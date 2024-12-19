@@ -9,6 +9,7 @@ import {
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
+  Refund,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
   RunningBalances,
@@ -160,10 +161,12 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   // Append V3 slow fills to the V2 leaf list
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
     Object.values(depositsForChain).forEach((deposits) => {
-      deposits.forEach((deposit) => {
-        const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit, deposit.lpFeePct);
-        slowRelayLeaves.push(v3SlowFillLeaf);
-      });
+      deposits
+        .filter((deposit) => deposit.inputAmount.gt(0) || sdkUtils.isMessageEmpty(deposit.message))
+        .forEach((deposit) => {
+          const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit, deposit.lpFeePct);
+          slowRelayLeaves.push(v3SlowFillLeaf);
+        });
     });
   });
 
@@ -233,10 +236,6 @@ export function _buildRelayerRefundRoot(
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(refundsForChain).forEach(([l2TokenAddress, refunds]) => {
-      // We need to sort leaves deterministically so that the same root is always produced from the same loadData
-      // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
-      const sortedRefundAddresses = sortRefundAddresses(refunds);
-
       const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
         l2TokenAddress,
         repaymentChainId,
@@ -255,20 +254,8 @@ export function _buildRelayerRefundRoot(
         runningBalances[repaymentChainId][l1TokenCounterpart]
       );
 
-      // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
-      // refunds.
-      for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
-        relayerRefundLeaves.push({
-          groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
-          // L2 token address
-          amountToReturn: i === 0 ? amountToReturn : bnZero,
-          chainId: repaymentChainId,
-          refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
-          leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
-          l2TokenAddress,
-          refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
-        });
-      }
+      const _refundLeaves = _getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount);
+      relayerRefundLeaves.push(..._refundLeaves);
     });
   });
 
@@ -323,6 +310,42 @@ export function _buildRelayerRefundRoot(
     leaves: indexedLeaves,
     tree: buildRelayerRefundTree(indexedLeaves),
   };
+}
+
+export function _getRefundLeaves(
+  refunds: Refund,
+  amountToReturn: BigNumber,
+  repaymentChainId: number,
+  l2TokenAddress: string,
+  maxRefundCount: number
+): RelayerRefundLeafWithGroup[] {
+  const nonZeroRefunds = Object.fromEntries(Object.entries(refunds).filter(([, refundAmount]) => refundAmount.gt(0)));
+  // We need to sort leaves deterministically so that the same root is always produced from the same loadData
+  // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
+  const sortedRefundAddresses = sortRefundAddresses(nonZeroRefunds);
+
+  const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
+
+  // Create leaf for { repaymentChainId, L2TokenAddress }, split leaves into sub-leaves if there are too many
+  // refunds.
+  for (let i = 0; i < sortedRefundAddresses.length; i += maxRefundCount) {
+    const newLeaf = {
+      groupIndex: i, // Will delete this group index after using it to sort leaves for the same chain ID and
+      // L2 token address
+      amountToReturn: i === 0 ? amountToReturn : bnZero,
+      chainId: repaymentChainId,
+      refundAmounts: sortedRefundAddresses.slice(i, i + maxRefundCount).map((address) => refunds[address]),
+      leafId: 0, // Will be updated before inserting into tree when we sort all leaves.
+      l2TokenAddress,
+      refundAddresses: sortedRefundAddresses.slice(i, i + maxRefundCount),
+    };
+    assert(
+      newLeaf.refundAmounts.length === newLeaf.refundAddresses.length,
+      "refund address and amount array lengths mismatch"
+    );
+    relayerRefundLeaves.push(newLeaf);
+  }
+  return relayerRefundLeaves;
 }
 
 /**
