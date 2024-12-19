@@ -12,8 +12,8 @@ import {
   MAX_UINT_VAL,
   assign,
   blockExplorerLink,
-  getCurrentTime,
   getNetworkName,
+  Profiler,
   runTransaction,
   toBN,
   winston,
@@ -27,6 +27,7 @@ type TokenShortfallType = {
 };
 
 export class TokenClient {
+  private profiler: InstanceType<typeof Profiler>;
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
 
@@ -35,7 +36,9 @@ export class TokenClient {
     readonly relayerAddress: string,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient
-  ) {}
+  ) {
+    this.profiler = new Profiler({ at: "TokenClient", logger });
+  }
 
   getAllTokenData(): TokenDataType {
     return this.tokenData;
@@ -211,7 +214,7 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const { spokePool } = this.spokePoolClients[chainId];
 
-    const multicall3 = await sdkUtils.getMulticall3(chainId, spokePool.provider);
+    const multicall3 = sdkUtils.getMulticall3(chainId, spokePool.provider);
     if (!isDefined(multicall3)) {
       return this.fetchTokenData(chainId, hubPoolTokens);
     }
@@ -238,7 +241,7 @@ export class TokenClient {
   }
 
   async update(): Promise<void> {
-    const start = getCurrentTime();
+    const mark = this.profiler.start("update");
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
     const { hubPoolClient } = this;
 
@@ -272,11 +275,7 @@ export class TokenClient {
       })
     );
 
-    this.logger.debug({
-      at: "TokenBalanceClient",
-      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`,
-      balanceData,
-    });
+    mark.stop({ message: "Updated TokenBalance client.", balanceData });
   }
 
   async fetchTokenData(

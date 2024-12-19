@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, ethers, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -10,7 +10,7 @@ import {
   PolygonERC20Bridge,
   ZKSyncBridge,
   ZKSyncWethBridge,
-  ArbitrumOneBridge,
+  ArbitrumOrbitBridge,
   LineaBridge,
   LineaUSDCBridge,
   LineaWethBridge,
@@ -38,25 +38,6 @@ export const INFINITE_FILL_DEADLINE = bnUint32Max;
 // Target ~4 hours
 export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 
-// Target ~4 days per chain. Should cover all events needed to construct pending bundle.
-export const DATAWORKER_FAST_LOOKBACK: { [chainId: number]: number } = {
-  [CHAIN_IDs.ARBITRUM]: 1382400,
-  [CHAIN_IDs.BASE]: 172800, // Same as Optimism.
-  [CHAIN_IDs.BLAST]: 172800,
-  [CHAIN_IDs.BOBA]: 11520,
-  [CHAIN_IDs.LINEA]: 115200, // 1 block every 3 seconds
-  [CHAIN_IDs.LISK]: 172800, // Same as Optimism.
-  [CHAIN_IDs.MAINNET]: 28800,
-  [CHAIN_IDs.MODE]: 172800, // Same as Optimism.
-  [CHAIN_IDs.OPTIMISM]: 172800, // 1 block every 2 seconds after bedrock
-  [CHAIN_IDs.POLYGON]: 138240,
-  [CHAIN_IDs.REDSTONE]: 172800, // OP stack
-  [CHAIN_IDs.SCROLL]: 115200, // 4 * 24 * 20 * 60,
-  [CHAIN_IDs.WORLD_CHAIN]: 172800, // OP stack
-  [CHAIN_IDs.ZK_SYNC]: 345600, // 4 * 24 * 60 * 60,
-  [CHAIN_IDs.ZORA]: 172800, // OP stack
-};
-
 // Target ~14 days per chain. Should cover all events that could be finalized, so 2x the optimistic
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
@@ -70,7 +51,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // The key of the following dictionary is used as the USD threshold to determine the MDC:
 // - Searching from highest USD threshold to lowest
 // - If the key is >= deposited USD amount, then use the MDC associated with the key for the origin chain
-// - If no keys are >= depostied USD amount, ignore the deposit.
+// - If no keys are >= deposited USD amount, ignore the deposit.
 // To see the latest block reorg events go to:
 // - Ethereum: https://etherscan.io/blocks_forked
 // - Polygon: https://polygonscan.com/blocks_forked
@@ -79,6 +60,7 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // anything under 7 days.
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 120,
     [CHAIN_IDs.BLAST]: 120,
@@ -95,6 +77,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 120,
   },
   1000: {
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
@@ -111,6 +94,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZORA]: 60,
   },
   100: {
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.ARBITRUM]: 0,
     [CHAIN_IDs.BASE]: 60,
     [CHAIN_IDs.BLAST]: 60,
@@ -136,13 +120,14 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
 // Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
+  [CHAIN_IDs.ALEPH_ZERO]: 10000,
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.LINEA]: 5000,
   [CHAIN_IDs.LISK]: 10000,
-  [CHAIN_IDs.MAINNET]: 10000,
+  [CHAIN_IDs.MAINNET]: 5000,
   [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
   [CHAIN_IDs.POLYGON]: 10000,
@@ -167,6 +152,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
+  [CHAIN_IDs.ALEPH_ZERO]: 240, // Same as Arbitrum
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
@@ -212,6 +198,7 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
 export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 60,
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
@@ -242,6 +229,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
 // These are all intended to be roughly 2 days of blocks for each chain.
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
+  [CHAIN_IDs.ALEPH_ZERO]: 691200,
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
@@ -281,37 +269,6 @@ export const BLOCK_NUMBER_TTL = 60;
 export const PROVIDER_CACHE_TTL = 3600;
 export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
-// Multicall3 Constants:
-export const multicall3Addresses = {
-  [CHAIN_IDs.ARBITRUM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BASE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BLAST]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BOBA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.LINEA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.LISK]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.MAINNET]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.MODE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.OPTIMISM]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.POLYGON]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.REDSTONE]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SCROLL]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.WORLD_CHAIN]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.ZK_SYNC]: "0xF9cda624FBC7e059355ce98a31693d299FACd963",
-  [CHAIN_IDs.ZORA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  // Testnet:
-  [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BASE_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.BLAST_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.POLYGON_AMOY]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SCROLL_SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-  [CHAIN_IDs.SEPOLIA]: "0xcA11bde05977b3631167028862bE2a173976CA11",
-};
-
-export type Multicall2Call = {
-  callData: ethers.utils.BytesLike;
-  target: string;
-};
-
 // These are the spokes that can hold both ETH and WETH, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 export const spokesThatHoldEthAndWeth = [
@@ -349,17 +306,18 @@ export const chainIdsToCctpDomains: { [chainId: number]: number } = {
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
+  [CHAIN_IDs.ALEPH_ZERO]: ["USDT", "WETH"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC"],
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -402,7 +360,8 @@ export const CANONICAL_BRIDGE: {
     ): BaseBridgeAdapter;
   };
 } = {
-  [CHAIN_IDs.ARBITRUM]: ArbitrumOneBridge,
+  [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
+  [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LINEA]: LineaBridge,
@@ -483,28 +442,46 @@ export const RELAYER_DEFAULT_SPOKEPOOL_INDEXER = "./dist/src/libexec/RelayerSpok
 
 export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol: "https" };
 
+export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
+
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
 // This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
 // This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
 // relayer to unintentionally overdraw the HubPool's available reserves.
 export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
 
-export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { l1: string; l2: string } } = {
-  [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
-    l2: "0x096760F208390250649E3e8763348E783AEF5562",
+// Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
+// gateway, while function calls are directed at the gateway router.
+export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]: { l1: string; l2: string } } } = {
+  [CHAIN_IDs.ARBITRUM]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDT
+      l2: "0x096760F208390250649E3e8763348E783AEF5562",
+    },
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
+      l2: "0x096760F208390250649E3e8763348E783AEF5562", // If we want to bridge to USDC.e, we need to specify a unique Arbitrum Gateway.
+    },
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
+      l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
+    },
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
+      l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
+      l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+    },
   },
-  [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xcEe284F754E854890e311e3280b767F80797180d", // USDC
-    l2: "0x096760F208390250649E3e8763348E783AEF5562", // If we want to bridge to USDC.e, we need to specify a unique Arbitrum Gateway.
+};
+
+// The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
+export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    l1: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
+    l2: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
   },
-  [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
-    l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
-  },
-  [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
-    l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
-    l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+  [CHAIN_IDs.ARBITRUM]: {
+    l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
+    l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
   },
 };
 
@@ -524,6 +501,7 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 
 // Expected worst-case time for message from L1 to propogate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
+  [CHAIN_IDs.ALEPH_ZERO]: 20 * 60,
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.BLAST]: 20 * 60,
@@ -540,6 +518,22 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
 };
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
+  [CHAIN_IDs.BASE]: {
+    // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
+    l1: {
+      AddressManager: "0x8EfB6B5c4767B09Dc9AA6Af4eAA89F749522BaE2",
+      L1CrossDomainMessenger: "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_8453.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+      L2OutputOracle: "0x56315b90c40730925ec5485cf004d835058518A0",
+      OptimismPortal2: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
+      DisputeGameFactory: "0x43edB88C4B80fDD2AdFF2412A7BebF9dF42cB40e",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
   [CHAIN_IDs.BLAST]: {
     l1: {
       AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
@@ -617,3 +611,31 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
 };
 
 export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time
+
+export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
+  [chainId: number]: {
+    // Amount of tokens required to send a single message to the L2
+    amountWei: number;
+    // Multiple of the required amount above to send to the feePayer in case
+    // we are short funds. For example, if set to 10, then everytime we need to load more funds
+    // we'll send 10x the required amount.
+    amountMultipleToFund: number;
+    // Account that pays the fees on-chain that we will load more fee tokens into.
+    feePayer?: string;
+    // Token that the feePayer will pay the fees in.
+    feeToken?: string;
+  };
+} = {
+  // Leave feePayer undefined if feePayer is HubPool.
+  // Leave feeToken undefined if feeToken is ETH.
+  [CHAIN_IDs.ARBITRUM]: {
+    amountWei: 0.02,
+    amountMultipleToFund: 1,
+  },
+  [CHAIN_IDs.ALEPH_ZERO]: {
+    amountWei: 0.49,
+    amountMultipleToFund: 20,
+    feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
+    feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
+  },
+};

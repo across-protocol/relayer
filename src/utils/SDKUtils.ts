@@ -40,6 +40,7 @@ export const {
   formatFeePct,
   shortenHexStrings,
   convertFromWei,
+  formatGwei,
   max,
   min,
   utf8ToHex,
@@ -53,6 +54,7 @@ export const {
   getTokenInfo,
   getL1TokenInfo,
   getUsdcSymbol,
+  Profiler,
 } = sdk.utils;
 
 export const {

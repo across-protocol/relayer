@@ -2,6 +2,8 @@
 
 This document explains how the Dataworker constructs "root bundles", which instruct the Across system on how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
+The following README is a simplified summary of the exact protocol rules described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/2046d3cc228cacfb27688fc02e9674aef13445c9/UMIPs/umip-179.md) and its predecessor [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/92abcfcb676b0c24690811751521cd0782af5372/UMIPs/umip-157). These UMIP's describe the explicit rules that the Dataworker implements. In other words, the "Dataworker" code is an implementation of the UMIP-179 "interface".
+
 ## Why does Across need to move capital around?
 
 There are two types of capital pools in Across: liquidity provider capital in the `HubPool` ("LP capital") and capital held in the `SpokePools` ("SpokePool balance").
@@ -123,48 +125,51 @@ flowchart TD
 
 ### Validating fills
 
-A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L139)'s:
+A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L124)'s:
 
 ```solidity
-event FilledRelay(
-    uint256 amount,
-    uint256 totalFilledAmount,
-    uint256 fillAmount,
+event FilledV3Relay(
+    address inputToken,
+    address outputToken,
+    uint256 inputAmount,
+    uint256 outputAmount,
     uint256 repaymentChainId,
     uint256 indexed originChainId,
-    uint256 destinationChainId,
-    int64 relayerFeePct,
-    int64 realizedLpFeePct,
     uint32 indexed depositId,
-    address destinationToken,
-    address relayer,
-    address indexed depositor,
+    uint32 fillDeadline,
+    uint32 exclusivityDeadline,
+    address exclusiveRelayer,
+    address indexed relayer,
+    address depositor,
     address recipient,
     bytes message,
-    RelayExecutionInfo updatableRelayData
+    V3RelayExecutionEventInfo relayExecutionInfo
 );
 ```
 
-A [deposit](https://github.com/across-protocol/contracts/blob/master/contracts/SpokePool.sol#L119) contains:
+A [deposit](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L99) contains:
 
 ```solidity
-event FundsDeposited(
-    uint256 amount,
-    uint256 originChainId,
+event V3FundsDeposited(
+    address inputToken,
+    address outputToken,
+    uint256 inputAmount,
+    uint256 outputAmount,
     uint256 indexed destinationChainId,
-    int64 relayerFeePct,
     uint32 indexed depositId,
     uint32 quoteTimestamp,
-    address originToken,
-    address recipient,
+    uint32 fillDeadline,
+    uint32 exclusivityDeadline,
     address indexed depositor,
+    address recipient,
+    address exclusiveRelayer,
     bytes message
 );
 ```
 
-Therefore, `amount`, `originChainId`, `destinationChainId`, `relayerFeePct`, `depositId`, `destinationToken`, `message`, and `recipient` must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
+All of the shared event properties must match. In addition, the fill's matched deposit must have been emitted from the SpokePool at the `originChainId` of the fill. The fill must have been emitted from the SpokePool on the `destinationChainId`.
 
-Finally, the fill's `realizedLpFeePct` must be correct. Currently this is deterministically linked with the deposit's `quoteTimestamp`: there is a correct `realizedLpFeePct` for each `quoteTimestamp`, which is computed by querying the HubPool's "utilization" at the Ethereum block height corresponding to the `quoteTimestamp`. This is described in the [UMIP here](https://github.com/UMAprotocol/UMIPs/blob/e3198578b1d339914afa5243a80e3ac8055fba34/UMIPs/umip-157.md#validating-realizedlpfeepct).
+The only exception to the above rule is if `outputToken` is equal to the zero address, then the "equivalent" token address should be substituted in as described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/2046d3cc228cacfb27688fc02e9674aef13445c9/UMIPs/umip-179.md#finding-valid-relays).
 
 ## Incorporating slow fills
 
@@ -231,7 +236,7 @@ This is everything that the Dataworker needs to construct a root bundle! All tha
 
 Root bundle merkle leaf formats
 
-- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
-- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
-- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/SpokePoolInterface.sol#L29) One per unfilled deposit
-- [RootBundle](https://github.com/across-protocol/contracts/blob/master/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window
+- [PoolRebalanceLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/HubPoolInterface.sol#L11): One per chain
+- [RelayerRefundLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/SpokePoolInterface.sol#L9) One per token per chain
+- [SlowFillLeaf](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/V3SpokePoolInterface.sol#L66) One per unfilled deposit
+- [RootBundle](https://github.com/across-protocol/contracts/blob/95c4f923932d597d3e63449718bba5c674b084eb/contracts/interfaces/HubPoolInterface.sol#L53) how the Dataworker's proposal is stored in the HubPool throughout its pending challenge window

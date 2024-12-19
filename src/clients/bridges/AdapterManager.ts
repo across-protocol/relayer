@@ -13,6 +13,7 @@ import { ArbitrumAdapter, PolygonAdapter, ZKSyncAdapter, LineaAdapter, ScrollAda
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
 import { BaseChainAdapter } from "../../adapter";
+import { EthereumAdapter } from "./EthereumAdapter";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
@@ -21,7 +22,7 @@ export class AdapterManager {
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
-  public chainsToWrapEtherOn = [...spokesThatHoldEthAndWeth, CHAIN_IDs.ARBITRUM];
+  private chainsToWrapEtherOn = [...spokesThatHoldEthAndWeth, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
 
   constructor(
     readonly logger: winston.Logger,
@@ -45,7 +46,8 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA } = CHAIN_IDs;
+    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA, ALEPH_ZERO } =
+      CHAIN_IDs;
     const hubChainId = hubPoolClient.chainId;
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
     const constructBridges = (chainId: number) => {
@@ -170,6 +172,18 @@ export class AdapterManager {
         DEFAULT_GAS_MULTIPLIER[ZORA] ?? 1
       );
     }
+    if (this.spokePoolClients[ALEPH_ZERO] !== undefined) {
+      this.adapters[ALEPH_ZERO] = new BaseChainAdapter(
+        spokePoolClients,
+        ALEPH_ZERO,
+        hubChainId,
+        filterMonitoredAddresses(ALEPH_ZERO),
+        logger,
+        SUPPORTED_TOKENS[ALEPH_ZERO],
+        constructBridges(ALEPH_ZERO),
+        DEFAULT_GAS_MULTIPLIER[ALEPH_ZERO] ?? 1
+      );
+    }
 
     logger.debug({
       at: "AdapterManager#constructor",
@@ -232,7 +246,14 @@ export class AdapterManager {
           wrapThreshold.gte(wrapTarget),
           `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
         );
-        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
+        if (chainId === CHAIN_IDs.MAINNET) {
+          // For mainnet, construct one-off adapter to wrap ETH, because Ethereum is typically not a chain
+          // that we have an adapter for.
+          const ethAdapter = new EthereumAdapter(this.logger, this.spokePoolClients);
+          await ethAdapter.wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
+        } else {
+          await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
+        }
       }
     );
   }

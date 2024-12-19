@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   Signer,
@@ -14,6 +13,7 @@ import {
   getNetworkName,
   getRedisCache,
   groupObjectCountsByProp,
+  Multicall2Call,
   isDefined,
   winston,
   convertFromWei,
@@ -23,7 +23,7 @@ import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
-  signer: Signer,
+  _signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
