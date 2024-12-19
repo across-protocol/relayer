@@ -660,8 +660,6 @@ export class ProfitClient {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;
-    // TODO: Set this once we figure out gas markup on the API side.
-    const gasMarkup = 0;
     // Call the factory to create a new QueryBase instance.
     return relayFeeCalculator.QueryBase__factory.create(
       chainId,
@@ -670,8 +668,7 @@ export class ProfitClient {
       undefined, // spokePoolAddress
       undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
-      this.logger,
-      gasMarkup
+      this.logger
     );
   }
 }
