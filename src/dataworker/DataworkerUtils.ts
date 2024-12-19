@@ -162,7 +162,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
     Object.values(depositsForChain).forEach((deposits) => {
       deposits
-        .filter((deposit) => deposit.inputAmount.gt(0) || sdkUtils.isMessageEmpty(deposit.message))
+        .filter((deposit) => deposit.inputAmount.gt(0) || !utils.isMessageEmpty(deposit.message))
         .forEach((deposit) => {
           const v3SlowFillLeaf = buildV3SlowFillLeaf(deposit, deposit.lpFeePct);
           slowRelayLeaves.push(v3SlowFillLeaf);
