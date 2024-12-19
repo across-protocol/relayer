@@ -161,6 +161,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   // Append V3 slow fills to the V2 leaf list
   Object.values(bundleSlowFillsV3).forEach((depositsForChain) => {
     Object.values(depositsForChain).forEach((deposits) => {
+      // Do not create slow fill leaves where the amount to transfer would be 0 and the message is empty
       deposits
         .filter((deposit) => deposit.inputAmount.gt(0) || !utils.isMessageEmpty(deposit.message))
         .forEach((deposit) => {
