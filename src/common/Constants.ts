@@ -499,7 +499,7 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
   },
 };
 
-// Expected worst-case time for message from L1 to propogate to L2 in seconds
+// Expected worst-case time for message from L1 to propagate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.ALEPH_ZERO]: 20 * 60,
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
