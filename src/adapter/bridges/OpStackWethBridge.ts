@@ -60,10 +60,15 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositETHTo", [
+      toAddress,
+      this.l2Gas,
+      "0x",
+    ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToOvm",
-      args: [toAddress, amount, this.l2Gas, this.l2chainId],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount, bridgeCalldata],
     });
   }
 
