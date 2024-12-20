@@ -79,19 +79,25 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
      * @notice Initiates a WETH deposit to a whitelisted bridge for a specified chain with user calldata.
      * @dev Requires that the owner of this contract has whitelisted the bridge contract and function
      * selector for the chainId that the user wants to send ETH to.
-     * @param value The amount of WETH to deposit.
+     * @param netValue The total amount of WETH to withdraw and send to the bridge contract.
+     * @param bridgeValue The amount of WETH which the depositor expects to receive on L2. That is, netValue - fees.
      * @param chainId The chain to send ETH to.
      * @param bridgeCallData The calldata to pass to the bridge contract. The first 4 bytes should be equal
      * to the whitelisted function selector of the bridge contract.
      */
-    function bridgeWeth(uint256 chainId, uint256 value, bytes calldata bridgeCallData) public nonReentrant {
-        _withdrawWeth(value);
+    function bridgeWeth(
+        uint256 chainId,
+        uint256 netValue,
+        uint256 bridgeValue,
+        bytes calldata bridgeCallData
+    ) public nonReentrant {
+        _withdrawWeth(netValue);
         Bridge memory bridge = whitelistedBridgeFunctions[chainId];
         if (bridge.funcSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
         // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory result) = bridge.bridge.call{ value: value }(bridgeCallData);
+        (bool success, bytes memory result) = bridge.bridge.call{ value: netValue }(bridgeCallData);
         require(success, string(result));
-        emit AtomicWethDepositInitiated(msg.sender, chainId, value);
+        emit AtomicWethDepositInitiated(msg.sender, chainId, bridgeValue);
     }
 
     fallback() external payable {}
