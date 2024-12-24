@@ -58,57 +58,35 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days.
+const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 120,
-    [CHAIN_IDs.BLAST]: 120,
-    [CHAIN_IDs.LINEA]: 30,
-    [CHAIN_IDs.LISK]: 120,
-    [CHAIN_IDs.MAINNET]: 64, // Finalized block: https://www.alchemy.com/overviews/ethereum-commitment-levels
-    [CHAIN_IDs.MODE]: 120,
-    [CHAIN_IDs.OPTIMISM]: 120,
+    [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
-    [CHAIN_IDs.REDSTONE]: 120,
-    [CHAIN_IDs.SCROLL]: 30,
-    [CHAIN_IDs.WORLD_CHAIN]: 120,
-    [CHAIN_IDs.ZK_SYNC]: 120,
-    [CHAIN_IDs.ZORA]: 120,
+    [CHAIN_IDs.SCROLL]: 18,
   },
   1000: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 60,
-    [CHAIN_IDs.BLAST]: 60,
-    [CHAIN_IDs.LINEA]: 1,
-    [CHAIN_IDs.LISK]: 60,
-    [CHAIN_IDs.MAINNET]: 32, // Justified block
-    [CHAIN_IDs.MODE]: 60,
-    [CHAIN_IDs.OPTIMISM]: 60,
-    [CHAIN_IDs.POLYGON]: 100, // Probabilistically safe level based on historic Polygon reorgs
-    [CHAIN_IDs.REDSTONE]: 60,
-    [CHAIN_IDs.SCROLL]: 1,
-    [CHAIN_IDs.WORLD_CHAIN]: 60,
-    [CHAIN_IDs.ZK_SYNC]: 0,
-    [CHAIN_IDs.ZORA]: 60,
+    [CHAIN_IDs.ALEPH_ZERO]: ORBIT_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.ARBITRUM]: ORBIT_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.BASE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.BLAST]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.LISK]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.MAINNET]: 4,
+    [CHAIN_IDs.MODE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.OPTIMISM]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.REDSTONE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.SCROLL]: 8,
+    [CHAIN_IDs.WORLD_CHAIN]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+    [CHAIN_IDs.ZORA]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
   },
   100: {
-    [CHAIN_IDs.ALEPH_ZERO]: 0,
-    [CHAIN_IDs.ARBITRUM]: 0,
-    [CHAIN_IDs.BASE]: 60,
-    [CHAIN_IDs.BLAST]: 60,
     [CHAIN_IDs.LINEA]: 1,
-    [CHAIN_IDs.LISK]: 60,
-    [CHAIN_IDs.MAINNET]: 16, // Mainnet reorgs are rarely > 4 blocks in depth so this is a very safe buffer
-    [CHAIN_IDs.MODE]: 60,
-    [CHAIN_IDs.OPTIMISM]: 60,
-    [CHAIN_IDs.POLYGON]: 80,
-    [CHAIN_IDs.REDSTONE]: 60,
-    [CHAIN_IDs.SCROLL]: 1,
-    [CHAIN_IDs.WORLD_CHAIN]: 60,
+    [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
+    [CHAIN_IDs.POLYGON]: 16,
+    [CHAIN_IDs.SCROLL]: 2,
     [CHAIN_IDs.ZK_SYNC]: 0,
-    [CHAIN_IDs.ZORA]: 60,
   },
 };
 
