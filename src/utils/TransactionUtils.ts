@@ -154,16 +154,13 @@ export async function runTransaction(
   }
 }
 
-// TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
-// For now this method will extract the provider's Fee data from the associated network and scale it by a priority
-// scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
 export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3
 ): Promise<Partial<FeeData>> {
   const { chainId } = await provider.getNetwork();
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId);
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId, maxFeePerGasScaler);
 
   if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
     feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
@@ -176,7 +173,7 @@ export async function getGasPrice(
 
   // Default to EIP-1559 (type 2) pricing.
   return {
-    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, Math.max(priorityScaler * maxFeePerGasScaler, 1)),
+    maxFeePerGas: feeData.maxFeePerGas,
     maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
   };
 }
