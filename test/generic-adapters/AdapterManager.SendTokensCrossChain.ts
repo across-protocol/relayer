@@ -182,6 +182,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
       chainId, // chainId
       amountToSend, // amount
+      amountToSend,
       bridgeCalldata
     );
   });
@@ -226,6 +227,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
       chainId,
       amountToSend, // amount
+      amountToSend,
       bridgeCalldata
     );
   });
@@ -333,7 +335,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       [],
       relayer.address,
     ]);
-    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(chainId, amountToSend.add(fee), bridgeCalldata);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId,
+      amountToSend.add(fee),
+      amountToSend,
+      bridgeCalldata
+    );
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWithValue(toBN(0));
   });
   it("Correctly sends tokens to chain: Base", async function () {
@@ -401,6 +408,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
       chainId, // chainId
       amountToSend, // amount
+      amountToSend,
       bridgeCalldata
     );
   });

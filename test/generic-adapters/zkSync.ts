@@ -155,7 +155,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
   describe("WETH bridge", function () {
     it("Get L1 deposits: EOA", async function () {
       // await adapter.sendTokenToTargetChain(monitoredEoa, WETH.addresses[MAINNET], l2Weth.address, depositAmount, false);
-      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, "0x");
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, depositAmount, "0x");
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
@@ -221,7 +221,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       });
 
       // Make a single l1 -> l2 deposit.
-      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, "0x");
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, depositAmount, "0x");
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
         monitoredEoa,
