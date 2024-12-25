@@ -160,7 +160,8 @@ export async function getGasPrice(
   maxFeePerGasScaler = 3
 ): Promise<Partial<FeeData>> {
   const { chainId } = await provider.getNetwork();
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId, maxFeePerGasScaler);
+  // TODO: Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, { chainId, baseFeeMultiplier: maxFeePerGasScaler });
 
   if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
     feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
