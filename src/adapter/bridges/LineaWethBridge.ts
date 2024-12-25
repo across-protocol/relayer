@@ -54,7 +54,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount, bridgeCalldata],
+      args: [this.l2chainId, amount, amount, bridgeCalldata],
     });
   }
 

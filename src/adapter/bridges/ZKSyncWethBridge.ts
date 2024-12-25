@@ -103,7 +103,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount.add(l2TransactionBaseCost), bridgeCalldata],
+      args: [this.l2chainId, amount.add(l2TransactionBaseCost), amount, bridgeCalldata],
     });
   }
 
