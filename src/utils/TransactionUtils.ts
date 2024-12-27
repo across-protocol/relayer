@@ -82,7 +82,12 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(provider, priorityFeeScaler, maxFeePerGasScaler);
+    const gas = await getGasPrice(
+      provider,
+      priorityFeeScaler,
+      maxFeePerGasScaler,
+      await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    );
 
     logger.debug({
       at: "TxUtil",
@@ -157,11 +162,16 @@ export async function runTransaction(
 export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
-  maxFeePerGasScaler = 3
+  maxFeePerGasScaler = 3,
+  transactionObject?: ethers.PopulatedTransaction
 ): Promise<Partial<FeeData>> {
   const { chainId } = await provider.getNetwork();
-  // TODO: Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, { chainId, baseFeeMultiplier: maxFeePerGasScaler });
+  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
+    chainId,
+    baseFeeMultiplier: maxFeePerGasScaler,
+    unsignedTx: transactionObject,
+  });
 
   if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
     feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
