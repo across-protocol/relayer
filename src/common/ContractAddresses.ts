@@ -109,6 +109,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x735aDBbE72226BD52e818E7181953f42E3b0FF21",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_57073: {
+      address: "0x88ff1e5b602916615391f55854588efcbb7663f0",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     ovmStandardBridge_81457: {
       address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -303,6 +307,15 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   34443: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  57073: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
