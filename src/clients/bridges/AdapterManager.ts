@@ -24,6 +24,9 @@ const CUSTOM_ADAPTERS = {
   [CHAIN_IDs.SCROLL]: ScrollAdapter,
 } as const;
 
+// Define chains that we skip instantiating
+const SKIPPED_CHAIN_ADAPTERS = [CHAIN_IDs.MAINNET, CHAIN_IDs.BOBA];
+
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
@@ -80,7 +83,7 @@ export class AdapterManager {
       const CustomAdapter = CUSTOM_ADAPTERS[chainId];
       if (CustomAdapter) {
         this.adapters[chainId] = new CustomAdapter(logger, spokePoolClients, filterMonitoredAddresses(chainId));
-      } else {
+      } else if (!SKIPPED_CHAIN_ADAPTERS.includes(chainId)) {
         // Use BaseChainAdapter for all other chains
         this.adapters[chainId] = new BaseChainAdapter(
           spokePoolClients,
