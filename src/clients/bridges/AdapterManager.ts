@@ -15,6 +15,15 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 import { EthereumAdapter } from "./EthereumAdapter";
 
+// Define chains that use custom adapters
+const CUSTOM_ADAPTERS = {
+  [CHAIN_IDs.POLYGON]: PolygonAdapter,
+  [CHAIN_IDs.ARBITRUM]: ArbitrumAdapter,
+  [CHAIN_IDs.ZK_SYNC]: ZKSyncAdapter,
+  [CHAIN_IDs.LINEA]: LineaAdapter,
+  [CHAIN_IDs.SCROLL]: ScrollAdapter,
+} as const;
+
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
@@ -46,8 +55,6 @@ export class AdapterManager {
       );
     };
 
-    const { OPTIMISM, ARBITRUM, POLYGON, ZK_SYNC, BASE, MODE, LINEA, LISK, BLAST, REDSTONE, SCROLL, ZORA, ALEPH_ZERO } =
-      CHAIN_IDs;
     const hubChainId = hubPoolClient.chainId;
     const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
     const constructBridges = (chainId: number) => {
@@ -61,129 +68,32 @@ export class AdapterManager {
         })
       );
     };
-    if (this.spokePoolClients[OPTIMISM] !== undefined) {
-      this.adapters[OPTIMISM] = new BaseChainAdapter(
-        spokePoolClients,
-        OPTIMISM,
-        hubChainId,
-        filterMonitoredAddresses(OPTIMISM),
-        logger,
-        SUPPORTED_TOKENS[OPTIMISM],
-        constructBridges(OPTIMISM),
-        DEFAULT_GAS_MULTIPLIER[OPTIMISM] ?? 1
-      );
-    }
-    if (this.spokePoolClients[POLYGON] !== undefined) {
-      this.adapters[POLYGON] = new PolygonAdapter(logger, spokePoolClients, filterMonitoredAddresses(POLYGON));
-    }
-    if (this.spokePoolClients[ARBITRUM] !== undefined) {
-      this.adapters[ARBITRUM] = new ArbitrumAdapter(logger, spokePoolClients, filterMonitoredAddresses(ARBITRUM));
-    }
-    if (this.spokePoolClients[ZK_SYNC] !== undefined) {
-      this.adapters[ZK_SYNC] = new ZKSyncAdapter(logger, spokePoolClients, filterMonitoredAddresses(ZK_SYNC));
-    }
-    if (this.spokePoolClients[BASE] !== undefined) {
-      this.adapters[BASE] = new BaseChainAdapter(
-        spokePoolClients,
-        BASE,
-        hubChainId,
-        filterMonitoredAddresses(BASE),
-        logger,
-        SUPPORTED_TOKENS[BASE],
-        constructBridges(BASE),
-        DEFAULT_GAS_MULTIPLIER[BASE] ?? 1
-      );
-    }
-    if (this.spokePoolClients[LINEA] !== undefined) {
-      this.adapters[LINEA] = new LineaAdapter(logger, spokePoolClients, filterMonitoredAddresses(LINEA));
-    }
-    if (this.spokePoolClients[MODE] !== undefined) {
-      this.adapters[MODE] = new BaseChainAdapter(
-        spokePoolClients,
-        MODE,
-        hubChainId,
-        filterMonitoredAddresses(MODE),
-        logger,
-        SUPPORTED_TOKENS[MODE],
-        constructBridges(MODE),
-        DEFAULT_GAS_MULTIPLIER[MODE] ?? 1
-      );
-    }
-    if (this.spokePoolClients[REDSTONE] !== undefined) {
-      this.adapters[REDSTONE] = new BaseChainAdapter(
-        spokePoolClients,
-        REDSTONE,
-        hubChainId,
-        filterMonitoredAddresses(REDSTONE),
-        logger,
-        SUPPORTED_TOKENS[REDSTONE],
-        constructBridges(REDSTONE),
-        DEFAULT_GAS_MULTIPLIER[REDSTONE] ?? 1
-      );
-    }
-    if (this.spokePoolClients[LISK] !== undefined) {
-      this.adapters[LISK] = new BaseChainAdapter(
-        spokePoolClients,
-        LISK,
-        hubChainId,
-        filterMonitoredAddresses(LISK),
-        logger,
-        SUPPORTED_TOKENS[LISK],
-        constructBridges(LISK),
-        DEFAULT_GAS_MULTIPLIER[LISK] ?? 1
-      );
-    }
-    if (this.spokePoolClients[BLAST] !== undefined) {
-      this.adapters[BLAST] = new BaseChainAdapter(
-        spokePoolClients,
-        BLAST,
-        hubChainId,
-        filterMonitoredAddresses(BLAST),
-        logger,
-        SUPPORTED_TOKENS[BLAST],
-        constructBridges(BLAST),
-        DEFAULT_GAS_MULTIPLIER[BLAST] ?? 1
-      );
-    }
-    if (this.spokePoolClients[SCROLL] !== undefined) {
-      this.adapters[SCROLL] = new ScrollAdapter(logger, spokePoolClients, filterMonitoredAddresses(SCROLL));
-    }
-    if (this.spokePoolClients[CHAIN_IDs.WORLD_CHAIN] !== undefined) {
-      this.adapters[CHAIN_IDs.WORLD_CHAIN] = new BaseChainAdapter(
-        spokePoolClients,
-        CHAIN_IDs.WORLD_CHAIN,
-        hubChainId,
-        filterMonitoredAddresses(CHAIN_IDs.WORLD_CHAIN),
-        logger,
-        SUPPORTED_TOKENS[CHAIN_IDs.WORLD_CHAIN],
-        constructBridges(CHAIN_IDs.WORLD_CHAIN),
-        DEFAULT_GAS_MULTIPLIER[CHAIN_IDs.WORLD_CHAIN] ?? 1
-      );
-    }
-    if (this.spokePoolClients[ZORA] !== undefined) {
-      this.adapters[ZORA] = new BaseChainAdapter(
-        spokePoolClients,
-        ZORA,
-        hubChainId,
-        filterMonitoredAddresses(ZORA),
-        logger,
-        SUPPORTED_TOKENS[ZORA],
-        constructBridges(ZORA),
-        DEFAULT_GAS_MULTIPLIER[ZORA] ?? 1
-      );
-    }
-    if (this.spokePoolClients[ALEPH_ZERO] !== undefined) {
-      this.adapters[ALEPH_ZERO] = new BaseChainAdapter(
-        spokePoolClients,
-        ALEPH_ZERO,
-        hubChainId,
-        filterMonitoredAddresses(ALEPH_ZERO),
-        logger,
-        SUPPORTED_TOKENS[ALEPH_ZERO],
-        constructBridges(ALEPH_ZERO),
-        DEFAULT_GAS_MULTIPLIER[ALEPH_ZERO] ?? 1
-      );
-    }
+
+    // Process all chains that have spoke pool clients
+    Object.keys(this.spokePoolClients).forEach((chainIdStr) => {
+      const chainId = Number(chainIdStr);
+      if (this.spokePoolClients[chainId] === undefined) {
+        return;
+      }
+
+      // Check if chain uses custom adapter
+      const CustomAdapter = CUSTOM_ADAPTERS[chainId];
+      if (CustomAdapter) {
+        this.adapters[chainId] = new CustomAdapter(logger, spokePoolClients, filterMonitoredAddresses(chainId));
+      } else {
+        // Use BaseChainAdapter for all other chains
+        this.adapters[chainId] = new BaseChainAdapter(
+          spokePoolClients,
+          chainId,
+          hubChainId,
+          filterMonitoredAddresses(chainId),
+          logger,
+          SUPPORTED_TOKENS[chainId],
+          constructBridges(chainId),
+          DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
+        );
+      }
+    });
 
     logger.debug({
       at: "AdapterManager#constructor",
