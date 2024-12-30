@@ -144,10 +144,6 @@ export class TransactionClient {
         txnsToSubmit.push(txns[i]);
       }
     }
-    this.logger.debug({
-      at: "TransactionClient",
-      message: `Submitting ${txnsToSubmit.length} transactions that successfully simulated`,
-    });
     return await this.submit(chainId, txnsToSubmit);
   }
 }
