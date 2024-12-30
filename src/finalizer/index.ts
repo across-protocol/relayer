@@ -326,7 +326,9 @@ export async function finalize(
 
   if (finalizations.length > 0) {
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
-    // safety features
+    // safety features. This only works because we assume all finalizer transactions are
+    // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
+    // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
     let txnHashLookup: Record<number, string[]> = {};
     try {
