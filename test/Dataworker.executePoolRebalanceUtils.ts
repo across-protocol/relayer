@@ -709,10 +709,6 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       // Should submit two pool rebalance leaf executions to multicaller client.
       expect(multiCallerClient.transactionCount()).to.equal(2);
       const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
-      // expect(queuedTransactions[0].method).to.equal("transfer");
-      // expect(queuedTransactions[0].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf1]);
-      // expect(queuedTransactions[1].method).to.equal("transfer");
-      // expect(queuedTransactions[1].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf2]);
       expect(queuedTransactions[0].method).to.equal("executeRootBundle");
       expect(queuedTransactions[1].method).to.equal("executeRootBundle");
 
