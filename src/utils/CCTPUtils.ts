@@ -97,7 +97,7 @@ export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
         return undefined;
       }
       // Call into the destinationMessageTransmitter contract to determine if the message has been processed
-      // on the destionation chain. We want to make sure the message **hasn't** been processed.
+      // on the destination chain. We want to make sure the message **hasn't** been processed.
       const isMessageProcessed = await hasCCTPMessageBeenProcessed(sourceDomain, nonce, destinationMessageTransmitter);
       if (isMessageProcessed) {
         return undefined;

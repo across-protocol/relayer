@@ -110,6 +110,7 @@ export async function arbStackFinalizer(
     undefined,
     redis
   );
+  const l2BlockTime = (await averageBlockTime(spokePoolClient.spokePool.provider)).average;
   logger.debug({
     at: `Finalizer#${networkName}Finalizer`,
     message: `${networkName} TokensBridged event filter`,
@@ -209,6 +210,9 @@ export async function arbStackFinalizer(
           logger.debug({
             at: `Finalizer#${networkName}Finalizer`,
             message: `Withdrawal event for ${amountFromWei} of ${l1TokenInfo.symbol} is too recent to finalize`,
+            timeUntilFinalization: `${Math.floor(
+              ((event.blockNumber - latestBlockToFinalize) * l2BlockTime) / 60 / 60
+            )}`,
           });
         }
       } catch (err) {

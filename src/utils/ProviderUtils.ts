@@ -127,7 +127,7 @@ export async function getProvider(
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
-      // Implement a slightly aggressive expontential backoff to account for fierce paralellism.
+      // Implement a slightly aggressive expontential backoff to account for fierce parallelism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = baseDelay + baseDelay * Math.random();

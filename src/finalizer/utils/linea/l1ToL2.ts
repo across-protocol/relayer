@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, retryAsync, winston, CHAIN_IDs } from "../../../utils";
+import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -12,8 +12,28 @@ import {
   findMessageFromUsdcBridge,
   findMessageSentEvents,
   getBlockRangeByHoursOffsets,
+  getL1MessageServiceContractFromL1ClaimingService,
   initLineaSdk,
 } from "./common";
+import { L2MessageServiceContract } from "./imports";
+
+const L1L2MessageStatuses = {
+  0: "UNKNOWN",
+  1: "CLAIMABLE",
+  2: "CLAIMED",
+};
+// Temporary re-implementation of the SDK's `L2MessageServiceContract.getMessageStatus` functions that allow us to use
+// our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
+// from 0 to "latest" which will not work on all RPC's.
+async function getL1ToL2MessageStatusUsingCustomProvider(
+  messageService: L2MessageServiceContract,
+  messageHash: string,
+  l2Provider: ethers.providers.Provider
+): Promise<OnChainMessageStatus> {
+  const l2Contract = messageService.contract.connect(l2Provider);
+  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  return L1L2MessageStatuses[status.toString()];
+}
 
 export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
@@ -58,7 +78,11 @@ export async function lineaL1ToL2Finalizer(
   };
 
   const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
-    findMessageSentEvents(l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageSentEvents(
+      getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
+      l1ToL2AddressesToFinalize,
+      searchConfig
+    ),
     findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
     findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
   ]);
@@ -73,9 +97,11 @@ export async function lineaL1ToL2Finalizer(
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
 
-    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
-    // twice with a 1 second delay between in case of intermittent RPC failures.
-    const messageStatus = await retryAsync(() => l2MessageServiceContract.getMessageStatus(_messageHash), 2, 1);
+    const messageStatus = await getL1ToL2MessageStatusUsingCustomProvider(
+      l2MessageServiceContract,
+      _messageHash,
+      _spokePoolClient.spokePool.provider
+    );
     return {
       messageSender: _from,
       destination: _to,
