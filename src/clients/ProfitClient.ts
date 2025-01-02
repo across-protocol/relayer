@@ -243,6 +243,14 @@ export class ProfitClient {
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
+    // TODO: This is where the relayer's computation of the tokenGasCost (gasUnits * gasFee) diverges from the
+    // quoting API's. The latter uses the SDK's GasPriceOracle.getGasPriceEstimate() function and passes in an optional
+    // baseFeeMultiplier. The relayer uses this.getTotalGasCost() to compute the gasUnits the same way that the
+    // API does but then computes the tokenGasCost by computing the gasPrice using a baseFeeMultiplier hardcoded
+    // to 1.0. The relayer applies its own padding on the full tokenGasCost (not just the base fee!) using
+    // this.gasPadding. To make the two implementations use the same computation, then the relayer should set
+    // baseFeeMultiplier = this.gasPadding when calling getTotalGasCost which itself will call the GasPriceOracle's
+    // getGasPriceEstimate function.
     const totalGasCost = await this.getTotalGasCost(deposit);
     let { nativeGasCost, tokenGasCost } = totalGasCost;
     const gasPrice = totalGasCost.gasPrice;
