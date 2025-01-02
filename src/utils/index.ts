@@ -14,11 +14,8 @@ export {
   providers,
   utils,
   BaseContract,
-  BigNumber,
-  BigNumberish,
   Contract,
   ContractFactory,
-  Event,
   EventFilter,
   Signer,
   Transaction,
@@ -57,7 +54,6 @@ export * from "./chains";
 export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
-export * from "./DepositUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
@@ -69,7 +65,6 @@ export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
 export * from "./GckmsUtils";
-export * from "./TimeUtils";
 export * from "./TypeGuards";
 export * from "./Help";
 export * from "./LogUtils";

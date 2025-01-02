@@ -1,11 +1,21 @@
-import { BigNumber, Contract, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
+import {
+  BigNumber,
+  EventSearchConfig,
+  Provider,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  assert,
+  toBN,
+} from "../../utils";
 import { processEvent } from "../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
+  private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
+
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,
@@ -38,6 +48,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",

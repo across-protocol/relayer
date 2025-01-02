@@ -27,10 +27,11 @@ import {
   ERC20,
   fixedPointAdjustment as fixedPoint,
   getNetworkName,
+  parseUnits,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
 
-const toMegaWei = (num: string | number | BigNumber) => ethers.utils.parseUnits(num.toString(), 6);
+const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
 let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
 let bundleDataClient: MockBundleDataClient;

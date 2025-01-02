@@ -22,8 +22,10 @@ import {
   chainIsProd,
   Contract,
   ethers,
+  Multicall2Call,
+  paginatedEventQuery,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, Multicall2Call, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 const { utils } = ethers;
 
@@ -93,6 +95,91 @@ export async function opStackFinalizer(
     message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
     latestBlockToProve,
   });
+
+  // Add in all manual withdrawals from other EOA's from OPStack chain to the finalizer. This will help us
+  // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
+  // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
+  // the lite chain to Ethereum via the canonical OVM standard bridge.
+  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
+    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+    : [];
+  if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
+    logger.warn({
+      at: "opStackFinalizer",
+      message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
+    });
+  } else if (withdrawalToAddresses.length > 0) {
+    const ovmStandardBridge = new Contract(
+      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
+      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
+      spokePoolClient.spokePool.provider
+    );
+    const withdrawalEthEvents = (
+      await paginatedEventQuery(
+        ovmStandardBridge,
+        ovmStandardBridge.filters.ETHBridgeInitiated(
+          null, // from
+          withdrawalToAddresses // to
+        ),
+        {
+          ...spokePoolClient.eventSearchConfig,
+          toBlock: spokePoolClient.latestBlockSearched,
+        }
+      )
+    ).map((event) => {
+      return {
+        ...event,
+        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+      };
+    });
+    const withdrawalErc20Events = (
+      await paginatedEventQuery(
+        ovmStandardBridge,
+        ovmStandardBridge.filters.ERC20BridgeInitiated(
+          null, // localToken
+          null, // remoteToken
+          withdrawalToAddresses // from
+        ),
+        {
+          ...spokePoolClient.eventSearchConfig,
+          toBlock: spokePoolClient.latestBlockSearched,
+        }
+      )
+    ).map((event) => {
+      // If we're aware of this token, then save the event as one we can finalize.
+      try {
+        getL1TokenInfo(event.args.localToken, chainId);
+        return {
+          ...event,
+          l2TokenAddress: event.args.localToken,
+        };
+      } catch (err) {
+        logger.debug({
+          at: "opStackFinalizer",
+          message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
+          event: event,
+        });
+        return undefined;
+      }
+    });
+    const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter((event) => event !== undefined);
+    // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+    // submit proofs and finalizations for.
+    withdrawalEvents.forEach((event) => {
+      const tokenBridgedEvent: TokensBridged = {
+        ...event,
+        amountToReturn: event.args.amount,
+        chainId,
+        leafId: 0,
+        l2TokenAddress: event.l2TokenAddress,
+      };
+      if (event.blockNumber >= latestBlockToProve) {
+        recentTokensBridgedEvents.push(tokenBridgedEvent);
+      } else {
+        olderTokensBridgedEvents.push(tokenBridgedEvent);
+      }
+    });
+  }
 
   const proofs = await multicallOptimismL1Proofs(
     chainId,

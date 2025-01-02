@@ -1,53 +1,9 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
-import { Fill, FillStatus, SpokePoolClientsByChain, V3DepositWithBlock } from "../interfaces";
+import { Fill, FillStatus, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
 import { bnZero } from "../utils";
-import { getBlockRangeForChain } from "../dataworker/DataworkerUtils";
 
-export function getRefundInformationFromFill(
-  fill: Fill,
-  hubPoolClient: HubPoolClient,
-  blockRangesForChains: number[][],
-  chainIdListForBundleEvaluationBlockNumbers: number[],
-  fromLiteChain: boolean
-): {
-  chainToSendRefundTo: number;
-  repaymentToken: string;
-} {
-  // Handle slow relay where repaymentChainId = 0. Slow relays always pay recipient on destination chain.
-  // So, save the slow fill under the destination chain, and save the fast fill under its repayment chain.
-  let chainToSendRefundTo = sdkUtils.isSlowFill(fill) ? fill.destinationChainId : fill.repaymentChainId;
-  // If the fill is for a deposit originating from the lite chain, the repayment chain is the origin chain
-  // regardless of whether it is a slow or fast fill (we ignore slow fills but this is for posterity).
-  if (fromLiteChain) {
-    chainToSendRefundTo = fill.originChainId;
-  }
-
-  // Save fill data and associate with repayment chain and L2 token refund should be denominated in.
-  const endBlockForMainnet = getBlockRangeForChain(
-    blockRangesForChains,
-    hubPoolClient.chainId,
-    chainIdListForBundleEvaluationBlockNumbers
-  )[1];
-
-  const l1TokenCounterpart = hubPoolClient.getL1TokenForL2TokenAtBlock(
-    fill.inputToken,
-    fill.originChainId,
-    endBlockForMainnet
-  );
-
-  const repaymentToken = hubPoolClient.getL2TokenForL1TokenAtBlock(
-    l1TokenCounterpart,
-    chainToSendRefundTo,
-    endBlockForMainnet
-  );
-  return {
-    chainToSendRefundTo,
-    repaymentToken,
-  };
-}
 export type RelayerUnfilledDeposit = {
-  deposit: V3DepositWithBlock;
+  deposit: DepositWithBlock;
   version: number;
   invalidFills: Fill[];
 };
@@ -76,11 +32,14 @@ export function getUnfilledDeposits(
 
   return deposits
     .map((deposit) => {
-      const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
       const { unfilledAmount, invalidFills } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
-      return { deposit, version, unfilledAmount, invalidFills };
+      return { deposit, unfilledAmount, invalidFills };
     })
-    .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero));
+    .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero))
+    .map(({ deposit, ...rest }) => {
+      const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
+      return { deposit, ...rest, version };
+    });
 }
 
 export function getAllUnfilledDeposits(

@@ -1,15 +1,13 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  formatUnitsForToken,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
@@ -17,8 +15,10 @@ import {
   getRedisCache,
   groupObjectCountsByProp,
   isDefined,
+  Multicall2Call,
   paginatedEventQuery,
   winston,
+  convertFromWei,
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
@@ -27,7 +27,7 @@ import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
-  signer: Signer,
+  _signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
@@ -147,7 +147,7 @@ async function generateDepositData(
 ): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: formatUnitsForToken("USDC", message.amount), // Format out to 6 decimal places for USDC
+    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
     type: "deposit",
     originationChainId,
     destinationChainId,

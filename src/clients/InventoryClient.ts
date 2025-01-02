@@ -1,4 +1,3 @@
-import { utils as ethersUtils } from "ethers";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
@@ -10,6 +9,7 @@ import {
   createFormatFunction,
   blockExplorerLink,
   Contract,
+  formatUnits,
   runTransaction,
   isDefined,
   DefaultLogLevels,
@@ -25,9 +25,11 @@ import {
   assert,
   compareAddressesSimple,
   getUsdcSymbol,
+  Profiler,
+  getNativeTokenSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { V3Deposit } from "../interfaces";
+import { Deposit } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -58,6 +60,7 @@ export class InventoryClient {
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
   private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
+  private profiler: InstanceType<typeof Profiler>;
 
   constructor(
     readonly relayer: string,
@@ -74,6 +77,10 @@ export class InventoryClient {
   ) {
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
+    this.profiler = new Profiler({
+      logger: this.logger,
+      at: "InventoryClient",
+    });
   }
 
   /**
@@ -298,13 +305,15 @@ export class InventoryClient {
   async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
 
+    let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    let startTimer: number;
     if (!isDefined(this.bundleRefundsPromise)) {
-      startTimer = performance.now();
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
+      mark = this.profiler.start("bundleRefunds", {
+        l1Token,
+      });
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
@@ -326,12 +335,12 @@ export class InventoryClient {
       },
       {}
     );
-    if (startTimer) {
-      this.log(`Time taken to get bundle refunds: ${Math.round((performance.now() - startTimer) / 1000)}s`, {
-        l1Token,
-        totalRefundsPerChain,
-      });
-    }
+
+    mark?.stop({
+      message: "Time to calculate total refunds per chain",
+      l1Token,
+    });
+
     return totalRefundsPerChain;
   }
 
@@ -340,10 +349,10 @@ export class InventoryClient {
    * so that it can batch compute LP fees for all possible repayment chains. By locating this function
    * here it ensures that the relayer and the inventory client are in sync as to which chains are possible
    * repayment chains for a given deposit.
-   * @param deposit V3Deposit
+   * @param deposit Deposit
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
-  getPossibleRepaymentChainIds(deposit: V3Deposit): number[] {
+  getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Destination and Origin chain are always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = [originChainId, destinationChainId];
@@ -364,7 +373,7 @@ export class InventoryClient {
    * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
    * is Bridged USDC.
    */
-  validateOutputToken(deposit: V3Deposit): boolean {
+  validateOutputToken(deposit: Deposit): boolean {
     const { inputToken, outputToken, originChainId, destinationChainId } = deposit;
 
     // Return true if input and output tokens are mapped to the same L1 token via PoolRebalanceRoutes
@@ -411,7 +420,7 @@ export class InventoryClient {
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
-  async determineRefundChainId(deposit: V3Deposit, l1Token?: string): Promise<number[]> {
+  async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
@@ -549,7 +558,10 @@ export class InventoryClient {
       // It's undesirable to accrue excess balances on a Lite chain because the relayer relies on additional deposits
       // destined for that chain in order to offload its excess.
       const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE } = tokenConfig;
-      const effectiveTargetPct = tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
+      const effectiveTargetPct =
+        deposit.toLiteChain && chainId === destinationChainId
+          ? tokenConfig.targetPct
+          : tokenConfig.targetPct.mul(targetOverageBuffer).div(fixedPointAdjustment);
 
       this.log(
         `Evaluated taking repayment on ${
@@ -566,10 +578,11 @@ export class InventoryClient {
           chainVirtualBalanceWithShortfall,
           chainVirtualBalanceWithShortfallPostRelay,
           cumulativeVirtualBalance,
-          cumulativeVirtualBalancePostRefunds,
-          targetPct: ethersUtils.formatUnits(tokenConfig.targetPct, 18),
-          targetOverage: ethersUtils.formatUnits(targetOverageBuffer, 18),
-          effectiveTargetPct: ethersUtils.formatUnits(effectiveTargetPct, 18),
+          cumulativeVirtualBalanceWithShortfall,
+          cumulativeVirtualBalanceWithShortfallPostRefunds,
+          targetPct: formatUnits(tokenConfig.targetPct, 18),
+          targetOverage: formatUnits(targetOverageBuffer, 18),
+          effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
           expectedPostRelayAllocation,
           chainsToEvaluate,
         }
@@ -583,12 +596,8 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
+    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainid].
     if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
-      this.logger.warn({
-        at: "InventoryClient#determineRefundChainId",
-        message: `Deposit ${deposit.depositId} originated on lite chain ${originChainId} and origin chain is over-allocated. Refusing to fill deposit.`,
-        eligibleRefundChains,
-      });
       return [];
     }
 
@@ -611,7 +620,8 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const start = performance.now();
+
+    const mark = this.profiler.start("getLatestRunningBalances");
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -667,13 +677,10 @@ export class InventoryClient {
         ];
       })
     );
-    this.log(
-      `Approximated latest (abs. val) running balance for ORU chains for token ${l1Token} in ${
-        Math.round(performance.now() - start) / 1000
-      }s`,
-      { runningBalances }
-    );
-
+    mark.stop({
+      message: "Time to get running balances",
+      runningBalances,
+    });
     return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
   }
 
@@ -978,7 +985,11 @@ export class InventoryClient {
             const { unwrapWethThreshold, unwrapWethTarget } = tokenConfig;
 
             // Ignore chains where ETH isn't the native gas token. Returning null will result in these being filtered.
-            if (chainId === CHAIN_IDs.POLYGON || unwrapWethThreshold === undefined || unwrapWethTarget === undefined) {
+            if (
+              getNativeTokenSymbol(chainId) !== "ETH" ||
+              unwrapWethThreshold === undefined ||
+              unwrapWethTarget === undefined
+            ) {
               return;
             }
             const weth = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];

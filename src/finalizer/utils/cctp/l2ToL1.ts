@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call, chainIdsToCctpDomains } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   Signer,
@@ -14,15 +13,17 @@ import {
   getNetworkName,
   getRedisCache,
   groupObjectCountsByProp,
+  Multicall2Call,
   isDefined,
   winston,
+  convertFromWei,
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
-  signer: Signer,
+  _signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
@@ -127,7 +128,7 @@ async function generateWithdrawalData(
 ): Promise<CrossChainMessage[]> {
   return messages.map((message) => ({
     l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: message.amount,
+    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals),
     type: "withdrawal",
     originationChainId,
     destinationChainId,

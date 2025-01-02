@@ -1,9 +1,9 @@
 import assert from "assert";
-import { Contract, ethers, utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils, Signer } from "ethers";
 import readline from "readline";
 import * as contracts from "@across-protocol/contracts";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { getDeployedContract, getNodeUrlList, CHAIN_IDs } from "../src/utils";
+import { getDeployedContract, getProvider, CHAIN_IDs } from "../src/utils";
 
 // https://nodejs.org/api/process.html#exit-codes
 export const NODE_SUCCESS = 0;
@@ -14,12 +14,6 @@ export type ERC20 = {
   address: string;
   decimals: number;
   symbol: string;
-};
-
-// Public RPC endpoints to be used if preferred providers are not defined in the environment.
-const fallbackProviders: { [chainId: number]: string } = {
-  [CHAIN_IDs.MAINNET]: "https://eth.llamarpc.com",
-  [CHAIN_IDs.SEPOLIA]: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
 };
 
 async function askQuestion(query: string) {
@@ -82,19 +76,6 @@ export function validateChainIds(chainIds: number[]): boolean {
 }
 
 /**
- * @description Resolve a default provider URL.
- * @param chainId Chain ID for the provider to select.
- * @returns URL of the provider endpoint.
- */
-export function getProviderUrl(chainId: number): string {
-  try {
-    return getNodeUrlList(chainId, 1)[0];
-  } catch {
-    return fallbackProviders[chainId];
-  }
-}
-
-/**
  * @description For a SpokePool chain ID, resolve its corresponding HubPool chain ID.
  * @param spokeChainId Chain ID of the SpokePool.
  * @returns Chain ID for the corresponding HubPool.
@@ -116,7 +97,7 @@ export function resolveHubChainId(spokeChainId: number): number {
  */
 export async function getContract(chainId: number, contractName: string): Promise<Contract> {
   const contract = getDeployedContract(contractName, chainId);
-  const provider = new ethers.providers.StaticJsonRpcProvider(getProviderUrl(chainId));
+  const provider = await getProvider(chainId);
   return contract.connect(provider);
 }
 
@@ -131,5 +112,19 @@ export async function getSpokePoolContract(chainId: number): Promise<Contract> {
   const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
 
   const contract = new Contract(spokePoolAddr, contracts.SpokePool__factory.abi);
+  return contract;
+}
+
+/**
+ * @description Instantiate an Across OVM SpokePool contract instance.
+ * @param chainId Chain ID for the SpokePool deployment.
+ * @returns SpokePool contract instance.
+ */
+export async function getOvmSpokePoolContract(chainId: number, signer?: Signer): Promise<Contract> {
+  const hubChainId = resolveHubChainId(chainId);
+  const hubPool = await getContract(hubChainId, "HubPool");
+  const spokePoolAddr = (await hubPool.crossChainContracts(chainId))[1];
+
+  const contract = new Contract(spokePoolAddr, contracts.Ovm_SpokePool__factory.abi, signer);
   return contract;
 }

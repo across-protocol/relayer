@@ -28,6 +28,7 @@ export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 export abstract class BaseBridgeAdapter {
   protected l1Bridge: Contract;
   protected l2Bridge: Contract;
+  public gasToken: string | undefined;
 
   constructor(
     protected l2chainId: number,

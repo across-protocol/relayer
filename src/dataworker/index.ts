@@ -6,6 +6,7 @@ import {
   Signer,
   disconnectRedisClients,
   isDefined,
+  Profiler,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -52,21 +53,29 @@ export async function createDataworker(
     dataworker,
   };
 }
+
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  logger = _logger;
-  let loopStart = performance.now();
-  const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
-  logger.debug({
+  const profiler = new Profiler({
     at: "Dataworker#index",
-    message: `Time to update non-spoke clients: ${(performance.now() - loopStart) / 1000}s`,
+    logger: _logger,
   });
-  loopStart = performance.now();
+  logger = _logger;
+
+  const { clients, config, dataworker } = await profiler.measureAsync(
+    createDataworker(logger, baseSigner),
+    "createDataworker",
+    {
+      message: "Time to update non-spoke clients",
+    }
+  );
+
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
   try {
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
 
     for (;;) {
+      profiler.mark("loopStart");
       // Determine the spoke client's lookback:
       // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
       //    how many bundles we want to look back from the start bundle blocks.
@@ -108,7 +117,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         fromBlocks,
         toBlocks
       );
-      const dataworkerFunctionLoopTimerStart = performance.now();
+      profiler.mark("dataworkerFunctionLoopTimerStart");
       // Validate and dispute pending proposal before proposing a new one
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(
@@ -185,25 +194,33 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           at: "Dataworker#index",
           message: "Exiting early due to dataworker function collision",
           proposalCollision,
+          proposedBundleDataDefined: isDefined(proposedBundleData),
           executorCollision,
+          poolRebalanceLeafExecutionCount,
+          unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
+          challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
           pendingProposal,
         });
       } else {
         await clients.multiCallerClient.executeTxnQueues();
       }
-
-      const dataworkerFunctionLoopTimerEnd = performance.now();
-      logger.debug({
-        at: "Dataworker#index",
-        message: `Time to update spoke pool clients and run dataworker function: ${Math.round(
-          (dataworkerFunctionLoopTimerEnd - loopStart) / 1000
-        )}s`,
-        timeToLoadSpokes: Math.round((dataworkerFunctionLoopTimerStart - loopStart) / 1000),
-        timeToRunDataworkerFunctions: Math.round(
-          (dataworkerFunctionLoopTimerEnd - dataworkerFunctionLoopTimerStart) / 1000
-        ),
+      profiler.mark("dataworkerFunctionLoopTimerEnd");
+      profiler.measure("timeToLoadSpokes", {
+        message: "Time to load spokes in data worker loop",
+        from: "loopStart",
+        to: "dataworkerFunctionLoopTimerStart",
       });
-      loopStart = performance.now();
+      profiler.measure("timeToRunDataworkerFunctions", {
+        message: "Time to run data worker functions in data worker loop",
+        from: "dataworkerFunctionLoopTimerStart",
+        to: "dataworkerFunctionLoopTimerEnd",
+      });
+      // do we need to add an additional log for the sum of the previous?
+      profiler.measure("dataWorkerTotal", {
+        message: "Total time taken for dataworker loop",
+        from: "loopStart",
+        to: "dataworkerFunctionLoopTimerEnd",
+      });
 
       if (await processEndPollingLoop(logger, "Dataworker", config.pollingDelay)) {
         break;

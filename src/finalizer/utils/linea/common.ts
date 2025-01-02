@@ -1,7 +1,4 @@
 import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
-import { L1MessageServiceContract, L2MessageServiceContract } from "@consensys/linea-sdk/dist/lib/contracts";
-import { L1ClaimingService } from "@consensys/linea-sdk/dist/lib/sdk/claiming/L1ClaimingService";
-import { MessageSentEvent } from "@consensys/linea-sdk/dist/typechain/L2MessageService";
 import { Linea_Adapter__factory } from "@across-protocol/contracts";
 import {
   BigNumber,
@@ -16,11 +13,12 @@ import {
   getNodeUrlList,
   getRedisCache,
   paginatedEventQuery,
-  retryAsync,
   CHAIN_IDs,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
+import { Log } from "../../../interfaces";
+import { L1ClaimingService, L1MessageServiceContract, L2MessageServiceContract, MessageSentEvent } from "./imports";
 
 export type MessageWithStatus = Message & {
   logIndex: number;
@@ -28,7 +26,7 @@ export type MessageWithStatus = Message & {
   txHash: string;
 };
 
-export const lineaAdapterIface = Linea_Adapter__factory.createInterface();
+export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
 export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
   return new LineaSDK({
@@ -40,8 +38,12 @@ export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
 }
 
 export function makeGetMessagesWithStatusByTxHash(
-  srcMessageService: L1MessageServiceContract | L2MessageServiceContract,
-  dstClaimingService: L1ClaimingService | L2MessageServiceContract
+  l2Provider: ethers.providers.Provider,
+  l1Provider: ethers.providers.Provider,
+  l2MessageService: L2MessageServiceContract,
+  l1ClaimingService: L1ClaimingService,
+  l1SearchConfig: EventSearchConfig,
+  l2SearchConfig: EventSearchConfig
 ) {
   /**
    * Retrieves Linea's MessageSent events for a given transaction hash and enhances them with their status.
@@ -51,18 +53,16 @@ export function makeGetMessagesWithStatusByTxHash(
    */
   return async (txHashOrReceipt: string | TransactionReceipt): Promise<MessageWithStatus[]> => {
     const txReceipt =
-      typeof txHashOrReceipt === "string"
-        ? await srcMessageService.provider.getTransactionReceipt(txHashOrReceipt)
-        : txHashOrReceipt;
+      typeof txHashOrReceipt === "string" ? await l2Provider.getTransactionReceipt(txHashOrReceipt) : txHashOrReceipt;
 
     if (!txReceipt) {
       return [];
     }
 
     const messages = txReceipt.logs
-      .filter((log) => log.address === srcMessageService.contract.address)
+      .filter((log) => log.address === l2MessageService.contract.address)
       .flatMap((log) => {
-        const parsedLog = srcMessageService.contract.interface.parseLog(log);
+        const parsedLog = l2MessageService.contract.interface.parseLog(log);
 
         if (!parsedLog || parsedLog.name !== "MessageSent") {
           return [];
@@ -83,17 +83,89 @@ export function makeGetMessagesWithStatusByTxHash(
           logIndex: log.logIndex,
         };
       });
-
-    // The Linea SDK MessageServiceContract constructs its own Provider without our retry logic so we retry each call
-    // twice with a 1 second delay between in case of intermittent RPC failures.
     const messageStatus = await Promise.all(
-      messages.map((message) => retryAsync(() => dstClaimingService.getMessageStatus(message.messageHash), 2, 1))
+      messages.map((message) =>
+        getL2L1MessageStatusUsingCustomProvider(
+          l1ClaimingService,
+          message.messageHash,
+          l1Provider,
+          l1SearchConfig,
+          l2Provider,
+          l2SearchConfig
+        )
+      )
     );
     return messages.map((message, index) => ({
       ...message,
       status: messageStatus[index],
     }));
   };
+}
+
+// Temporary re-implementation of the SDK's `L1ClaimingService.getMessageStatus` functions that allow us to use
+// our custom provider, with retry and caching logic, to get around the SDK's hardcoded logic to query events
+// from 0 to "latest" which will not work on all RPC's.
+async function getL2L1MessageStatusUsingCustomProvider(
+  messageService: L1ClaimingService,
+  messageHash: string,
+  l1Provider: ethers.providers.Provider,
+  l1SearchConfig: EventSearchConfig,
+  l2Provider: ethers.providers.Provider,
+  l2SearchConfig: EventSearchConfig
+): Promise<OnChainMessageStatus> {
+  const l2Contract = getL2MessageServiceContractFromL1ClaimingService(messageService, l2Provider);
+  const messageEvent = await getMessageSentEventForMessageHash(messageHash, l2Contract, l2SearchConfig);
+  const l1Contract = getL1MessageServiceContractFromL1ClaimingService(messageService, l1Provider);
+  const [l2MessagingBlockAnchoredEvents, isMessageClaimed] = await Promise.all([
+    getL2MessagingBlockAnchoredFromMessageSentEvent(messageEvent, l1Contract, l1SearchConfig),
+    l1Contract.isMessageClaimed(messageEvent.args?._nonce),
+  ]);
+  if (isMessageClaimed) {
+    return OnChainMessageStatus.CLAIMED;
+  }
+  if (l2MessagingBlockAnchoredEvents.length > 0) {
+    return OnChainMessageStatus.CLAIMABLE;
+  }
+  return OnChainMessageStatus.UNKNOWN;
+}
+export function getL2MessageServiceContractFromL1ClaimingService(
+  l1ClaimingService: L1ClaimingService,
+  l2Provider: ethers.providers.Provider
+): Contract {
+  return l1ClaimingService.l2Contract.contract.connect(l2Provider);
+}
+export function getL1MessageServiceContractFromL1ClaimingService(
+  l1ClaimingService: L1ClaimingService,
+  l1Provider: ethers.providers.Provider
+): Contract {
+  return l1ClaimingService.l1Contract.contract.connect(l1Provider);
+}
+export async function getMessageSentEventForMessageHash(
+  messageHash: string,
+  l2MessageServiceContract: Contract,
+  l2SearchConfig: EventSearchConfig
+): Promise<Log> {
+  const [messageEvent] = await paginatedEventQuery(
+    l2MessageServiceContract,
+    l2MessageServiceContract.filters.MessageSent(null, null, null, null, null, null, messageHash),
+    l2SearchConfig
+  );
+  if (!messageEvent) {
+    throw new Error(`Message hash does not exist on L2. Message hash: ${messageHash}`);
+  }
+  return messageEvent;
+}
+export async function getL2MessagingBlockAnchoredFromMessageSentEvent(
+  messageSentEvent: Log,
+  l1MessageServiceContract: Contract,
+  l1SearchConfig: EventSearchConfig
+): Promise<Log[]> {
+  const l2MessagingBlockAnchoredEvents = await paginatedEventQuery(
+    l1MessageServiceContract,
+    l1MessageServiceContract.filters.L2MessagingBlockAnchored(messageSentEvent.blockNumber),
+    l1SearchConfig
+  );
+  return l2MessagingBlockAnchoredEvents;
 }
 
 export async function getBlockRangeByHoursOffsets(
@@ -188,13 +260,13 @@ export function determineMessageType(
 }
 
 export async function findMessageSentEvents(
-  contract: L1MessageServiceContract | L2MessageServiceContract,
+  contract: Contract,
   l1ToL2AddressesToFinalize: string[],
   searchConfig: EventSearchConfig
 ): Promise<MessageSentEvent[]> {
   return paginatedEventQuery(
-    contract.contract,
-    (contract.contract as Contract).filters.MessageSent(l1ToL2AddressesToFinalize, l1ToL2AddressesToFinalize),
+    contract,
+    contract.filters.MessageSent(l1ToL2AddressesToFinalize, l1ToL2AddressesToFinalize),
     searchConfig
   ) as Promise<MessageSentEvent[]>;
 }

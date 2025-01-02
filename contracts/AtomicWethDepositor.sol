@@ -49,9 +49,11 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable modeL1Bridge = OvmL1Bridge(0x735aDBbE72226BD52e818E7181953f42E3b0FF21);
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
+    OvmL1Bridge public immutable inkL1Bridge = OvmL1Bridge(0x88FF1e5b602916615391F55854588EFcBB7663f0);
     OvmL1Bridge public immutable liskL1Bridge = OvmL1Bridge(0x2658723Bf70c7667De6B25F99fcce13A16D25d08);
     OvmL1Bridge public immutable redstoneL1Bridge = OvmL1Bridge(0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69);
     OvmL1Bridge public immutable blastL1Bridge = OvmL1Bridge(0x697402166Fbf2F22E970df8a6486Ef171dbfc524);
+    OvmL1Bridge public immutable worldChainL1Bridge = OvmL1Bridge(0x470458C91978D2d929704489Ad730DC3E3001113);
     OvmL1Bridge public immutable zoraL1Bridge = OvmL1Bridge(0x3e2Ea9B92B7E48A52296fD261dc26fd995284631);
     PolygonL1Bridge public immutable polygonL1Bridge = PolygonL1Bridge(0xA0c68C638235ee32657e8f720a23ceC1bFc77C77);
     ZkSyncL1Bridge public immutable zkSyncL1Bridge = ZkSyncL1Bridge(0x32400084C286CF3E17e7B677ea9583e60a000324);
@@ -72,6 +74,10 @@ contract AtomicWethDepositor {
             baseL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 34443) {
             modeL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 480) {
+            worldChainL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 57073) {
+            inkL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 1135) {
             liskL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 81457) {

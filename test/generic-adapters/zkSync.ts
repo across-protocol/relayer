@@ -178,7 +178,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       const result = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
         monitoredEoa,
-        null,
+        monitoredEoa,
         searchConfig
       );
       expect(Object.keys(result).length).to.equal(1);
@@ -220,7 +220,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await atomicDepositor.bridgeWethToZkSync(monitoredEoa, depositAmount, 0, 0, ZERO_ADDRESS);
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
-        null,
+        monitoredEoa,
         monitoredEoa,
         searchConfig
       );
@@ -229,7 +229,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       let receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
-        null,
+        monitoredEoa,
         monitoredEoa,
         searchConfig
       );
@@ -263,7 +263,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l2Weth.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount); // Simulate subsequent WETH deposit.
       receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
-        null,
+        monitoredEoa,
         monitoredEoa,
         searchConfig
       );
@@ -298,7 +298,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
-        null,
+        spokePool.address,
         spokePool.address,
         searchConfig
       );
@@ -318,7 +318,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const result = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
-        null,
+        spokePool.address,
         spokePool.address,
         searchConfig
       );
@@ -359,7 +359,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await hubPool.relayTokens(l1Weth, l2Weth.address, depositAmount, spokePool.address);
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
-        null,
+        spokePool.address,
         spokePool.address,
         searchConfig
       );
@@ -368,7 +368,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       let receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
-        null,
+        spokePool.address,
         spokePool.address,
         searchConfig
       );
@@ -401,7 +401,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l2Eth.transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), spokePool.address, depositAmount);
       receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
         l1Weth,
-        null,
+        spokePool.address,
         spokePool.address,
         searchConfig
       );
@@ -458,7 +458,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await adapter.sendTokenToTargetChain(monitoredEoa, l1Weth, l2Token, depositAmount);
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
-        null,
+        monitoredEoa,
         monitoredEoa,
         searchConfig
       );

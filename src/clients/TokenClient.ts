@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
-import { CachingMechanismInterface, L1Token, V3Deposit } from "../interfaces";
+import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -12,8 +12,8 @@ import {
   MAX_UINT_VAL,
   assign,
   blockExplorerLink,
-  getCurrentTime,
   getNetworkName,
+  Profiler,
   runTransaction,
   toBN,
   winston,
@@ -27,6 +27,7 @@ type TokenShortfallType = {
 };
 
 export class TokenClient {
+  private profiler: InstanceType<typeof Profiler>;
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
 
@@ -35,7 +36,9 @@ export class TokenClient {
     readonly relayerAddress: string,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient
-  ) {}
+  ) {
+    this.profiler = new Profiler({ at: "TokenClient", logger });
+  }
 
   getAllTokenData(): TokenDataType {
     return this.tokenData;
@@ -64,7 +67,7 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
-  hasBalanceForFill(deposit: V3Deposit): boolean {
+  hasBalanceForFill(deposit: Deposit): boolean {
     return this.getBalance(deposit.destinationChainId, deposit.outputToken).gte(deposit.outputAmount);
   }
 
@@ -79,7 +82,7 @@ export class TokenClient {
     assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
   }
 
-  captureTokenShortfallForFill(deposit: V3Deposit): void {
+  captureTokenShortfallForFill(deposit: Deposit): void {
     const { outputAmount: unfilledAmount } = deposit;
     this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.outputToken, deposit.depositId, unfilledAmount);
@@ -211,7 +214,7 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const { spokePool } = this.spokePoolClients[chainId];
 
-    const multicall3 = await sdkUtils.getMulticall3(chainId, spokePool.provider);
+    const multicall3 = sdkUtils.getMulticall3(chainId, spokePool.provider);
     if (!isDefined(multicall3)) {
       return this.fetchTokenData(chainId, hubPoolTokens);
     }
@@ -238,7 +241,7 @@ export class TokenClient {
   }
 
   async update(): Promise<void> {
-    const start = getCurrentTime();
+    const mark = this.profiler.start("update");
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
     const { hubPoolClient } = this;
 
@@ -272,11 +275,7 @@ export class TokenClient {
       })
     );
 
-    this.logger.debug({
-      at: "TokenBalanceClient",
-      message: `Updated TokenBalance client in ${getCurrentTime() - start} seconds.`,
-      balanceData,
-    });
+    mark.stop({ message: "Updated TokenBalance client.", balanceData });
   }
 
   async fetchTokenData(

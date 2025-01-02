@@ -11,6 +11,7 @@ import {
   TransactionResponse,
   TransactionSimulationResult,
   willSucceed,
+  stringifyThrownValue,
 } from "../utils";
 
 export interface AugmentedTransaction {
@@ -28,11 +29,6 @@ export interface AugmentedTransaction {
   canFailInSimulation?: boolean;
   // Optional batch ID to use to group transactions
   groupId?: string;
-}
-
-export interface RawTransaction {
-  contract: Contract;
-  data: string;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -105,7 +101,7 @@ export class TransactionClient {
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
           errorMessage: isError(error) ? (error as Error).message : undefined,
-          error,
+          error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
         return txnResponses;

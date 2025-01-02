@@ -1,6 +1,8 @@
-import { BigNumber, Contract, Event } from "ethers";
+import { Contract } from "ethers";
+import { Log } from "../../interfaces";
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
 import {
+  BigNumber,
   MAX_SAFE_ALLOWANCE,
   blockExplorerLink,
   bnZero,
@@ -31,9 +33,9 @@ import {
  * @returns List of l2EthDepositEvents followed by a l2WrapEvent. None of the
  * l2EthDepositEvents will match with the same l2WrapEvent.
  */
-export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Event[], _l2WrapEvents: Event[]): Event[] {
+export function matchL2EthDepositAndWrapEvents(l2EthDepositEvents: Log[], _l2WrapEvents: Log[]): Log[] {
   const l2WrapEvents = [..._l2WrapEvents]; // deep-copy because we're going to modify this in-place.
-  return l2EthDepositEvents.filter((l2EthDepositEvent: Event) => {
+  return l2EthDepositEvents.filter((l2EthDepositEvent) => {
     // Search from left to right to find the first following wrap event.
     const followingWrapEventIndex = l2WrapEvents.findIndex(
       (wrapEvent) => wrapEvent.blockNumber >= l2EthDepositEvent.blockNumber

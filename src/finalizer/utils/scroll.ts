@@ -1,10 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
-import { Contract, Signer, getBlockForTimestamp, getCurrentTime, getRedisCache, winston } from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common";
+import {
+  Contract,
+  Signer,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getRedisCache,
+  Multicall2Call,
+  winston,
+  convertFromWei,
+} from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 // The highest amount of pending finalizations the scroll API can return.
@@ -49,7 +57,6 @@ export async function scrollFinalizer(
   // Why are we breaking with the existing pattern--is it faster?
   // Scroll takes up to 4 hours with finalize a withdrawal so lets search
   // up to 12 hours for withdrawals.
-  const redis = await getRedisCache(logger);
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
     message: "Scroll TokensBridged event filter",
@@ -169,7 +176,7 @@ function populateClaimWithdrawal(
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
-    amount: claim.tokenAmount,
+    amount: convertFromWei(claim.tokenAmount, l1Token.decimals),
     type: "withdrawal",
     destinationChainId: hubPoolClient.chainId, // Always on L1
   };

@@ -1,6 +1,7 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
+import hre from "hardhat";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
-import { FillStatus, V3Deposit, V3RelayData } from "../src/interfaces";
+import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { averageBlockTime, bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
@@ -165,6 +166,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minDepositConfirmations: defaultMinDepositConfirmations,
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
+        loggingInterval: -1,
       } as unknown as RelayerConfig
     );
 
@@ -190,7 +192,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   describe("Relayer: Check for Unfilled v3 Deposits and Fill", async function () {
     // Helper for quickly computing fill amounts.
-    const getFillAmount = (relayData: V3RelayData, tokenPrice: BigNumber): BigNumber =>
+    const getFillAmount = (relayData: RelayData, tokenPrice: BigNumber): BigNumber =>
       relayData.outputAmount.mul(tokenPrice).div(fixedPoint);
 
     const findOriginChainLimitIdx = (
@@ -419,9 +421,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Ignores exclusive deposits", async function () {
-      const currentTime = (await spokePool_2.getCurrentTime()).toNumber();
-      const exclusivityDeadline = currentTime + 7200;
-      const deposits: V3Deposit[] = [];
+      const exclusivityDeadline = 7200;
+      const deposits: Deposit[] = [];
       const { fillStatus, relayerAddress } = relayerInstance;
 
       // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.
@@ -455,7 +456,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
-      await spokePool_2.setCurrentTime(exclusivityDeadline + 1);
+      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress);
+      expect(exclusiveDeposit).to.exist;
+      await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
       await updateAllClients();
 
       // Relayer can unconditionally fill after the exclusivityDeadline.
@@ -503,14 +506,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       for (const receipts of Object.values(txnReceipts)) {
         expect((await receipts).length).to.equal(0);
       }
-      expect(spyLogIncludes(spy, -3, "due to insufficient deposit confirmations.")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "due to insufficient deposit confirmations.")).to.be.true;
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found.")).to.be.true;
     });
 
     it("Correctly defers destination chain fills", async function () {
-      let { average: avgBlockTime } = await averageBlockTime(spokePool_2.provider);
-      avgBlockTime = Math.ceil(avgBlockTime);
-      const minFillTime = 4 * avgBlockTime; // Fill after deposit has aged 4 blocks.
+      const { average: avgBlockTime } = await averageBlockTime(spokePool_2.provider);
+      const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
+      const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
       relayerInstance = new Relayer(
         relayer.address,
@@ -535,15 +538,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         } as unknown as RelayerConfig
       );
 
-      const deposit = await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        inputToken,
-        inputAmount,
-        outputToken,
-        outputAmount
-      );
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       for (const receipts of Object.values(txnReceipts)) {
@@ -551,19 +546,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       }
       expect(lastSpyLogIncludes(spy, "due to insufficient fill time for")).to.be.true;
 
-      // SpokePool time is overridden and does not increment; it must be cranked manually.
-      const startTime = Number(await spokePool_2.getCurrentTime());
-      let nextTime: number;
-      do {
-        await fillV3Relay(
-          spokePool_2,
-          { ...deposit, depositId: deposit.depositId + 1, outputAmount: bnZero, recipient: randomAddress() },
-          relayer
-        );
-        nextTime = Number(await spokePool_2.getCurrentTime()) + avgBlockTime;
-        await spokePool_2.setCurrentTime(nextTime);
-      } while (startTime + minFillTime > nextTime);
-
+      // Mine enough blocks such that the deposit has aged sufficiently.
+      for (let i = 0; i < minFillTime * minDepositAgeBlocks * 10; i++) {
+        await hre.network.provider.send("evm_mine");
+      }
       await updateAllClients();
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       const receipts = await txnReceipts[destinationChainId];
