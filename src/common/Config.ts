@@ -43,8 +43,17 @@ export class CommonConfig {
       ARWEAVE_GATEWAY,
     } = env;
 
-    const updateConfig = (envVar: string, config: Record<string, unknown>) =>
-      Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => (config[k] = v));
+    const mergeConfig = <T>(config: T, envVar: string): T => {
+      const shallowCopy = { ...config };
+      Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
+        assert(
+          typeof v === typeof shallowCopy[k] || !isDefined(shallowCopy[k]),
+          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[k]})`
+        );
+        shallowCopy[k] = v;
+      });
+      return shallowCopy;
+    };
 
     this.version = ACROSS_BOT_VERSION ?? "unknown";
     this.hubPoolChainId = Number(HUB_CHAIN_ID ?? CHAIN_IDs.MAINNET);
@@ -60,8 +69,7 @@ export class CommonConfig {
     this.maxConfigVersion = Number(ACROSS_MAX_CONFIG_VERSION ?? Constants.CONFIG_STORE_VERSION);
     assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
-    this.blockRangeEndBlockBuffer = { ...Constants.BUNDLE_END_BLOCK_BUFFERS };
-    updateConfig(BLOCK_RANGE_END_BLOCK_BUFFER, this.blockRangeEndBlockBuffer);
+    this.blockRangeEndBlockBuffer = mergeConfig(Constants.BUNDLE_END_BLOCK_BUFFERS, BLOCK_RANGE_END_BLOCK_BUFFER);
 
     this.ignoredAddresses = JSON.parse(IGNORED_ADDRESSES ?? "[]").map((address) => ethers.utils.getAddress(address));
 
@@ -71,8 +79,7 @@ export class CommonConfig {
     this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
-    this.maxBlockLookBack = { ...Constants.CHAIN_MAX_BLOCK_LOOKBACK };
-    updateConfig(MAX_BLOCK_LOOK_BACK, this.maxBlockLookBack);
+    this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
 
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
 
