@@ -608,6 +608,7 @@ export class ProfitClient {
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
+      [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
@@ -660,8 +661,6 @@ export class ProfitClient {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;
-    // TODO: Set this once we figure out gas markup on the API side.
-    const gasMarkup = 0;
     // Call the factory to create a new QueryBase instance.
     return relayFeeCalculator.QueryBase__factory.create(
       chainId,
@@ -670,8 +669,7 @@ export class ProfitClient {
       undefined, // spokePoolAddress
       undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
-      this.logger,
-      gasMarkup
+      this.logger
     );
   }
 }
