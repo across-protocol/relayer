@@ -66,7 +66,6 @@ export class MonitorConfig extends CommonConfig {
       REFILL_BALANCES,
       REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
-      MONITOR_USE_GENERIC_ADAPTER,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
@@ -82,8 +81,6 @@ export class MonitorConfig extends CommonConfig {
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
     };
-
-    this.useGenericAdapter = MONITOR_USE_GENERIC_ADAPTER === "true";
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);

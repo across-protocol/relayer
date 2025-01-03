@@ -89,13 +89,10 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_TRY_MULTICALL_CHAINS,
-      RELAYER_USE_GENERIC_ADAPTER,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
     } = env;
     super(env);
-
-    this.useGenericAdapter = RELAYER_USE_GENERIC_ADAPTER === "true";
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
