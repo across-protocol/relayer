@@ -210,18 +210,19 @@ describe("ProfitClient: Consider relay profit", () => {
 
   it("Verify gas padding on SDK call is set correctly", async () => {
     class ExampleQueries implements relayFeeCalculator.QueryInterface {
-      readonly GAS_COST = BigNumber.from(300_000);
+      GAS_PRICE(): BigNumber {
+        return toGWei("1");
+      }
       // We only test that the baseFeeMultiplier is being correctly passed from the ProfitClient
       // to the RelayFeeCalculator using this class
       getGasCosts(_deposit: Deposit, _relayer: string, options?: any): Promise<TransactionCostEstimate> {
-        const gasPrice = toGWei("1");
-        const gasCost = this.GAS_COST;
-        const nativeGasCost = toBN(gasCost)
+        const gasCost = BigNumber.from(300_000);
+        const gasPrice = this.GAS_PRICE()
           .mul(options?.baseFeeMultiplier ?? fixedPointAdjustment)
           .div(fixedPointAdjustment);
         return Promise.resolve({
-          nativeGasCost,
-          tokenGasCost: toBN(nativeGasCost).mul(gasPrice),
+          nativeGasCost: gasCost,
+          tokenGasCost: toBN(gasCost).mul(gasPrice),
           gasPrice,
         });
       }
@@ -248,9 +249,9 @@ describe("ProfitClient: Consider relay profit", () => {
     for (const padding of gasPadding) {
       profitClient.setGasPadding(padding);
 
-      const expectedNativeGasCost = exampleQuery.GAS_COST.mul(padding).div(fixedPoint);
-      const { nativeGasCost } = await profitClient.estimateFillCost(deposit);
-      expect(expectedNativeGasCost.eq(nativeGasCost)).to.be.true;
+      const expectedGasPrice = exampleQuery.GAS_PRICE().mul(padding).div(fixedPoint);
+      const { gasPrice } = await profitClient.estimateFillCost(deposit);
+      expect(expectedGasPrice.eq(gasPrice)).to.be.true;
     }
   });
 
