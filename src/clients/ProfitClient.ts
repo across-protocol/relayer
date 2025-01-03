@@ -97,7 +97,7 @@ export class ProfitClient {
   protected totalGasCosts: { [chainId: number]: TransactionCostEstimate } = {};
 
   // Queries needed to fetch relay gas costs.
-  private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
+  protected relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
   private readonly isTestnet: boolean;
 
@@ -205,7 +205,9 @@ export class ProfitClient {
 
   private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
     try {
-      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
+      return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer, {
+        baseFeeMultiplier: this.gasPadding,
+      });
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       this.logger.warn({
@@ -243,16 +245,15 @@ export class ProfitClient {
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
-    // TODO: This is where the relayer's computation of the tokenGasCost (gasUnits * gasFee) diverges from the
+    // This is where the relayer's computation of the tokenGasCost (gasUnits * gasFee) can diverge from the
     // quoting API's. The latter uses the SDK's GasPriceOracle.getGasPriceEstimate() function and passes in an optional
     // baseFeeMultiplier. The relayer uses this.getTotalGasCost() to compute the gasUnits the same way that the
-    // API does but then computes the tokenGasCost by computing the gasPrice using a baseFeeMultiplier hardcoded
-    // to 1.0. The relayer applies its own padding on the full tokenGasCost (not just the base fee!) using
-    // this.gasPadding. To make the two implementations use the same computation, then the relayer should set
-    // baseFeeMultiplier = this.gasPadding when calling getTotalGasCost which itself will call the GasPriceOracle's
-    // getGasPriceEstimate function.
+    // API does and then computes the tokenGasCost by computing the gasPrice using a baseFeeMultiplier set as this
+    // client's this.gasPadding. Therefore, this.getTotalGasCost will importantly set
+    // baseFeeMultiplier = this.gasPadding.
     const totalGasCost = await this.getTotalGasCost(deposit);
-    let { nativeGasCost, tokenGasCost } = totalGasCost;
+    let tokenGasCost = totalGasCost.tokenGasCost;
+    const nativeGasCost = totalGasCost.nativeGasCost;
     const gasPrice = totalGasCost.gasPrice;
 
     Object.entries({
@@ -264,11 +265,6 @@ export class ProfitClient {
         throw new Error(`Unable to compute gas cost (${err} unknown)`);
       }
     });
-
-    // Fills with messages have arbitrary execution and therefore lower certainty about the simulated execution cost.
-    // Pad these estimates before computing profitability to allow execution headroom and reduce the chance of an OoG.
-    nativeGasCost = nativeGasCost.mul(this.gasPadding).div(fixedPoint);
-    tokenGasCost = tokenGasCost.mul(this.gasPadding).div(fixedPoint);
 
     // Gas estimates for token-only fills are stable and reliable. Allow these to be scaled up or down via the
     // configured gasMultiplier. Do not scale the nativeGasCost, since it might be used to set the transaction gasLimit.

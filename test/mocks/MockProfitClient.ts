@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, relayFeeCalculator } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
@@ -75,6 +75,10 @@ export class MockProfitClient extends ProfitClient {
 
   mapToken(symbol: string, address: string): void {
     this.tokenSymbolMap[symbol] = address;
+  }
+
+  setRelayerFeeQueries(queries: { [chainId: number]: relayFeeCalculator.QueryInterface }): void {
+    this.relayerFeeQueries = queries;
   }
 
   setTokenPrice(token: string, price: BigNumber | undefined): void {
