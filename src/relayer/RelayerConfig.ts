@@ -258,7 +258,7 @@ export class RelayerConfig extends CommonConfig {
     // Transform deposit confirmation requirements into an array of ascending
     // deposit confirmations, sorted by the corresponding threshold in USD.
     this.minDepositConfirmations = {};
-    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET) {
+    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET && !isDefined(MIN_DEPOSIT_CONFIRMATIONS)) {
       // Sub in permissive defaults for testnet.
       const standardConfig = { usdThreshold: toBNWei(Number.MAX_SAFE_INTEGER), minConfirmations: 1 };
       Object.values(TESTNET_CHAIN_IDs).forEach((chainId) => (this.minDepositConfirmations[chainId] = [standardConfig]));
