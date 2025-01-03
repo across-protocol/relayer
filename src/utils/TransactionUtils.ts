@@ -82,7 +82,12 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(provider, priorityFeeScaler, maxFeePerGasScaler);
+    const gas = await getGasPrice(
+      provider,
+      priorityFeeScaler,
+      maxFeePerGasScaler,
+      await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    );
 
     logger.debug({
       at: "TxUtil",
@@ -154,16 +159,22 @@ export async function runTransaction(
   }
 }
 
-// TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
-// For now this method will extract the provider's Fee data from the associated network and scale it by a priority
-// scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
 export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
-  maxFeePerGasScaler = 3
+  maxFeePerGasScaler = 3,
+  transactionObject?: ethers.PopulatedTransaction
 ): Promise<Partial<FeeData>> {
+  // Floor maxFeePerGasScaler at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
+  // just want to submit with as close to prevailing fees as possible.
+  maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   const { chainId } = await provider.getNetwork();
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId);
+  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
+    chainId,
+    baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
+    unsignedTx: transactionObject,
+  });
 
   if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
     feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
@@ -176,7 +187,7 @@ export async function getGasPrice(
 
   // Default to EIP-1559 (type 2) pricing.
   return {
-    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, Math.max(priorityScaler * maxFeePerGasScaler, 1)),
+    maxFeePerGas: feeData.maxFeePerGas,
     maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
   };
 }
