@@ -165,6 +165,9 @@ export async function getGasPrice(
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
 ): Promise<Partial<FeeData>> {
+  // Floor maxFeePerGasScaler at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
+  // just want to submit with as close to prevailing fees as possible.
+  maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   const { chainId } = await provider.getNetwork();
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
