@@ -1,6 +1,6 @@
 import { assert } from "chai";
 import { random } from "lodash";
-import { constants as sdkConstants, utils as sdkUtils, relayFeeCalculator } from "@across-protocol/sdk";
+import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
 import {
@@ -16,7 +16,6 @@ import {
   toBNWei,
   toGWei,
   TOKEN_SYMBOLS_MAP,
-  fixedPointAdjustment,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
@@ -208,50 +207,28 @@ describe("ProfitClient: Consider relay profit", () => {
     }
   });
 
-  it("Verify gas padding on SDK call is set correctly", async () => {
-    class ExampleQueries implements relayFeeCalculator.QueryInterface {
-      GAS_PRICE(): BigNumber {
-        return toGWei("1");
-      }
-      // We only test that the baseFeeMultiplier is being correctly passed from the ProfitClient
-      // to the RelayFeeCalculator using this class
-      getGasCosts(_deposit: Deposit, _relayer: string, options?: any): Promise<TransactionCostEstimate> {
-        const gasCost = BigNumber.from(300_000);
-        const gasPrice = this.GAS_PRICE()
-          .mul(options?.baseFeeMultiplier ?? fixedPointAdjustment)
-          .div(fixedPointAdjustment);
-        return Promise.resolve({
-          nativeGasCost: gasCost,
-          tokenGasCost: toBN(gasCost).mul(gasPrice),
-          gasPrice,
-        });
-      }
-
-      // Unused functions in the QueryInterface
-      getTokenPrice(): Promise<number> {
-        return Promise.resolve(1);
-      }
-      getTokenDecimals(): number {
-        return 18;
-      }
-    }
+  it("Verify gas padding", async () => {
     const gasPadding = ["0", "0.10", "0.20", "0.50", "1"].map((padding) => toBNWei("1").add(toBNWei(padding)));
 
     profitClient.setGasMultiplier(toBNWei("1")); // Neutralise any gas multiplier.
-    profitClient.setGasCosts({}); // Neutralise any hardcoded gas costs so ExampleQueries.getGasCosts() is called
 
-    const chainId = chainIds[0];
-    const exampleQuery = new ExampleQueries();
-    profitClient.setRelayerFeeQueries({ [chainId]: exampleQuery });
-    spyLogger.debug({ message: `Verifying gas padding for chainId ${destinationChainId}.` });
-    const deposit = { ...v3DepositTemplate, destinationChainId: chainId };
+    for (const destinationChainId of chainIds) {
+      spyLogger.debug({ message: `Verifying gas padding for chainId ${destinationChainId}.` });
+      const deposit = { ...v3DepositTemplate, destinationChainId };
 
-    for (const padding of gasPadding) {
-      profitClient.setGasPadding(padding);
+      const { nativeGasCost: defaultNativeGasCost, tokenGasCost: defaultTokenGasCost } =
+        await profitClient.getTotalGasCost(deposit);
 
-      const expectedGasPrice = exampleQuery.GAS_PRICE().mul(padding).div(fixedPoint);
-      const { gasPrice } = await profitClient.estimateFillCost(deposit);
-      expect(expectedGasPrice.eq(gasPrice)).to.be.true;
+      for (const padding of gasPadding) {
+        profitClient.setGasPadding(padding);
+
+        const expectedNativeGasCost = defaultNativeGasCost.mul(padding).div(fixedPoint);
+        const expectedTokenGasCost = defaultTokenGasCost.mul(padding).div(fixedPoint);
+
+        const { nativeGasCost, tokenGasCost } = await profitClient.estimateFillCost(deposit);
+        expect(expectedNativeGasCost.eq(nativeGasCost)).to.be.true;
+        expect(expectedTokenGasCost.eq(tokenGasCost)).to.be.true;
+      }
     }
   });
 
