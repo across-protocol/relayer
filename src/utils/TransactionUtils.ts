@@ -169,7 +169,7 @@ export async function getGasPrice(
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
-    baseFeeMultiplier: maxFeePerGasScaler,
+    baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     unsignedTx: transactionObject,
   });
 
