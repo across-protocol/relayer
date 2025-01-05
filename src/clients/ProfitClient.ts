@@ -649,7 +649,13 @@ export class ProfitClient {
 
         const deposit = { ...sampleDeposit, destinationChainId, outputToken };
         const gasCosts = await this._getTotalGasCost(deposit, relayer);
+        // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
+        // fills on the destination chain.
         const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
+        // The scaledTokenGasCost is the estimated gas cost of submitting a fill on the destination chain and is used
+        // in the this.estimateFillCost function to determine whether a deposit is profitable to fill. Therefore,
+        // the scaledTokenGasCost should be safely lower than the quote API's tokenGasCosts in order for the relayer
+        // to consider a deposit is profitable.
         const scaledTokenGasCost = gasCosts.tokenGasCost
           .mul(this.gasPadding)
           .div(fixedPointAdjustment)
