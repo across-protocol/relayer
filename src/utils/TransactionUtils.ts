@@ -236,7 +236,3 @@ export function getTarget(targetAddress: string):
     return { targetAddress };
   }
 }
-
-function scaleByNumber(amount: BigNumber, scaling: number) {
-  return amount.mul(toBNWei(scaling)).div(fixedPoint);
-}
