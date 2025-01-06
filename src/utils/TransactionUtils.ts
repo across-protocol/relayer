@@ -8,7 +8,6 @@ import {
   BigNumber,
   bnZero,
   Contract,
-  fixedPointAdjustment as fixedPoint,
   isDefined,
   TransactionResponse,
   ethers,
