@@ -176,11 +176,7 @@ export class MultiCallerClient {
     const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
     const nonMulticallTxns: AugmentedTransaction[] | undefined = this.nonMulticallTxns[chainId];
     this.clearTransactionQueue(chainId);
-    const allNonMulticallTxns = [];
-    if (nonMulticallTxns) {
-      allNonMulticallTxns.push(...nonMulticallTxns);
-    }
-    return this._executeTxnQueue(chainId, txns, allNonMulticallTxns, simulate);
+    return this._executeTxnQueue(chainId, txns, nonMulticallTxns, simulate);
   }
 
   // For a single chain, simulate all potential multicall txns and group the ones that pass into multicall bundles.
