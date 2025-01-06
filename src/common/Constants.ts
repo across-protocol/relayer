@@ -351,16 +351,24 @@ export const CANONICAL_BRIDGE: {
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LINEA]: LineaBridge,
   [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.LISK_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.MODE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+  [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+  [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
   [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
@@ -475,6 +483,10 @@ export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: st
   [CHAIN_IDs.ARBITRUM]: {
     l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
     l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
+  },
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    l1: "0x902b3E5f8F19571859F4AB1003B960a5dF693aFF",
+    l2: "0x6e244cD02BBB8a6dbd7F626f05B2ef82151Ab502",
   },
 };
 
