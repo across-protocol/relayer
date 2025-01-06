@@ -706,16 +706,15 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       );
       expect(result).to.equal(2);
 
-      // Should submit two pool rebalance leaf executions to multicaller client.
-      expect(multiCallerClient.transactionCount()).to.equal(2);
+      // Should submit two transactions to load ETH for each leaf plus pool rebalance leaf execution.
+      expect(multiCallerClient.transactionCount()).to.equal(4);
       const queuedTransactions = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
-      expect(queuedTransactions[0].method).to.equal("executeRootBundle");
-      expect(queuedTransactions[1].method).to.equal("executeRootBundle");
-
-      // Should also submit two transfer calls through the transaction client
-      const fundedLogs = spy.getCalls().filter((l) => l.lastArg.message.includes("Successfully funded"));
-      expect(fundedLogs[0].lastArg.message.includes(expectedFeeLeaf1.toString())).to.be.true;
-      expect(fundedLogs[1].lastArg.message.includes(expectedFeeLeaf2.toString())).to.be.true;
+      expect(queuedTransactions[0].method).to.equal("transfer");
+      expect(queuedTransactions[0].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf1]);
+      expect(queuedTransactions[1].method).to.equal("transfer");
+      expect(queuedTransactions[1].args).to.deep.equal([customGasTokenFunder, expectedFeeLeaf2]);
+      expect(queuedTransactions[2].method).to.equal("executeRootBundle");
+      expect(queuedTransactions[3].method).to.equal("executeRootBundle");
     });
     it("fails to fund custom gas token orbit leaf", async function () {
       // Replicate custom gas token setups, but this time do not set a balance for the custom gas token funder.

@@ -32,7 +32,7 @@ import {
   FillStatus,
 } from "../interfaces";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, BalanceAllocator, BundleDataClient, TransactionClient } from "../clients";
+import { SpokePoolClient, BalanceAllocator, BundleDataClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -1690,25 +1690,18 @@ export class Dataworker {
               value: requiredAmount,
             });
           } else {
-            // We can't use the multicaller client here because the feeToken is not guaranteed to be a Multicaller
+            // We can't call multicall() here because the feeToken is not guaranteed to be a Multicaller
             // contract and this is a permissioned function where the msg.sender needs to be the
-            // feeToken balance owner, so we can't simply set `unpermissioned: true` to send it through the Multisender
-            const txnClient = new TransactionClient(this.logger);
-            const txnsToSubmit = [
-              {
-                contract: new Contract(feeToken, ERC20.abi, signer),
-                chainId: hubPoolChainId,
-                method: "transfer",
-                args: [holder, requiredAmount],
-                message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,
-                mrkdwn: `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`,
-              },
-            ];
-            const result = (await txnClient.simulateAndSubmit(hubPoolChainId, txnsToSubmit))[0];
-            this.logger.debug({
-              at: "Dataworker#_executePoolRebalanceLeaves",
-              message: `Successfully funded ${requiredAmount.toString()} ${feeToken} tokens to ${holder}`,
-              hash: result.hash,
+            // feeToken balance owner, so we can't simply set `unpermissioned: true` to send it through the Multisender.
+            // Instead, we need to set `nonMulticall: true` and avoid batch calling this transaction.
+            this.clients.multiCallerClient.enqueueTransaction({
+              contract: new Contract(feeToken, ERC20.abi, signer),
+              chainId: hubPoolChainId,
+              nonMulticall: true,
+              method: "transfer",
+              args: [holder, requiredAmount],
+              message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,
+              mrkdwn: `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`,
             });
           }
         }

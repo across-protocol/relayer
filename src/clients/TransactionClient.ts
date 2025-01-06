@@ -29,6 +29,9 @@ export interface AugmentedTransaction {
   canFailInSimulation?: boolean;
   // Optional batch ID to use to group transactions
   groupId?: string;
+  // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
+  // with other transactions.
+  nonMulticall?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -120,32 +123,5 @@ export class TransactionClient {
     });
 
     return txnResponses;
-  }
-
-  async simulateAndSubmit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
-    const simulationResults = await this.simulate(txns);
-    this.logger.debug({
-      at: "TransactionClient",
-      message: `Simulating ${txns.length} transactions before submitting the ones that pass simulation`,
-    });
-    const txnsToSubmit: AugmentedTransaction[] = simulationResults.reduce(
-      (_txnsToSubmit, { reason, succeed, transaction }, i) => {
-        const { contract: targetContract, ...txnRequestData } = transaction;
-        if (!succeed) {
-          this.logger.warn({
-            at: "TransactionClient",
-            message: `Failed to simulate calling ${transaction.method} on chain ${chainId}`,
-            reason,
-            contract: targetContract.address,
-            txnRequestData,
-          });
-        } else {
-          _txnsToSubmit.push(txns[i]);
-        }
-        return _txnsToSubmit;
-      },
-      []
-    );
-    return this.submit(chainId, txnsToSubmit);
   }
 }

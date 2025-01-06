@@ -142,36 +142,4 @@ describe("TransactionClient", async function () {
       expect(txnResponse.gasLimit).to.equal(gasLimit.mul(idx + 1));
     });
   });
-
-  it("Simulate and Submit", async function () {
-    const chainId = chainIds[0];
-
-    // This transaction will fail to simulate:
-    const txns: AugmentedTransaction[] = [
-      {
-        chainId,
-        contract: { address } as Contract,
-        method,
-        args: [{ result: "Forced submission failure" }],
-        value: toBN(0),
-        mrkdwn: `Sample markdown string for chain ${chainId} transaction`,
-      },
-    ];
-
-    // Should simulate all transactions and submit only the ones that pass simulation.
-    const successfulTxns = 2;
-    for (let i = 0; i < successfulTxns; i++) {
-      txns.push({
-        chainId,
-        contract: { address } as Contract,
-        method,
-        args: [{ result: txnClientPassResult }],
-        value: toBN(0),
-        mrkdwn: `Sample markdown string for chain ${chainId} transaction`,
-      });
-    }
-
-    const txnResponses = await txnClient.simulateAndSubmit(chainId, txns);
-    expect(txnResponses.length).to.equal(2);
-  });
 });
