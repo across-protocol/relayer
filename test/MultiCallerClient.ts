@@ -34,10 +34,6 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  valueTxnCount(): number {
-    return this.txnCount(this.valueTxns);
-  }
-
   nonMulticallTxnCount(): number {
     return this.txnCount(this.nonMulticallTxns);
   }
@@ -72,7 +68,7 @@ describe("MultiCallerClient", async function () {
 
   it("Correctly enqueues value transactions", async function () {
     chainIds.forEach((chainId) => multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction));
-    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.nonMulticallTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.transactionCount()).to.equal(chainIds.length);
   });
 
@@ -101,9 +97,8 @@ describe("MultiCallerClient", async function () {
       multiCaller.enqueueTransaction({ chainId, value: bnOne } as AugmentedTransaction);
       multiCaller.enqueueTransaction({ chainId, nonMulticall: true } as AugmentedTransaction);
     });
-    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.multiCallTransactionCount()).to.equal(chainIds.length);
-    expect(multiCaller.nonMulticallTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.nonMulticallTxnCount()).to.equal(2 * chainIds.length);
     expect(multiCaller.transactionCount()).to.equal(3 * chainIds.length);
   });
 

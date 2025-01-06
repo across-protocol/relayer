@@ -79,7 +79,6 @@ export interface TryMulticallTransaction {
 export class MultiCallerClient {
   protected txnClient: TransactionClient;
   protected txns: { [chainId: number]: AugmentedTransaction[] } = {};
-  protected valueTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   protected nonMulticallTxns: { [chainId: number]: AugmentedTransaction[] } = {};
   constructor(
     readonly logger: winston.Logger,
@@ -91,9 +90,6 @@ export class MultiCallerClient {
 
   getQueuedTransactions(chainId: number): AugmentedTransaction[] {
     const allTxns = [];
-    if (this.valueTxns?.[chainId]) {
-      allTxns.push(...this.valueTxns[chainId]);
-    }
     if (this.nonMulticallTxns?.[chainId]) {
       allTxns.push(...this.nonMulticallTxns[chainId]);
     }
@@ -106,8 +102,7 @@ export class MultiCallerClient {
   // Adds all information associated with a transaction to the transaction queue.
   enqueueTransaction(txn: AugmentedTransaction): void {
     // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
-    const txnQueue =
-      txn.value && txn.value.gt(0) ? this.valueTxns : txn.nonMulticall ? this.nonMulticallTxns : this.txns;
+    const txnQueue = (txn.value && txn.value.gt(0)) || txn.nonMulticall ? this.nonMulticallTxns : this.txns;
     if (txnQueue[txn.chainId] === undefined) {
       txnQueue[txn.chainId] = [];
     }
@@ -116,7 +111,6 @@ export class MultiCallerClient {
 
   transactionCount(): number {
     return Object.values(this.txns)
-      .concat(Object.values(this.valueTxns))
       .concat(Object.values(this.nonMulticallTxns))
       .reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
@@ -124,11 +118,9 @@ export class MultiCallerClient {
   clearTransactionQueue(chainId: number | null = null): void {
     if (chainId !== null) {
       this.txns[chainId] = [];
-      this.valueTxns[chainId] = [];
       this.nonMulticallTxns[chainId] = [];
     } else {
       this.txns = {};
-      this.valueTxns = {};
       this.nonMulticallTxns = {};
     }
   }
@@ -137,7 +129,6 @@ export class MultiCallerClient {
   async executeTxnQueues(simulate = false, chainIds: number[] = []): Promise<Record<number, string[]>> {
     if (chainIds.length === 0) {
       chainIds = sdkUtils.dedupArray([
-        ...Object.keys(this.valueTxns).map(Number),
         ...Object.keys(this.nonMulticallTxns).map(Number),
         ...Object.keys(this.txns).map(Number),
       ]);
@@ -183,15 +174,11 @@ export class MultiCallerClient {
   // For a single chain, take any enqueued transactions and attempt to execute them.
   async executeTxnQueue(chainId: number, simulate = false): Promise<TransactionResponse[]> {
     const txns: AugmentedTransaction[] | undefined = this.txns[chainId];
-    const valueTxns: AugmentedTransaction[] | undefined = this.valueTxns[chainId];
     const nonMulticallTxns: AugmentedTransaction[] | undefined = this.nonMulticallTxns[chainId];
     this.clearTransactionQueue(chainId);
     const allNonMulticallTxns = [];
     if (nonMulticallTxns) {
       allNonMulticallTxns.push(...nonMulticallTxns);
-    }
-    if (valueTxns) {
-      allNonMulticallTxns.push(...valueTxns);
     }
     return this._executeTxnQueue(chainId, txns, allNonMulticallTxns, simulate);
   }
@@ -202,10 +189,10 @@ export class MultiCallerClient {
   protected async _executeTxnQueue(
     chainId: number,
     txns: AugmentedTransaction[] = [],
-    valueTxns: AugmentedTransaction[] = [],
+    nonMulticallTxns: AugmentedTransaction[] = [],
     simulate = false
   ): Promise<TransactionResponse[]> {
-    const nTxns = txns.length + valueTxns.length;
+    const nTxns = txns.length + nonMulticallTxns.length;
     if (nTxns === 0) {
       return [];
     }
@@ -221,7 +208,7 @@ export class MultiCallerClient {
     // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
-    const batchTxns: AugmentedTransaction[] = valueTxns.concat(
+    const batchTxns: AugmentedTransaction[] = nonMulticallTxns.concat(
       await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
     );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
@@ -244,7 +231,7 @@ export class MultiCallerClient {
     } else {
       const individualTxnSimResults = await Promise.allSettled([
         this.simulateTransactionQueue(txns),
-        this.simulateTransactionQueue(valueTxns),
+        this.simulateTransactionQueue(nonMulticallTxns),
       ]);
       const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
         return isPromiseFulfilled(result) ? result.value : [];
