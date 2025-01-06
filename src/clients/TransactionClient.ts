@@ -146,6 +146,6 @@ export class TransactionClient {
       },
       []
     );
-    return await this.submit(chainId, txnsToSubmit);
+    return this.submit(chainId, txnsToSubmit);
   }
 }
