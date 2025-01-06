@@ -101,7 +101,7 @@ export class MultiCallerClient {
 
   // Adds all information associated with a transaction to the transaction queue.
   enqueueTransaction(txn: AugmentedTransaction): void {
-    // Value transactions are sorted immediately because the UMA multicall implementation rejects them.
+    // We do not attempt to batch together transactions that have value or are explicitly nonMulticall.
     const txnQueue = (txn.value && txn.value.gt(0)) || txn.nonMulticall ? this.nonMulticallTxns : this.txns;
     if (txnQueue[txn.chainId] === undefined) {
       txnQueue[txn.chainId] = [];
