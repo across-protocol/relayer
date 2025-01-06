@@ -165,30 +165,24 @@ export async function getGasPrice(
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
 ): Promise<Partial<FeeData>> {
-  // Floor maxFeePerGasScaler at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
+  // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
   // just want to submit with as close to prevailing fees as possible.
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
+  priorityScaler = Math.max(1, priorityScaler);
   const { chainId } = await provider.getNetwork();
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
+    priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
   });
 
-  if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
-    feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
-  }
-
-  // Handle chains with legacy pricing.
-  if (feeData.maxPriorityFeePerGas.eq(bnZero)) {
-    return { gasPrice: scaleByNumber(feeData.maxFeePerGas, priorityScaler) };
-  }
-
-  // Default to EIP-1559 (type 2) pricing.
+  // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
+  // the priority fee will be 0.
   return {
     maxFeePerGas: feeData.maxFeePerGas,
-    maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
+    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
   };
 }
 
