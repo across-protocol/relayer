@@ -1690,9 +1690,14 @@ export class Dataworker {
               value: requiredAmount,
             });
           } else {
+            // We can't call multicall() here because the feeToken is not guaranteed to be a Multicaller
+            // contract and this is a permissioned function where the msg.sender needs to be the
+            // feeToken balance owner, so we can't simply set `unpermissioned: true` to send it through the Multisender.
+            // Instead, we need to set `nonMulticall: true` and avoid batch calling this transaction.
             this.clients.multiCallerClient.enqueueTransaction({
               contract: new Contract(feeToken, ERC20.abi, signer),
               chainId: hubPoolChainId,
+              nonMulticall: true,
               method: "transfer",
               args: [holder, requiredAmount],
               message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,

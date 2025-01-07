@@ -37,8 +37,8 @@ class DummyTryMulticallClient extends TryMulticallClient {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  valueTxnCount(): number {
-    return this.txnCount(this.valueTxns);
+  nonMulticallTxnCount(): number {
+    return this.txnCount(this.nonMulticallTxns);
   }
 
   multiCallTransactionCount(): number {
