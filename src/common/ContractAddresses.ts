@@ -402,6 +402,52 @@ export const CONTRACT_ADDRESSES: {
   },
   // Testnets
   11155111: {
+    ovmStandardBridge_4202: {
+      address: "0x1Fb30e446eA791cd1f011675E5F3f5311b70faF5",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_84532: {
+      address: "0xfd0Bf71F60660E2f608ed56e1659C450eB113120",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_11155420: {
+      address: "0xFBb0621E0B23b5478B630BD55a5f21f67730B0F1",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_168587773: {
+      address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    polygonBridge: {
+      address: "", // FIXME. Can leave undefined for now due to no IM on Sepolia.
+      abi: POLYGON_BRIDGE_ABI,
+    },
+    orbitErc20GatewayRouter_421614: {
+      address: "0xcE18836b233C83325Cc8848CA4487e94C6288264",
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_421614: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
+  },
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    erc20Gateway: {
+      abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.BASE_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
@@ -411,14 +457,39 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  84532: {
-    cctpMessageTransmitter: {
-      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
-      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+  [CHAIN_IDs.BLAST_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    cctpTokenMessenger: {
-      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
-      abi: CCTP_TOKEN_MESSENGER_ABI,
+  },
+  [CHAIN_IDs.LISK_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.MODE_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.POLYGON_AMOY]: {
+    withdrawableErc20: {
+      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
+    },
+  },
+  [CHAIN_IDs.SCROLL_SEPOLIA]: {
+    scrollGatewayRouter: {
+      address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
+      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
   },
   59140: {
