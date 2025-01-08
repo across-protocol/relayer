@@ -1352,8 +1352,9 @@ export class Relayer {
         const formattedLpFeePct = formatFeePct(lpFeePct);
 
         // @dev If the origin chain is a lite chain and the LP fee percentage is infinity, then we can assume that the
-        // deposit originated from an over-allocated lite chain so the "unprofitable" log should be modified to be
-        // less confusing.
+        // deposit originated from an over-allocated lite chain because the originChain, the only possible
+        // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
+        // this lite chain edge case.
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
