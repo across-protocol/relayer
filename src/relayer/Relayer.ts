@@ -46,8 +46,7 @@ export class Relayer {
   public readonly relayerAddress: string;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
-  private lastUnfillableDepositLogTime = 0;
-  private lastOverallocatedChainLogTime = 0;
+  private lastLogTime = 0;
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer: number;
@@ -906,15 +905,15 @@ export class Relayer {
     });
 
     const currentTime = getCurrentTime();
-    const logDeposits = this.config.loggingInterval < currentTime - this.lastUnfillableDepositLogTime;
+    const logDeposits = this.config.loggingInterval < currentTime - this.lastLogTime;
     if (logDeposits) {
       if (tokenClient.anyCapturedShortFallFills()) {
         this.handleTokenShortfall();
-        this.lastUnfillableDepositLogTime = currentTime;
+        this.lastLogTime = currentTime;
       }
       if (profitClient.anyCapturedUnprofitableFills()) {
         this.handleUnprofitableFill();
-        this.lastUnfillableDepositLogTime = currentTime;
+        this.lastLogTime = currentTime;
       }
     }
 
@@ -1067,8 +1066,7 @@ export class Relayer {
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
       const currentTime = getCurrentTime();
-      const logDeposit = this.config.loggingInterval < currentTime - this.lastOverallocatedChainLogTime;
-      this.lastOverallocatedChainLogTime = currentTime;
+      const logDeposit = this.config.loggingInterval < currentTime - this.lastLogTime;
       this.logger[this.config.sendingRelaysEnabled && logDeposit ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
