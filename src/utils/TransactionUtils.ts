@@ -84,10 +84,8 @@ export async function runTransaction(
     const gas = await getGasPrice(
       provider,
       priorityFeeScaler,
-      maxFeePerGasScaler
-      // TODO: For now, do not pass in unsignedTx that is used specifically for Linea priroity gas fee estimation.
-      // There might be an issue with our usage.
-      // await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      maxFeePerGasScaler,
+      await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
 
     logger.debug({
