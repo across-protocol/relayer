@@ -62,7 +62,7 @@ export async function run(): Promise<void> {
     connectedSigner
   );
   const l2PubdataByteLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider, { chainId: l1ChainId });
+  const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider, l1ChainId);
   const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
   // The ZkSync Mailbox contract checks that the msg.value of the transaction is enough to cover the transaction base
   // cost. The transaction base cost can be queried from the Mailbox by passing in an L1 "executed" gas price,
