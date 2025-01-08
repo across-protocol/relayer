@@ -1065,7 +1065,9 @@ export class Relayer {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+      const currentTime = getCurrentTime();
+      const logDeposit = this.config.loggingInterval < currentTime - this.lastLogTime;
+      this.logger[this.config.sendingRelaysEnabled && logDeposit ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
