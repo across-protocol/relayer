@@ -8,6 +8,7 @@ import {
   BigNumber,
   bnZero,
   Contract,
+  fixedPointAdjustment as fixedPoint,
   isDefined,
   TransactionResponse,
   ethers,
@@ -81,12 +82,7 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(
-      provider,
-      priorityFeeScaler,
-      maxFeePerGasScaler,
-      await contract.populateTransaction[method](...(args as Array<unknown>), { value })
-    );
+    const gas = await getGasPrice(provider, priorityFeeScaler, maxFeePerGasScaler);
 
     logger.debug({
       at: "TxUtil",
@@ -158,30 +154,30 @@ export async function runTransaction(
   }
 }
 
+// TODO: add in gasPrice when the SDK has this for the given chainId. TODO: improve how we fetch prices.
+// For now this method will extract the provider's Fee data from the associated network and scale it by a priority
+// scaler. This works on both mainnet and L2's by the utility switching the response structure accordingly.
 export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
-  maxFeePerGasScaler = 3,
-  transactionObject?: ethers.PopulatedTransaction
+  maxFeePerGasScaler = 3
 ): Promise<Partial<FeeData>> {
-  // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
-  // just want to submit with as close to prevailing fees as possible.
-  maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
-  priorityScaler = Math.max(1, priorityScaler);
   const { chainId } = await provider.getNetwork();
-  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
-    chainId,
-    baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
-    priorityFeeMultiplier: toBNWei(priorityScaler),
-    unsignedTx: transactionObject,
-  });
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, chainId);
 
-  // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
-  // the priority fee will be 0.
+  if (feeData.maxPriorityFeePerGas.gt(feeData.maxFeePerGas)) {
+    feeData.maxFeePerGas = scaleByNumber(feeData.maxPriorityFeePerGas, 1.5);
+  }
+
+  // Handle chains with legacy pricing.
+  if (feeData.maxPriorityFeePerGas.eq(bnZero)) {
+    return { gasPrice: scaleByNumber(feeData.maxFeePerGas, priorityScaler) };
+  }
+
+  // Default to EIP-1559 (type 2) pricing.
   return {
-    maxFeePerGas: feeData.maxFeePerGas,
-    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+    maxFeePerGas: scaleByNumber(feeData.maxFeePerGas, Math.max(priorityScaler * maxFeePerGasScaler, 1)),
+    maxPriorityFeePerGas: scaleByNumber(feeData.maxPriorityFeePerGas, priorityScaler),
   };
 }
 
@@ -234,4 +230,8 @@ export function getTarget(targetAddress: string):
   } catch (error) {
     return { targetAddress };
   }
+}
+
+function scaleByNumber(amount: BigNumber, scaling: number) {
+  return amount.mul(toBNWei(scaling)).div(fixedPoint);
 }
