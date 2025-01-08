@@ -1065,7 +1065,7 @@ export class Relayer {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+      this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
@@ -1351,13 +1351,19 @@ export class Relayer {
         const formattedRelayerFeePct = formatFeePct(relayerFeePct);
         const formattedLpFeePct = formatFeePct(lpFeePct);
 
+        // @dev If the origin chain is a lite chain and the LP fee percentage is infinity, then we can assume that the
+        // deposit originated from an over-allocated lite chain because the originChain, the only possible
+        // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
+        // this lite chain edge case.
+        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%,` +
-          ` and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
+          fromOverallocatedLiteChain
+            ? " is from an over-allocated lite chain.\n"
+            : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
       });
 
       if (depositMrkdwn) {
