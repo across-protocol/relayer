@@ -1324,8 +1324,8 @@ export class Relayer {
   }
 
   // TODO: This should really be renamed to "handleUnfillableDeposit" since it not only logs about unprofitable relayer
-  // fees but also about fills with messages that fail to simulate and deposits from lite chains that are 
-  // over-allocated. 
+  // fees but also about fills with messages that fail to simulate and deposits from lite chains that are
+  // over-allocated.
   private handleUnprofitableFill() {
     const { profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
