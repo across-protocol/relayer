@@ -29,6 +29,7 @@ import {
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
   formatGwei,
+  fixedPointAdjustment,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -636,24 +637,49 @@ export class ProfitClient {
     };
 
     // Pre-fetch total gas costs for relays on enabled chains.
-    await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-      const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
-      const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
-      const outputToken =
-        destinationChainId === hubPoolClient.chainId
-          ? hubToken
-          : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
-      assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
+    const totalGasCostsToLog = Object.fromEntries(
+      await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+        const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
+        const hubToken = TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId];
+        const outputToken =
+          destinationChainId === hubPoolClient.chainId
+            ? hubToken
+            : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
+        assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
-      const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-      this.totalGasCosts[destinationChainId] = await this._getTotalGasCost(deposit, relayer);
-    });
+        const deposit = { ...sampleDeposit, destinationChainId, outputToken };
+        const gasCosts = await this._getTotalGasCost(deposit, relayer);
+        // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
+        // fills on the destination chain.
+        const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
+        // The scaledTokenGasCost is the estimated gas cost of submitting a fill on the destination chain and is used
+        // in the this.estimateFillCost function to determine whether a deposit is profitable to fill. Therefore,
+        // the scaledTokenGasCost should be safely lower than the quote API's tokenGasCosts in order for the relayer
+        // to consider a deposit is profitable.
+        const scaledTokenGasCost = gasCosts.tokenGasCost
+          .mul(this.gasPadding)
+          .div(fixedPointAdjustment)
+          .mul(this.gasMultiplier)
+          .div(fixedPointAdjustment);
+        this.totalGasCosts[destinationChainId] = gasCosts;
+        return [
+          destinationChainId,
+          {
+            ...gasCosts,
+            scaledNativeGasCost,
+            scaledTokenGasCost,
+            gasPadding: formatEther(this.gasPadding),
+            gasMultiplier: formatEther(this.gasMultiplier),
+          },
+        ];
+      })
+    );
 
     this.logger.debug({
       at: "ProfitClient",
       message: "Updated gas cost",
       enabledChainIds: this.enabledChainIds,
-      totalGasCosts: this.totalGasCosts,
+      totalGasCosts: totalGasCostsToLog,
     });
   }
 
