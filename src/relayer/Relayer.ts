@@ -1357,20 +1357,19 @@ export class Relayer {
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
         const depositFailedToSimulateWithMessage = isMessageEmpty(deposit.message) && gasCost.eq(bnUint256Max);
         depositMrkdwn +=
-          `- Deposit${
+          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
+          ` of input amount ${formattedInputAmount} ${inputSymbol}` +
+          ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
+          ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
+          `${fromOverallocatedLiteChain ? " is from an over-allocated lite chain and" : ""}` +
+          `${
             depositFailedToSimulateWithMessage
               ? ""
               : ` failed to simulate with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
           }` +
-          ` ID ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
-          ` of input amount ${formattedInputAmount} ${inputSymbol}` +
-          ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
-          ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          `${fromOverallocatedLiteChain ? " and is from an over-allocated lite chain" : ""}` +
           `${` with relayerFeePct ${formattedRelayerFeePct}% lpFeePct ${
-            lpFeePct.eq(bnUint256Max) ? "INF" : formattedLpFeePct
-          }%
-           and gas cost ${gasCost.eq(bnUint256Max) ? "INF" : formattedGasCost} ${gasTokenSymbol}\n`}`;
+            lpFeePct.eq(bnUint256Max) ? "∞" : formattedLpFeePct
+          }% and gas cost ${gasCost.eq(bnUint256Max) ? "∞" : formattedGasCost} ${gasTokenSymbol}\n`}`;
       });
 
       if (depositMrkdwn) {
