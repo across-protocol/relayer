@@ -1364,7 +1364,7 @@ export class Relayer {
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          `${fromOverallocatedLiteChain ? " is from an over-allocated lite chain and" : ""}` +
+          `${fromOverallocatedLiteChain ? " is from an over-allocated lite chain" : ""}` +
           `${
             depositFailedToSimulateWithMessage
               ? ""
