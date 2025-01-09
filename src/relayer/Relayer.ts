@@ -1071,7 +1071,6 @@ export class Relayer {
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
         txn: blockExplorerLink(transactionHash, originChainId),
-        notificationPath: "across-unprofitable-fills",
       });
       return {
         repaymentChainProfitability: {
@@ -1324,6 +1323,9 @@ export class Relayer {
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
+  // TODO: This should really be renamed to "handleUnfillableDeposit" since it not only logs about unprofitable relayer
+  // fees but also about fills with messages that fail to simulate and deposits from lite chains that are
+  // over-allocated.
   private handleUnprofitableFill() {
     const { profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
@@ -1356,16 +1358,21 @@ export class Relayer {
         // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
         // this lite chain edge case.
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
+        const depositFailedToSimulateWithMessage = isMessageEmpty(deposit.message) && gasCost.eq(bnUint256Max);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
+          `${fromOverallocatedLiteChain ? " is from an over-allocated lite chain" : ""}` +
           `${
-            fromOverallocatedLiteChain
-              ? " is from an over-allocated lite chain.\n"
-              : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`
-          }`;
+            depositFailedToSimulateWithMessage
+              ? ""
+              : ` failed to simulate with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
+          }` +
+          `${` with relayerFeePct ${formattedRelayerFeePct}% lpFeePct ${
+            lpFeePct.eq(bnUint256Max) ? "∞" : formattedLpFeePct
+          }% and gas cost ${gasCost.eq(bnUint256Max) ? "∞" : formattedGasCost} ${gasTokenSymbol}\n`}`;
       });
 
       if (depositMrkdwn) {
