@@ -1071,7 +1071,6 @@ export class Relayer {
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
         txn: blockExplorerLink(transactionHash, originChainId),
-        notificationPath: "across-unprofitable-fills",
       });
       return {
         repaymentChainProfitability: {
@@ -1357,7 +1356,12 @@ export class Relayer {
         // this lite chain edge case.
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
+          `- Deposit ${
+            isMessageEmpty(deposit.message)
+              ? ` with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
+              : ""
+          }` +
+          ` ID ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +

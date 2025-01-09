@@ -213,7 +213,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
-        notificationPath: "across-unprofitable-fills",
+        notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
     }
