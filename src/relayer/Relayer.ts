@@ -1330,8 +1330,8 @@ export class Relayer {
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
-      Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
+      unprofitableDeposits[Number(chainId)].forEach((unprofitableFill) => {
+        const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableFill;
 
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
@@ -1365,9 +1365,11 @@ export class Relayer {
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          fromOverallocatedLiteChain
-            ? " is from an over-allocated lite chain.\n"
-            : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
+          `${
+            fromOverallocatedLiteChain
+              ? " is from an over-allocated lite chain.\n"
+              : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`
+          }`;
       });
 
       if (depositMrkdwn) {
