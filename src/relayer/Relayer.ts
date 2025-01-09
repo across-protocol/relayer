@@ -1367,9 +1367,10 @@ export class Relayer {
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
           `${fromOverallocatedLiteChain ? " and is from an over-allocated lite chain" : ""}` +
-          `${` with relayerFeePct ${formattedRelayerFeePct}%${
-            lpFeePct.eq(bnUint256Max) ? "" : ` lpFeePct ${formattedLpFeePct}%`
-          }${gasCost.eq(bnUint256Max) ? "" : ` and gas cost ${formattedGasCost} ${gasTokenSymbol}`}\n`}`;
+          `${` with relayerFeePct ${formattedRelayerFeePct}% lpFeePct ${
+            lpFeePct.eq(bnUint256Max) ? "INF" : formattedLpFeePct
+          }%
+           and gas cost ${gasCost.eq(bnUint256Max) ? "INF" : formattedGasCost} ${gasTokenSymbol}\n`}`;
       });
 
       if (depositMrkdwn) {
