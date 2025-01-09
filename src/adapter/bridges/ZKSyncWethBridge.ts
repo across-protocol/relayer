@@ -6,6 +6,7 @@ import {
   EventSearchConfig,
   Provider,
   isContractDeployedToAddress,
+  bnZero,
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   assert,
@@ -103,7 +104,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount.add(l2TransactionBaseCost), amount, bridgeCalldata],
+      args: [this.l2chainId, amount.add(l2TransactionBaseCost), amount, bnZero, bridgeCalldata],
     });
   }
 

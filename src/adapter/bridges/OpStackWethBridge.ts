@@ -6,6 +6,7 @@ import {
   Signer,
   Provider,
   ZERO_ADDRESS,
+  bnZero,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -68,7 +69,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount, amount, bridgeCalldata],
+      args: [this.l2chainId, amount, amount, bnZero, bridgeCalldata],
     });
   }
 

@@ -5,6 +5,7 @@ import {
   Signer,
   EventSearchConfig,
   Provider,
+  bnZero,
   ZERO_ADDRESS,
   getL2TokenAddresses,
 } from "../../utils";
@@ -57,7 +58,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
-      args: [this.l2chainId, amount, amount, bridgeCalldata],
+      args: [this.l2chainId, amount, amount, bnZero, bridgeCalldata],
     });
   }
 

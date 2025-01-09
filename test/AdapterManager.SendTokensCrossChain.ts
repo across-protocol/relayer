@@ -9,6 +9,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   cctpAddressToBytes32,
+  bnZero,
 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import {
@@ -190,6 +191,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       chainId, // chainId
       amountToSend, // amount
       amountToSend,
+      bnZero,
       bridgeCalldata // depositETHTo
     );
   });
@@ -235,6 +237,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       chainId,
       amountToSend, // amount
       amountToSend,
+      bnZero,
       bridgeCalldata
     );
   });
@@ -340,6 +343,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       chainId,
       amountToSend.add(fee),
       amountToSend,
+      bnZero,
       bridgeCalldata
     );
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWithValue(toBN(0));
@@ -409,6 +413,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       chainId, // chainId
       amountToSend, // amount
       amountToSend,
+      bnZero,
       bridgeCalldata
     );
   });

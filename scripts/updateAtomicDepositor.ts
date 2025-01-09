@@ -1,4 +1,4 @@
-import { ethers, Contract, CHAIN_IDs } from "../src/utils";
+import { ethers, Contract, CHAIN_IDs, ZERO_ADDRESS, isDefined } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common/ContractAddresses";
 import { askYesNoQuestion } from "./utils";
 
@@ -31,8 +31,16 @@ export async function run(): Promise<void> {
   if (!Object.keys(args).includes("bridge")) {
     throw new Error("Define `bridge` as address of the canonical bridge which bridges raw ETH to L2");
   }
+  const feeToken = isDefined(args.feeToken) ? args.feeToken : ZERO_ADDRESS;
+  const gateway = isDefined(args.gateway) ? args.gateway : ZERO_ADDRESS;
+  if (
+    (feeToken !== ZERO_ADDRESS && gateway === ZERO_ADDRESS) ||
+    (feeToken === ZERO_ADDRESS && gateway !== ZERO_ADDRESS)
+  ) {
+    throw new Error("One of the fee token or gateway cannot be defined while the other is not");
+  }
   console.log(
-    `Confirmation: target chain ID: ${args.chainId}, function: ${args.function}, bridge address: ${args.bridge}`
+    `Confirmation: target chain ID: ${args.chainId}, function: ${args.function}, bridge address: ${args.bridge}, bridge fee token ${feeToken}, bridge gateway: ${gateway}`
   );
   if (!(await askYesNoQuestion("Do these arguments match with your expectations?"))) {
     throw new Error("Exiting due to incorrect arguments");
@@ -45,8 +53,7 @@ export async function run(): Promise<void> {
   );
   const calldata = atomicDepositor.interface.encodeFunctionData("whitelistBridge", [
     args.chainId,
-    args.bridge,
-    functionSignatureToWhitelist,
+    [args.bridge, gateway, feeToken, functionSignatureToWhitelist],
   ]);
   console.log(`Alternatively, call ${atomicDepositor.address} directly with calldata ${calldata}`);
 }

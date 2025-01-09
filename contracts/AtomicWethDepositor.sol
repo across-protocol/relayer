@@ -75,8 +75,7 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
     /**
      * @notice Whitelists function selector and bridge contract for chain.
      * @param chainId The chain ID of the bridge.
-     * @param bridge The address of the bridge contract to call to bridge ETH to the chain.
-     * @param funcSelector The function selector of the bridge contract.
+     * @param bridge The Bridge struct to set to the specified chain ID.
      */
     function whitelistBridge(uint256 chainId, Bridge calldata bridge) public onlyOwner {
         whitelistedBridgeFunctions[chainId] = bridge;

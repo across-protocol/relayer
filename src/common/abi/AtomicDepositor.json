@@ -83,6 +83,11 @@
         "type": "uint256"
       },
       {
+        "internalType": "uint256",
+        "name": "feeAmount",
+        "type": "uint256"
+      },
+      {
         "internalType": "bytes",
         "name": "bridgeCallData",
         "type": "bytes"
@@ -153,14 +158,31 @@
         "type": "uint256"
       },
       {
-        "internalType": "address",
+        "components": [
+          {
+            "internalType": "address",
+            "name": "bridge",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "gateway",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "feeToken",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes4",
+            "name": "funcSelector",
+            "type": "bytes4"
+          }
+        ],
+        "internalType": "struct AtomicWethDepositor.Bridge",
         "name": "bridge",
-        "type": "address"
-      },
-      {
-        "internalType": "bytes4",
-        "name": "funcSelector",
-        "type": "bytes4"
+        "type": "tuple"
       }
     ],
     "name": "whitelistBridge",
@@ -181,6 +203,16 @@
       {
         "internalType": "address",
         "name": "bridge",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "gateway",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "feeToken",
         "type": "address"
       },
       {
