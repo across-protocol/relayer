@@ -1354,7 +1354,7 @@ export class Relayer {
         // deposit originated from an over-allocated lite chain because the originChain, the only possible
         // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
         // this lite chain edge case.
-        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
+        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
         depositMrkdwn +=
           `- Deposit${
             isMessageEmpty(deposit.message)
