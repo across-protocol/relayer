@@ -1331,8 +1331,8 @@ export class Relayer {
     let mrkdwn = "";
     Object.keys(unprofitableDeposits).forEach((chainId) => {
       let depositMrkdwn = "";
-      Object.keys(unprofitableDeposits[chainId]).forEach((depositId) => {
-        const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableDeposits[chainId][depositId];
+      unprofitableDeposits[Number(chainId)].forEach((unprofitableFill) => {
+        const { deposit, lpFeePct, relayerFeePct, gasCost } = unprofitableFill;
 
         // Skip notifying if the unprofitable fill happened too long ago to avoid spamming.
         if (deposit.quoteTimestamp + UNPROFITABLE_DEPOSIT_NOTICE_PERIOD < getCurrentTime()) {
@@ -1355,15 +1355,17 @@ export class Relayer {
         // deposit originated from an over-allocated lite chain because the originChain, the only possible
         // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
         // this lite chain edge case.
-        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
+        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          fromOverallocatedLiteChain
-            ? " is from an over-allocated lite chain.\n"
-            : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`;
+          `${
+            fromOverallocatedLiteChain
+              ? " is from an over-allocated lite chain.\n"
+              : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`
+          }`;
       });
 
       if (depositMrkdwn) {
