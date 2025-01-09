@@ -1356,7 +1356,7 @@ export class Relayer {
         // this lite chain edge case.
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.isEqualTo(bnUint256Max);
         depositMrkdwn +=
-          `- Deposit ${
+          `- Deposit${
             isMessageEmpty(deposit.message)
               ? ""
               : ` with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
