@@ -2,6 +2,8 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@uma/core/contracts/common/implementation/MultiCaller.sol";
 import "@uma/core/contracts/common/implementation/Lockable.sol";
 
@@ -17,10 +19,19 @@ interface Weth {
  * @dev This contract is ownable so that the owner can update whitelisted bridge addresses and function selectors.
  */
 contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
+    using SafeERC20 for IERC20;
     // The Bridge used to send ETH to another chain. Only the function selector can be used when
     // calling the bridge contract.
     struct Bridge {
+        // Address of the contract to call when bridging ETH.
         address bridge;
+        // Address of the contract to approve when bridging ETH. An approval is only sent if `feeToken` is
+        // not the zero address.
+        address gateway;
+        // Address of the fee token used to pay for L1-L2 bridging.
+        address feeToken;
+        // The approved function selector for `bridge`. This contract may only call this function
+        // when calling the `bridge` contract.
         bytes4 funcSelector;
     }
 
@@ -67,8 +78,8 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
      * @param bridge The address of the bridge contract to call to bridge ETH to the chain.
      * @param funcSelector The function selector of the bridge contract.
      */
-    function whitelistBridge(uint256 chainId, address bridge, bytes4 funcSelector) public onlyOwner {
-        whitelistedBridgeFunctions[chainId] = Bridge({ bridge: bridge, funcSelector: funcSelector });
+    function whitelistBridge(uint256 chainId, Bridge calldata bridge) public onlyOwner {
+        whitelistedBridgeFunctions[chainId] = bridge;
     }
 
     ///////////////////////////////
@@ -89,11 +100,18 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
         uint256 chainId,
         uint256 netValue,
         uint256 bridgeValue,
+        uint256 feeAmount,
         bytes calldata bridgeCallData
     ) public nonReentrant {
         _withdrawWeth(netValue);
         Bridge memory bridge = whitelistedBridgeFunctions[chainId];
         if (bridge.funcSelector != bytes4(bridgeCallData)) revert InvalidBridgeFunction();
+
+        IERC20 feeToken = IERC20(bridge.feeToken);
+        if (address(feeToken) != address(0)) {
+            feeToken.safeTransferFrom(msg.sender, address(this), feeAmount);
+            feeToken.forceApprove(bridge.gateway, feeAmount);
+        }
         // solhint-disable-next-line avoid-low-level-calls
         (bool success, bytes memory result) = bridge.bridge.call{ value: netValue }(bridgeCallData);
         require(success, string(result));
