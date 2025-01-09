@@ -1358,8 +1358,8 @@ export class Relayer {
         depositMrkdwn +=
           `- Deposit ${
             isMessageEmpty(deposit.message)
-              ? ` with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
-              : ""
+              ? ""
+              : ` with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
           }` +
           ` ID ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
