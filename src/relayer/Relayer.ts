@@ -1355,21 +1355,21 @@ export class Relayer {
         // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
         // this lite chain edge case.
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
+        const depositFailedToSimulateWithMessage = isMessageEmpty(deposit.message) && gasCost.eq(bnUint256Max);
         depositMrkdwn +=
           `- Deposit${
-            isMessageEmpty(deposit.message)
+            depositFailedToSimulateWithMessage
               ? ""
-              : ` with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
+              : ` failed to simulate with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
           }` +
           ` ID ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          `${
-            fromOverallocatedLiteChain
-              ? " is from an over-allocated lite chain.\n"
-              : ` with relayerFeePct ${formattedRelayerFeePct}%, lpFeePct ${formattedLpFeePct}%, and gas cost ${formattedGasCost} ${gasTokenSymbol} is unprofitable!\n`
-          }`;
+          `${fromOverallocatedLiteChain ? " and is from an over-allocated lite chain" : ""}` +
+          `${` with relayerFeePct ${formattedRelayerFeePct}%${
+            lpFeePct.eq(bnUint256Max) ? "" : ` lpFeePct ${formattedLpFeePct}%`
+          }${gasCost.eq(bnUint256Max) ? "" : ` and gas cost ${formattedGasCost} ${gasTokenSymbol}`}\n`}`;
       });
 
       if (depositMrkdwn) {
