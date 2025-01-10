@@ -101,6 +101,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_1868: {
+      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     ovmStandardBridge_8453: {
       address: "0x3154Cf16ccdb4C6d922629664174b904d80F2C35",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -256,6 +260,19 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+  },
+  [CHAIN_IDs.CHER]: {
+    opUSDCBridge: {
+      address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
