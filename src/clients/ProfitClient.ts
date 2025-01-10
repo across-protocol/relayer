@@ -567,7 +567,12 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+      // For testnet only, if the custom gas token has no mainnet address, use ETH.
+      if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
+        nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
+      }
+      tokens[symbol] ??= nativeTokenAddress;
     });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
@@ -610,6 +615,7 @@ export class ProfitClient {
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
+      [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =
