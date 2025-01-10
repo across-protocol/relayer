@@ -23,7 +23,6 @@ import {
   filterAsync,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
-  CHAIN_IDs,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -227,8 +226,7 @@ export class BaseChainAdapter {
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.
-    // Permit bypass if simMode is set in order to permit tests to pass or if we are on testnet.
-    // This is because some testnet L2 WETH contracts do not implement symbol().
+    // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
       assert(
