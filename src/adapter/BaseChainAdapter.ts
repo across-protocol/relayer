@@ -229,7 +229,7 @@ export class BaseChainAdapter {
     // accidentally sending ETH to the wrong address, which would be a critical error.
     // Permit bypass if simMode is set in order to permit tests to pass or if we are on testnet.
     // This is because some testnet L2 WETH contracts do not implement symbol().
-    if (simMode === false || this.hubChainId === CHAIN_IDs.SEPOLIA) {
+    if (simMode === false) {
       const symbol = await contract.symbol();
       assert(
         symbol === "WETH",
