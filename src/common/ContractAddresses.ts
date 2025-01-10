@@ -437,6 +437,17 @@ export const CONTRACT_ADDRESSES: {
     orbitErc20Gateway_421614: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
+    zkSyncDefaultErc20Bridge: {
+      address: "0x7303b5ce64f1adb0558572611a0b90620b6dd5f4",
+      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI,
+    },
+    zkSyncMailbox: {
+      address: "", // TODO
+      abi: ZK_SYNC_MAILBOX_ABI,
+    },
+    hubPool: {
+      address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
+    },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     erc20Gateway: {
@@ -461,6 +472,13 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.LENS_SEPOLIA]: {
+    // TODO: Rename to zkstack once zkstack adapters are made.
+    zkSyncDefaultErc20Bridge: {
+      address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
+      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
     },
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
