@@ -580,16 +580,16 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.CHER]: {
     l1: {
-      AddressManager: "", // TODO: update when provided
+      AddressManager: "0xb24bfeece1b3b7a44559f4cbc21bed312b130b70",
       L1CrossDomainMessenger: "0x9cf951e3f74b644e621b36ca9cea147a78d4c39f",
       L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_1868.address,
       StateCommitmentChain: ZERO_ADDRESS,
       CanonicalTransactionChain: ZERO_ADDRESS,
       BondManager: ZERO_ADDRESS,
-      OptimismPortal: "", // TODO: update when provided
-      L2OutputOracle: "", // TODO: update when provided
-      OptimismPortal2: ZERO_ADDRESS, // TODO: update if provided
-      DisputeGameFactory: ZERO_ADDRESS, // TODO: update if provided
+      OptimismPortal: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
