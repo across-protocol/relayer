@@ -544,7 +544,12 @@ export class ProfitClient {
         .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
         .map(({ symbol }) => {
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-          const address = addresses[CHAIN_IDs.MAINNET];
+          let address = addresses[CHAIN_IDs.MAINNET];
+          // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
+          // we will throw an error instead.
+          if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(address)) {
+            address = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
+          }
           return [symbol, address];
         })
     );
