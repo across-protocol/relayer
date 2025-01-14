@@ -26,6 +26,8 @@ export function castSpokePoolName(networkId: number): string {
       return "Arbitrum_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";
+    case CHAIN_IDs.SONEIUM:
+      return "Cher_SpokePool";
     default:
       networkName = getNetworkName(networkId);
   }
