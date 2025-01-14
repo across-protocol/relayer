@@ -83,6 +83,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
       abi: OP_USDC_BRIDGE_ABI,
     },
+    opUSDCBridge_1868: {
+      address: "0xC67A8c5f22b40274Ca7C4A56Db89569Ee2AD3FAb",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
     // Stack chain to the name to differentiate. This one is for Optimism.
     ovmStandardBridge_10: {
