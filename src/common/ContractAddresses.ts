@@ -262,7 +262,7 @@ export const CONTRACT_ADDRESSES: {
       abi: WETH_ABI,
     },
   },
-  [CHAIN_IDs.CHER]: {
+  [CHAIN_IDs.SONEIUM]: {
     opUSDCBridge: {
       address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
       abi: OP_USDC_BRIDGE_ABI,

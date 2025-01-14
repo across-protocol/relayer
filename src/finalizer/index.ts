@@ -116,7 +116,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
-  [CHAIN_IDs.CHER]: {
+  [CHAIN_IDs.SONEIUM]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
