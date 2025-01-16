@@ -675,15 +675,9 @@ export class Relayer {
         l1Token,
         lpFees
       );
-      const {
-        relayerFeePct,
-        gasCost,
-        gasLimit: _gasLimit,
-        lpFeePct: realizedLpFeePct,
-        gasPrice,
-      } = repaymentChainProfitability;
+      const { relayerFeePct, gasCost, gasLimit, lpFeePct, gasPrice } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+        profitClient.captureUnprofitableFill(deposit, lpFeePct, relayerFeePct, gasCost);
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
@@ -709,8 +703,7 @@ export class Relayer {
         // Update local balance to account for the enqueued fill.
         tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
-        const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-        this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
+        this.fillRelay(deposit, repaymentChainId, lpFeePct, gasPrice, gasLimit);
       }
     } else if (selfRelay) {
       // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
@@ -734,7 +727,7 @@ export class Relayer {
         deposit,
         destinationChainId,
         lpFeePct,
-        this.clients.profitClient.getGasCostsForChain(destinationChainId).gasPrice
+        this.clients.profitClient.getGasCostsForChain(destinationChainId)[deposit.outputToken].gasPrice
       );
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
@@ -992,7 +985,7 @@ export class Relayer {
     deposit: Deposit,
     repaymentChainId: number,
     realizedLpFeePct: BigNumber,
-    gasPrice: BigNumber,
+    gasPrice?: BigNumber,
     gasLimit?: BigNumber
   ): void {
     const { spokePoolClients } = this.clients;
@@ -1394,7 +1387,7 @@ export class Relayer {
     deposit: Deposit,
     repaymentChainId: number,
     realizedLpFeePct: BigNumber,
-    gasPrice: BigNumber
+    gasPrice?: BigNumber
   ): string {
     let mrkdwn =
       this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasPrice) +
@@ -1412,7 +1405,7 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
+  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, gasPrice?: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
@@ -1429,11 +1422,14 @@ export class Relayer {
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
       this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
+
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price used in profit calc: ${formatGwei(
-        _gasPriceGwei.toString()
-      )} Gwei.`;
+      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%.`;
+
+    if (isDefined(gasPrice)) {
+      msg += ` Gas price: ${formatGwei(gasPrice.toString())} Gwei.`;
+    }
 
     return msg;
   }
