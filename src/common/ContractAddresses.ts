@@ -76,11 +76,15 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xb505EB8E884cA548508bd7806631b6C1BC25C1f8",
+      address: "0xE06B3B73708C38a72107e4afdBA37C76eCB3A57B",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     opUSDCBridge_480: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    opUSDCBridge_1868: {
+      address: "0xC67A8c5f22b40274Ca7C4A56Db89569Ee2AD3FAb",
       abi: OP_USDC_BRIDGE_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
@@ -99,6 +103,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_1135: {
       address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_1868: {
+      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_8453: {
@@ -256,6 +264,19 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+  },
+  [CHAIN_IDs.SONEIUM]: {
+    opUSDCBridge: {
+      address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
