@@ -675,13 +675,7 @@ export class Relayer {
         l1Token,
         lpFees
       );
-      const {
-        relayerFeePct,
-        gasCost,
-        gasLimit,
-        lpFeePct,
-        gasPrice,
-      } = repaymentChainProfitability;
+      const { relayerFeePct, gasCost, gasLimit, lpFeePct, gasPrice } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, lpFeePct, relayerFeePct, gasCost);
       } else {
