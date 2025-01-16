@@ -232,7 +232,7 @@ export class ProfitClient {
     return this._getTotalGasCost(deposit, this.relayerAddress);
   }
 
-  getGasCostsForChain(chainId: number): TransactionCostEstimate {
+  getGasCostsForChain(chainId: number): { [token: string]: TransactionCostEstimate } {
     return this.totalGasCosts[chainId];
   }
 
@@ -654,8 +654,15 @@ export class ProfitClient {
       })
     );
 
+    type GasCostLog = sdkUtils.TransactionCostEstimate & {
+      scaledNativeGasCost: BigNumber;
+      scaledTokenGasCost: BigNumber;
+      gasPadding: string;
+      gasMultiplier: string;
+    };
+
     // Pre-fetch total gas costs for relays on enabled chains.
-    const totalGasCostsToLog: { [destinationChainId: number]: {} } = {};
+    const totalGasCostsToLog: { [destinationChainId: number]: { [token: string]: GasCostLog } } = {};
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       this.totalGasCosts[destinationChainId] ??= {};
       await sdkUtils.mapAsync(spokeTokens[destinationChainId], async (outputToken) => {
