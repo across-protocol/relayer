@@ -83,6 +83,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
       abi: OP_USDC_BRIDGE_ABI,
     },
+    opUSDCBridge_1868: {
+      address: "0xC67A8c5f22b40274Ca7C4A56Db89569Ee2AD3FAb",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
     // Stack chain to the name to differentiate. This one is for Optimism.
     ovmStandardBridge_10: {
@@ -99,6 +103,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_1135: {
       address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_1868: {
+      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_8453: {
@@ -256,6 +264,19 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+  },
+  [CHAIN_IDs.SONEIUM]: {
+    opUSDCBridge: {
+      address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   [CHAIN_IDs.WORLD_CHAIN]: {

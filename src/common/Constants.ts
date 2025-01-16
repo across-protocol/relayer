@@ -79,6 +79,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.REDSTONE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
     [CHAIN_IDs.SCROLL]: 8,
+    [CHAIN_IDs.SONEIUM]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
     [CHAIN_IDs.WORLD_CHAIN]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
     [CHAIN_IDs.ZORA]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
   },
@@ -113,6 +114,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.POLYGON]: 10000,
   [CHAIN_IDs.REDSTONE]: 10000,
   [CHAIN_IDs.SCROLL]: 10000,
+  [CHAIN_IDs.SONEIUM]: 10000,
   [CHAIN_IDs.WORLD_CHAIN]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   [CHAIN_IDs.ZORA]: 10000,
@@ -148,6 +150,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
+  [CHAIN_IDs.SONEIUM]: 60, // 2s/block
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   [CHAIN_IDs.ZORA]: 60, // 2s/block
@@ -196,6 +199,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 256,
   [CHAIN_IDs.REDSTONE]: 120,
+  [CHAIN_IDs.SONEIUM]: 120,
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.WORLD_CHAIN]: 120,
   [CHAIN_IDs.ZK_SYNC]: 512,
@@ -231,6 +235,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 86400,
   [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
+  [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
   [CHAIN_IDs.ZORA]: 86400,
@@ -248,6 +253,7 @@ export const DEFAULT_GAS_FEE_SCALERS: {
   [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.REDSTONE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
+  [CHAIN_IDs.SONEIUM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.WORLD_CHAIN]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.ZORA]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
@@ -271,6 +277,7 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.REDSTONE,
   CHAIN_IDs.SCROLL,
+  CHAIN_IDs.SONEIUM,
   CHAIN_IDs.WORLD_CHAIN,
   CHAIN_IDs.ZK_SYNC,
   CHAIN_IDs.ZORA,
@@ -309,6 +316,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
+  [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
@@ -355,28 +363,30 @@ export const CANONICAL_BRIDGE: {
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LENS_SEPOLIA]: ZKSyncBridge, // TODO
   [CHAIN_IDs.LINEA]: LineaBridge,
   [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LISK_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
-  [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
-  [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
+  [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
   [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
+  // Testnets:
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
+  [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.LISK_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.MODE_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
+  [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -430,6 +440,10 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.REDSTONE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.SONEIUM]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
@@ -523,6 +537,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
+  [CHAIN_IDs.SONEIUM]: 20 * 60,
   [CHAIN_IDs.WORLD_CHAIN]: 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
   [CHAIN_IDs.ZORA]: 20 * 60,
@@ -594,6 +609,21 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.SONEIUM]: {
+    l1: {
+      AddressManager: "0xb24bfeece1b3b7a44559f4cbc21bed312b130b70",
+      L1CrossDomainMessenger: "0x9cf951e3f74b644e621b36ca9cea147a78d4c39f",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_1868.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     l1: {
       AddressManager: "0x5891090d5085679714cb0e62f74950a3c19146a8",
@@ -633,6 +663,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
+  [CHAIN_IDs.SONEIUM]: 1.5,
   [CHAIN_IDs.WORLD_CHAIN]: 1.5,
   [CHAIN_IDs.ZORA]: 1.5,
 };

@@ -544,7 +544,12 @@ export class ProfitClient {
         .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
         .map(({ symbol }) => {
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-          const address = addresses[CHAIN_IDs.MAINNET];
+          let address = addresses[CHAIN_IDs.MAINNET];
+          // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
+          // we will throw an error instead.
+          if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(address)) {
+            address = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
+          }
           return [symbol, address];
         })
     );
@@ -611,10 +616,11 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.ALEPH_ZERO]: "USDT", // USDC is not yet supported on AlephZero, so revert to USDT. @todo: Update.
       [CHAIN_IDs.BLAST]: "USDB",
+      [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
+      [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
-      [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
       [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
