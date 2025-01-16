@@ -237,7 +237,7 @@ describe("Monitor", async function () {
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
     expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
-      "60000000000000000000000"
+      "75000000000000000000000"
     );
   });
 

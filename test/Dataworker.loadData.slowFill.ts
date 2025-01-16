@@ -17,6 +17,7 @@ import {
   expect,
   fillV3,
   getDefaultBlockRange,
+  getDisabledBlockRanges,
   mineRandomBlocks,
   randomAddress,
   requestSlowFill,
@@ -321,8 +322,6 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     const destinationChainDeposit = spokePoolClient_2.getDeposits()[0];
 
     // Generate slow fill requests for the slow fill-eligible deposits
-    await spokePool_1.setCurrentTime(depositsWithSlowFillRequests[1].exclusivityDeadline + 1); // Temporary workaround
-    await spokePool_2.setCurrentTime(depositsWithSlowFillRequests[0].exclusivityDeadline + 1); // Temporary workaround
     await requestSlowFill(spokePool_2, relayer, depositsWithSlowFillRequests[0]);
     await requestSlowFill(spokePool_1, relayer, depositsWithSlowFillRequests[1]);
     const lastDestinationChainSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
@@ -388,6 +387,27 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     );
   });
 
+  it("Ignores disabled chains", async function () {
+    // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
+    generateV3Deposit({ outputToken: randomAddress() });
+    generateV3Deposit({ outputToken: erc20_2.address });
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+
+    generateSlowFillRequestFromDeposit(deposits[0]);
+    generateSlowFillRequestFromDeposit(deposits[1]);
+    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
+    expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(2);
+
+    const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
+      getDisabledBlockRanges(),
+      spokePoolClients
+    );
+    expect(emptyData.bundleDepositsV3).to.deep.equal({});
+    expect(emptyData.expiredDepositsToRefundV3).to.deep.equal({});
+    expect(emptyData.bundleSlowFillsV3).to.deep.equal({});
+  });
+
   it("Slow fill requests cannot coincide with fill in same bundle", async function () {
     generateV3Deposit({ outputToken: erc20_2.address });
     generateV3Deposit({ outputToken: erc20_2.address });
@@ -422,6 +442,24 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.unexecutableSlowFills).to.deep.equal({});
+  });
+
+  it("Ignores disabled chains", async function () {
+    generateV3Deposit({ outputToken: erc20_2.address });
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+
+    generateSlowFillRequestFromDeposit(deposits[0]);
+    generateV3FillFromDeposit(deposits[0], undefined, undefined, undefined, interfaces.FillType.ReplacedSlowFill);
+    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
+
+    const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
+      getDisabledBlockRanges(),
+      spokePoolClients
+    );
+    expect(emptyData.unexecutableSlowFills).to.deep.equal({});
+    expect(emptyData.bundleFillsV3).to.deep.equal({});
+    expect(emptyData.bundleSlowFillsV3).to.deep.equal({});
   });
 
   it("Handles slow fill requests out of block range", async function () {

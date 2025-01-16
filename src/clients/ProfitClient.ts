@@ -28,9 +28,12 @@ import {
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
+  formatGwei,
+  fixedPointAdjustment,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
-import { HubPoolClient } from ".";
+import { getAcrossHost } from "./AcrossAPIClient";
+import { HubPoolClient } from "./HubPoolClient";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
@@ -57,6 +60,7 @@ export type FillProfit = {
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
   nativeGasCost: BigNumber; // Cost of completing the fill in the units of gas.
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
+  gasPrice: BigNumber; // Gas price in wei.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
   gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
@@ -129,7 +133,7 @@ export class ProfitClient {
     );
 
     this.priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed(),
+      new acrossApi.PriceFeed({ host: getAcrossHost(hubPoolClient.chainId) }),
       new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
       new defiLlama.PriceFeed(),
     ]);
@@ -210,9 +214,9 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         deposit,
-        notificationPath: "across-unprofitable-fills",
+        notificationPath: "across-warn",
       });
-      return { nativeGasCost: uint256Max, tokenGasCost: uint256Max };
+      return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
     }
   }
 
@@ -228,15 +232,21 @@ export class ProfitClient {
     return this._getTotalGasCost(deposit, this.relayerAddress);
   }
 
+  getGasCostsForChain(chainId: number): TransactionCostEstimate {
+    return this.totalGasCosts[chainId];
+  }
+
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
     deposit: Deposit
-  ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd">> {
+  ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd" | "gasPrice">> {
     const { destinationChainId: chainId } = deposit;
 
     const gasToken = this.resolveGasToken(chainId);
     const gasTokenPriceUsd = this.getPriceOfToken(gasToken.symbol);
-    let { nativeGasCost, tokenGasCost } = await this.getTotalGasCost(deposit);
+    const totalGasCost = await this.getTotalGasCost(deposit);
+    let { nativeGasCost, tokenGasCost } = totalGasCost;
+    const gasPrice = totalGasCost.gasPrice;
 
     Object.entries({
       "gas consumption": nativeGasCost, // raw gas units
@@ -264,6 +274,7 @@ export class ProfitClient {
     return {
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       gasTokenPriceUsd,
       gasCostUsd,
     };
@@ -362,7 +373,9 @@ export class ProfitClient {
       : bnZero;
 
     // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd } = await this.estimateFillCost(deposit);
+    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd, gasPrice } = await this.estimateFillCost(
+      deposit
+    );
 
     // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
     // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
@@ -385,6 +398,7 @@ export class ProfitClient {
       grossRelayerFeeUsd,
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       gasPadding: this.gasPadding,
       gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
@@ -433,7 +447,7 @@ export class ProfitClient {
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${l1Token.symbol} v3 deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${l1Token.symbol} deposit ${depositId} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -444,6 +458,7 @@ export class ProfitClient {
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
         nativeGasCost: fill.nativeGasCost,
         tokenGasCost: formatEther(fill.tokenGasCost),
+        gasPrice: formatGwei(fill.gasPrice.toString()),
         gasPadding: this.gasPadding,
         gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
@@ -464,13 +479,14 @@ export class ProfitClient {
     lpFeePct: BigNumber,
     l1Token: L1Token,
     repaymentChainId: number
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "tokenGasCost" | "netRelayerFeePct">> {
+  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
     let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
+    let gasPrice = uint256Max;
     try {
-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost } = await this.getFillProfitability(
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice } = await this.getFillProfitability(
         deposit,
         lpFeePct,
         l1Token,
@@ -489,6 +505,7 @@ export class ProfitClient {
       profitable: profitable || (this.isTestnet && nativeGasCost.lt(uint256Max)),
       nativeGasCost,
       tokenGasCost,
+      gasPrice,
       netRelayerFeePct,
     };
   }
@@ -527,7 +544,12 @@ export class ProfitClient {
         .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
         .map(({ symbol }) => {
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
-          const address = addresses[1];
+          let address = addresses[CHAIN_IDs.MAINNET];
+          // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
+          // we will throw an error instead.
+          if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(address)) {
+            address = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
+          }
           return [symbol, address];
         })
     );
@@ -550,7 +572,12 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      tokens[symbol] ??= TOKEN_SYMBOLS_MAP[symbol].addresses[1];
+      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+      // For testnet only, if the custom gas token has no mainnet address, use ETH.
+      if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
+        nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
+      }
+      tokens[symbol] ??= nativeTokenAddress;
     });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
@@ -628,11 +655,36 @@ export class ProfitClient {
     );
 
     // Pre-fetch total gas costs for relays on enabled chains.
+    const totalGasCostsToLog: { [destinationChainId: number]: {} } = {};
     await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
       this.totalGasCosts[destinationChainId] ??= {};
       await sdkUtils.mapAsync(spokeTokens[destinationChainId], async (outputToken) => {
         const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-        this.totalGasCosts[destinationChainId][outputToken] = await this._getTotalGasCost(deposit, relayer);
+        const gasCosts = await this._getTotalGasCost(deposit, relayer);
+        // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
+        // fills on the destination chain.
+        const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
+
+        // The scaledTokenGasCost is the estimated gas cost of submitting a fill on the destination chain and is used
+        // in the this.estimateFillCost function to determine whether a deposit is profitable to fill. Therefore,
+        // the scaledTokenGasCost should be safely lower than the quote API's tokenGasCosts in order for the relayer
+        // to consider a deposit is profitable.
+        const scaledTokenGasCost = gasCosts.tokenGasCost
+          .mul(this.gasPadding)
+          .div(fixedPointAdjustment)
+          .mul(this.gasMultiplier)
+          .div(fixedPointAdjustment);
+
+        this.totalGasCosts[destinationChainId][outputToken] = gasCosts; // XXX verify
+
+        totalGasCostsToLog[destinationChainId] ??= {};
+        totalGasCostsToLog[destinationChainId][outputToken] = {
+          ...gasCosts,
+          scaledNativeGasCost,
+          scaledTokenGasCost,
+          gasPadding: formatEther(this.gasPadding),
+          gasMultiplier: formatEther(this.gasMultiplier),
+        };
       });
     });
 
@@ -640,7 +692,7 @@ export class ProfitClient {
       at: "ProfitClient",
       message: "Updated gas cost",
       enabledChainIds: this.enabledChainIds,
-      totalGasCosts: this.totalGasCosts,
+      totalGasCosts: totalGasCostsToLog,
     });
   }
 
@@ -648,8 +700,6 @@ export class ProfitClient {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;
-    // TODO: Set this once we figure out gas markup on the API side.
-    const gasMarkup = 0;
     // Call the factory to create a new QueryBase instance.
     return relayFeeCalculator.QueryBase__factory.create(
       chainId,
@@ -658,8 +708,7 @@ export class ProfitClient {
       undefined, // spokePoolAddress
       undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
-      this.logger,
-      gasMarkup
+      this.logger
     );
   }
 }

@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { TransactionRequest } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
+import { CONTRACT_ADDRESSES } from "../../common";
 import {
   Contract,
   Signer,
   getBlockForTimestamp,
   getCurrentTime,
   getRedisCache,
+  Multicall2Call,
   winston,
   convertFromWei,
 } from "../../utils";
@@ -57,7 +57,6 @@ export async function scrollFinalizer(
   // Why are we breaking with the existing pattern--is it faster?
   // Scroll takes up to 4 hours with finalize a withdrawal so lets search
   // up to 12 hours for withdrawals.
-  const redis = await getRedisCache(logger);
   logger.debug({
     at: "Finalizer#ScrollFinalizer",
     message: "Scroll TokensBridged event filter",
