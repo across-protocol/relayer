@@ -1,5 +1,4 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
-import { PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { chainIsOPStack, CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -86,9 +85,9 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
-Object.entries(PRODUCTION_NETWORKS)
-  .filter(([, { family }]) => chainIsOPStack(family))
-  .forEach(([chainId]) => {
+Object.values(CHAIN_IDs)
+  .filter(chainIsOPStack)
+  .forEach((chainId) => {
     MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
   });
 
