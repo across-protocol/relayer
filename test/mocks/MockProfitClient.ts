@@ -59,7 +59,6 @@ export class MockProfitClient extends ProfitClient {
           const gasToken = this.resolveGasToken(chainId);
           this.setTokenPrice(gasToken.address, defaultGasPrice); // usd wei
         });
-
       } else {
         logger.debug({
           at: "MockProfitClient",

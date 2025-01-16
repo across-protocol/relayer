@@ -110,9 +110,7 @@ describe("ProfitClient: Consider relay profit", () => {
       const gasPrice = gasTokenPrice;
       const _tokenGasCost = nativeGasCost.mul(gasPrice);
       const tokenGasCost = Object.fromEntries(
-        Object.values(tokens).map(({ address }) =>
-          [address, { nativeGasCost, tokenGasCost: _tokenGasCost, gasPrice }]
-        )
+        Object.values(tokens).map(({ address }) => [address, { nativeGasCost, tokenGasCost: _tokenGasCost, gasPrice }])
       );
       return [chainId, tokenGasCost];
     })
@@ -381,7 +379,6 @@ describe("ProfitClient: Consider relay profit", () => {
     for (const originChainId of chainIds) {
       for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
         for (const token of Object.values(tokens)) {
-
           const { tokenGasCost } = gasCost[destinationChainId][token.address];
           const gasToken = profitClient.resolveGasToken(destinationChainId);
           const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
