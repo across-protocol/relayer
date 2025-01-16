@@ -3,7 +3,7 @@ import { Contract, Wallet, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES, Multicall2Call } from "../../common";
+import { CONTRACT_ADDRESSES } from "../../common";
 import {
   convertFromWei,
   getBlockForTimestamp,
@@ -12,6 +12,7 @@ import {
   getL1TokenInfo,
   getRedisCache,
   getUniqueLogIndex,
+  Multicall2Call,
   winston,
   zkSync as zkSyncUtils,
 } from "../../utils";

@@ -1,6 +1,6 @@
 import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../../src/clients";
-import { GenericAdapterManager } from "../../src/adapter/AdapterManager"; // Tested
+import { AdapterManager } from "../../src/clients/bridges";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
 import {
   bnToHex,
@@ -30,7 +30,7 @@ const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
 let relayer: SignerWithAddress, owner: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
-let adapterManager: AdapterManager; // tested
+let adapterManager: AdapterManager;
 
 // Atomic depositor
 let l1AtomicDepositor: FakeContract;
@@ -78,7 +78,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
-    adapterManager = new GenericAdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
+    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 
     await constructChainSpecificFakes();
 
@@ -428,8 +428,8 @@ async function constructChainSpecificFakes() {
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake(
-    "arbitrumErc20GatewayRouter",
-    CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address
+    "orbitErc20GatewayRouter_42161",
+    CONTRACT_ADDRESSES[1].orbitErc20GatewayRouter_42161.address
   );
 
   // zkSync contracts

@@ -37,7 +37,7 @@ task("integration-tests", "Run integration tests against key Dataworker function
 
     // Override environment variables that we want to control for, for example we want to prevent the runner of this
     // script from sending any on-chain transactions.
-    process.env.POLLING_DELAY = "0"; // Set to severless mode so that bot terminates after successful run.
+    process.env.POLLING_DELAY = "0"; // Set to serverless mode so that bot terminates after successful run.
     process.env.DISPUTER_ENABLED = "true";
     process.env.PROPOSER_ENABLED = "true";
     process.env.EXECUTOR_ENABLED = "true";
