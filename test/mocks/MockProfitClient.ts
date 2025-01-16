@@ -1,5 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { ProfitClient } from "../../src/clients";
+import { Contract } from "ethers";
+import { HubPoolClient, ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
 import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
@@ -36,6 +37,12 @@ export class MockProfitClient extends ProfitClient {
       gasPadding
     );
 
+    const defaultGasCost = {
+      nativeGasCost: defaultFillCost,
+      tokenGasCost: defaultGasPrice.mul(defaultFillCost),
+      gasPrice: defaultGasPrice,
+    };
+
     // Initialise with known mainnet ERC20s
     Object.entries(TOKEN_SYMBOLS_MAP).forEach(([symbol, { decimals, addresses }]) => {
       const address = addresses[hubPoolClient.chainId];
@@ -45,6 +52,14 @@ export class MockProfitClient extends ProfitClient {
         if (this.hubPoolClient instanceof MockHubPoolClient) {
           this.hubPoolClient.addL1Token({ symbol, decimals, address });
         }
+
+        Object.values(spokePoolClients).map(({ chainId }) => {
+          this.setGasCost(chainId, address, defaultGasCost); // gas/fill
+
+          const gasToken = this.resolveGasToken(chainId);
+          this.setTokenPrice(gasToken.address, defaultGasPrice); // usd wei
+        });
+
       } else {
         logger.debug({
           at: "MockProfitClient",
@@ -54,17 +69,6 @@ export class MockProfitClient extends ProfitClient {
     });
 
     // Some tests run against mocked chains, so hack in the necessary parts
-    const defaultGasCost = {
-      nativeGasCost: defaultFillCost,
-      tokenGasCost: defaultGasPrice.mul(defaultFillCost),
-      gasPrice: defaultGasPrice,
-    };
-    Object.values(spokePoolClients).map(({ chainId }) => {
-      this.setGasCost(chainId, defaultGasCost); // gas/fill
-
-      const gasToken = this.resolveGasToken(chainId);
-      this.setTokenPrice(gasToken.address, defaultGasPrice); // usd wei
-    });
   }
 
   async initToken(erc20: Contract): Promise<void> {
@@ -94,15 +98,16 @@ export class MockProfitClient extends ProfitClient {
     });
   }
 
-  setGasCost(chainId: number, gas?: TransactionCostEstimate): void {
+  setGasCost(chainId: number, token: string, gas?: TransactionCostEstimate): void {
+    this.totalGasCosts[chainId] ??= {};
     if (gas) {
-      this.totalGasCosts[chainId] = gas;
+      this.totalGasCosts[chainId][token] = gas;
     } else {
-      delete this.totalGasCosts[chainId];
+      delete this.totalGasCosts[chainId][token];
     }
   }
 
-  setGasCosts(gasCosts: { [chainId: number]: TransactionCostEstimate }): void {
+  setGasCosts(gasCosts: { [chainId: number]: { [token: string]: TransactionCostEstimate } }): void {
     this.totalGasCosts = gasCosts;
   }
 
