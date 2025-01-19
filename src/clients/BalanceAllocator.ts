@@ -153,7 +153,7 @@ export class BalanceAllocator {
     this.balances = {};
   }
 
-  // This method is primarily here to be overriden for testing purposes.
+  // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
     return getNativeTokenAddressForChain(chainId).toLowerCase() === token.toLowerCase()
       ? await this.providers[chainId].getBalance(holder)
