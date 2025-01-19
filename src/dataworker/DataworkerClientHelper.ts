@@ -157,7 +157,7 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
       : Object.fromEntries(
           dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
             // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then leave undefined which
-            // will reuslt in querying from the spoke activation block.
+            // will result in querying from the spoke activation block.
             if (i >= fromBundle.bundleEvaluationBlockNumbers.length) {
               return [chainId, undefined];
             }
