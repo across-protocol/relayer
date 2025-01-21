@@ -301,10 +301,13 @@ export class Relayer {
     }
 
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+      this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit including in-protocol token swap.",
-        deposit,
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
         notificationPath: "across-unprofitable-fills",
       });
       return false;
