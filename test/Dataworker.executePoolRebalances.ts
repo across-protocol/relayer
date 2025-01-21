@@ -628,7 +628,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       expect(errorLogs[0].lastArg.message).to.contain("Not enough funds to execute pool rebalance leaf for chain 137");
     });
     it("Only mainnet leaves", async function () {
-      // Shouuld not throw if there are only mainnet leaves.
+      // Should not throw if there are only mainnet leaves.
       const liquidReserves = toBNWei("1");
       mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
 
