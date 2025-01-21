@@ -213,7 +213,7 @@ async function run(argv: string[]): Promise<void> {
   providers.forEach((provider) => {
     const { _websocket: ws } = provider;
     const _provider = getOriginFromURL(provider.connection.url);
-    let interval: NodeJS.Timer | undefined;
+    let interval: NodeJS.Timeout | undefined;
     let timeout: NodeJS.Timeout | undefined;
 
     const closeProvider = () => {
@@ -301,6 +301,6 @@ if (require.main === module) {
     .finally(async () => {
       await disconnectRedisClients();
       logger.debug({ at: "RelayerSpokePoolIndexer", message: `Exiting ${chain} listener.` });
-      exit(process.exitCode);
+      exit(Number(process.exitCode));
     });
 }
