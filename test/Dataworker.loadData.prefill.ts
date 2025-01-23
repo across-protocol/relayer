@@ -207,8 +207,37 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
         expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
 
-        // So, one of the fills is a pre-fill because its earlier than the bundle block range. Because its corresponding
+        // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
         // deposit is in the block range, we should refund it.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          fill.args.depositId
+        );
+      });
+
+      it("Ignores duplicate deposits", async function () {
+        // In this test, we send one fill per deposit. We assume you cannot send more than one fill per deposit.
+        generateV3Deposit({ outputToken: randomAddress() });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+        expect(deposits.length).to.equal(2);
+
+        // Submit fill that we won't include in the bundle block range.
+        const fill = generateV3FillFromDeposit(deposits[0], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber,
+        });
+        // Substitute bundle block ranges.
+        const bundleBlockRanges = getDefaultBlockRange(5);
+        const destinationChainIndex =
+          dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
+        bundleBlockRanges[destinationChainIndex] = [fill.blockNumber + 1, fill.blockNumber + 2];
+
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
+
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
@@ -286,8 +315,36 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
         expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
 
-        // So, one of the fills is a pre-fill because its earlier than the bundle block range. Because its corresponding
-        // deposit is in the block range, we should refund it.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
+        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
+          request.args.depositId
+        );
+      });
+
+      it("Ignores duplicate deposits", async function () {
+        // In this test, we should create one leaf per deposit.
+        // We assume you cannot send more than one request per deposit.
+        generateV3Deposit({ outputToken: erc20_2.address });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+        expect(deposits.length).to.equal(2);
+
+        // Submit request that we won't include in the bundle block range.
+        const request = generateSlowFillRequestFromDeposit(deposits[0], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber,
+        });
+        // Substitute bundle block ranges.
+        const bundleBlockRanges = getDefaultBlockRange(5);
+        const destinationChainIndex =
+          dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
+        bundleBlockRanges[destinationChainIndex] = [request.blockNumber + 1, request.blockNumber + 2];
+
+        await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
+        expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
+
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
