@@ -73,7 +73,7 @@ export class TokenClient {
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it will capture the
   // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
-  captureTokenShortfall(chainId: number, token: string, depositId: number, unfilledAmount: BigNumber): void {
+  captureTokenShortfall(chainId: number, token: string, depositId: BigNumber, unfilledAmount: BigNumber): void {
     // Shortfall is the previous shortfall + the current unfilledAmount from this deposit.
     const totalRequirement = this.getShortfallTotalRequirement(chainId, token).add(unfilledAmount);
 
