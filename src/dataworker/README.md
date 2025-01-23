@@ -129,21 +129,21 @@ A fill must match a deposit on every shared parameter that they have in common. 
 
 ```solidity
 event FilledV3Relay(
-    address inputToken,
-    address outputToken,
-    uint256 inputAmount,
-    uint256 outputAmount,
-    uint256 repaymentChainId,
-    uint256 indexed originChainId,
-    uint32 indexed depositId,
-    uint32 fillDeadline,
-    uint32 exclusivityDeadline,
-    address exclusiveRelayer,
-    address indexed relayer,
-    address depositor,
-    address recipient,
-    bytes message,
-    V3RelayExecutionEventInfo relayExecutionInfo
+  address inputToken,
+  address outputToken,
+  uint256 inputAmount,
+  uint256 outputAmount,
+  uint256 repaymentChainId,
+  uint256 indexed originChainId,
+  uint32 indexed depositId,
+  uint32 fillDeadline,
+  uint32 exclusivityDeadline,
+  address exclusiveRelayer,
+  address indexed relayer,
+  address depositor,
+  address recipient,
+  bytes message,
+  V3RelayExecutionEventInfo relayExecutionInfo
 );
 ```
 
@@ -151,19 +151,19 @@ A [deposit](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb
 
 ```solidity
 event V3FundsDeposited(
-    address inputToken,
-    address outputToken,
-    uint256 inputAmount,
-    uint256 outputAmount,
-    uint256 indexed destinationChainId,
-    uint32 indexed depositId,
-    uint32 quoteTimestamp,
-    uint32 fillDeadline,
-    uint32 exclusivityDeadline,
-    address indexed depositor,
-    address recipient,
-    address exclusiveRelayer,
-    bytes message
+  address inputToken,
+  address outputToken,
+  uint256 inputAmount,
+  uint256 outputAmount,
+  uint256 indexed destinationChainId,
+  uint32 indexed depositId,
+  uint32 quoteTimestamp,
+  uint32 fillDeadline,
+  uint32 exclusivityDeadline,
+  address indexed depositor,
+  address recipient,
+  address exclusiveRelayer,
+  bytes message
 );
 ```
 
