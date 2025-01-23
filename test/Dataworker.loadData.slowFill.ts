@@ -463,9 +463,18 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
   });
 
   it("Handles slow fill requests out of block range", async function () {
-    generateV3Deposit({ outputToken: erc20_2.address });
-    generateV3Deposit({ outputToken: erc20_2.address });
-    generateV3Deposit({ outputToken: erc20_2.address });
+    generateV3Deposit({
+      outputToken: erc20_2.address,
+      blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
+    });
+    generateV3Deposit({
+      outputToken: erc20_2.address,
+      blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
+    });
+    generateV3Deposit({
+      outputToken: erc20_2.address,
+      blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
+    });
     await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
     const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -480,13 +489,16 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
         blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 21,
       }),
     ];
-    // Create a block range that contains only the middle event.
+    // Create a block range that contains only the middle events.
     const destinationChainBlockRange = [events[1].blockNumber - 1, events[1].blockNumber + 1];
-    // Substitute destination chain bundle block range.
+    const originChainBlockRange = [deposits[1].blockNumber - 1, deposits[1].blockNumber + 1];
+    // Substitute bundle block ranges.
     const bundleBlockRanges = getDefaultBlockRange(5);
     const destinationChainIndex =
       dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
     bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
+    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+    bundleBlockRanges[originChainIndex] = originChainBlockRange;
     await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
     expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(3);
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
