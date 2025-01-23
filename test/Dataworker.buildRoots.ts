@@ -275,7 +275,13 @@ describe("Dataworker: Build merkle roots", async function () {
 
     // Origin chain running balance is incremented by refunded deposit which cancels out the subtraction for
     // bundle deposit.
-    expect(bnZero).to.equal(merkleRoot1.runningBalances[originChainId][l1Token_1.address]);
+    const expectedRunningBalances: RunningBalances = {
+      // Note: There should be no origin chain entry here since there were no deposits.
+      [originChainId]: {
+        [l1Token_1.address]: bnZero,
+      },
+    };
+    expect(expectedRunningBalances).to.deep.equal(merkleRoot1.runningBalances);
     expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
   });
   it("Adds fills to relayer refund root", async function () {
