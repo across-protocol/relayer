@@ -82,7 +82,7 @@ describe("ProfitClient: Consider relay profit", () => {
     const tokenGasCost = nativeGasCost.mul(gasPrice).div(toBN(10).pow(9));
 
     profitClient.setTokenPrice(gasToken.address, gasTokenPriceUsd);
-    profitClient.setGasCost(chainId, { nativeGasCost, tokenGasCost, gasPrice });
+    profitClient.setGasCost(chainId, v3DepositTemplate.outputToken, { nativeGasCost, tokenGasCost, gasPrice });
 
     return { nativeGasCost, tokenGasCost, gasPrice, gasTokenPriceUsd };
   };
@@ -103,13 +103,16 @@ describe("ProfitClient: Consider relay profit", () => {
 
   // Quirk: Use the chainId as the gas price in Gwei. This gives a range of
   // gas prices to test with, since there's a spread in the chainId numbers.
-  const gasCost: { [chainId: number]: TransactionCostEstimate } = Object.fromEntries(
+  const gasCost: { [chainId: number]: { [token: string]: TransactionCostEstimate } } = Object.fromEntries(
     chainIds.map((chainId) => {
       const nativeGasCost = toBN(100_000); // Assume 100k gas for a single fill
       const gasTokenPrice = toBN(chainId);
       const gasPrice = gasTokenPrice;
-      const tokenGasCost = nativeGasCost.mul(gasPrice);
-      return [chainId, { nativeGasCost, tokenGasCost, gasPrice }];
+      const _tokenGasCost = nativeGasCost.mul(gasPrice);
+      const tokenGasCost = Object.fromEntries(
+        Object.values(tokens).map(({ address }) => [address, { nativeGasCost, tokenGasCost: _tokenGasCost, gasPrice }])
+      );
+      return [chainId, tokenGasCost];
     })
   );
 
@@ -260,8 +263,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
   it("Return uint256Max when gas cost fails to be fetched", async () => {
     const destinationChainId = 137;
-    profitClient.setGasCost(destinationChainId, undefined);
     const deposit = { ...v3DepositTemplate, destinationChainId };
+    profitClient.setGasCost(destinationChainId, deposit.outputToken, undefined);
     const { nativeGasCost, tokenGasCost } = await profitClient.getTotalGasCost(deposit);
     expect(nativeGasCost.eq(uint256Max)).to.be.true;
     expect(tokenGasCost.eq(uint256Max)).to.be.true;
@@ -280,9 +283,9 @@ describe("ProfitClient: Consider relay profit", () => {
 
       spyLogger.debug({ message: `Verify exception on chain ${destinationChainId} gas cost estimation failure.` });
       const destinationGasCost = await profitClient.getTotalGasCost(deposit);
-      profitClient.setGasCost(destinationChainId, undefined);
+      profitClient.setGasCost(destinationChainId, deposit.outputToken, undefined);
       await assertPromiseError(profitClient.calculateFillProfitability(deposit, zeroLPFee, minRelayerFeePct));
-      profitClient.setGasCost(destinationChainId, destinationGasCost);
+      profitClient.setGasCost(destinationChainId, deposit.outputToken, destinationGasCost);
 
       spyLogger.debug({ message: `Verifying exception on chain ${destinationChainId} token price lookup failure.` });
       const l1TokenPrice = profitClient.getPriceOfToken(l1Token.address);
@@ -302,11 +305,11 @@ describe("ProfitClient: Consider relay profit", () => {
 
     for (const originChainId of chainIds) {
       for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
-        const { nativeGasCost: baseNativeGasCost, gasPrice } = gasCost[destinationChainId];
+        const { outputToken } = v3DepositTemplate;
 
         for (const token of Object.values(tokens)) {
           const inputToken = randomAddress();
-          const outputToken = randomAddress();
+          const { nativeGasCost: baseNativeGasCost, gasPrice } = gasCost[destinationChainId][token.address];
 
           const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
           const inputAmount = outputAmount
@@ -340,7 +343,7 @@ describe("ProfitClient: Consider relay profit", () => {
             const nativeGasCost = baseNativeGasCost.mul(gasCostMultiplier).div(fixedPoint);
             const tokenGasCost = nativeGasCost.mul(gasPrice);
             const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(fixedPoint);
-            profitClient.setGasCost(destinationChainId, { nativeGasCost, tokenGasCost, gasPrice });
+            profitClient.setGasCost(destinationChainId, deposit.outputToken, { nativeGasCost, tokenGasCost, gasPrice });
 
             const gasCostPct = gasCostUsd.mul(fixedPoint).div(outputAmountUsd);
 
@@ -375,16 +378,13 @@ describe("ProfitClient: Consider relay profit", () => {
 
     for (const originChainId of chainIds) {
       for (const destinationChainId of chainIds.filter((chainId) => chainId !== originChainId)) {
-        const { tokenGasCost } = gasCost[destinationChainId];
-        const gasToken = profitClient.resolveGasToken(destinationChainId);
-        const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
-        const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
-
         for (const token of Object.values(tokens)) {
-          const inputToken = randomAddress();
-          const outputToken = randomAddress();
+          const { tokenGasCost } = gasCost[destinationChainId][token.address];
+          const gasToken = profitClient.resolveGasToken(destinationChainId);
+          const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
+          const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
-          const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
+          const outputAmount = bn10.pow(token.decimals);
           const inputAmount = outputAmount
             .mul(fixedPoint)
             .div(fixedPoint.sub(lpFeePct.add(relayerFeePct).add(gasFeePct)));
@@ -392,13 +392,13 @@ describe("ProfitClient: Consider relay profit", () => {
             ...v3DepositTemplate,
             originChainId,
             destinationChainId,
-            inputToken,
+            inputToken: randomAddress(),
             inputAmount,
-            outputToken,
+            outputToken: token.address,
             outputAmount,
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
-          hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(token.address, token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
