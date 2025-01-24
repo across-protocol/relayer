@@ -23,7 +23,7 @@ import {
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
-  [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
+  [chainId: number]: { [token: string]: { deposits: BigNumber[]; totalRequirement: BigNumber } };
 };
 
 export class TokenClient {
@@ -63,7 +63,7 @@ export class TokenClient {
     return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
   }
 
-  getShortfallDeposits(chainId: number, token: string): number[] {
+  getShortfallDeposits(chainId: number, token: string): BigNumber[] {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
@@ -92,12 +92,12 @@ export class TokenClient {
   // requirement to send all seen relays and the total remaining balance of the relayer.
   getTokenShortfall(): {
     [chainId: number]: {
-      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
+      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber[] };
     };
   } {
     const tokenShortfall: {
       [chainId: number]: {
-        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
+        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber[] };
       };
     } = {};
     Object.entries(this.tokenShortfall).forEach(([_chainId, tokenMap]) => {
