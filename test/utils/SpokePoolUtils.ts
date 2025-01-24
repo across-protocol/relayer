@@ -62,7 +62,7 @@ export async function fillV3(
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
-    ...spreadEvent(lastEvent.args!)
+    ...spreadEvent(lastEvent.args!),
   };
   return fillObject;
 }
@@ -99,7 +99,7 @@ export async function requestSlowFill(
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
-    ...spreadEvent(lastEvent.args!)
+    ...spreadEvent(lastEvent.args!),
   };
   return requestObject;
 }
