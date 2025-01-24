@@ -398,31 +398,12 @@ export async function fillV3Relay(
   const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
 
   return {
-    depositId: args.depositId,
-    originChainId: Number(args.originChainId),
     destinationChainId,
-    depositor: args.depositor,
-    recipient: args.recipient,
-    inputToken: args.inputToken,
-    inputAmount: args.inputAmount,
-    outputToken: args.outputToken,
-    outputAmount: args.outputAmount,
-    message: args.message,
-    fillDeadline: args.fillDeadline,
-    exclusivityDeadline: args.exclusivityDeadline,
-    exclusiveRelayer: args.exclusiveRelayer,
-    relayer: args.relayer,
-    repaymentChainId: Number(args.repaymentChainId),
-    relayExecutionInfo: {
-      updatedRecipient: args.relayExecutionInfo.updatedRecipient,
-      updatedMessage: args.relayExecutionInfo.updatedMessage,
-      updatedOutputAmount: args.relayExecutionInfo.updatedOutputAmount,
-      fillType: args.relayExecutionInfo.fillType,
-    },
     blockNumber,
     transactionHash,
     transactionIndex,
     logIndex,
+    ...spreadEvent(args),
   };
 }
 
