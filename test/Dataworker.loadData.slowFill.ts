@@ -330,8 +330,8 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     await mineRandomBlocks();
 
     // Now, generate fast fills replacing slow fills for all deposits.
-    await fillV3Relay(spokePool_2, originChainDeposit, relayer);
-    await fillV3Relay(spokePool_1, destinationChainDeposit, relayer);
+    await fillV3Relay(spokePool_2, originChainDeposit, relayer, repaymentChainId);
+    await fillV3Relay(spokePool_1, destinationChainDeposit, relayer, repaymentChainId);
 
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
