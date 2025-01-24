@@ -268,9 +268,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
-          deposit,
+          deposit: {
+            ...deposit,
+            depositId: sdkUtils.toBN(deposit.depositId),
+          },
           unfilledAmount: deposit.outputAmount,
-          invalidFills: [invalidFill],
+          invalidFills: [
+            {
+              ...invalidFill,
+              depositId: sdkUtils.toBN(invalidFill.depositId),
+            },
+          ],
           version: configStoreClient.configStoreVersion,
         },
       ]);
@@ -512,9 +520,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
-          deposit,
+          deposit: {
+            ...deposit,
+            depositId: sdkUtils.toBN(deposit.depositId),
+          },
           unfilledAmount: deposit.outputAmount,
-          invalidFills: [invalidFill],
+          invalidFills: [
+            {
+              ...invalidFill,
+              depositId: sdkUtils.toBN(invalidFill.depositId),
+            },
+          ],
           version: configStoreClient.configStoreVersion,
         },
       ]);
