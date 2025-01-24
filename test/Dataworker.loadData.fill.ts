@@ -16,7 +16,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   getDefaultBlockRange,
   getDisabledBlockRanges,
   randomAddress,
@@ -503,7 +503,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(deposits.length).to.equal(0);
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
-      await fillV3(spokePool_2, relayer, depositObject);
+      await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
       await updateAllClients();
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
@@ -559,7 +559,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
-      await fillV3(spokePool_2, relayer, depositObject);
+      await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
       await updateAllClients();
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
@@ -606,7 +606,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
       // However, send a fill that doesn't match with the above deposit. This should produce an invalid fill.
-      await fillV3(spokePool_2, relayer, { ...depositObject, depositId: depositObject.depositId + 1 });
+      await fillV3Relay(spokePool_2, { ...depositObject, depositId: depositObject.depositId + 1 }, relayer);
       await updateAllClients();
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
@@ -714,7 +714,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       await spokePoolClient_1.update();
       const deposit = spokePoolClient_1.getDeposits()[0];
-      await fillV3(spokePool_2, relayer, deposit);
+      await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
       await spokePoolClient_2.update();
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
         ...spokePoolClients,
@@ -965,8 +965,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       const deposit1 = spokePoolClient_1.getDeposits()[0];
       const deposit2 = spokePoolClient_2.getDeposits()[0];
 
-      await fillV3(spokePool_2, relayer, deposit1, originChainId);
-      await fillV3(spokePool_1, relayer, deposit2, originChainId);
+      await fillV3Relay(spokePool_2, deposit1, relayer, repaymentChainId);
+      await fillV3Relay(spokePool_1, deposit2, relayer, repaymentChainId);
 
       // Approximate refunds should count both fills
       await updateAllClients();
@@ -975,8 +975,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5)
       );
       const expectedRefunds = {
-        [originChainId]: {
-          [erc20_1.address]: {
+        [repaymentChainId]: {
+          [l1Token_1.address]: {
             [relayer.address]: BigNumber.from(amountToDeposit.mul(2)).toString(),
           },
         },
@@ -1006,7 +1006,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(convertToNumericStrings(refunds)).to.deep.equal(expectedRefunds);
 
       // Send an invalid fill and check it is not included.
-      await fillV3(spokePool_1, relayer, { ...deposit1, depositId: deposit1.depositId + 1 }, originChainId);
+      await fillV3Relay(spokePool_2, { ...deposit1, depositId: deposit1.depositId + 1 }, relayer, repaymentChainId);
       await updateAllClients();
       expect(
         convertToNumericStrings(
@@ -1016,8 +1016,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           )
         )
       ).to.deep.equal({
-        [originChainId]: {
-          [erc20_1.address]: {
+        [repaymentChainId]: {
+          [l1Token_1.address]: {
             [relayer.address]: amountToDeposit.mul(2).toString(),
           },
         },
