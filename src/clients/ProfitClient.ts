@@ -630,7 +630,7 @@ export class ProfitClient {
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
     const sampleDeposit = {
-      depositId: 0,
+      depositId: bnZero,
       depositor: TEST_RECIPIENT,
       recipient: TEST_RECIPIENT,
       inputToken: ZERO_ADDRESS, // Not verified by the SpokePool.
