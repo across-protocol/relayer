@@ -576,7 +576,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
       // However, send a fill that doesn't match with the above deposit. This should produce an invalid fill.
-      await fillV3Relay(spokePool_2, { ...depositObject, depositId: depositObject.depositId + 1 }, relayer);
+      await fillV3Relay(spokePool_2, { ...depositObject, depositId: depositObject.depositId.add(1) }, relayer);
       await updateAllClients();
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
@@ -930,7 +930,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(convertToNumericStrings(refunds)).to.deep.equal(expectedRefunds);
 
       // Send an invalid fill and check it is not included.
-      await fillV3Relay(spokePool_2, { ...deposit1, depositId: deposit1.depositId + 1 }, relayer, repaymentChainId);
+      await fillV3Relay(spokePool_2, { ...deposit1, depositId: deposit1.depositId.add(1) }, relayer, repaymentChainId);
       await updateAllClients();
       expect(
         convertToNumericStrings(

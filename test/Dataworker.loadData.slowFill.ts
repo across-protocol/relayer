@@ -551,7 +551,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
       inputAmount: deposit.inputAmount.add(1),
       outputAmount: deposit.outputAmount.add(1),
       originChainId: destinationChainId,
-      depositId: deposit.depositId + 1,
+      depositId: deposit.depositId.add(1),
       fillDeadline: deposit.fillDeadline + 1,
       exclusivityDeadline: deposit.exclusivityDeadline + 1,
       message: randomAddress(),
@@ -623,7 +623,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(deposits.length).to.equal(0);
 
     // Send a slow fill request now and force the bundle data client to query for the historical deposit.
-    await requestSlowFill(spokePool_2, relayer, { ...depositObject, depositId: depositObject.depositId + 1 });
+    await requestSlowFill(spokePool_2, relayer, { ...depositObject, depositId: depositObject.depositId.add(1) });
     await updateAllClients();
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
