@@ -258,7 +258,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     // Make an invalid fills by tweaking outputAmount and depositId, respectively.
     const fakeDeposit = { ...deposit, outputAmount: deposit.outputAmount.sub(bnOne) };
     const invalidFill = await fillV3Relay(spokePool_2, fakeDeposit, relayer);
-    const wrongDepositId = { ...deposit, depositId: deposit.depositId + 1 };
+    const wrongDepositId = { ...deposit, depositId: deposit.depositId.add(1) };
     await fillV3Relay(spokePool_2, wrongDepositId, relayer);
 
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
@@ -268,9 +268,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
-          deposit,
+          deposit: {
+            ...deposit,
+            depositId: sdkUtils.toBN(deposit.depositId),
+          },
           unfilledAmount: deposit.outputAmount,
-          invalidFills: [invalidFill],
+          invalidFills: [
+            {
+              ...invalidFill,
+              depositId: sdkUtils.toBN(invalidFill.depositId),
+            },
+          ],
           version: configStoreClient.configStoreVersion,
         },
       ]);
@@ -512,9 +520,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
-          deposit,
+          deposit: {
+            ...deposit,
+            depositId: sdkUtils.toBN(deposit.depositId),
+          },
           unfilledAmount: deposit.outputAmount,
-          invalidFills: [invalidFill],
+          invalidFills: [
+            {
+              ...invalidFill,
+              depositId: sdkUtils.toBN(invalidFill.depositId),
+            },
+          ],
           version: configStoreClient.configStoreVersion,
         },
       ]);

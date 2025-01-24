@@ -1,4 +1,4 @@
-import { Contract, bnZero } from "../../src/utils";
+import { Contract, bnZero, spreadEvent } from "../../src/utils";
 import { interfaces } from "@across-protocol/sdk";
 import { repaymentChainId } from "../constants";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
@@ -57,31 +57,12 @@ export async function fillV3(
   ]);
   const lastEvent = events[events.length - 1];
   const fillObject: interfaces.FillWithBlock = {
-    inputToken: lastEvent.args?.inputToken,
-    outputToken: lastEvent.args?.outputToken,
-    inputAmount: lastEvent.args?.inputAmount,
-    outputAmount: lastEvent.args?.outputAmount,
-    originChainId: lastEvent.args?.originChainId,
-    repaymentChainId: lastEvent.args?.repaymentChainId,
-    relayer: lastEvent.args?.relayer,
-    depositId: lastEvent.args?.depositId,
-    fillDeadline: lastEvent.args?.fillDeadline,
-    exclusivityDeadline: lastEvent.args?.exclusivityDeadline,
-    depositor: lastEvent.args?.depositor,
-    recipient: lastEvent.args?.recipient,
-    exclusiveRelayer: lastEvent.args?.exclusiveRelayer,
-    message: lastEvent.args?.message,
-    relayExecutionInfo: {
-      updatedRecipient: lastEvent.args?.updatedRecipient,
-      updatedMessage: lastEvent.args?.updatedMessage,
-      updatedOutputAmount: lastEvent.args?.updatedOutputAmount,
-      fillType: lastEvent.args?.fillType,
-    },
     destinationChainId,
     blockNumber: lastEvent.blockNumber,
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
+    ...spreadEvent(lastEvent.args!),
   };
   return fillObject;
 }
@@ -113,23 +94,12 @@ export async function requestSlowFill(
   ]);
   const lastEvent = events[events.length - 1];
   const requestObject: interfaces.SlowFillRequestWithBlock = {
-    inputToken: lastEvent.args?.inputToken,
-    outputToken: lastEvent.args?.outputToken,
-    inputAmount: lastEvent.args?.inputAmount,
-    outputAmount: lastEvent.args?.outputAmount,
-    originChainId: lastEvent.args?.originChainId,
-    depositId: lastEvent.args?.depositId,
-    fillDeadline: lastEvent.args?.fillDeadline,
-    exclusivityDeadline: lastEvent.args?.exclusivityDeadline,
-    depositor: lastEvent.args?.depositor,
-    recipient: lastEvent.args?.recipient,
-    exclusiveRelayer: lastEvent.args?.exclusiveRelayer,
-    message: lastEvent.args?.message,
     destinationChainId,
     blockNumber: lastEvent.blockNumber,
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
     transactionIndex: lastEvent.transactionIndex,
+    ...spreadEvent(lastEvent.args!),
   };
   return requestObject;
 }

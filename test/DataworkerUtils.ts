@@ -96,7 +96,7 @@ describe("SlowFill utils", function () {
       outputAmount: bnOne,
       outputToken: randomAddress(),
       depositor: randomAddress(),
-      depositId,
+      depositId: BigNumber.from(depositId),
       originChainId: 1,
       recipient: randomAddress(),
       exclusiveRelayer: ZERO_ADDRESS,
