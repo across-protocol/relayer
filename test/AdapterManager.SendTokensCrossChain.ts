@@ -9,6 +9,7 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   cctpAddressToBytes32,
+  bnZero,
 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import {
@@ -181,11 +182,17 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
-      relayer.address, // to
+    const bridgeCalldata = l1OptimismBridge.interface.encodeFunctionData("depositETHTo", [
+      relayer.address,
+      adapterManager.adapters[chainId].bridges[mainnetTokens.weth].l2Gas,
+      "0x",
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId, // chainId
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2Gas, // l2Gas
-      chainId // chainId
+      amountToSend,
+      bnZero,
+      bridgeCalldata // depositETHTo
     );
   });
 
@@ -225,9 +232,13 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToPolygon).to.have.been.calledWith(
-      relayer.address, // to
-      amountToSend // amount
+    const bridgeCalldata = l1PolygonRootChainManager.interface.encodeFunctionData("depositEtherFor", [relayer.address]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId,
+      amountToSend, // amount
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
   });
 
@@ -314,14 +325,28 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWith(
+    const fee = await l1MailboxContract.l2TransactionBaseCost(
+      await l1MailboxContract.provider.getGasPrice(),
+      2_000_000,
+      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT
+    );
+    const bridgeCalldata = l1MailboxContract.interface.encodeFunctionData("requestL2Transaction", [
       relayer.address,
       amountToSend,
+      "0x",
       2_000_000,
       zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT,
-      relayer.address
+      [],
+      relayer.address,
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId,
+      amountToSend.add(fee),
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
-    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(toBN(0));
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWithValue(toBN(0));
   });
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
@@ -379,11 +404,17 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
-      relayer.address, // to
+    const bridgeCalldata = l1BaseBridge.interface.encodeFunctionData("depositETHTo", [
+      relayer.address,
+      adapterManager.adapters[chainId].bridges[mainnetTokens.weth].l2Gas,
+      "0x",
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId, // chainId
       amountToSend, // amount
-      addAttrib(adapterManager.adapters[chainId]).bridges[mainnetTokens.weth].l2Gas, // l2Gas
-      chainId // chainId
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
   });
 });
