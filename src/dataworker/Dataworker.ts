@@ -1113,7 +1113,7 @@ export class Dataworker {
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
-                event.originChainId === leaf.relayData.originChainId && event.depositId === leaf.relayData.depositId
+                event.originChainId === leaf.relayData.originChainId && event.depositId.eq(leaf.relayData.depositId)
             );
 
             // Only return true if no leaf was found in the list of executed leaves.
@@ -1196,7 +1196,7 @@ export class Dataworker {
       const fill = _.findLast(sortedFills, (fill) => {
         if (
           !(
-            fill.depositId === relayData.depositId &&
+            fill.depositId.eq(relayData.depositId) &&
             fill.originChainId === relayData.originChainId &&
             sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
           )
