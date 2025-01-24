@@ -529,7 +529,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
 
       // Send a fill now and force the bundle data client to query for the historical deposit.
-      await fillV3Relay(spokePool_2, depositObject, relayer);
+      await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
       await updateAllClients();
       const fills = spokePoolClient_2.getFills();
       expect(fills.length).to.equal(1);
@@ -672,7 +672,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       await spokePoolClient_1.update();
       const deposit = spokePoolClient_1.getDeposits()[0];
-      await fillV3Relay(spokePool_2, deposit, relayer);
+      await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
       await spokePoolClient_2.update();
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
         ...spokePoolClients,
