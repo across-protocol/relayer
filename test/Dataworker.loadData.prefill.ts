@@ -9,7 +9,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   getDefaultBlockRange,
   randomAddress,
   smock,
@@ -69,7 +69,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         // Mine fill, update spoke pool client to advance its latest block searched far enough such that the
         // fillStatuses() call and findFillEvent() queries work but ignore the fill event to force the Bundle Client
         // to query fresh for the fill status.
-        await fillV3(spokePoolClient_2.spokePool, relayer, deposit);
+        await fillV3Relay(spokePoolClient_2.spokePool, deposit, relayer, repaymentChainId);
         await spokePoolClient_2.update([]);
         expect(spokePoolClient_2.getFills().length).to.equal(0);
 
