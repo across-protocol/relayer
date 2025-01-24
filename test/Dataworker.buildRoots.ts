@@ -11,7 +11,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   getDefaultBlockRange,
   requestSlowFill,
   toBN,
@@ -109,8 +109,8 @@ describe("Dataworker: Build merkle roots", async function () {
     const [deposit1] = spokePoolClients[originChainId].getDeposits();
     const [deposit2] = spokePoolClients[destinationChainId].getDeposits();
 
-    await fillV3(spokePool_2, relayer, deposit1, repaymentChainId);
-    await fillV3(spokePool_1, relayer, deposit2, repaymentChainId);
+    await fillV3Relay(spokePool_2, deposit1, relayer, repaymentChainId);
+    await fillV3Relay(spokePool_1, deposit2, relayer, repaymentChainId);
     await updateAllClients();
     const [fill1] = spokePoolClients[destinationChainId].getFills();
     const [fill2] = spokePoolClients[originChainId].getFills();
@@ -220,7 +220,7 @@ describe("Dataworker: Build merkle roots", async function () {
     expect({}).to.deep.equal(merkleRoot1.realizedLpFees);
 
     // Send a fast fill in a second bundle block range.
-    await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+    await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
     await updateAllClients();
     const [fill] = spokePoolClients[destinationChainId].getFills();
 
@@ -297,7 +297,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     const [deposit] = spokePoolClients[originChainId].getDeposits();
 
-    await fillV3(spokePool_2, relayer, deposit, repaymentChainId);
+    await fillV3Relay(spokePool_2, deposit, relayer, repaymentChainId);
     await updateAllClients();
     const { runningBalances, leaves } = await dataworkerInstance.buildPoolRebalanceRoot(
       getDefaultBlockRange(2),

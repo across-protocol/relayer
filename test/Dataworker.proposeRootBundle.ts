@@ -8,7 +8,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   lastSpyLogIncludes,
   lastSpyLogLevel,
   requestSlowFill,
@@ -130,7 +130,7 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 4:
     // Submit another fill and check that dataworker proposes another root:
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
     const latestBlock4 = await hubPool.provider.getBlockNumber();
     const blockRange4 = [
@@ -193,7 +193,7 @@ describe("Dataworker: Propose root bundle", async function () {
     );
 
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(multiCallerClient.transactionCount()).to.equal(0);

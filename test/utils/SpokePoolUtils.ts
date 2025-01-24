@@ -1,6 +1,5 @@
 import { Contract, bnZero, spreadEvent } from "../../src/utils";
 import { interfaces } from "@across-protocol/sdk";
-import { repaymentChainId } from "../constants";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
 import { SignerWithAddress } from "./utils";
 
@@ -24,47 +23,6 @@ export function V3FillFromDeposit(
     },
   };
   return fill;
-}
-
-export async function fillV3(
-  spokePool: Contract,
-  relayer: SignerWithAddress,
-  deposit: interfaces.Deposit,
-  _repaymentChainId = repaymentChainId
-): Promise<interfaces.FillWithBlock> {
-  await spokePool
-    .connect(relayer)
-    .fillV3Relay(
-      [
-        deposit.depositor,
-        deposit.recipient,
-        deposit.exclusiveRelayer,
-        deposit.inputToken,
-        deposit.outputToken,
-        deposit.inputAmount,
-        deposit.outputAmount,
-        deposit.originChainId,
-        deposit.depositId,
-        deposit.fillDeadline,
-        deposit.exclusivityDeadline,
-        deposit.message,
-      ],
-      _repaymentChainId
-    );
-  const [events, destinationChainId] = await Promise.all([
-    spokePool.queryFilter(spokePool.filters.FilledV3Relay()),
-    spokePool.chainId(),
-  ]);
-  const lastEvent = events[events.length - 1];
-  const fillObject: interfaces.FillWithBlock = {
-    destinationChainId,
-    blockNumber: lastEvent.blockNumber,
-    transactionHash: lastEvent.transactionHash,
-    logIndex: lastEvent.logIndex,
-    transactionIndex: lastEvent.transactionIndex,
-    ...spreadEvent(lastEvent.args!),
-  };
-  return fillObject;
 }
 
 export async function requestSlowFill(
