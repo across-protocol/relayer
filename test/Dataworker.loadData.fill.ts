@@ -889,8 +889,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       const deposit1 = spokePoolClient_1.getDeposits()[0];
       const deposit2 = spokePoolClient_2.getDeposits()[0];
 
-      await fillV3Relay(spokePool_2, deposit1, relayer, originChainId);
-      await fillV3Relay(spokePool_1, deposit2, relayer, originChainId);
+      await fillV3Relay(spokePool_2, deposit1, relayer, repaymentChainId);
+      await fillV3Relay(spokePool_1, deposit2, relayer, repaymentChainId);
 
       // Approximate refunds should count both fills
       await updateAllClients();
@@ -899,8 +899,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         getDefaultBlockRange(5)
       );
       const expectedRefunds = {
-        [originChainId]: {
-          [erc20_1.address]: {
+        [repaymentChainId]: {
+          [l1Token_1.address]: {
             [relayer.address]: BigNumber.from(amountToDeposit.mul(2)).toString(),
           },
         },
@@ -930,7 +930,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(convertToNumericStrings(refunds)).to.deep.equal(expectedRefunds);
 
       // Send an invalid fill and check it is not included.
-      await fillV3Relay(spokePool_1, { ...deposit1, depositId: deposit1.depositId + 1 }, relayer, originChainId);
+      await fillV3Relay(spokePool_2, { ...deposit1, depositId: deposit1.depositId + 1 }, relayer, repaymentChainId);
       await updateAllClients();
       expect(
         convertToNumericStrings(
@@ -940,8 +940,8 @@ describe("Dataworker: Load data used in all functions", async function () {
           )
         )
       ).to.deep.equal({
-        [originChainId]: {
-          [erc20_1.address]: {
+        [repaymentChainId]: {
+          [l1Token_1.address]: {
             [relayer.address]: amountToDeposit.mul(2).toString(),
           },
         },
