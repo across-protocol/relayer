@@ -7,12 +7,12 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=20.18.0"
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.30",
     "@across-protocol/contracts": "^3.0.25",
-    "@across-protocol/sdk": "^3.4.12",
+    "@across-protocol/sdk": "^3.4.13",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
