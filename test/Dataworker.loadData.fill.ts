@@ -228,19 +228,15 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
       // Send unexpired deposit
-      const unexpiredDeposits = [generateV3Deposit()];
+      generateV3Deposit();
       // Send expired deposit
       const expiredDeposits = [generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 })];
-      const depositEvents = [...unexpiredDeposits, ...expiredDeposits];
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
       );
 
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
-        depositEvents.map((event) => event.args.depositId)
-      );
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
       expect(
         data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)
@@ -286,6 +282,40 @@ describe("Dataworker: Load data used in all functions", async function () {
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].depositId).to.equal(deposits[1].args.depositId);
+    });
+    it("Includes duplicate deposits in bundle data", async function () {
+      generateV3Deposit();
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const depositToDuplicate = mockOriginSpokePoolClient.getDeposits()[0];
+      mockOriginSpokePoolClient.depositV3(depositToDuplicate);
+      mockOriginSpokePoolClient.depositV3(depositToDuplicate);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      expect(
+        mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId).length
+      ).to.equal(3);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+    });
+    it("Filters duplicate deposits out of block range", async function () {
+      const deposit = generateV3Deposit({ blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const depositToDuplicate = mockOriginSpokePoolClient.getDeposits()[0];
+      const duplicateDeposit = mockOriginSpokePoolClient.depositV3({
+        ...depositToDuplicate,
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
+      });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      expect(
+        mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId).length
+      ).to.equal(2);
+      const originChainBlockRange = [deposit.blockNumber, duplicateDeposit.blockNumber - 1];
+      // Substitute origin chain bundle block range.
+      const bundleBlockRanges = [originChainBlockRange].concat(getDefaultBlockRange(5).slice(1));
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
     });
     it("Ignores expired deposits that were filled in same bundle", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
@@ -590,9 +620,18 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
     it("Filters fills out of block range", async function () {
-      generateV3Deposit({ outputToken: randomAddress() });
-      generateV3Deposit({ outputToken: randomAddress() });
-      generateV3Deposit({ outputToken: randomAddress() });
+      generateV3Deposit({
+        outputToken: randomAddress(),
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
+      });
+      generateV3Deposit({
+        outputToken: randomAddress(),
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
+      });
+      generateV3Deposit({
+        outputToken: randomAddress(),
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
+      });
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -607,13 +646,16 @@ describe("Dataworker: Load data used in all functions", async function () {
           blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 21,
         }),
       ];
-      // Create a block range that contains only the middle event.
+      // Create a block range that contains only the middle events.
       const destinationChainBlockRange = [fills[1].blockNumber - 1, fills[1].blockNumber + 1];
-      // Substitute destination chain bundle block range.
+      const originChainBlockRange = [deposits[1].blockNumber - 1, deposits[1].blockNumber + 1];
+      // Substitute bundle block ranges.
       const bundleBlockRanges = getDefaultBlockRange(5);
       const destinationChainIndex =
         dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
       bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      bundleBlockRanges[originChainIndex] = originChainBlockRange;
       await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
       expect(mockDestinationSpokePoolClient.getFills().length).to.equal(fills.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
@@ -711,6 +753,37 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data2.bundleDepositsV3).to.deep.equal({});
       expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
     });
+    it("Includes duplicate prior bundle expired deposits", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      // Send deposit that expires in this bundle and send duplicate at same block.
+      const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]);
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+
+      // Now, load a bundle that doesn't include the deposits in its range.
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
+      const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+
+      // Now, there is no bundle deposit but still two expired deposits to refund.
+      expect(data2.bundleDepositsV3).to.deep.equal({});
+      expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+    });
     it("Handles when deposit is greater than origin bundle end block but fill is within range", async function () {
       // Send deposit after origin chain block range.
       const blockRanges = getDefaultBlockRange(5);
@@ -725,8 +798,11 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(blockRanges, spokePoolClients);
       expect(data1.bundleDepositsV3).to.deep.equal({});
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.false;
+
+      // Fill should not be included since we cannot validate fills when the deposit is in a following bundle.
+      // This fill is considered a "pre-fill" and will be validated when the deposit is included in a bundle.
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
     });
     it("Does not count prior bundle expired deposits that were filled", async function () {
       // Send deposit that expires in this bundle.
