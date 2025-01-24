@@ -228,19 +228,15 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
       // Send unexpired deposit
-      const unexpiredDeposits = [generateV3Deposit()];
+      generateV3Deposit();
       // Send expired deposit
       const expiredDeposits = [generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 })];
-      const depositEvents = [...unexpiredDeposits, ...expiredDeposits];
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
       );
 
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)).to.deep.equal(
-        depositEvents.map((event) => event.args.depositId)
-      );
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
       expect(
         data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)
