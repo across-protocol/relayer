@@ -232,9 +232,9 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     await mineRandomBlocks();
 
     // Now, generate fast fills replacing slow fills for all deposits.
-    await fillV3Relay(spokePool_2, deposits[0], relayer);
-    await fillV3Relay(spokePool_2, deposits[1], relayer);
-    await fillV3Relay(spokePool_2, deposits[2], relayer);
+    await fillV3Relay(spokePool_2, deposits[0], relayer, repaymentChainId);
+    await fillV3Relay(spokePool_2, deposits[1], relayer, repaymentChainId);
+    await fillV3Relay(spokePool_2, deposits[2], relayer, repaymentChainId);
 
     // Construct a spoke pool client with a small search range that would not include the first fill.
     spokePoolClient_2.firstBlockToSearch = missingSlowFillRequestBlock + 1;
@@ -330,8 +330,8 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     await mineRandomBlocks();
 
     // Now, generate fast fills replacing slow fills for all deposits.
-    await fillV3Relay(spokePool_2, originChainDeposit, relayer);
-    await fillV3Relay(spokePool_1, destinationChainDeposit, relayer);
+    await fillV3Relay(spokePool_2, originChainDeposit, relayer, repaymentChainId);
+    await fillV3Relay(spokePool_1, destinationChainDeposit, relayer, repaymentChainId);
 
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
