@@ -36,6 +36,7 @@
     "lodash": "^4.17.21",
     "lodash.get": "^4.4.2",
     "minimist": "^1.2.8",
+    "node-gyp": "^11.0.0",
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
