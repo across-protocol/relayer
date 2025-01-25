@@ -609,8 +609,8 @@ export class ProfitClient {
     const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
     const currentTime = getCurrentTime();
 
-    // Prefer USDC on mainnet because it's consistent in terms of gas estimation (no unwrap conditional).
-    // Prefer WETH on testnet because it's more likely to be configured for the destination SpokePool.
+    // Prefer USDC on mainnet because it is consistent in terms of gas estimation (no unwrap conditional).
+    // Prefer WETH on testnet because it is more likely to be configured for the destination SpokePool.
     // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
     // the main RL address because it has all supported tokens and approvals in place on all chains.
     const testSymbols = {
@@ -630,7 +630,7 @@ export class ProfitClient {
     // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
     const sampleDeposit = {
-      depositId: 0,
+      depositId: bnZero,
       depositor: TEST_RECIPIENT,
       recipient: TEST_RECIPIENT,
       inputToken: ZERO_ADDRESS, // Not verified by the SpokePool.

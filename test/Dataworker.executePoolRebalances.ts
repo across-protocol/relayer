@@ -22,7 +22,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   smock,
   sinon,
   lastSpyLogIncludes,
@@ -120,7 +120,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     // Executing leaves before there is a bundle should do nothing:
@@ -189,7 +189,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     );
     await updateAllClients();
     // Fill and take repayment on a non-mainnet spoke pool.
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     const balanceAllocator = getNewBalanceAllocator();

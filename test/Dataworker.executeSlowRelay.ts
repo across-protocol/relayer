@@ -10,7 +10,7 @@ import {
   originChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3, requestSlowFill } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay, requestSlowFill } from "./utils";
 import { interfaces } from "@across-protocol/sdk";
 
 // Tested
@@ -158,7 +158,7 @@ describe("Dataworker: Execute slow relays", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
     // Replace slow fill, and check that it no longer tries to get executed by dataworker.
-    await fillV3(spokePool_2, relayer, deposit);
+    await fillV3Relay(spokePool_2, deposit, relayer);
     await updateAllClients();
     multiCallerClient.clearTransactionQueue();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));
