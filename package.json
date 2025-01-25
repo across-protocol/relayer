@@ -49,6 +49,7 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "cd node_modules/bigint-buffer && node-gyp configure && node-gyp build",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
