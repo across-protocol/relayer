@@ -19,7 +19,6 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
-  ZERO_ADDRESS,
   Profiler,
   formatGwei,
 } from "../utils";
