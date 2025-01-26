@@ -2,6 +2,7 @@ import { SpokePoolClient, TokenClient } from "../src/clients";
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
+  BigNumber,
   Contract,
   SignerWithAddress,
   createSpyLogger,
@@ -82,7 +83,7 @@ describe("TokenClient: Token shortfall", async function () {
     const balance = toBNWei(69);
     await erc20_2.mint(owner.address, balance);
     await updateAllClients();
-    const depositId = 1;
+    const depositId = BigNumber.from(1);
     let needed = toBNWei(420);
     let shortfall = needed.sub(balance);
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId, toBNWei(420));
@@ -93,7 +94,7 @@ describe("TokenClient: Token shortfall", async function () {
     expect(tokenShortFallData.deposits).to.deep.equal([depositId]);
 
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
-    const depositId2 = 2;
+    const depositId2 = BigNumber.from(2);
 
     tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId2, toBNWei(42));
     needed = needed.add(toBNWei(42));
