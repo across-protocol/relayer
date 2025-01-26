@@ -292,11 +292,7 @@ export class Relayer {
       return false;
     }
 
-    if (
-      deposit.exclusiveRelayer !== ZERO_ADDRESS &&
-      deposit.exclusivityDeadline > currentTime &&
-      getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
-    ) {
+    if (deposit.exclusivityDeadline >= currentTime && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
       return false;
     }
 
