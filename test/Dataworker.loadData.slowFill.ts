@@ -27,9 +27,9 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS } from "../src/utils";
+import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
@@ -56,8 +56,9 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
   function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): Event {
     return mockOriginSpokePoolClient.depositV3({
       inputToken: erc20_1.address,
+      inputAmount: eventOverride?.inputAmount ?? undefined,
       outputToken: eventOverride?.outputToken ?? erc20_2.address,
-      message: "0x",
+      message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
       destinationChainId,
@@ -1030,6 +1031,29 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(data1.bundleDepositsV3).to.deep.equal({});
     expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
+  });
+
+  it("Does not create slow fill for zero value deposit", async function () {
+    generateV3Deposit({
+      inputAmount: bnZero,
+      message: "0x",
+    });
+    generateV3Deposit({
+      inputAmount: bnZero,
+      message: "0x",
+    });
+
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+    generateSlowFillRequestFromDeposit(deposits[0]);
+    generateSlowFillRequestFromDeposit({
+      ...deposits[1],
+      message: sdkConstants.EMPTY_MESSAGE_HASH,
+    });
+    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
   });
 });
