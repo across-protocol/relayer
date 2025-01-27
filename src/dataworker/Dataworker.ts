@@ -1290,7 +1290,7 @@ export class Dataworker {
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
         `Origin chain: ${relayData.originChainId}\n` +
         `Destination chain:${chainId}\n` +
-        `Deposit Id: ${relayData.depositId}\n` +
+        `Deposit Id: ${relayData.depositId.toString()}\n` +
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
