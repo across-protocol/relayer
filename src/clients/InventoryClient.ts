@@ -436,7 +436,7 @@ export class InventoryClient {
     if (!this.validateOutputToken(deposit)) {
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
       throw new Error(
-        `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId}` +
+        `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId.toString()}` +
           ` (${inputToken} != ${outputToken})`
       );
     }
@@ -572,7 +572,7 @@ export class InventoryClient {
       this.log(
         `Evaluated taking repayment on ${
           chainId === originChainId ? "origin" : chainId === destinationChainId ? "destination" : "slow withdrawal"
-        } chain ${chainId} for deposit ${deposit.depositId}: ${
+        } chain ${chainId} for deposit ${deposit.depositId.toString()}: ${
           expectedPostRelayAllocation.lte(effectiveTargetPct) ? "UNDERALLOCATED ✅" : "OVERALLOCATED ❌"
         }`,
         {
