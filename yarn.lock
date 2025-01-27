@@ -53,10 +53,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@^4.0.0-beta.5":
-  version "4.0.0-beta.5"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.0.0-beta.5.tgz#e6a0c5dc1a623b782ed20ad96d406b89a279b1cd"
-  integrity sha512-/GowufxWEXWK2mzB2F2M78XGxG8jaxp08AJm33BZ0kCuL16LkC/CbKEJ3yGeMkNORWYRXvS5oxj/lFaounUKrg==
+"@across-protocol/sdk@^4.0.0-beta.6":
+  version "4.0.0-beta.6"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.0.0-beta.6.tgz#2a5575cc27658832d5b7a54977d3988c0ad3151f"
+  integrity sha512-xq39AAvB5432YkOtaLck5xSGoL43F9nyktCSrrp0Grc/rQUsqrfLDV5wuQw1+iu047fbb77on1YTlKpe1c+2rw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.30"
