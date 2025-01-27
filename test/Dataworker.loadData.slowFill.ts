@@ -15,10 +15,8 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3Relay,
   getDefaultBlockRange,
   getDisabledBlockRanges,
-  mineRandomBlocks,
   randomAddress,
   requestSlowFill,
   sinon,
@@ -27,7 +25,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/utils";
+import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS, bnZero } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
@@ -182,194 +180,6 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     );
   });
 
-  it("Filters for fast fills replacing slow fills from older bundles", async function () {
-    // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
-    // Generate a second deposit that can be slow filled but will be slow filled in an older bundle
-    // Generate a third deposit that does get slow filled but the slow fill is not "seen" by the client.
-    const depositWithMissingSlowFillRequest = await depositV3(
-      spokePool_1,
-      destinationChainId,
-      depositor,
-      erc20_1.address,
-      amountToDeposit,
-      erc20_2.address,
-      amountToDeposit
-    );
-    await requestSlowFill(spokePool_2, relayer, depositWithMissingSlowFillRequest);
-    const missingSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
-    await mineRandomBlocks();
-
-    const depositsWithSlowFillRequests = [
-      await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        erc20_1.address,
-        amountToDeposit,
-        erc20_1.address,
-        amountToDeposit
-      ),
-      await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        erc20_1.address,
-        amountToDeposit,
-        erc20_2.address,
-        amountToDeposit
-      ),
-    ];
-
-    await spokePoolClient_1.update();
-    const deposits = spokePoolClient_1.getDeposits();
-    expect(deposits.length).to.equal(3);
-    const eligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address === x.outputToken);
-    const ineligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address !== x.outputToken);
-
-    // Generate slow fill requests for the slow fill-eligible deposits
-    await requestSlowFill(spokePool_2, relayer, eligibleSlowFills[0]);
-    await requestSlowFill(spokePool_2, relayer, ineligibleSlowFills[0]);
-    const lastSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
-    await mineRandomBlocks();
-
-    // Now, generate fast fills replacing slow fills for all deposits.
-    await fillV3Relay(spokePool_2, deposits[0], relayer, repaymentChainId);
-    await fillV3Relay(spokePool_2, deposits[1], relayer, repaymentChainId);
-    await fillV3Relay(spokePool_2, deposits[2], relayer, repaymentChainId);
-
-    // Construct a spoke pool client with a small search range that would not include the first fill.
-    spokePoolClient_2.firstBlockToSearch = missingSlowFillRequestBlock + 1;
-    spokePoolClient_2.eventSearchConfig.fromBlock = spokePoolClient_2.firstBlockToSearch;
-
-    // There should be one "missing" slow fill request.
-    await spokePoolClient_2.update();
-    const fills = spokePoolClient_2.getFills();
-    expect(fills.length).to.equal(3);
-    const slowFillRequests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
-    expect(slowFillRequests.length).to.equal(2);
-    assert(
-      fills.every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
-      "All fills should be replaced slow fills"
-    );
-    assert(
-      fills.every((x) => x.blockNumber > lastSlowFillRequestBlock),
-      "Fills should be later than slow fill request"
-    );
-
-    // Create a block range that would make the slow fill requests appear to be in an "older" bundle.
-    const destinationChainBlockRange = [lastSlowFillRequestBlock + 1, getDefaultBlockRange(5)[0][1]];
-    // Substitute destination chain bundle block range.
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    const destinationChainIndex =
-      dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
-    bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, {
-      ...spokePoolClients,
-      [originChainId]: spokePoolClient_1,
-      [destinationChainId]: spokePoolClient_2,
-    });
-
-    // All fills and deposits are valid
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
-    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-
-    // There are two "unexecutable slow fills" because there are two deposits that have "equivalent" input
-    // and output tokens AND:
-    // - one slow fill request does not get seen by the spoke pool client
-    // - one slow fill request is in an older bundle
-    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(2);
-    expect(
-      data1.unexecutableSlowFills[destinationChainId][erc20_2.address].map((x) => x.depositId).sort()
-    ).to.deep.equal([depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort());
-  });
-
-  it("Handles fast fills replacing invalid slow fill request from older bundles", async function () {
-    // Create a Lite chain to test that slow fill requests involving lite chains are ignored.
-    mockConfigStore.updateGlobalConfig(
-      GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
-      JSON.stringify([mockOriginSpokePoolClient.chainId])
-    );
-    await mockConfigStore.update();
-    (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
-    (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
-
-    // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
-    // - first deposit is FROM lite chain
-    // - second deposit is TO lite chain
-    const depositsWithSlowFillRequests = [
-      await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        erc20_1.address,
-        amountToDeposit,
-        erc20_2.address,
-        amountToDeposit
-      ),
-      await depositV3(
-        spokePool_2,
-        originChainId,
-        depositor,
-        erc20_2.address,
-        amountToDeposit,
-        erc20_1.address,
-        amountToDeposit
-      ),
-    ];
-
-    await spokePoolClient_1.update();
-    await spokePoolClient_2.update();
-    const originChainDeposit = spokePoolClient_1.getDeposits()[0];
-    const destinationChainDeposit = spokePoolClient_2.getDeposits()[0];
-
-    // Generate slow fill requests for the slow fill-eligible deposits
-    await requestSlowFill(spokePool_2, relayer, depositsWithSlowFillRequests[0]);
-    await requestSlowFill(spokePool_1, relayer, depositsWithSlowFillRequests[1]);
-    const lastDestinationChainSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
-    const lastOriginChainSlowFillRequestBlock = await spokePool_2.provider.getBlockNumber();
-
-    await mineRandomBlocks();
-
-    // Now, generate fast fills replacing slow fills for all deposits.
-    await fillV3Relay(spokePool_2, originChainDeposit, relayer, repaymentChainId);
-    await fillV3Relay(spokePool_1, destinationChainDeposit, relayer, repaymentChainId);
-
-    await spokePoolClient_1.update();
-    await spokePoolClient_2.update();
-    assert(
-      spokePoolClient_2.getFills().every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
-      "All fills should be replaced slow fills"
-    );
-    assert(
-      spokePoolClient_1.getFills().every((x) => x.relayExecutionInfo.fillType === interfaces.FillType.ReplacedSlowFill),
-      "All fills should be replaced slow fills"
-    );
-
-    // Create a block range that would make the slow fill requests appear to be in an "older" bundle.
-    const destinationChainBlockRange = [lastDestinationChainSlowFillRequestBlock + 1, getDefaultBlockRange(5)[0][1]];
-    const originChainBlockRange = [lastOriginChainSlowFillRequestBlock + 1, getDefaultBlockRange(5)[0][1]];
-    // Substitute destination chain bundle block range.
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    const destinationChainIndex =
-      dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
-    bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
-    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
-    bundleBlockRanges[originChainIndex] = originChainBlockRange;
-
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, {
-      ...spokePoolClients,
-      [originChainId]: spokePoolClient_1,
-      [destinationChainId]: spokePoolClient_2,
-    });
-
-    // All fills are valid. Note, origin chain deposit must take repayment on origin chain.
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-    expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(1);
-
-    // There are zero "unexecutable slow fills" because the slow fill requests in an older bundle are invalid
-    expect(data1.unexecutableSlowFills).to.deep.equal({});
-  });
-
   it("Saves valid slow fill requests under destination chain and token", async function () {
     // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
     generateV3Deposit({ outputToken: randomAddress() });
@@ -388,7 +198,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     );
   });
 
-  it("Ignores disabled chains", async function () {
+  it("Ignores disabled chains for slow fill requests", async function () {
     // Only one deposit is eligible to be slow filled because its input and output tokens are equivalent.
     generateV3Deposit({ outputToken: randomAddress() });
     generateV3Deposit({ outputToken: erc20_2.address });
@@ -428,39 +238,6 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(deposits[1].depositId);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
-  });
-
-  it("Replacing a slow fill request with a fast fill in same bundle doesn't create unexecutable slow fill", async function () {
-    generateV3Deposit({ outputToken: erc20_2.address });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-    const deposits = mockOriginSpokePoolClient.getDeposits();
-
-    generateSlowFillRequestFromDeposit(deposits[0]);
-    generateV3FillFromDeposit(deposits[0], undefined, undefined, undefined, interfaces.FillType.ReplacedSlowFill);
-    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-    expect(data1.bundleSlowFillsV3).to.deep.equal({});
-    expect(data1.unexecutableSlowFills).to.deep.equal({});
-  });
-
-  it("Ignores disabled chains", async function () {
-    generateV3Deposit({ outputToken: erc20_2.address });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-    const deposits = mockOriginSpokePoolClient.getDeposits();
-
-    generateSlowFillRequestFromDeposit(deposits[0]);
-    generateV3FillFromDeposit(deposits[0], undefined, undefined, undefined, interfaces.FillType.ReplacedSlowFill);
-    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill", "FilledV3Relay"]);
-
-    const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
-      getDisabledBlockRanges(),
-      spokePoolClients
-    );
-    expect(emptyData.unexecutableSlowFills).to.deep.equal({});
-    expect(emptyData.bundleFillsV3).to.deep.equal({});
-    expect(emptyData.bundleSlowFillsV3).to.deep.equal({});
   });
 
   it("Handles slow fill requests out of block range", async function () {
@@ -892,146 +669,6 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
-  });
-
-  it("Adds prior bundle expired deposits that requested a slow fill in a prior bundle to unexecutable slow fills", async function () {
-    // Send deposit that expires in this bundle.
-    const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
-      [originChainId, destinationChainId],
-      getDefaultBlockRange(5),
-      spokePoolClients
-    );
-    const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-
-    // Let's make fill status for the relay hash always return RequestedSlowFill.
-    const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
-    mockDestinationSpokePool.fillStatuses
-      .whenCalledWith(expiredDepositHash)
-      .returns(interfaces.FillStatus.RequestedSlowFill);
-
-    // Now, load a bundle that doesn't include the deposit in its range.
-    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
-    const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-
-    // Now, there is no bundle deposit but still an expired deposit to refund.
-    // There is also an unexecutable slow fill.
-    expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
-  });
-
-  it("Does not add prior bundle expired lite chain deposits that requested a slow fill in a prior bundle to unexecutable slow fills", async function () {
-    mockConfigStore.updateGlobalConfig(
-      GLOBAL_CONFIG_STORE_KEYS.LITE_CHAIN_ID_INDICES,
-      JSON.stringify([mockOriginSpokePoolClient.chainId])
-    );
-    await mockConfigStore.update();
-    (mockOriginSpokePoolClient as any).configStoreClient = mockConfigStore;
-    (mockDestinationSpokePool as any).configStoreClient = mockConfigStore;
-    const updateEventTimestamp = mockConfigStore.liteChainIndicesUpdates[0].timestamp;
-
-    // Send lite chain deposit that expires in this bundle.
-    const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
-      [originChainId, destinationChainId],
-      getDefaultBlockRange(5),
-      spokePoolClients
-    );
-    const expiredDeposit = generateV3Deposit({
-      fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
-      quoteTimestamp: updateEventTimestamp,
-    });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-
-    const deposit = mockOriginSpokePoolClient.getDeposits()[0];
-    assert(deposit.fromLiteChain, "Deposit should be from lite chain");
-
-    // Let's make fill status for the relay hash always return RequestedSlowFill.
-    const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
-    mockDestinationSpokePool.fillStatuses
-      .whenCalledWith(expiredDepositHash)
-      .returns(interfaces.FillStatus.RequestedSlowFill);
-
-    // Now, load a bundle that doesn't include the deposit in its range.
-    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
-    const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-
-    // Now, there is no bundle deposit but still an expired deposit to refund.
-    // There is NOT an unexecutable slow fill.
-    expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.unexecutableSlowFills).to.deep.equal({});
-  });
-
-  it("Does not add prior bundle expired deposits that did not request a slow fill in a prior bundle to unexecutable slow fills", async function () {
-    // Send deposit that expires in this bundle.
-    const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
-      [originChainId, destinationChainId],
-      getDefaultBlockRange(5),
-      spokePoolClients
-    );
-    const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-
-    // Let's make fill status for the relay hash always return Unfilled.
-    const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
-    mockDestinationSpokePool.fillStatuses.whenCalledWith(expiredDepositHash).returns(interfaces.FillStatus.Unfilled);
-
-    // Now, load a bundle that doesn't include the deposit in its range.
-    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
-    const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-
-    // Now, there is no bundle deposit but still an expired deposit to refund.
-    // There is also an unexecutable slow fill.
-    expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.unexecutableSlowFills).to.deep.equal({});
-  });
-
-  it("Does not add unexecutable slow fill for prior bundle expired deposits that requested a slow fill if slow fill request is in current bundle", async function () {
-    // Send deposit that expires in this bundle.
-    const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
-      [originChainId, destinationChainId],
-      getDefaultBlockRange(5),
-      spokePoolClients
-    );
-    const expiredDeposit = generateV3Deposit({ fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1 });
-    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-
-    // If the slow fill request took place in the current bundle, then it is not marked as unexecutable since
-    // it would not have produced a slow fill request.
-    const deposit = mockOriginSpokePoolClient.getDeposits()[0];
-    generateSlowFillRequestFromDeposit(deposit);
-    await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
-
-    // Let's make fill status for the relay hash always return RequestedSlowFill.
-    const expiredDepositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
-    mockDestinationSpokePool.fillStatuses
-      .whenCalledWith(expiredDepositHash)
-      .returns(interfaces.FillStatus.RequestedSlowFill);
-
-    // Now, load a bundle that doesn't include the deposit in its range.
-    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
-    const oldOriginChainToBlock = getDefaultBlockRange(5)[0][1];
-    const bundleBlockRanges = getDefaultBlockRange(5);
-    bundleBlockRanges[originChainIndex] = [expiredDeposit.blockNumber + 1, oldOriginChainToBlock];
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-
-    // Now, there is no bundle deposit but still an expired deposit to refund.
-    // There is also no unexecutable slow fill because the slow fill request was sent in this bundle.
-    expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.unexecutableSlowFills).to.deep.equal({});
-    expect(data1.bundleSlowFillsV3).to.deep.equal({});
   });
 
   it("Does not create slow fill for zero value deposit", async function () {
