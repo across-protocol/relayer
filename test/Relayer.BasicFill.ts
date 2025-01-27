@@ -769,7 +769,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         originChainConfirmations[0].minConfirmations >
         spokePoolClient_2.latestBlockSearched - deposit1.blockNumber
       ) {
-        await fillV3Relay(spokePool_2, { ...deposit1, depositId: randomNumber(), outputAmount: bnZero }, relayer);
+        await fillV3Relay(
+          spokePool_2,
+          { ...deposit1, depositId: BigNumber.from(randomNumber()), outputAmount: bnZero },
+          relayer
+        );
         await updateAllClients();
       }
       const originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
@@ -795,7 +799,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         originChainConfirmations[0].minConfirmations >
         spokePoolClient_2.latestBlockSearched - deposit2.blockNumber
       ) {
-        await fillV3Relay(spokePool_2, { ...deposit2, depositId: randomNumber(), outputAmount: bnZero }, relayer);
+        await fillV3Relay(
+          spokePool_2,
+          { ...deposit2, depositId: BigNumber.from(randomNumber()), outputAmount: bnZero },
+          relayer
+        );
         await updateAllClients();
       }
 
