@@ -79,7 +79,10 @@ if (require.main === module) {
         args,
         notificationPath: "across-error",
       });
-      logger.debug({ at: cmd ?? "unknown process", message: "Logging full error", error });
+      if (process.env.CONSOLE_LOG_ERRORS) {
+        // eslint-disable-next-line no-console
+        console.error(error);
+      }
     })
     .finally(async () => {
       await waitForLogger(logger);
