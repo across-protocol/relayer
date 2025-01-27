@@ -285,8 +285,8 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     const _firstDepositId = events[fundsDeposited].at(0)?.args?.depositId;
     const _latestDepositId = events[fundsDeposited].at(-1)?.args?.depositId;
     const [firstDepositId, latestDepositId] = [
-      _firstDepositId ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
-      _latestDepositId ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,
+      isDefined(_firstDepositId) ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
+      isDefined(_latestDepositId) ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,
     ];
 
     return {
