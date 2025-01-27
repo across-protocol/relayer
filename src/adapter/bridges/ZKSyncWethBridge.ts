@@ -6,6 +6,7 @@ import {
   EventSearchConfig,
   Provider,
   isContractDeployedToAddress,
+  bnZero,
   ZERO_ADDRESS,
   TOKEN_SYMBOLS_MAP,
   assert,
@@ -18,6 +19,7 @@ import { processEvent } from "../utils";
 import * as zksync from "zksync-ethers";
 import { zkSync as zkSyncUtils } from "../../utils/chains";
 import { matchL2EthDepositAndWrapEvents } from "../../clients/bridges/utils";
+import { gasPriceOracle } from "@across-protocol/sdk";
 
 /* For both the canonical bridge and the ZkSync Weth bridge (this
  * bridge), we need to assume that the l1 and l2 signers contain
@@ -45,9 +47,12 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
+    const { address: mailboxAddress, abi: mailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
+
     this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], l2EthAbi, l2SignerOrProvider);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    this.l1Bridge = new Contract(mailboxAddress, mailboxAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
@@ -79,10 +84,27 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
         )
       : BigNumber.from(2_000_000);
 
+    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(l1Provider);
+    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+    const l2TransactionBaseCost = await this.getL1Bridge().l2TransactionBaseCost(
+      estimatedL1GasPrice,
+      l2GasLimit,
+      this.gasPerPubdataLimit
+    );
+
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2Transaction", [
+      toAddress,
+      amount,
+      "0x",
+      l2GasLimit,
+      this.gasPerPubdataLimit,
+      [],
+      toAddress,
+    ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToZkSync",
-      args: [toAddress, amount, l2GasLimit.toString(), this.gasPerPubdataLimit, toAddress],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount.add(l2TransactionBaseCost), amount, bnZero, bridgeCalldata],
     });
   }
 
@@ -119,10 +141,11 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     } else {
       events = await paginatedEventQuery(
         this.atomicDepositor,
-        this.atomicDepositor.filters.ZkSyncEthDepositInitiated(fromAddress, toAddress),
+        this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
         eventConfig
       );
-      processedEvents = events.map((e) => processEvent(e, "_amount", "_to", "from"));
+      // If we are in this branch, then the depositor is an EOA, so we can assume that from == to.
+      processedEvents = events.map((e) => processEvent(e, "amount", "from", "from"));
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
