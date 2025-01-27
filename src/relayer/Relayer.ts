@@ -240,7 +240,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
-        depositId,
+        depositId: depositId.toString(),
         blockNumber,
         confirmations: latestBlockSearched - blockNumber,
         minConfirmations,
@@ -350,7 +350,7 @@ export class Relayer {
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
           l1Token: l1Token.address,
-          depositId,
+          depositId: depositId.toString(),
           inputToken,
           inputAmount,
           originChainId,
@@ -611,9 +611,8 @@ export class Relayer {
     if (isDefined(this.pendingTxnReceipts[destinationChainId])) {
       this.logger.info({
         at: "Relayer::evaluateFill",
-        message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId}...`,
+        message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId.toString()}...`,
         originChainId,
-        depositId,
         transactionHash,
       });
       return;
@@ -623,8 +622,7 @@ export class Relayer {
     if (deposit.blockNumber > maxBlockNumber) {
       this.logger.debug({
         at: "Relayer::evaluateFill",
-        message: `Skipping ${originChain} deposit ${depositId} due to insufficient deposit confirmations.`,
-        depositId,
+        message: `Skipping ${originChain} deposit ${depositId.toString()} due to insufficient deposit confirmations.`,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
         transactionHash,
@@ -697,7 +695,7 @@ export class Relayer {
           const limits = this.fillLimits[originChainId].slice(limitIdx);
           this.logger.debug({
             at: "Relayer::evaluateFill",
-            message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
+            message: `Skipping ${originChain} deposit ${depositId.toString()} due to anticipated origin chain overcommitment.`,
             blockNumber,
             fillAmountUsd,
             limits,
@@ -723,7 +721,7 @@ export class Relayer {
           at: "Relayer::evaluateFill",
           message: "Skipping self-relay deposit originating from lite chain.",
           originChainId,
-          depositId,
+          depositId: depositId.toString(),
         });
         return;
       }
@@ -974,7 +972,7 @@ export class Relayer {
       // @todo (future) infer the updated outputAmount by zeroing the relayer fee in order to print the correct amount.
       return (
         `Requested slow fill 🐌 of ${outputAmount} ${symbol}` +
-        ` on ${dstChain} for ${srcChain} depositId ${depositId}.`
+        ` on ${dstChain} for ${srcChain} depositId ${depositId.toString()}.`
       );
     };
 
@@ -1001,7 +999,7 @@ export class Relayer {
     const { spokePoolClients } = this.clients;
     this.logger.debug({
       at: "Relayer::fillRelay",
-      message: `Filling v3 deposit ${deposit.depositId} with repayment on ${repaymentChainId}.`,
+      message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
       deposit,
       repaymentChainId,
       realizedLpFeePct,
@@ -1010,7 +1008,9 @@ export class Relayer {
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
     assert(
       !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
-      `Lite chain deposits must be filled on its origin chain (${deposit.originChainId}). Deposit Id: ${deposit.depositId}.`
+      `Lite chain deposits must be filled on its origin chain (${
+        deposit.originChainId
+      }). Deposit Id: ${deposit.depositId.toString()}.`
     );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
@@ -1072,7 +1072,7 @@ export class Relayer {
         at: "Relayer::resolveRepaymentChain",
         message: deposit.fromLiteChain
           ? `Deposit ${depositId} originated from over-allocated lite chain ${originChain}`
-          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId}.`,
+          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`,
         txn: blockExplorerLink(transactionHash, originChainId),
       });
       return {
@@ -1089,9 +1089,8 @@ export class Relayer {
     mark.stop({
       message: `Determined eligible repayment chains ${JSON.stringify(
         preferredChainIds
-      )} for deposit ${depositId} from ${originChain} to ${destinationChain}.`,
+      )} for deposit ${depositId.toString()} from ${originChain} to ${destinationChain}.`,
       preferredChainIds,
-      depositId,
       originChain,
       destinationChain,
     });
@@ -1168,7 +1167,7 @@ export class Relayer {
       profitabilityData = getProfitabilityDataForPreferredChainIndex(preferredChainIndex);
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
-        message: `Selected preferred repayment chain ${preferredChain} for deposit ${depositId}, #${
+        message: `Selected preferred repayment chain ${preferredChain} for deposit ${depositId.toString()}, #${
           preferredChainIndex + 1
         } in eligible chains ${JSON.stringify(preferredChainIds)} list.`,
         profitableRepaymentChainIds,
@@ -1192,7 +1191,7 @@ export class Relayer {
         message: `Preferred chains ${JSON.stringify(
           preferredChainIds
         )} are not profitable. Checking destination chain ${destinationChainId} profitability.`,
-        deposit: { originChain, depositId, destinationChain, transactionHash },
+        deposit: { originChain, depositId: depositId.toString(), destinationChain, transactionHash },
       });
       // Evaluate destination chain profitability to see if we can reset preferred chain.
       const { lpFeePct: destinationChainLpFeePct } = repaymentFees.find(
@@ -1217,7 +1216,7 @@ export class Relayer {
         // maintaining its inventory allocation by sticking to its preferred repayment chain.
         this.logger[this.config.sendingRelaysEnabled ? "info" : "debug"]({
           at: "Relayer::resolveRepaymentChain",
-          message: `🦦 Taking repayment for filling deposit ${depositId} on preferred chains ${JSON.stringify(
+          message: `🦦 Taking repayment for filling deposit ${depositId.toString()} on preferred chains ${JSON.stringify(
             preferredChainIds
           )} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChain} as favor to depositor who assumed repayment on destination chain in their quote. Delta in net relayer fee: ${formatFeePct(
             deltaRelayerFee
@@ -1243,12 +1242,11 @@ export class Relayer {
         // If preferred chain is not profitable and neither is fallback, then return the original profitability result.
         this.logger.debug({
           at: "Relayer::resolveRepaymentChain",
-          message: `Taking repayment for deposit ${depositId} with preferred chains ${JSON.stringify(
+          message: `Taking repayment for deposit ${depositId.toString()} with preferred chains ${JSON.stringify(
             preferredChainIds
           )} on destination chain ${destinationChainId} would also not be profitable.`,
           deposit: {
             originChain,
-            depositId,
             destinationChain,
             transactionHash,
             token: hubPoolToken.symbol,
@@ -1363,7 +1361,7 @@ export class Relayer {
         const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
         const depositFailedToSimulateWithMessage = !isMessageEmpty(deposit.message) && gasCost.eq(bnUint256Max);
         depositMrkdwn +=
-          `- DepositId ${deposit.depositId} (tx: ${depositblockExplorerLink})` +
+          `- DepositId ${deposit.depositId.toString()} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
@@ -1422,7 +1420,7 @@ export class Relayer {
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
     const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
-    let msg = `Relayed depositId ${deposit.depositId} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
+    let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
     const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
     const _totalFeePct = deposit.inputAmount
       .sub(deposit.outputAmount)
