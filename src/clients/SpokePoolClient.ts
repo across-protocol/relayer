@@ -4,7 +4,7 @@ import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
-import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
+import { bnZero, EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -283,8 +283,8 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     // Find the latest deposit Ids, and if there are no new events, fall back to already stored values.
     const fundsDeposited = eventsToQuery.indexOf("V3FundsDeposited");
     const [firstDepositId, latestDepositId] = [
-      events[fundsDeposited].at(0)?.args?.depositId ?? this.getDeposits().at(0) ?? 0,
-      events[fundsDeposited].at(-1)?.args?.depositId ?? this.getDeposits().at(-1) ?? 0,
+      events[fundsDeposited].at(0)?.args?.depositId ?? this.getDeposits().at(0) ?? bnZero,
+      events[fundsDeposited].at(-1)?.args?.depositId ?? this.getDeposits().at(-1) ?? bnZero,
     ];
 
     return {
