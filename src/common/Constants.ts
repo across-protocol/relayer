@@ -688,7 +688,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   // Leave feeToken undefined if feeToken is ETH.
   [CHAIN_IDs.ARBITRUM]: {
     amountWei: 0.02,
-    amountMultipleToFund: 50,
+    amountMultipleToFund: 1,
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
     amountWei: 0.49,
