@@ -17,8 +17,8 @@ import {
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS } from "../src/utils";
-import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
 
 let erc20_1: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -48,6 +48,9 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+    (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
+      sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
+    ); 
   });
 
   describe("Tests with real events", function () {
