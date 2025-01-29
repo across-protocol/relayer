@@ -26,7 +26,7 @@ import {
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
+import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 
 describe("BundleDataClient: Expired deposit and Slow Fill interactions", async function () {
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -111,9 +111,6 @@ describe("BundleDataClient: Expired deposit and Slow Fill interactions", async f
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
-    (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
-      sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
-    );
     await updateAllClients();
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
