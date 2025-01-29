@@ -22,15 +22,17 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   }
 
   public setRelayFillStatus(deposit: Deposit, fillStatus: interfaces.FillStatus): void {
-    const relayDataHash =  deposit.depositId.toString();
+    const relayDataHash = deposit.depositId.toString();
     this.relayFillStatuses[relayDataHash] = fillStatus;
   }
-  public relayFillStatus(relayData: interfaces.RelayData,
+  public relayFillStatus(
+    relayData: interfaces.RelayData,
     blockTag?: number | "latest",
-    destinationChainId?: number): Promise<interfaces.FillStatus> {
-    const relayDataHash =  relayData.depositId.toString();
+    destinationChainId?: number
+  ): Promise<interfaces.FillStatus> {
+    const relayDataHash = relayData.depositId.toString();
     return this.relayFillStatuses[relayDataHash]
       ? Promise.resolve(this.relayFillStatuses[relayDataHash])
       : super.relayFillStatus(relayData, blockTag, destinationChainId);
-    }
+  }
 }

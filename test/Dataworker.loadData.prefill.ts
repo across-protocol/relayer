@@ -1,4 +1,4 @@
-import { BundleDataClient, ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -17,7 +17,15 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS, bnZero, TransactionResponse, spreadEventWithBlockNumber } from "../src/utils";
+import {
+  getCurrentTime,
+  Event,
+  toBNWei,
+  ZERO_ADDRESS,
+  bnZero,
+  TransactionResponse,
+  spreadEventWithBlockNumber,
+} from "../src/utils";
 import { MockBundleDataClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
@@ -231,14 +239,14 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         const fill = generateV3FillFromDeposit(deposits[0], {}, createRandomBytes32());
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
-          destinationChainId
+          destinationChainId,
         } as FillWithBlock;
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
           deposits[0],
           fillWithBlock
         );
 
-        // Don't include the fill event in the update so that the bundle data client is forced to load the event 
+        // Don't include the fill event in the update so that the bundle data client is forced to load the event
         // fresh.
         await mockDestinationSpokePoolClient.update([]);
         expect(mockDestinationSpokePoolClient.getFills().length).to.equal(0);
@@ -261,15 +269,16 @@ describe("BundleDataClient: Pre-fill logic", async function () {
 
         // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
         // deposit is in the block range, we should refund it.
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+          getDefaultBlockRange(5),
+          spokePoolClients
+        );
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
           fill.args.depositId
         );
         // Check its refunded to correct address:
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(
-          validRelayerAddress
-        );
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(validRelayerAddress);
       });
 
       it("Refunds pre-fills for duplicate deposits", async function () {
