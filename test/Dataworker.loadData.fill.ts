@@ -631,11 +631,10 @@ describe("Dataworker: Load data used in all functions", async function () {
         inputAmount: depositEvent.args.inputAmount.add(1),
         outputAmount: depositEvent.args.outputAmount.add(1),
         originChainId: destinationChainId,
-        depositId: depositEvent.args.depositId + 1,
+        depositId: toBN(depositEvent.args.depositId + 1),
         fillDeadline: depositEvent.args.fillDeadline + 1,
         exclusivityDeadline: depositEvent.args.exclusivityDeadline + 1,
         message: randomAddress(),
-        destinationChainId: originChainId,
       };
       for (const [key, val] of Object.entries(invalidRelayData)) {
         const _depositEvent = cloneDeep(depositEvent);
@@ -730,7 +729,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
       // Approximate refunds should count both fills
       await updateAllClients();
-      const refunds = bundleDataClient.getApproximateRefundsForBlockRange(
+      const refunds = await bundleDataClient.getApproximateRefundsForBlockRange(
         [originChainId, destinationChainId],
         getDefaultBlockRange(5)
       );
@@ -770,7 +769,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       await updateAllClients();
       expect(
         convertToNumericStrings(
-          bundleDataClient.getApproximateRefundsForBlockRange(
+          await bundleDataClient.getApproximateRefundsForBlockRange(
             [originChainId, destinationChainId],
             getDefaultBlockRange(5)
           )

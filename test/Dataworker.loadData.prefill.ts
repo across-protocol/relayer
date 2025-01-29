@@ -6,6 +6,7 @@ import {
   FakeContract,
   SignerWithAddress,
   V3FillFromDeposit,
+  createRandomBytes32,
   depositV3,
   ethers,
   expect,
@@ -16,9 +17,10 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS } from "../src/utils";
-import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
+import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS, bnZero, TransactionResponse, spreadEventWithBlockNumber } from "../src/utils";
+import { MockBundleDataClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
+import { FillWithBlock } from "../src/interfaces";
 
 let erc20_1: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -125,7 +127,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
       mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
       mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
-      const bundleDataClient = new BundleDataClient(
+      const bundleDataClient = new MockBundleDataClient(
         dataworkerInstance.logger,
         {
           ...dataworkerInstance.clients.bundleDataClient.clients,
@@ -216,6 +218,57 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
           fill.args.depositId
+        );
+      });
+
+      it("Refunds fill to msg.sender if fill is not in-memory and repayment info is invalid", async function () {
+        generateV3Deposit({ outputToken: randomAddress() });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        // Submit fill that we won't include in the bundle block range. Make sure its relayer address is invalid
+        // so that the bundle data client is forced to overwrite the refund recipient.
+        const fill = generateV3FillFromDeposit(deposits[0], {}, createRandomBytes32());
+        const fillWithBlock = {
+          ...spreadEventWithBlockNumber(fill),
+          destinationChainId
+        } as FillWithBlock;
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          deposits[0],
+          fillWithBlock
+        );
+
+        // Don't include the fill event in the update so that the bundle data client is forced to load the event 
+        // fresh.
+        await mockDestinationSpokePoolClient.update([]);
+        expect(mockDestinationSpokePoolClient.getFills().length).to.equal(0);
+
+        // Mock FillStatus to be Filled so that the BundleDataClient searches for event.
+        mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
+
+        // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+        // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid
+        // but the msg.sender is valid.
+        const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+        const validRelayerAddress = randomAddress();
+        provider._setTransaction(fill.transactionHash, { from: validRelayerAddress } as unknown as TransactionResponse);
+        const spokeWrapper = new Contract(
+          mockDestinationSpokePoolClient.spokePool.address,
+          mockDestinationSpokePoolClient.spokePool.interface,
+          provider
+        );
+        mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+        // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
+        // deposit is in the block range, we should refund it.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          fill.args.depositId
+        );
+        // Check its refunded to correct address:
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(
+          validRelayerAddress
         );
       });
 
