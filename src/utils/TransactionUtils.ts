@@ -191,6 +191,8 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
     return { transaction, succeed: true };
   }
 
+  const overrides = { blockTag: "pending" };
+
   const { contract, method } = transaction;
   const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
 
@@ -200,7 +202,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
   try {
-    data = await contract.callStatic[method](...args);
+    data = await contract.callStatic[method](...args, { overrides });
   } catch (err: any) {
     if (err.errorName) {
       return {
@@ -212,7 +214,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   }
 
   try {
-    const gasLimit = await contract.estimateGas[method](...args);
+    const gasLimit = await contract.estimateGas[method](...args, overrides);
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (_error) {
     const error = _error as EthersError;
