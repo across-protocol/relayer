@@ -818,13 +818,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         const relayer2 = randomAddress();
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
-        fillV3Events.push(
-          generateV3FillFromDeposit(
-            deposits[2],
-            {},
-            ethers.utils.randomBytes(32)
-          )
-        );
+        fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, ethers.utils.randomBytes(32)));
         await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid.
@@ -878,7 +872,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         // Fill deposits from different relayers
-        const relayer2 = randomAddress();
         const invalidRelayer = ethers.utils.randomBytes(32);
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
@@ -990,7 +983,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         // Fill deposits from different relayers
-        const relayer2 = randomAddress();
         const invalidRelayer = ethers.utils.randomBytes(32);
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
