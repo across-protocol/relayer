@@ -822,7 +822,7 @@ describe("Dataworker: Load data used in all functions", async function () {
           generateV3FillFromDeposit(
             deposits[2],
             {},
-            ethers.utils.hexConcat(["0x11", ethers.utils.hexZeroPad(relayer2, 31)])
+            ethers.utils.randomBytes(32)
           )
         );
         await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
@@ -879,7 +879,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
-        const invalidRelayer = ethers.utils.hexConcat(["0x11", ethers.utils.hexZeroPad(relayer2, 31)]);
+        const invalidRelayer = ethers.utils.randomBytes(32);
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
@@ -929,7 +929,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
-        const invalidRelayer = ethers.utils.hexConcat(["0x11", ethers.utils.hexZeroPad(relayer2, 31)]);
+        const invalidRelayer = ethers.utils.randomBytes(32);
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
@@ -991,7 +991,7 @@ describe("Dataworker: Load data used in all functions", async function () {
 
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
-        const invalidRelayer = ethers.utils.hexConcat(["0x11", ethers.utils.hexZeroPad(relayer2, 31)]);
+        const invalidRelayer = ethers.utils.randomBytes(32);
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
