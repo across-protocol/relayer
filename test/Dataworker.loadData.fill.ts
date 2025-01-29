@@ -640,7 +640,6 @@ describe("Dataworker: Load data used in all functions", async function () {
         fillDeadline: depositEvent.args.fillDeadline + 1,
         exclusivityDeadline: depositEvent.args.exclusivityDeadline + 1,
         message: randomAddress(),
-        destinationChainId: originChainId,
       };
       for (const [key, val] of Object.entries(invalidRelayData)) {
         const _depositEvent = cloneDeep(depositEvent);
