@@ -119,7 +119,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     } = await setupDataworker(ethers, 25, 25, 0));
     (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
       sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
-    ); 
+    );
     await updateAllClients();
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,

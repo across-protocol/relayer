@@ -50,7 +50,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
     await updateAllClients();
     (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
       sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
-    ); 
+    );
   });
 
   describe("Tests with real events", function () {

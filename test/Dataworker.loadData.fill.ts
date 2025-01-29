@@ -78,7 +78,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     bundleDataClient = dataworkerInstance.clients.bundleDataClient;
     (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
       sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
-    ); 
+    );
   });
 
   it("Default conditions", async function () {
