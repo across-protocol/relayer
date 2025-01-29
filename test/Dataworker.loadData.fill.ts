@@ -1089,7 +1089,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       ).to.equal(0);
     });
     it("getApproximateRefundsForBlockRange", async function () {
-      // Send two deposits on dioriginfferent chains
+      // Send two deposits on different chains
       // Fill both deposits and request repayment on same chain
       await depositV3(
         spokePool_1,
