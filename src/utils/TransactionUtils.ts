@@ -202,7 +202,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
   try {
-    data = await contract.callStatic[method](...args, { overrides });
+    data = await contract.callStatic[method](...args, overrides);
   } catch (err: any) {
     if (err.errorName) {
       return {
