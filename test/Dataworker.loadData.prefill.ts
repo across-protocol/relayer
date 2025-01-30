@@ -37,6 +37,8 @@ let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
 describe("BundleDataClient: Pre-fill logic", async function () {
@@ -46,6 +48,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       erc20_2,
       hubPoolClient,
       configStoreClient,
+      spy,
       l1Token_1,
       relayer,
       depositor,
@@ -277,6 +280,87 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         );
         // Check its refunded to correct address:
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(validRelayerAddress);
+      });
+
+      it("Does not refund fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for repayment chain", async function () {
+        generateV3Deposit({ outputToken: randomAddress() });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        // Send fill with invalid repayment address
+        const invalidRelayer = ethers.utils.randomBytes(32);
+        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+
+        // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+        // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
+        // set the msg.sender as an invalid address.
+        const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+        const spokeWrapper = new Contract(
+          mockDestinationSpokePoolClient.spokePool.address,
+          mockDestinationSpokePoolClient.spokePool.interface,
+          provider
+        );
+        provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
+        mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
+        // query relayStatuses() on the spoke pool.
+        const invalidFill = mockDestinationSpokePoolClient.getFills()[0];
+        mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
+        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          deposits[0],
+          invalidFill
+        );
+
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+          getDefaultBlockRange(5),
+          spokePoolClients
+        );
+
+        // We expect the fillV3Event to be invalid.
+        expect(data1.bundleFillsV3).to.deep.equal({});
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
+      });
+      it("Does not refund lite chain fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for origin chain", async function () {
+        generateV3Deposit({ outputToken: randomAddress(), fromLiteChain: true });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        // Fill deposits from different relayers
+        const invalidRelayer = ethers.utils.randomBytes(32);
+        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+        // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
+        // set the msg.sender as an invalid address.
+        const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+        const spokeWrapper = new Contract(
+          mockDestinationSpokePoolClient.spokePool.address,
+          mockDestinationSpokePoolClient.spokePool.interface,
+          provider
+        );
+        provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
+        mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
+        // query relayStatuses() on the spoke pool.
+        const invalidFill = mockDestinationSpokePoolClient.getFills()[0];
+        mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
+        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          deposits[0],
+          invalidFill
+        );
+
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+          getDefaultBlockRange(5),
+          spokePoolClients
+        );
+
+        expect(data1.bundleFillsV3).to.deep.equal({});
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
       });
 
       it("Refunds pre-fills for duplicate deposits", async function () {

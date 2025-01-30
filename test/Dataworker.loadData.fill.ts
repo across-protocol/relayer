@@ -746,64 +746,6 @@ describe("Dataworker: Load data used in all functions", async function () {
             .div(fixedPointAdjustment),
         });
       });
-      it("Treats a relayer's fill with a bytes32 address taking repayment on an EVM network as invalid", async function () {
-        const depositV3Events: interfaces.Log[] = [];
-        const fillV3Events: interfaces.Log[] = [];
-        const destinationChainId = mockDestinationSpokePoolClient.chainId;
-        // Create three valid deposits
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        const deposits = mockOriginSpokePoolClient.getDeposits();
-
-        // Fill deposits from different relayers
-        const invalidRelayer = ethers.utils.randomBytes(32);
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
-        // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
-        // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
-        // set the msg.sender as an invalid address.
-        const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
-        const spokeWrapper = new Contract(
-          mockDestinationSpokePoolClient.spokePool.address,
-          mockDestinationSpokePoolClient.spokePool.interface,
-          provider
-        );
-        fillV3Events.forEach((event) => provider._setTransaction(event.transactionHash, { from: invalidRelayer }));
-        mockDestinationSpokePoolClient.spokePool = spokeWrapper;
-
-        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
-        // query relayStatuses() on the spoke pool.
-        const invalidFill = mockDestinationSpokePoolClient
-          .getFills()
-          .find((e) => e.depositId.eq(fillV3Events[2].args.depositId));
-        const invalidFilledDeposit = deposits.find((e) => e.depositId.eq(invalidFill!.depositId));
-        mockDestinationSpokePoolClient.setRelayFillStatus(invalidFilledDeposit!, interfaces.FillStatus.Filled);
-        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
-        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
-          invalidFilledDeposit!,
-          invalidFill!
-        );
-
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
-          getDefaultBlockRange(5),
-          spokePoolClients
-        );
-
-        // We expect the last fillV3Event to be invalid.
-        const nValidFills = fillV3Events.length - 1;
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(nValidFills);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-          fillV3Events.slice(0, nValidFills).map((event) => event.args.depositId)
-        );
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
-          fillV3Events.slice(0, nValidFills).map(() => lpFeePct)
-        );
-        expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
-      });
       // This is essentially a copy of the first test in this block, with the addition of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is refunded on lite chain to msg.sender", async function () {
         const depositV3Events: interfaces.Log[] = [];
@@ -865,68 +807,6 @@ describe("Dataworker: Load data used in all functions", async function () {
             .mul(refundAmountPct)
             .div(fixedPointAdjustment),
         });
-      });
-      // This is almost the same as the second test in this block, with the exception of the change to the config store.
-      it("Fill with bytes32 relayer with lite chain deposit is invalid if msg.sender is not a bytes20 address", async function () {
-        const depositV3Events: interfaces.Log[] = [];
-        const fillV3Events: interfaces.Log[] = [];
-        const destinationChainId = mockDestinationSpokePoolClient.chainId;
-        // Update and set the config store client.
-        hubPoolClient.configStoreClient._updateLiteChains([mockOriginSpokePoolClient.chainId]);
-        mockOriginSpokePoolClient.configStoreClient = hubPoolClient.configStoreClient;
-        // Create three valid deposits
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        const deposits = mockOriginSpokePoolClient.getDeposits();
-
-        // Fill deposits from different relayers
-        const invalidRelayer = ethers.utils.randomBytes(32);
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
-        // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
-        // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
-        // set the msg.sender as an invalid address.
-        const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
-        const spokeWrapper = new Contract(
-          mockDestinationSpokePoolClient.spokePool.address,
-          mockDestinationSpokePoolClient.spokePool.interface,
-          provider
-        );
-        fillV3Events.forEach((event) => provider._setTransaction(event.transactionHash, { from: invalidRelayer }));
-        mockDestinationSpokePoolClient.spokePool = spokeWrapper;
-
-        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
-        // query relayStatuses() on the spoke pool.
-        const invalidFill = mockDestinationSpokePoolClient
-          .getFills()
-          .find((e) => e.depositId.eq(fillV3Events[2].args.depositId));
-        const invalidFilledDeposit = deposits.find((e) => e.depositId.eq(invalidFill!.depositId));
-        mockDestinationSpokePoolClient.setRelayFillStatus(invalidFilledDeposit!, interfaces.FillStatus.Filled);
-        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
-        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
-          invalidFilledDeposit!,
-          invalidFill!
-        );
-
-        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
-          getDefaultBlockRange(5),
-          spokePoolClients
-        );
-
-        // We expect the last fillV3Event to be invalid.
-        const nValidFills = fillV3Events.length - 1;
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(nValidFills);
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-          fillV3Events.slice(0, nValidFills).map((event) => event.args.depositId)
-        );
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
-          fillV3Events.slice(0, nValidFills).map(() => lpFeePct)
-        );
-        expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
       });
     });
   });
