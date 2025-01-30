@@ -23,21 +23,11 @@ import {
   sinon,
   smock,
   spyLogIncludes,
-  bnZero,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import {
-  getCurrentTime,
-  toBN,
-  Event,
-  toBNWei,
-  fixedPointAdjustment,
-  ZERO_ADDRESS,
-  BigNumber,
-  bnZero,
-} from "../src/utils";
-import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { getCurrentTime, toBN, toBNWei, fixedPointAdjustment, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
+import { MockBundleDataClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
@@ -153,7 +143,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       mockHubPoolClient.setTokenMapping(l1Token_1.address, originChainId, erc20_1.address);
       mockHubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
       mockHubPoolClient.setTokenMapping(l1Token_1.address, repaymentChainId, l1Token_1.address);
-      const bundleDataClient = new BundleDataClient(
+      const bundleDataClient = new MockBundleDataClient(
         dataworkerInstance.logger,
         {
           ...dataworkerInstance.clients.bundleDataClient.clients,
@@ -172,7 +162,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
     });
 
-    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): Event {
+    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.depositV3({
         inputToken: erc20_1.address,
         inputAmount: eventOverride?.inputAmount ?? undefined,
@@ -192,14 +182,14 @@ describe("Dataworker: Load data used in all functions", async function () {
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
-    ): Event {
+    ): interfaces.Log {
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...fillObject,
         relayExecutionInfo: {
-          updatedRecipient: fillObject.updatedRecipient,
-          updatedMessage: fillObject.updatedMessage,
-          updatedOutputAmount: fillObject.updatedOutputAmount,
+          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
+          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -208,14 +198,14 @@ describe("Dataworker: Load data used in all functions", async function () {
     }
 
     function generateV3FillFromDepositEvent(
-      depositEvent: Event,
+      depositEvent: interfaces.Log,
       fillEventOverride?: Partial<interfaces.FillWithBlock>,
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill,
       outputAmount: BigNumber = depositEvent.args.outputAmount,
       updatedOutputAmount: BigNumber = depositEvent.args.outputAmount
-    ): Event {
+    ): interfaces.Log {
       const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...args,
@@ -223,8 +213,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         outputAmount,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          updatedRecipient: depositEvent.updatedRecipient,
-          updatedMessage: depositEvent.updatedMessage,
+          updatedRecipient: depositEvent.args.updatedRecipient,
+          updatedMessage: depositEvent.args.updatedMessage,
           updatedOutputAmount: updatedOutputAmount,
           fillType,
         },
@@ -700,8 +690,8 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
     describe("Bytes32 address invalid cases", async function () {
       it("Fallback to msg.sender when the relayer repayment address is invalid on an EVM chain", async function () {
-        const depositV3Events: Event[] = [];
-        const fillV3Events: Event[] = [];
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Create three valid deposits
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
@@ -757,8 +747,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         });
       });
       it("Treats a relayer's fill with a bytes32 address taking repayment on an EVM network as invalid", async function () {
-        const depositV3Events: Event[] = [];
-        const fillV3Events: Event[] = [];
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Create three valid deposits
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
@@ -785,6 +775,19 @@ describe("Dataworker: Load data used in all functions", async function () {
         fillV3Events.forEach((event) => provider._setTransaction(event.transactionHash, { from: invalidRelayer }));
         mockDestinationSpokePoolClient.spokePool = spokeWrapper;
 
+        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
+        // query relayStatuses() on the spoke pool.
+        const invalidFill = mockDestinationSpokePoolClient
+          .getFills()
+          .find((e) => e.depositId.eq(fillV3Events[2].args.depositId));
+        const invalidFilledDeposit = deposits.find((e) => e.depositId.eq(invalidFill!.depositId));
+        mockDestinationSpokePoolClient.setRelayFillStatus(invalidFilledDeposit!, interfaces.FillStatus.Filled);
+        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          invalidFilledDeposit!,
+          invalidFill!
+        );
+
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
           getDefaultBlockRange(5),
           spokePoolClients
@@ -803,8 +806,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       });
       // This is essentially a copy of the first test in this block, with the addition of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is refunded on lite chain to msg.sender", async function () {
-        const depositV3Events: Event[] = [];
-        const fillV3Events: Event[] = [];
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Update and set the config store client.
         hubPoolClient.configStoreClient._updateLiteChains([mockOriginSpokePoolClient.chainId]);
@@ -865,8 +868,8 @@ describe("Dataworker: Load data used in all functions", async function () {
       });
       // This is almost the same as the second test in this block, with the exception of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is invalid if msg.sender is not a bytes20 address", async function () {
-        const depositV3Events: Event[] = [];
-        const fillV3Events: Event[] = [];
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Update and set the config store client.
         hubPoolClient.configStoreClient._updateLiteChains([mockOriginSpokePoolClient.chainId]);
@@ -895,6 +898,19 @@ describe("Dataworker: Load data used in all functions", async function () {
         );
         fillV3Events.forEach((event) => provider._setTransaction(event.transactionHash, { from: invalidRelayer }));
         mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+        // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
+        // query relayStatuses() on the spoke pool.
+        const invalidFill = mockDestinationSpokePoolClient
+          .getFills()
+          .find((e) => e.depositId.eq(fillV3Events[2].args.depositId));
+        const invalidFilledDeposit = deposits.find((e) => e.depositId.eq(invalidFill!.depositId));
+        mockDestinationSpokePoolClient.setRelayFillStatus(invalidFilledDeposit!, interfaces.FillStatus.Filled);
+        // Also mock the matched fill event so that BundleDataClient doesn't query for it.
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          invalidFilledDeposit!,
+          invalidFill!
+        );
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
           getDefaultBlockRange(5),

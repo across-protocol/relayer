@@ -15,11 +15,9 @@ import {
   randomAddress,
   smock,
 } from "./utils";
-
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import {
   getCurrentTime,
-  Event,
   toBNWei,
   ZERO_ADDRESS,
   bnZero,
@@ -154,7 +152,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       );
     });
 
-    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): Event {
+    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.depositV3({
         inputToken: erc20_1.address,
         outputToken: eventOverride?.outputToken ?? erc20_2.address,
@@ -173,14 +171,14 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
-    ): Event {
+    ): interfaces.Log {
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...fillObject,
         relayExecutionInfo: {
-          updatedRecipient: fillObject.updatedRecipient,
-          updatedMessage: fillObject.updatedMessage,
-          updatedOutputAmount: fillObject.updatedOutputAmount,
+          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
+          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -191,14 +189,14 @@ describe("BundleDataClient: Pre-fill logic", async function () {
     function generateSlowFillRequestFromDeposit(
       deposit: interfaces.DepositWithBlock,
       fillEventOverride?: Partial<interfaces.FillWithBlock>
-    ): Event {
+    ): interfaces.Log {
       const fillObject = V3FillFromDeposit(deposit, ZERO_ADDRESS);
       const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
       return mockDestinationSpokePoolClient.requestV3SlowFill({
         ...relayData,
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestBlockSearched gets set to the same value.
-      } as interfaces.SlowFillRequest);
+      } as interfaces.SlowFillRequestWithBlock);
     }
 
     describe("Pre-fills", function () {

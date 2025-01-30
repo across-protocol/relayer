@@ -17,7 +17,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
+import { getCurrentTime, toBNWei, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 
@@ -117,7 +117,7 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
     });
 
-    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): Event {
+    function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.depositV3({
         inputToken: erc20_1.address,
         inputAmount: eventOverride?.inputAmount ?? undefined,
@@ -137,14 +137,14 @@ describe("Dataworker: Load data used in all functions", async function () {
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
-    ): Event {
+    ): interfaces.Log {
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...fillObject,
         relayExecutionInfo: {
-          updatedRecipient: fillObject.updatedRecipient,
-          updatedMessage: fillObject.updatedMessage,
-          updatedOutputAmount: fillObject.updatedOutputAmount,
+          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
+          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -153,14 +153,14 @@ describe("Dataworker: Load data used in all functions", async function () {
     }
 
     function generateV3FillFromDepositEvent(
-      depositEvent: Event,
+      depositEvent: interfaces.Log,
       fillEventOverride?: Partial<interfaces.FillWithBlock>,
       _relayer = relayer.address,
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill,
       outputAmount: BigNumber = depositEvent.args.outputAmount,
       updatedOutputAmount: BigNumber = depositEvent.args.outputAmount
-    ): Event {
+    ): interfaces.Log {
       const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillV3Relay({
         ...args,
@@ -168,8 +168,8 @@ describe("Dataworker: Load data used in all functions", async function () {
         outputAmount,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          updatedRecipient: depositEvent.updatedRecipient,
-          updatedMessage: depositEvent.updatedMessage,
+          updatedRecipient: depositEvent.args.updatedRecipient,
+          updatedMessage: depositEvent.args.updatedMessage,
           updatedOutputAmount: updatedOutputAmount,
           fillType,
         },

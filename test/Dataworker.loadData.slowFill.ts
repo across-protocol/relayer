@@ -25,7 +25,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, ZERO_ADDRESS, bnZero } from "../src/utils";
+import { getCurrentTime, toBNWei, ZERO_ADDRESS, bnZero } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
@@ -51,7 +51,7 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
   let mockConfigStore: MockConfigStoreClient;
   const lpFeePct = toBNWei("0.01");
 
-  function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): Event {
+  function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
     return mockOriginSpokePoolClient.depositV3({
       inputToken: erc20_1.address,
       inputAmount: eventOverride?.inputAmount ?? undefined,
@@ -71,14 +71,14 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     _relayer = relayer.address,
     _repaymentChainId = repaymentChainId,
     fillType = interfaces.FillType.FastFill
-  ): Event {
+  ): interfaces.Log {
     const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
     return mockDestinationSpokePoolClient.fillV3Relay({
       ...fillObject,
       relayExecutionInfo: {
-        updatedRecipient: fillObject.updatedRecipient,
-        updatedMessage: fillObject.updatedMessage,
-        updatedOutputAmount: fillObject.updatedOutputAmount,
+        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+        updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
+        updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
       },
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
@@ -89,14 +89,14 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
   function generateSlowFillRequestFromDeposit(
     deposit: interfaces.DepositWithBlock,
     fillEventOverride?: Partial<interfaces.FillWithBlock>
-  ): Event {
+  ): interfaces.Log {
     const fillObject = V3FillFromDeposit(deposit, ZERO_ADDRESS);
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
     return mockDestinationSpokePoolClient.requestV3SlowFill({
       ...relayData,
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestBlockSearched gets set to the same value.
-    } as interfaces.SlowFillRequest);
+    } as interfaces.SlowFillRequestWithBlock);
   }
 
   beforeEach(async function () {
