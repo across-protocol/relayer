@@ -31,7 +31,7 @@ import { interfaces, utils as sdkUtils, constants as sdkConstants } from "@acros
 import { cloneDeep } from "lodash";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
-describe("BundleDataClient: Slow fill handling & validation", async function () {
+describe("Dataworker: Load bundle data: Computing slow fills", async function () {
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
   let l1Token_1: Contract;
   let depositor: SignerWithAddress, relayer: SignerWithAddress;

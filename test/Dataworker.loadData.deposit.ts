@@ -35,7 +35,7 @@ let spy: sinon.SinonSpy;
 let updateAllClients: () => Promise<void>;
 
 // TODO: Rename this file to BundleDataClient
-describe("Dataworker: Load data used in all functions", async function () {
+describe("Dataworker: Load bundle data", async function () {
   beforeEach(async function () {
     ({
       spokePool_1,
@@ -57,7 +57,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     bundleDataClient = dataworkerInstance.clients.bundleDataClient;
   });
 
-  describe("V3 Events", function () {
+  describe("Computing bundle deposits and expired deposits to refund", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockHubPoolClient: MockHubPoolClient;
     let mockDestinationSpokePool: FakeContract;
@@ -292,11 +292,11 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].depositId).to.equal(deposits[1].args.depositId);
     });
     it("Includes duplicate deposits in bundle data", async function () {
-      generateV3Deposit();
+      const deposit = generateV3Deposit();
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       const depositToDuplicate = mockOriginSpokePoolClient.getDeposits()[0];
-      mockOriginSpokePoolClient.depositV3(depositToDuplicate);
-      mockOriginSpokePoolClient.depositV3(depositToDuplicate);
+      const dupe1 = mockOriginSpokePoolClient.depositV3(depositToDuplicate);
+      const dupe2 = mockOriginSpokePoolClient.depositV3(depositToDuplicate);
       await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
       expect(
         mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId).length
@@ -306,6 +306,11 @@ describe("Dataworker: Load data used in all functions", async function () {
         spokePoolClients
       );
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        deposit.transactionHash
+      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][1].transactionHash).to.equal(dupe1.transactionHash);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][2].transactionHash).to.equal(dupe2.transactionHash);
     });
     it("Filters duplicate deposits out of block range", async function () {
       const deposit = generateV3Deposit({ blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1 });

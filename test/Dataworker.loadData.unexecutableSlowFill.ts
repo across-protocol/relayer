@@ -28,7 +28,7 @@ import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/ut
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
 
-describe("BundleDataClient: Expired deposit and Slow Fill interactions", async function () {
+describe("Dataworker: Load bundle data: Computing unexecutable slow fills", async function () {
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
   let l1Token_1: Contract;
   let depositor: SignerWithAddress, relayer: SignerWithAddress;

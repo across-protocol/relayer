@@ -46,8 +46,7 @@ let spy: sinon.SinonSpy;
 
 let updateAllClients: () => Promise<void>;
 
-// TODO: Rename this file to BundleDataClient
-describe("Dataworker: Load data used in all functions", async function () {
+describe("Dataworker: Load bundle data", async function () {
   beforeEach(async function () {
     ({
       spokePool_1,
@@ -91,7 +90,7 @@ describe("Dataworker: Load data used in all functions", async function () {
     });
   });
 
-  describe("V3 Events", function () {
+  describe("Compute fills to refund", function () {
     let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
     let mockHubPoolClient: MockHubPoolClient;
     let mockDestinationSpokePool: FakeContract;
@@ -278,6 +277,48 @@ describe("Dataworker: Load data used in all functions", async function () {
       );
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
         dupe2.transactionHash
+      );
+    });
+
+    it("Does not account for duplicate deposit refunds for deposits after bundle block range", async function () {
+      generateV3Deposit({
+        outputToken: randomAddress(),
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
+      });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const dupe1 = await mockOriginSpokePoolClient.depositV3({
+        ...mockOriginSpokePoolClient.getDeposits()[0],
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
+      });
+      await mockOriginSpokePoolClient.depositV3({
+        ...mockOriginSpokePoolClient.getDeposits()[0],
+        blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
+      });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+      expect(deposits.length).to.equal(3);
+
+      const fill = generateV3FillFromDeposit(deposits[0], {
+        blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 21,
+      });
+
+      // Create a block range that removes latest event
+      const destinationChainBlockRange = [fill.blockNumber - 1, fill.blockNumber + 1];
+      const originChainBlockRange = [deposits[0].blockNumber, deposits[1].blockNumber];
+      // Substitute bundle block ranges.
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      const destinationChainIndex =
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
+      bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      bundleBlockRanges[originChainIndex] = originChainBlockRange;
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        dupe1.transactionHash
       );
     });
 

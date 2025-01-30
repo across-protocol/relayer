@@ -39,7 +39,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("BundleDataClient: Pre-fill logic", async function () {
+describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
   beforeEach(async function () {
     ({
       erc20_1,
@@ -364,14 +364,15 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         expect(data1.bundleFillsV3).to.deep.equal({});
       });
 
-      it("Refunds pre-fills for duplicate deposits", async function () {
-        // In this test, we send multiple fills per deposit. We assume you cannot send more than one fill per deposit.
+      it("Refunds pre-fills in-memory for duplicate deposits", async function () {
+        // In this test, we send multiple deposits per fill. We assume you cannot send more than one fill per deposit.
         const deposit = generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]);
+        const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]);
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
-        expect(deposits.length).to.equal(2);
+        expect(deposits.length).to.equal(3);
 
         // Submit fill that we won't include in the bundle block range.
         const fill = generateV3FillFromDeposit(deposits[0], {
@@ -386,14 +387,116 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
         expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
 
-        // This should return two refunds for the two deposits.
+        // This should return one refund for for the pre-fill and one refund for each duplicate deposit
+        // All deposits should be in the bundle.
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(2);
+        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
           deposit.args.depositId
         );
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[1].depositId).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+          dupe1.transactionHash
+        );
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+          dupe2.transactionHash
+        );
+      });
+
+      it("Does not refund duplicate deposit for pre-fill if duplicate is from older bundle", async function () {
+        // In this test, we send multiple deposits per fill. We assume you cannot send more than one fill per deposit.
+        generateV3Deposit({
+          outputToken: randomAddress(),
+          blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
+        });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposit = await mockOriginSpokePoolClient.depositV3({
+          ...mockOriginSpokePoolClient.getDeposits()[0],
+          blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
+        });
+        const dupe2 = await mockOriginSpokePoolClient.depositV3({
+          ...mockOriginSpokePoolClient.getDeposits()[0],
+          blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
+        });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+        expect(deposits.length).to.equal(3);
+
+        // Submit fill that we won't include in the bundle block range.
+        const fill = generateV3FillFromDeposit(deposits[0], {
+          blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber,
+        });
+        // Substitute bundle block ranges.
+        const bundleBlockRanges = getDefaultBlockRange(5);
+        const destinationChainIndex =
+          dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
+        bundleBlockRanges[destinationChainIndex] = [fill.blockNumber + 1, fill.blockNumber + 2];
+        const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+        bundleBlockRanges[originChainIndex] = [deposit.blockNumber, dupe2.blockNumber];
+
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
+
+        // This should return one refund for for the pre-fill and one refund for each duplicate deposit
+        // in the bundle.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
           deposit.args.depositId
+        );
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+          dupe2.transactionHash
+        );
+      });
+
+      it("Refunds duplicate deposits if pre-fill is not in memory", async function () {
+        generateV3Deposit({ outputToken: randomAddress() });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]);
+        const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]);
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+        expect(deposits.length).to.equal(3);
+
+        // Submit fill that we won't include in the bundle block range
+        const fill = generateV3FillFromDeposit(deposits[0]);
+        const fillWithBlock = {
+          ...spreadEventWithBlockNumber(fill),
+          destinationChainId,
+        } as FillWithBlock;
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          deposits[0],
+          fillWithBlock
+        );
+
+        // Don't include the fill event in the update so that the bundle data client is forced to load the event
+        // fresh.
+        await mockDestinationSpokePoolClient.update([]);
+        expect(mockDestinationSpokePoolClient.getFills().length).to.equal(0);
+
+        // Mock FillStatus to be Filled so that the BundleDataClient searches for event.
+        mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
+
+        // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
+        // deposit is in the block range, we should refund the pre-fill once and any duplicate deposits.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+          getDefaultBlockRange(5),
+          spokePoolClients
+        );
+        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          fill.args.depositId
+        );
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+          dupe1.transactionHash
+        );
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+          dupe2.transactionHash
         );
       });
 
@@ -475,9 +578,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         );
       });
 
-      it("Creates leaves for duplicate deposits", async function () {
-        // In this test, we should create multiple leaves per duplicate deposit.
-        // We assume you cannot send more than one request per deposit.
+      it("Creates one leaf for duplicate deposits", async function () {
         const deposit = generateV3Deposit({ outputToken: erc20_2.address });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
@@ -499,11 +600,8 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(2);
+        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
-          deposit.args.depositId
-        );
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][1].depositId).to.equal(
           deposit.args.depositId
         );
       });
@@ -541,6 +639,10 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       it("Creates slow fill leaf if fill status is RequestedSlowFill", async function () {
         const deposit = generateV3Deposit({ outputToken: erc20_2.address });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+        expect(deposits.length).to.equal(2);
 
         const depositHash = sdkUtils.getRelayHashFromEvent(mockOriginSpokePoolClient.getDeposits()[0]);
 
