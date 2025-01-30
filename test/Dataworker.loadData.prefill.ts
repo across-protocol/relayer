@@ -37,8 +37,6 @@ let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
-let spy: sinon.SinonSpy;
-
 let updateAllClients: () => Promise<void>;
 
 describe("BundleDataClient: Pre-fill logic", async function () {
@@ -48,7 +46,6 @@ describe("BundleDataClient: Pre-fill logic", async function () {
       erc20_2,
       hubPoolClient,
       configStoreClient,
-      spy,
       l1Token_1,
       relayer,
       depositor,
