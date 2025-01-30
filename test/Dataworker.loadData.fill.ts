@@ -251,6 +251,79 @@ describe("Dataworker: Load data used in all functions", async function () {
       expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(0);
     });
 
+    it("Sends duplicate deposit refunds for fills in bundle", async function () {
+      // Send duplicate deposits.
+      generateV3Deposit({ outputToken: randomAddress() });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+      const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+      expect(deposits.length).to.equal(3);
+
+      // Fill deposit.
+      generateV3FillFromDeposit(deposits[0]);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+
+      // Bundle should contain all deposits.
+      // Bundle should refund fill.
+      // Bundle should refund duplicate deposits.
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        dupe1.transactionHash
+      );
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+        dupe2.transactionHash
+      );
+    });
+
+    it("Sends duplicate deposit refunds even if relayer repayment information is invalid", async function () {
+      // Send duplicate deposits.
+      generateV3Deposit({ outputToken: randomAddress() });
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+      const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
+      expect(deposits.length).to.equal(3);
+
+      // Fill deposit with invalid repayment information.
+      const invalidRelayer = ethers.utils.randomBytes(32);
+      const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+      // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
+      // set the msg.sender as an invalid address.
+      const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+      const spokeWrapper = new Contract(
+        mockDestinationSpokePoolClient.spokePool.address,
+        mockDestinationSpokePoolClient.spokePool.interface,
+        provider
+      );
+      provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
+      mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+      // Bundle should contain all deposits.
+      // Bundle should not refund any fills
+      // Bundle should refund duplicate deposits.
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        dupe1.transactionHash
+      );
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+        dupe2.transactionHash
+      );
+    });
+
     it("Does not create unexecutable slow fill for zero value deposit", async function () {
       generateV3Deposit({
         inputAmount: bnZero,

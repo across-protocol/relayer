@@ -290,7 +290,11 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         // Send fill with invalid repayment address
         const invalidRelayer = ethers.utils.randomBytes(32);
         const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        const invalidFill = {
+          ...spreadEventWithBlockNumber(invalidFillEvent),
+          destinationChainId,
+        } as FillWithBlock;
+        await mockDestinationSpokePoolClient.update([]);
 
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
@@ -306,7 +310,6 @@ describe("BundleDataClient: Pre-fill logic", async function () {
 
         // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
         // query relayStatuses() on the spoke pool.
-        const invalidFill = mockDestinationSpokePoolClient.getFills()[0];
         mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
         // Also mock the matched fill event so that BundleDataClient doesn't query for it.
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -319,9 +322,7 @@ describe("BundleDataClient: Pre-fill logic", async function () {
           spokePoolClients
         );
 
-        // We expect the fillV3Event to be invalid.
         expect(data1.bundleFillsV3).to.deep.equal({});
-        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
       });
       it("Does not refund lite chain fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for origin chain", async function () {
         generateV3Deposit({ outputToken: randomAddress(), fromLiteChain: true });
@@ -331,7 +332,12 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         // Fill deposits from different relayers
         const invalidRelayer = ethers.utils.randomBytes(32);
         const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        const invalidFill = {
+          ...spreadEventWithBlockNumber(invalidFillEvent),
+          destinationChainId,
+        } as FillWithBlock;
+        await mockDestinationSpokePoolClient.update([]);
+        await mockDestinationSpokePoolClient.update([]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
         // set the msg.sender as an invalid address.
@@ -346,7 +352,6 @@ describe("BundleDataClient: Pre-fill logic", async function () {
 
         // Mock FillStatus to be Filled for any invalid fills otherwise the BundleDataClient will
         // query relayStatuses() on the spoke pool.
-        const invalidFill = mockDestinationSpokePoolClient.getFills()[0];
         mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
         // Also mock the matched fill event so that BundleDataClient doesn't query for it.
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -360,7 +365,6 @@ describe("BundleDataClient: Pre-fill logic", async function () {
         );
 
         expect(data1.bundleFillsV3).to.deep.equal({});
-        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
       });
 
       it("Refunds pre-fills for duplicate deposits", async function () {
