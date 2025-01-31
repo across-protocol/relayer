@@ -294,7 +294,7 @@ export class Relayer {
 
     if (
       deposit.exclusiveRelayer !== ZERO_ADDRESS &&
-      deposit.exclusivityDeadline > currentTime &&
+      deposit.exclusivityDeadline >= currentTime &&
       getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
     ) {
       return false;

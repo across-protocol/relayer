@@ -32,6 +32,7 @@ export const knownRevertReasons = new Set([
   "relay filled",
   "Already claimed",
   "RelayFilled",
+  "NotExclusiveRelayer",
   "ClaimedMerkleLeaf",
   "InvalidSlowFillRequest",
 ]);
