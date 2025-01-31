@@ -582,6 +582,9 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
           deposit.args.depositId
         );
+
+        // The first deposit should be matched which is important because the quote timestamp of the deposit is not
+        // in the relay data hash so it can change between duplicate deposits.
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].transactionHash).to.equal(
           deposit.transactionHash
         );
