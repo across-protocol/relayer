@@ -357,7 +357,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             // Load data from Arweave to reconstruct bundle so we can pass in these "light" spoke pool clients
             // that haven't loaded all the Bridge events.
             true,
-            false,
+            false
           );
           // There should be no more one leaf for this chainId and l2Token. If not, then there's an issue.
           // If there is no refund leaf, then we can early exit.
