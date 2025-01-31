@@ -250,7 +250,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(0);
     });
 
-    describe("Duplicate deposits in same bundle as fill", function() {
+    describe("Duplicate deposits in same bundle as fill", function () {
       it("Sends duplicate deposit refunds for fills in bundle", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
@@ -260,11 +260,11 @@ describe("Dataworker: Load bundle data", async function () {
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
-  
+
         // Fill deposit.
         generateV3FillFromDeposit(deposits[0]);
         await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
-  
+
         // Bundle should contain all deposits.
         // Bundle should refund fill.
         // Bundle should refund duplicate deposits.
@@ -280,7 +280,7 @@ describe("Dataworker: Load bundle data", async function () {
           dupe2.transactionHash
         );
       });
-  
+
       it("Does not account for duplicate deposit refunds for deposits after bundle block range", async function () {
         generateV3Deposit({
           outputToken: randomAddress(),
@@ -298,11 +298,11 @@ describe("Dataworker: Load bundle data", async function () {
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
-  
+
         const fill = generateV3FillFromDeposit(deposits[0], {
           blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 21,
         });
-  
+
         // Create a block range that removes latest event
         const destinationChainBlockRange = [fill.blockNumber - 1, fill.blockNumber + 1];
         const originChainBlockRange = [deposits[0].blockNumber, deposits[1].blockNumber];
@@ -322,7 +322,7 @@ describe("Dataworker: Load bundle data", async function () {
           dupe1.transactionHash
         );
       });
-  
+
       it("Sends duplicate deposit refunds even if relayer repayment information is invalid", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
@@ -332,7 +332,7 @@ describe("Dataworker: Load bundle data", async function () {
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
-  
+
         // Fill deposit with invalid repayment information.
         const invalidRelayer = ethers.utils.randomBytes(32);
         const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
@@ -348,7 +348,7 @@ describe("Dataworker: Load bundle data", async function () {
         );
         provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
         mockDestinationSpokePoolClient.spokePool = spokeWrapper;
-  
+
         // Bundle should contain all deposits.
         // Bundle should not refund any fills
         // Bundle should refund duplicate deposits.
@@ -364,8 +364,8 @@ describe("Dataworker: Load bundle data", async function () {
         expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
           dupe2.transactionHash
         );
-      });  
-    })
+      });
+    });
 
     it("Does not create unexecutable slow fill for zero value deposit", async function () {
       generateV3Deposit({
