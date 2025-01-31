@@ -582,6 +582,9 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
           deposit.args.depositId
         );
+        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].transactionHash).to.equal(
+          deposit.transactionHash
+        );
       });
 
       it("Does not create slow fill leaf if slow fill request is in-memory but an invalid request", async function () {
