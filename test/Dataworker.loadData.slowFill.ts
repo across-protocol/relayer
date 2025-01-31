@@ -27,9 +27,9 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS } from "../src/utils";
+import { getCurrentTime, Event, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
@@ -427,6 +427,89 @@ describe("BundleDataClient: Slow fill handling & validation", async function () 
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(deposits[1].depositId);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
+  });
+
+  it("Creates unexecutable slow fill even if fast fill repayment information is invalid", async function () {
+    generateV3Deposit({ outputToken: erc20_2.address });
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+
+    // Fill deposit but don't mine requested slow fill event. This makes BundleDataClient think that deposit's slow
+    // fill request was sent in a prior bundle. This simulates the situation where the slow fill request
+    // was sent in a prior bundle to the fast fill.
+
+    // Fill deposits with invalid repayment information
+    const invalidRelayer = ethers.utils.randomBytes(32);
+    const invalidFillEvent = generateV3FillFromDeposit(
+      deposits[0],
+      {},
+      invalidRelayer,
+      undefined,
+      interfaces.FillType.ReplacedSlowFill
+    );
+    await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+    // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+    // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
+    // set the msg.sender as an invalid address.
+    const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+    const spokeWrapper = new Contract(
+      mockDestinationSpokePoolClient.spokePool.address,
+      mockDestinationSpokePoolClient.spokePool.interface,
+      provider
+    );
+    provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
+    mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+
+    // The fill cannot be refunded but there is still an unexecutable slow fill leaf we need to refund.
+    expect(data1.bundleFillsV3).to.deep.equal({});
+    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    const logs = spy.getCalls().filter((x) => x.lastArg.message.includes("unrepayable"));
+    expect(logs.length).to.equal(1);
+  });
+
+  it("Does not create a slow fill leaf if fast fill follows slow fill request but repayment information is invalid", async function () {
+    generateV3Deposit({ outputToken: erc20_2.address });
+    await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+
+    generateSlowFillRequestFromDeposit(deposits[0]);
+
+    // Fill deposits with invalid repayment information
+    const invalidRelayer = ethers.utils.randomBytes(32);
+    const invalidFillEvent = generateV3FillFromDeposit(
+      deposits[0],
+      {},
+      invalidRelayer,
+      undefined,
+      interfaces.FillType.ReplacedSlowFill
+    );
+    await mockDestinationSpokePoolClient.update(["FilledV3Relay", "RequestedV3SlowFill"]);
+    // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
+    // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
+    // set the msg.sender as an invalid address.
+    const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+    const spokeWrapper = new Contract(
+      mockDestinationSpokePoolClient.spokePool.address,
+      mockDestinationSpokePoolClient.spokePool.interface,
+      provider
+    );
+    provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
+    mockDestinationSpokePoolClient.spokePool = spokeWrapper;
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+
+    // Slow fill request, fast fill and deposit should all be in same bundle. Test that the bundle data client is
+    // aware of the fill, even if its invalid, and therefore doesn't create a slow fill leaf.
+
+    // The fill cannot be refunded but there is still an unexecutable slow fill leaf we need to refund.
+    expect(data1.bundleFillsV3).to.deep.equal({});
+    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
+    const logs = spy.getCalls().filter((x) => x.lastArg.message.includes("unrepayable"));
+    expect(logs.length).to.equal(1);
   });
 
   it("Replacing a slow fill request with a fast fill in same bundle doesn't create unexecutable slow fill", async function () {
