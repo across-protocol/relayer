@@ -685,7 +685,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     generateSlowFillRequestFromDeposit(deposits[0]);
     generateSlowFillRequestFromDeposit({
       ...deposits[1],
-      message: sdkConstants.EMPTY_MESSAGE_HASH,
+      message: sdkConstants.ZERO_BYTES,
     });
     await mockDestinationSpokePoolClient.update(["RequestedV3SlowFill"]);
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);

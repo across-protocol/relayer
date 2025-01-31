@@ -237,7 +237,7 @@ describe("Dataworker: Load bundle data", async function () {
       generateV3FillFromDeposit(deposits[0]);
       generateV3FillFromDeposit({
         ...deposits[1],
-        message: sdkConstants.EMPTY_MESSAGE_HASH,
+        message: sdkConstants.ZERO_BYTES,
       });
 
       await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
@@ -389,7 +389,7 @@ describe("Dataworker: Load bundle data", async function () {
       generateV3FillFromDeposit(
         {
           ...deposits[1],
-          message: sdkConstants.EMPTY_MESSAGE_HASH,
+          message: sdkConstants.ZERO_BYTES,
         },
         undefined,
         undefined,
