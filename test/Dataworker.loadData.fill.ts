@@ -903,7 +903,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
           fillV3Events.slice(0, nValidFills).map(() => lpFeePct)
         );
-        expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
       });
       // This is essentially a copy of the first test in this block, with the addition of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is refunded on lite chain to msg.sender", async function () {
@@ -1014,7 +1014,7 @@ describe("Dataworker: Load data used in all functions", async function () {
         expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
           fillV3Events.slice(0, nValidFills).map(() => lpFeePct)
         );
-        expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
       });
     });
   });
