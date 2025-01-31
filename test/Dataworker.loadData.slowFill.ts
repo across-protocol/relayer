@@ -285,7 +285,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     );
   });
 
-  it("Validates slow fill request against old deposit", async function () {
+  it("Validates slow fill request against old bundle deposit if deposit is not in-memory", async function () {
     // For this test, we need to actually send a deposit on the spoke pool
     // because queryHistoricalDepositForFill eth_call's the contract.
 
@@ -324,6 +324,53 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     });
     expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
+    expect(data1.bundleDepositsV3).to.deep.equal({});
+  });
+
+  it("Does not validate slow fill request against future bundle deposit if deposit is not in-memory", async function () {
+    // For this test, we need to actually send a deposit on the spoke pool
+    // because queryHistoricalDepositForFill eth_call's the contract.
+
+    // Send a legacy deposit.
+    const depositObject = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit,
+      {
+        fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+      }
+    );
+
+    // Modify the block ranges such that the deposit is in a future bundle block range. This should render
+    // the slow fill request invalid.
+    const depositBlock = await spokePool_1.provider.getBlockNumber();
+    const bundleBlockRanges = getDefaultBlockRange(5);
+    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+    bundleBlockRanges[originChainIndex] = [depositBlock - 2, depositBlock - 1];
+
+    // Construct a spoke pool client with a small search range that would not include the deposit.
+    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    await spokePoolClient_1.update();
+    const deposits = spokePoolClient_1.getDeposits();
+    expect(deposits.length).to.equal(0);
+
+    // Send a slow fill request now and force the bundle data client to query for the historical deposit.
+    await requestSlowFill(spokePool_2, relayer, depositObject);
+    await updateAllClients();
+    const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
+    expect(requests.length).to.equal(1);
+
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, {
+      ...spokePoolClients,
+      [originChainId]: spokePoolClient_1,
+      [destinationChainId]: spokePoolClient_2,
+    });
+    expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
 

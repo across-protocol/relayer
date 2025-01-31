@@ -446,7 +446,7 @@ describe("Dataworker: Load bundle data", async function () {
       });
     });
 
-    it("Validates fill against old deposit", async function () {
+    it("Validates fill against old deposit if deposit is not in-memory", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
@@ -487,7 +487,54 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
-    it("Validates fill from lite chain against old deposit", async function () {
+    it("Does not validate fill against deposit in future bundle if deposit is not in-memory", async function () {
+      // For this test, we need to actually send a deposit on the spoke pool
+      // because queryHistoricalDepositForFill eth_call's the contract.
+
+      // Send a legacy deposit.
+      const depositObject = await depositV3(
+        spokePool_1,
+        destinationChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_2.address,
+        amountToDeposit,
+        {
+          fillDeadline: INFINITE_FILL_DEADLINE.toNumber(),
+        }
+      );
+
+      // Modify the block ranges such that the deposit is in a future bundle block range. This should render
+      // the fill invalid.
+      const depositBlock = await spokePool_1.provider.getBlockNumber();
+      const bundleBlockRanges = getDefaultBlockRange(5);
+      const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+      bundleBlockRanges[originChainIndex] = [depositBlock - 2, depositBlock - 1];
+
+      // Construct a spoke pool client with a small search range that would not include the deposit.
+      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      await spokePoolClient_1.update();
+      const deposits = spokePoolClient_1.getDeposits();
+      expect(deposits.length).to.equal(0);
+
+      // Send a fill now and force the bundle data client to query for the historical deposit.
+      await fillV3Relay(spokePool_2, depositObject, relayer, repaymentChainId);
+      await updateAllClients();
+      const fills = spokePoolClient_2.getFills();
+      expect(fills.length).to.equal(1);
+
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(data1.bundleDepositsV3).to.deep.equal({});
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
+    });
+    it("Validates fill from lite chain against old bundle deposit", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
       // because queryHistoricalDepositForFill eth_call's the contract.
 
