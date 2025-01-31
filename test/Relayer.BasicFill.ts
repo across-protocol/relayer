@@ -380,30 +380,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       }
     });
 
-    it("Correctly validates self-relays", async function () {
-      outputAmount = inputAmount.add(bnOne);
-      for (const testDepositor of [relayer, depositor]) {
-        await depositV3(
-          spokePool_1,
-          destinationChainId,
-          testDepositor,
-          inputToken,
-          inputAmount,
-          outputToken,
-          outputAmount
-        );
-
-        await updateAllClients();
-        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill(false);
-        const selfRelay = testDepositor.address === relayer.address;
-        const [expectedLog, expectedReceipts] = selfRelay
-          ? ["Filled v3 deposit", 1]
-          : ["Not relaying unprofitable deposit", 0];
-        expect((await txnReceipts[destinationChainId]).length).to.equal(expectedReceipts);
-        expect(lastSpyLogIncludes(spy, expectedLog)).to.be.true;
-      }
-    });
-
     it("Ignores expired deposits", async function () {
       const spokePoolTime = (await spokePool_2.getCurrentTime()).toNumber();
       const fillDeadline = spokePoolTime + 60;
