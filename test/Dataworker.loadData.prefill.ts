@@ -282,6 +282,43 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(validRelayerAddress);
       });
 
+      it("Does not refund fill if fill is not in-memory and is a slow fill", async function() {
+        generateV3Deposit({ outputToken: randomAddress() });
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        // Submit fill that we won't include in the bundle block range. 
+        const fill = generateV3FillFromDeposit(deposits[0], {},
+          undefined,
+          undefined,
+          interfaces.FillType.SlowFill);
+        const fillWithBlock = {
+          ...spreadEventWithBlockNumber(fill),
+          destinationChainId,
+        } as FillWithBlock;
+        (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
+          deposits[0],
+          fillWithBlock
+        );
+
+        // Don't include the fill event in the update so that the bundle data client is forced to load the event
+        // fresh.
+        await mockDestinationSpokePoolClient.update([]);
+        expect(mockDestinationSpokePoolClient.getFills().length).to.equal(0);
+
+        // Mock FillStatus to be Filled so that the BundleDataClient searches for event.
+        mockDestinationSpokePoolClient.setRelayFillStatus(deposits[0], interfaces.FillStatus.Filled);
+
+        // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
+        // deposit is in the block range, we should refund it.
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+          getDefaultBlockRange(5),
+          spokePoolClients
+        );
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].realizedLpFees).to.gt(0);
+      })
+
       it("Does not refund fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for repayment chain", async function () {
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
@@ -552,7 +589,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3).to.deep.equal({});
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].realizedLpFees).to.gt(0);
       });
     });
 
