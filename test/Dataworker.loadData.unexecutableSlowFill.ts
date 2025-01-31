@@ -38,6 +38,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
   let dataworkerInstance: Dataworker;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+  let spy: sinon.SinonSpy;
+
   let updateAllClients: () => Promise<void>;
 
   let mockOriginSpokePoolClient: MockSpokePoolClient, mockDestinationSpokePoolClient: MockSpokePoolClient;
@@ -101,6 +103,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       spokePool_2,
       erc20_2,
       configStoreClient,
+      spy,
       hubPoolClient,
       l1Token_1,
       depositor,
@@ -311,6 +314,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     expect(data1.bundleFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
     expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    const logs = spy.getCalls().filter((x) => x.lastArg.message.includes("unrepayable"));
+    expect(logs.length).to.equal(1);
   });
 
   it("Handles fast fills replacing invalid slow fill request from older bundles", async function () {

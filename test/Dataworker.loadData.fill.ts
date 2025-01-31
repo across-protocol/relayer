@@ -354,7 +354,7 @@ describe("Dataworker: Load bundle data", async function () {
       const bundleBlockRanges = getDefaultBlockRange(5);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
       expect(data1.bundleFillsV3).to.deep.equal({});
-      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
       expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(

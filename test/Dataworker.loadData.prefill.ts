@@ -37,6 +37,8 @@ let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
+let spy: sinon.SinonSpy;
+
 let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
@@ -46,6 +48,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       erc20_2,
       hubPoolClient,
       configStoreClient,
+      spy,
       l1Token_1,
       relayer,
       depositor,
@@ -320,6 +323,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         );
 
         expect(data1.bundleFillsV3).to.deep.equal({});
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
       });
       it("Does not refund lite chain fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for origin chain", async function () {
         generateV3Deposit({ outputToken: randomAddress(), fromLiteChain: true });
@@ -362,6 +366,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         );
 
         expect(data1.bundleFillsV3).to.deep.equal({});
+        expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
       });
 
       it("Refunds pre-fills in-memory for duplicate deposits", async function () {
