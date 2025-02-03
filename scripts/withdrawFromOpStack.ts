@@ -97,8 +97,9 @@ export async function run(): Promise<void> {
           "0x", // _data
         ];
 
+  const functionNameToCall = l1TokenInfo.symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
   console.log(
-    `Submitting bridgeETHTo on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
+    `Submitting ${functionNameToCall} on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
     ...bridgeArgs
   );
 
@@ -122,9 +123,7 @@ export async function run(): Promise<void> {
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
-  const withdrawal = await ovmStandardBridge[l1TokenInfo.symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To"](
-    ...bridgeArgs
-  );
+  const withdrawal = await ovmStandardBridge[functionNameToCall](...bridgeArgs);
   console.log(`Submitted withdrawal: ${blockExplorerLink(withdrawal.hash, chainId)}.`);
   const receipt = await withdrawal.wait();
   console.log("Receipt", receipt);
