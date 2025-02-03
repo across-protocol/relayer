@@ -52,6 +52,7 @@ import {
   getWidestPossibleExpectedBlockRange,
   assert,
   CHAIN_IDs,
+  chainIsOPStack,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { getBlockForChain } from "../dataworker/DataworkerUtils";
@@ -215,7 +216,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
                 // including the L1 and L2 ETH (native gas token) addresses.
-                if ([10, 8453].includes(leaf.chainId) && tokenInfo.symbol === "WETH") {
+                if (chainIsOPStack(leaf.chainId) && tokenInfo.symbol === "WETH") {
                   const ovmL2BridgeContractInfo = CONTRACT_ADDRESSES[leaf.chainId].ovmStandardBridge;
                   const ovmL2Bridge = new Contract(
                     ovmL2BridgeContractInfo.address,
@@ -355,7 +356,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             mostRecentValidatedBundle.blockNumber,
             // Load data from Arweave to reconstruct bundle so we can pass in these "light" spoke pool clients
             // that haven't loaded all the Bridge events.
-            true
+            true,
+            false
           );
           // There should be no more one leaf for this chainId and l2Token. If not, then there's an issue.
           // If there is no refund leaf, then we can early exit.
