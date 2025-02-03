@@ -453,7 +453,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             originChainId: 10,
             depositor: randomAddress(),
             recipient: randomAddress(),
-            depositId: 0,
+            depositId: bnZero,
             inputToken: randomAddress(),
             inputAmount: slowFillAmount,
             outputToken: l1Token_1.address,

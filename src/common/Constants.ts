@@ -692,7 +692,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
     amountWei: 0.49,
-    amountMultipleToFund: 10,
+    amountMultipleToFund: 50,
     feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
     feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
   },
