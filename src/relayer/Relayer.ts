@@ -603,7 +603,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, recipient, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
+    const { depositId, depositor, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
     const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -669,8 +669,7 @@ export class Relayer {
     }
 
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-    const selfRelay = [depositor, recipient].every((address) => address === this.relayerAddress);
-    if (tokenClient.hasBalanceForFill(deposit) && !selfRelay) {
+    if (tokenClient.hasBalanceForFill(deposit)) {
       const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
         deposit,
         l1Token,
@@ -713,31 +712,17 @@ export class Relayer {
         const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
       }
-    } else if (selfRelay) {
-      // Prefer exiting early here to avoid fast filling any deposits we send. This approach assumes that we always
-      // prefer someone else to fill the deposits.
+    } else {
+      // Exit early if we want to request a slow fill for a lite chain.
       if (deposit.fromLiteChain) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
-          message: "Skipping self-relay deposit originating from lite chain.",
+          message: "Skipping requesting slow fill for deposit originating from lite chain.",
           originChainId,
           depositId: depositId.toString(),
         });
         return;
       }
-      // A relayer can fill its own deposit without an ERC20 transfer. Only bypass profitability requirements if the
-      // relayer is both the depositor and the recipient, because a deposit on a cheap SpokePool chain could cause
-      // expensive fills on (for example) mainnet.
-      const { lpFeePct } = lpFees.find((lpFee) => lpFee.paymentChainId === destinationChainId);
-      // For self-relays, gas price is not a concern because we are bypassing profitability requirements so
-      // use profit client's gasprice.
-      this.fillRelay(
-        deposit,
-        destinationChainId,
-        lpFeePct,
-        this.clients.profitClient.getGasCostsForChain(destinationChainId).gasPrice
-      );
-    } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
       tokenClient.captureTokenShortfallForFill(deposit);
