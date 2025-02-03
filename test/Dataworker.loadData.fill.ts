@@ -247,7 +247,7 @@ describe("Dataworker: Load bundle data", async function () {
       );
 
       expect(data1.bundleFillsV3).to.deep.equal({});
-      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(0);
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(0);
     });
 
     describe("Duplicate deposits in same bundle as fill", function () {
@@ -639,7 +639,7 @@ describe("Dataworker: Load bundle data", async function () {
       });
       expect(data1.bundleFillsV3).to.deep.equal({});
       expect(data1.bundleDepositsV3).to.deep.equal({});
-      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid")).length).to.equal(1);
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(1);
     });
     it("Validates fill from lite chain against old bundle deposit", async function () {
       // For this test, we need to actually send a deposit on the spoke pool
@@ -823,7 +823,7 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "invalid fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
       await depositV3(

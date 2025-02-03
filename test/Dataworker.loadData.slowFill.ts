@@ -372,6 +372,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     });
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
+    expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid slow fill requests")).length).to.equal(1);
   });
 
   it("Handles invalid slow fill requests with mismatching params from deposit", async function () {

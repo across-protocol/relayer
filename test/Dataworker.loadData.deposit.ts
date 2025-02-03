@@ -436,7 +436,7 @@ describe("Dataworker: Load bundle data", async function () {
       // Fill should not be included since we cannot validate fills when the deposit is in a following bundle.
       // This fill is considered a "pre-fill" and will be validated when the deposit is included in a bundle.
       expect(data1.bundleFillsV3).to.deep.equal({});
-      expect(spyLogIncludes(spy, -2, "invalid V3 fills in range")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "invalid fills in range")).to.be.true;
     });
     it("Does not count prior bundle expired deposits that were filled", async function () {
       // Send deposit that expires in this bundle.
