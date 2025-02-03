@@ -515,7 +515,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     });
     // Here we can see that the historical query for the deposit actually succeeds, but the deposit itself
     // was not one eligible to be slow filled.
-    expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+    expect(
+      spy
+        .getCalls()
+        .find((e) => e.lastArg.message.includes("Located V3 deposit outside of SpokePoolClient's search range"))
+    ).to.not.be.undefined;
 
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
