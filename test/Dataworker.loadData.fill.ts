@@ -865,6 +865,55 @@ describe("Dataworker: Load bundle data", async function () {
       dataworkerInstance.clients.bundleDataClient.setBundleTimestampsInCache(key3, cache3);
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
+    describe("Load data from Arweave", async function () {
+      it("Correctly loads Arweave data with message hashes", async function () {
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
+        const blockRanges = getDefaultBlockRange(5);
+
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[2]));
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        const fills = mockDestinationSpokePoolClient.getFills();
+
+        const bundleDepositsV3 = {};
+        const bundleFillsV3 = {};
+        deposits.forEach((deposit) => {
+          bundleDepositsV3[deposit.originChainId] ??= {};
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
+        });
+        fills.forEach((fill) => {
+          bundleFillsV3[fill.originChainId] ??= {};
+          bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
+          bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
+        });
+        const mockArweaveData = [
+          {
+            data: {
+              bundleDepositsV3,
+              bundleFillsV3,
+              expiredDepositsToRefundV3: {},
+              unexecutableSlowFills: {},
+              bundleSlowFillsV3: {},
+            },
+          },
+        ];
+        const arweaveCacheKey = dataworkerInstance.clients.bundleDataClient.getArweaveBundleDataClientKey(blockRanges);
+        dataworkerInstance.clients.arweaveClient._setCache(arweaveCacheKey, mockArweaveData);
+
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadPersistedDataFromArweave(blockRanges);
+        expect(data1).to.deep.equal(mockArweaveData[0].data);
+      });
+    });
     describe("Bytes32 address invalid cases", async function () {
       it("Fallback to msg.sender when the relayer repayment address is invalid on an EVM chain", async function () {
         const depositV3Events: interfaces.Log[] = [];
