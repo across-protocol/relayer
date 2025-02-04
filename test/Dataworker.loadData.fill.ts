@@ -866,7 +866,62 @@ describe("Dataworker: Load bundle data", async function () {
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
     describe("Load data from Arweave", async function () {
-      it("Correctly loads Arweave data with message hashes", async function () {
+      it("Correctly loads Arweave deposit data with message hashes", async function () {
+        const depositV3Events: interfaces.Log[] = [];
+        const fillV3Events: interfaces.Log[] = [];
+        const blockRanges = getDefaultBlockRange(5);
+
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        const deposits = mockOriginSpokePoolClient.getDeposits();
+
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[2]));
+        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        const fills = mockDestinationSpokePoolClient.getFills();
+
+        const bundleDepositsV3 = {};
+        const bundleFillsV3 = {};
+        deposits.forEach((deposit) => {
+          const legacyDeposit = {
+            ...deposit,
+            messageHash: "", // Superstruct defaults to "" for undefined.
+          };
+          bundleDepositsV3[deposit.originChainId] ??= {};
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(legacyDeposit);
+        });
+        fills.forEach((fill) => {
+          bundleFillsV3[fill.originChainId] ??= {};
+          bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
+          bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
+        });
+        const mockArweaveData = [
+          {
+            data: {
+              bundleDepositsV3,
+              bundleFillsV3,
+              expiredDepositsToRefundV3: {},
+              unexecutableSlowFills: {},
+              bundleSlowFillsV3: {},
+            },
+          },
+        ];
+        const arweaveCacheKey = dataworkerInstance.clients.bundleDataClient.getArweaveBundleDataClientKey(blockRanges);
+        dataworkerInstance.clients.arweaveClient._setCache(arweaveCacheKey, mockArweaveData);
+
+        const data1 = await dataworkerInstance.clients.bundleDataClient.loadPersistedDataFromArweave(blockRanges);
+        Object.values(data1.bundleDepositsV3).forEach((x) => {
+          Object.values(x).forEach((deposits) => {
+            deposits.forEach((deposit) => expect(deposit.messageHash).to.eq(sdkConstants.ZERO_BYTES));
+          });
+        });
+      });
+      it("Correctly loads Arweave fill data with message hashes", async function () {
         const depositV3Events: interfaces.Log[] = [];
         const fillV3Events: interfaces.Log[] = [];
         const blockRanges = getDefaultBlockRange(5);
@@ -891,10 +946,14 @@ describe("Dataworker: Load bundle data", async function () {
           bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
         });
         fills.forEach((fill) => {
+          const legacyFill = {
+            ...fill,
+            messageHash: "", // Superstruct defaults to "" for undefined.
+          };
           bundleFillsV3[fill.originChainId] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
-          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
+          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(legacyFill);
         });
         const mockArweaveData = [
           {
@@ -911,7 +970,11 @@ describe("Dataworker: Load bundle data", async function () {
         dataworkerInstance.clients.arweaveClient._setCache(arweaveCacheKey, mockArweaveData);
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadPersistedDataFromArweave(blockRanges);
-        expect(data1).to.deep.equal(mockArweaveData[0].data);
+        Object.values(data1.bundleFillsV3).forEach((x) => {
+          Object.values(x).forEach((fills) => {
+            fills.fills.forEach((fill) => expect(fill.messageHash).to.eq(sdkConstants.ZERO_BYTES));
+          });
+        });
       });
     });
     describe("Bytes32 address invalid cases", async function () {
