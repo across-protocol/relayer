@@ -28,7 +28,7 @@ import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 // Maximum supported version of the configuration loaded into the Across ConfigStore.
 // It protects bots from running outdated code against newer version of the on-chain config store.
 // @dev Incorrectly setting this value may lead to incorrect behaviour and potential loss of funds.
-export const CONFIG_STORE_VERSION = 4;
+export const CONFIG_STORE_VERSION = 5;
 
 export const RELAYER_MIN_FEE_PCT = 0.0001;
 
@@ -692,7 +692,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
     amountWei: 0.49,
-    amountMultipleToFund: 10,
+    amountMultipleToFund: 50,
     feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
     feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
   },
