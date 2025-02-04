@@ -965,7 +965,7 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestV3SlowFill",
+      method: "requestSlowFill",
       args: [deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
@@ -1001,7 +1001,7 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          "fillV3RelayWithUpdatedDeposit",
+          "fillRelayWithUpdatedDeposit",
           " with updated parameters ",
           [
             deposit,

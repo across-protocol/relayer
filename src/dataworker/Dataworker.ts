@@ -1324,7 +1324,7 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = "executeV3SlowRelayLeaf";
+    const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const args = [leaf, rootBundleId, proof];
 
