@@ -36,7 +36,8 @@ export async function cctpL1toL2Finalizer(
   const decodedMessages = await resolveRelatedTxnReceipts(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
-    spokePoolClient.chainId
+    spokePoolClient.chainId,
+    hubPoolClient
   );
   const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
