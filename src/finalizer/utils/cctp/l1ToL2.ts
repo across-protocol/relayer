@@ -77,7 +77,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   const searchConfig: EventSearchConfig = {
     fromBlock: hubPoolClient.eventSearchConfig.fromBlock,
     toBlock: hubPoolClient.eventSearchConfig.toBlock,
-    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookback
+    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookBack
   };
   const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
   const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
