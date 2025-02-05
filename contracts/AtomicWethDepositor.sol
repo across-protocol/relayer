@@ -50,6 +50,7 @@ contract AtomicWethDepositor {
     OvmL1Bridge public immutable bobaL1Bridge = OvmL1Bridge(0xdc1664458d2f0B6090bEa60A8793A4E66c2F1c00);
     OvmL1Bridge public immutable baseL1Bridge = OvmL1Bridge(0x3154Cf16ccdb4C6d922629664174b904d80F2C35);
     OvmL1Bridge public immutable cherL1Bridge = OvmL1Bridge(0xeb9bf100225c214Efc3E7C651ebbaDcF85177607);
+    OvmL1Bridge public immutable doctorWhoL1Bridge = OvmL1Bridge(0x81014F44b0a345033bB2b3B21C7a1A308B35fEeA);
     OvmL1Bridge public immutable inkL1Bridge = OvmL1Bridge(0x88FF1e5b602916615391F55854588EFcBB7663f0);
     OvmL1Bridge public immutable liskL1Bridge = OvmL1Bridge(0x2658723Bf70c7667De6B25F99fcce13A16D25d08);
     OvmL1Bridge public immutable redstoneL1Bridge = OvmL1Bridge(0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69);
@@ -89,6 +90,8 @@ contract AtomicWethDepositor {
             redstoneL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 7777777) {
             zoraL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
+        } else if (chainId == 130) {
+            doctorWhoL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else if (chainId == 288) {
             bobaL1Bridge.depositETHTo{ value: amount }(to, l2Gas, "");
         } else {
