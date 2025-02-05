@@ -8,7 +8,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
   compareAddressesSimple,
-  getNetworkName,
   groupObjectCountsByProp,
   Multicall2Call,
   isDefined,
