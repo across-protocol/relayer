@@ -1,7 +1,7 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
 import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
-import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
+import { AcrossConfigStore, ERC20__factory, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
@@ -73,17 +73,26 @@ export async function setupTokensForWallet(
   weth?: Contract,
   seedMultiplier = 1
 ): Promise<void> {
-  const approveToken = async (token: Contract) => {
-    const balance = await token.balanceOf(wallet.address);
-    await token.connect(wallet).approve(contractToApprove.address, balance);
+  const _approveToken = async (token: Contract) => {
+    await approveToken(token, wallet, contractToApprove);
   };
 
   await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
-  await Promise.all(tokens.map(approveToken));
+  await Promise.all(tokens.map(_approveToken));
 
   if (weth) {
-    await approveToken(weth);
+    await _approveToken(weth);
   }
+}
+
+export async function approveToken(
+  token: Contract,
+  wallet: SignerWithAddress,
+  contractToApprove: Contract,
+  amount?: BigNumber
+): Promise<void> {
+  const approvalAmount = amount || (await token.balanceOf(wallet.address));
+  await token.connect(wallet).approve(contractToApprove.address, approvalAmount);
 }
 
 export function createSpyLogger(): SpyLoggerResult {
@@ -387,6 +396,7 @@ export async function fillV3Relay(
   const destinationChainId = Number(await spokePool.chainId());
   assert.notEqual(deposit.originChainId, destinationChainId);
 
+  await approveToken(ERC20__factory.connect(deposit.outputToken, signer), signer, spokePool, deposit.outputAmount);
   await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledV3Relay());
