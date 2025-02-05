@@ -61,9 +61,8 @@ async function resolveRelatedTxnReceipts(
   const uniqueTxnHashes = new Set<string>();
   client
     .getTokensBridged()
-    .filter(
-      (bridgeEvent) =>
-        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
+    .filter((bridgeEvent) =>
+      compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
     )
     .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
 

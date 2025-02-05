@@ -9,8 +9,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
   getCachedProvider,
-  getCurrentTime,
-  getNetworkName,
   groupObjectCountsByProp,
   isDefined,
   Multicall2Call,
@@ -77,7 +75,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   const searchConfig: EventSearchConfig = {
     fromBlock: hubPoolClient.eventSearchConfig.fromBlock,
     toBlock: hubPoolClient.eventSearchConfig.toBlock,
-    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookBack
+    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookBack,
   };
   const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
   const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
