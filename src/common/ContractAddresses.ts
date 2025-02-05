@@ -279,6 +279,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
+    cctpMessageTransmitter: {
+      address: "0x353bE9E2E38AB1D19104534e4edC21c643Df86f4",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x4e744b28E787c3aD0e810eD65A24461D4ac5a762",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
     eth: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
