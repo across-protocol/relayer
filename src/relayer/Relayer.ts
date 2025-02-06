@@ -27,6 +27,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -969,7 +970,7 @@ export class Relayer {
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
       method: "requestSlowFill",
-      args: [deposit],
+      args: [convertRelayDataParamsToBytes32(deposit)],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1007,11 +1008,11 @@ export class Relayer {
           "fillRelayWithUpdatedDeposit",
           " with updated parameters ",
           [
-            deposit,
+            convertRelayDataParamsToBytes32(deposit),
             repaymentChainId,
             toBytes32(this.relayerAddress),
             deposit.updatedOutputAmount,
-            deposit.updatedRecipient,
+            toBytes32(deposit.updatedRecipient),
             deposit.updatedMessage,
             deposit.speedUpSignature,
           ],

@@ -182,7 +182,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await updateAllClients();
   });
 
-  it.skip("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
+  it("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_2.connect(relayer).transfer(depositor.address, balance.sub(amountToDeposit));
@@ -214,7 +214,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
     expect(txnHashes.length).to.equal(1);
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method } = spokePool_1.interface.parseTransaction(txn);
-    expect(method).to.equal("requestV3SlowFill");
+    expect(method).to.equal("requestSlowFill");
     expect(spyLogIncludes(spy, -5, "Insufficient balance to fill all deposits")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 

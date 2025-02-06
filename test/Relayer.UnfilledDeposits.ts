@@ -284,7 +284,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       ]);
   });
 
-  it.skip("Correctly selects unfilled deposit with updated fee", async function () {
+  it("Correctly selects unfilled deposit with updated fee", async function () {
     const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
 
     // perform simple deposit
@@ -352,7 +352,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     });
   });
 
-  it.skip("Does not double fill deposit when updating fee after fill", async function () {
+  it("Does not double fill deposit when updating fee after fill", async function () {
     const deposit = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -385,8 +385,8 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     await spokePool_1
       .connect(depositor)
-      .speedUpV3Deposit(
-        sdkUtils.toBytes32(deposit.address),
+      .speedUpDeposit(
+        sdkUtils.toBytes32(depositor.address),
         deposit.depositId,
         updatedOutputAmount,
         sdkUtils.toBytes32(deposit.recipient),

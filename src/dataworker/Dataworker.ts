@@ -54,6 +54,7 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -1324,7 +1325,15 @@ export class Dataworker {
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
     const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
-    const args = [leaf, rootBundleId, proof];
+    const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
+    const args = [
+      {
+        ...leaf,
+        relayData: relayDataWithBytes32Params,
+      },
+      rootBundleId,
+      proof,
+    ];
 
     return { method, args };
   }
