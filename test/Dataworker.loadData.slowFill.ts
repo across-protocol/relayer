@@ -543,7 +543,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await updateAllClients();
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
-    expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+    expect(sdkUtils.getRelayHashFromEvent({ ...requests[0], message: depositObject.message })).to.equal(
+      sdkUtils.getRelayHashFromEvent(depositObject)
+    );
 
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
       ...spokePoolClients,
@@ -579,7 +581,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await updateAllClients();
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
-    expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+    expect(sdkUtils.getRelayHashFromEvent({ ...requests[0], message: depositObject.message })).to.equal(
+      sdkUtils.getRelayHashFromEvent(depositObject)
+    );
 
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
       ...spokePoolClients,
@@ -615,7 +619,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await updateAllClients();
     const requests = spokePoolClient_2.getSlowFillRequestsForOriginChain(originChainId);
     expect(requests.length).to.equal(1);
-    expect(sdkUtils.getRelayHashFromEvent(requests[0])).to.equal(sdkUtils.getRelayHashFromEvent(depositObject));
+    expect(sdkUtils.getRelayHashFromEvent({ ...requests[0], message: depositObject.message })).to.equal(
+      sdkUtils.getRelayHashFromEvent(depositObject)
+    );
 
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
       ...spokePoolClients,
