@@ -1,4 +1,4 @@
-import { Contract, bnZero, spreadEvent } from "../../src/utils";
+import { Contract, bnZero, spreadEvent, toBytes32 } from "../../src/utils";
 import { interfaces } from "@across-protocol/sdk";
 import { SlowFillRequestWithBlock } from "../../src/interfaces";
 import { SignerWithAddress } from "./utils";
@@ -32,12 +32,12 @@ export async function requestSlowFill(
 ): Promise<SlowFillRequestWithBlock> {
   await spokePool
     .connect(relayer)
-    .requestV3SlowFill([
-      deposit.depositor,
-      deposit.recipient,
-      deposit.exclusiveRelayer,
-      deposit.inputToken,
-      deposit.outputToken,
+    .requestSlowFill([
+      toBytes32(deposit.depositor),
+      toBytes32(deposit.recipient),
+      toBytes32(deposit.exclusiveRelayer),
+      toBytes32(deposit.inputToken),
+      toBytes32(deposit.outputToken),
       deposit.inputAmount,
       deposit.outputAmount,
       deposit.originChainId,
@@ -47,7 +47,7 @@ export async function requestSlowFill(
       deposit.message,
     ]);
   const [events, destinationChainId] = await Promise.all([
-    spokePool.queryFilter(spokePool.filters.RequestedV3SlowFill()),
+    spokePool.queryFilter(spokePool.filters.RequestedSlowFill()),
     spokePool.chainId(),
   ]);
   const lastEvent = events[events.length - 1];

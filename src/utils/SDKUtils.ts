@@ -57,6 +57,7 @@ export const {
   Profiler,
   getMessageHash,
   getRelayEventKey,
+  toBytes32,
 } = sdk.utils;
 
 export const {
