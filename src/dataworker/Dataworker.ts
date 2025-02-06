@@ -62,6 +62,8 @@ import {
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
 
+const { getMessageHash, getRelayEventKey } = sdkUtils;
+
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
   leaves: SlowFillLeaf[];
@@ -1191,20 +1193,14 @@ export class Dataworker {
     const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
       const { relayData, chainId: slowFillChainId } = slowFill;
+      const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(sortedFills, (fill) => {
-        if (
-          !(
-            fill.depositId.eq(relayData.depositId) &&
-            fill.originChainId === relayData.originChainId &&
-            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
-          )
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const fill = _.findLast(sortedFills, (fill) =>
+        fill.depositId.eq(relayData.depositId) &&
+        fill.originChainId === relayData.originChainId &&
+        getRelayEventKey(fill) === getRelayEventKey({ ...relayData, messageHash, destinationChainId: slowFillChainId })
+      );
 
       return fill;
     });
