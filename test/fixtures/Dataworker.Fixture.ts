@@ -28,7 +28,7 @@ import {
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient, MockArweaveClient } from "../mocks";
+import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
 
@@ -208,14 +208,12 @@ export async function setupDataworker(
     new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
     new defiLlama.PriceFeed(),
   ]);
-  const arweaveClient = new MockArweaveClient("", spyLogger);
   const bundleDataClient = new BundleDataClient(
     spyLogger,
     {
       configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
       multiCallerClient,
       hubPoolClient,
-      arweaveClient,
     },
     spokePoolClients,
     testChainIdList
@@ -228,7 +226,6 @@ export async function setupDataworker(
     multiCallerClient,
     configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     priceClient,
-    arweaveClient,
   };
   const dataworkerInstance = new Dataworker(
     spyLogger,

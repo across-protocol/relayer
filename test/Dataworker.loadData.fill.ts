@@ -27,7 +27,13 @@ import {
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { getCurrentTime, toBN, toBNWei, fixedPointAdjustment, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
-import { MockBundleDataClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import {
+  MockBundleDataClient,
+  MockConfigStoreClient,
+  MockHubPoolClient,
+  MockSpokePoolClient,
+  MockArweaveClient,
+} from "./mocks";
 import { interfaces, constants as sdkConstants, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
@@ -866,6 +872,11 @@ describe("Dataworker: Load bundle data", async function () {
       expect(dataworkerInstance.clients.bundleDataClient.getBundleTimestampsFromCache(key3)).to.deep.equal(cache3);
     });
     describe("Load data from Arweave", async function () {
+      beforeEach(function () {
+        const arweaveClient = new MockArweaveClient("", dataworkerInstance.logger);
+        dataworkerInstance.clients.arweaveClient = arweaveClient;
+        dataworkerInstance.clients.bundleDataClient.clients.arweaveClient = arweaveClient;
+      });
       it("Correctly loads Arweave deposit data with message hashes", async function () {
         const depositV3Events: interfaces.Log[] = [];
         const fillV3Events: interfaces.Log[] = [];

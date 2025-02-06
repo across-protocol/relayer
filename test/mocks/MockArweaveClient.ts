@@ -4,7 +4,7 @@ export class MockArweaveClient extends caching.ArweaveClient {
   // Map from arweave key to JSON object stored as a string.
   protected cache: { [key: string]: string } = {};
 
-  constructor(arweaveJWT: string, logger: winston.logger, gatewayURL = "arweave.net", protocol = "https", port = 443) {
+  constructor(arweaveJWT: string, logger: winston.logger, gatewayURL = "", protocol = "https", port = 443) {
     super(arweaveJWT, logger, gatewayURL, protocol, port);
   }
 
