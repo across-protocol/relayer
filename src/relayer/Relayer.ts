@@ -1006,6 +1006,7 @@ export class Relayer {
           [
             deposit,
             repaymentChainId,
+            this.relayerAddress,
             deposit.updatedOutputAmount,
             deposit.updatedRecipient,
             deposit.updatedMessage,
