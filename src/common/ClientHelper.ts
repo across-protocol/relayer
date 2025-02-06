@@ -209,7 +209,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
       const spokePoolContract = new ethers.Contract(
         spokePoolAddr,
-        SpokePool.abi.concat(V3_SPOKE_POOL_ABI),
+        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
         spokePoolSigners[chainId]
       );
       const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
