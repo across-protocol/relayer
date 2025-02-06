@@ -470,7 +470,7 @@ export class Relayer {
     const commitment = deposits.reduce((acc, deposit) => {
       const fills = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.map((fill) => validateFillForDeposit(fill, deposit));
+        ?.filter((fill) => validateFillForDeposit(fill, deposit).valid);
       let fill;
       if (isDefined(fills) && fills.length > 0) {
         // There should only ever be one valid fill per deposit.
