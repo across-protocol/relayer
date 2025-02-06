@@ -53,7 +53,6 @@ export const {
   modifyRelayHelper,
   randomAddress,
 } = utils;
-export const { getRelayDataHash } = sdkUtils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
@@ -363,7 +362,8 @@ export async function updateDeposit(
   deposit: Deposit,
   depositor: SignerWithAddress
 ): Promise<string> {
-  const { updatedRecipient, updatedOutputAmount, updatedMessage } = deposit;
+  const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
+  const updatedRecipient = sdkUtils.toBytes32(updatedRecipientAddress!);
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));
   assert.ok(isDefined(updatedMessage));
@@ -372,14 +372,14 @@ export async function updateDeposit(
     deposit.depositId,
     deposit.originChainId,
     updatedOutputAmount!,
-    updatedRecipient!,
+    updatedRecipient,
     updatedMessage!
   );
 
   await spokePool
     .connect(depositor)
-    .speedUpV3Deposit(
-      depositor.address,
+    .speedUpDeposit(
+      sdkUtils.toBytes32(depositor.address),
       deposit.depositId,
       updatedOutputAmount,
       updatedRecipient,
