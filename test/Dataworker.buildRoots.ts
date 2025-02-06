@@ -1,4 +1,4 @@
-import { interfaces } from "@across-protocol/sdk";
+import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { RelayerRefundLeaf, RunningBalances } from "../src/interfaces";
 import { assert, bnZero, fixedPointAdjustment } from "../src/utils";
@@ -474,6 +474,15 @@ describe("Dataworker: Build merkle roots", async function () {
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
     const expectedSlowFillLeaves = buildV3SlowRelayLeaves([deposit], lpFeePct);
-    expect(merkleRoot1.leaves).to.deep.equal(expectedSlowFillLeaves);
+    expect(merkleRoot1.leaves).to.deep.equal(
+      expectedSlowFillLeaves.map((leaf) => {
+        leaf.relayData.inputToken = sdkUtils.toAddress(leaf.relayData.inputToken);
+        leaf.relayData.outputToken = sdkUtils.toAddress(leaf.relayData.outputToken);
+        leaf.relayData.depositor = sdkUtils.toAddress(leaf.relayData.depositor);
+        leaf.relayData.recipient = sdkUtils.toAddress(leaf.relayData.recipient);
+        leaf.relayData.exclusiveRelayer = sdkUtils.toAddress(leaf.relayData.exclusiveRelayer);
+        return leaf;
+      })
+    );
   });
 });
