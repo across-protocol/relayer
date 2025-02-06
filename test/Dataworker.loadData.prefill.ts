@@ -277,12 +277,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
             getDefaultBlockRange(5),
             spokePoolClients
           );
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
             fill.args.depositId
           );
           // Check its refunded to correct address:
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].relayer).to.equal(
             validRelayerAddress
           );
         });
@@ -319,12 +319,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
             getDefaultBlockRange(5),
             spokePoolClients
           );
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
             fill.args.depositId
           );
           // Check its refunded to correct address:
-          expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].relayer).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].relayer).to.equal(
             validRelayerAddress
           );
         });
