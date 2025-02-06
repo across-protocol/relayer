@@ -1,6 +1,7 @@
 import { BundleDataClient, SpokePoolClient } from "../../src/clients";
 import { CombinedRefunds } from "../../src/dataworker/DataworkerUtils";
 import { DepositWithBlock, FillWithBlock } from "../../src/interfaces";
+import { getRelayEventKey } from "../../src/utils";
 
 export class MockBundleDataClient extends BundleDataClient {
   private pendingBundleRefunds: CombinedRefunds = {};
@@ -32,7 +33,7 @@ export class MockBundleDataClient extends BundleDataClient {
   }
 
   setMatchingFillEvent(deposit: DepositWithBlock, fill: FillWithBlock): void {
-    const relayDataHash = this.getRelayHashFromEvent(deposit);
+    const relayDataHash = getRelayEventKey(deposit);
     this.matchingFillEvents[relayDataHash] = fill;
   }
 
@@ -40,7 +41,7 @@ export class MockBundleDataClient extends BundleDataClient {
     deposit: DepositWithBlock,
     spokePoolClient: SpokePoolClient
   ): Promise<FillWithBlock | undefined> {
-    const relayDataHash = this.getRelayHashFromEvent(deposit);
+    const relayDataHash = getRelayEventKey(deposit);
     return this.matchingFillEvents[relayDataHash]
       ? Promise.resolve(this.matchingFillEvents[relayDataHash])
       : super.findMatchingFillEvent(deposit, spokePoolClient);
