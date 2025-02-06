@@ -188,8 +188,9 @@ describe("Dataworker: Load bundle data", async function () {
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
     ): interfaces.Log {
+      const method = fillEventOverride?.method ?? "fillV3Relay";
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
-      return mockDestinationSpokePoolClient.fillV3Relay({
+      return mockDestinationSpokePoolClient[method]({
         ...fillObject,
         relayExecutionInfo: {
           updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
@@ -243,7 +244,7 @@ describe("Dataworker: Load bundle data", async function () {
       generateV3FillFromDeposit(deposits[0]);
       generateV3FillFromDeposit({
         ...deposits[1],
-        message: sdkConstants.ZERO_BYTES,
+        messageHash: sdkConstants.ZERO_BYTES,
       });
 
       await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
@@ -363,8 +364,8 @@ describe("Dataworker: Load bundle data", async function () {
 
         // Fill deposit with invalid repayment information.
         const invalidRelayer = ethers.utils.randomBytes(32);
-        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
         // set the msg.sender as an invalid address.
@@ -1002,12 +1003,16 @@ describe("Dataworker: Load bundle data", async function () {
 
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1], { method: "fillRelay" }));
         fillV3Events.push(
-          generateV3FillFromDeposit(deposits[2], {}, ethers.utils.hexlify(ethers.utils.randomBytes(32)))
+          generateV3FillFromDeposit(
+            deposits[2],
+            { method: "fillRelay" },
+            ethers.utils.hexlify(ethers.utils.randomBytes(32))
+          )
         );
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid.
         const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
@@ -1052,10 +1057,10 @@ describe("Dataworker: Load bundle data", async function () {
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
         const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1], { method: "fillRelay" }));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[2], { method: "fillRelay" }, invalidRelayer));
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid.
         const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);

@@ -2,9 +2,20 @@ import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
-import { Log } from "../interfaces";
+import { Log, DepositWithBlock } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
-import { bnZero, EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston, BigNumber } from "../utils";
+import {
+  bnZero,
+  EventSearchConfig,
+  getNetworkName,
+  isDefined,
+  MakeOptional,
+  winston,
+  BigNumber,
+  getRelayEventKey,
+  getMessageHash,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -233,7 +244,11 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       const { depositId } = event.args;
       assert(isDefined(depositId));
 
-      const depositHash = this.getDepositHash({ depositId, originChainId: this.chainId });
+      const depositEvent = {
+        ...spreadEventWithBlockNumber(event),
+        messageHash: getMessageHash(event.args.message),
+      } as DepositWithBlock;
+      const depositHash = getRelayEventKey(depositEvent);
       if (isDefined(this.depositHashes[depositHash])) {
         delete this.depositHashes[depositHash];
         this.logger.warn({
