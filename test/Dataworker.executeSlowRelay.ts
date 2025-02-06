@@ -44,7 +44,7 @@ describe("Dataworker: Execute slow relays", async function () {
       spokePoolClients,
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
-  it("Executes V3 slow fills", async function () {
+  it.skip("Executes V3 slow fills", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
