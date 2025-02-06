@@ -181,7 +181,7 @@ export class Relayer {
       message: "Completed relayer maintenance.",
     });
   }
-  
+
   fillIsExclusive(deposit: Deposit): boolean {
     const currentTime = this.clients.spokePoolClients[deposit.destinationChainId].getCurrentTime();
     return deposit.exclusivityDeadline >= currentTime;
