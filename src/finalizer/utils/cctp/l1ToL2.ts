@@ -1,18 +1,14 @@
 import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getBlockForTimestamp,
   getCachedProvider,
-  getCurrentTime,
-  getNetworkName,
-  getRedisCache,
   groupObjectCountsByProp,
   isDefined,
   Multicall2Call,
@@ -22,7 +18,6 @@ import {
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { getBlockRangeByHoursOffsets } from "../linea/common";
 import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
@@ -32,14 +27,6 @@ export async function cctpL1toL2Finalizer(
   spokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
-  const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(hubPoolClient.chainId, lookback, undefined, redis);
-  logger.debug({
-    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
-    message: `MessageSent event filter for L1 to ${getNetworkName(spokePoolClient.chainId)}`,
-    fromBlock,
-  });
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(
     cctpMessageReceiverDetails.address,
@@ -50,7 +37,7 @@ export async function cctpL1toL2Finalizer(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
-    fromBlock
+    hubPoolClient
   );
   const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
@@ -71,7 +58,8 @@ export async function cctpL1toL2Finalizer(
 
 async function findRelevantTxnReceiptsForCCTPDeposits(
   currentChainId: number,
-  addressesToSearch: string[]
+  addressesToSearch: string[],
+  hubPoolClient: HubPoolClient
 ): Promise<TransactionReceipt[]> {
   const provider = getCachedProvider(currentChainId);
   const tokenMessengerContract = new Contract(
@@ -85,11 +73,10 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
     undefined,
     addressesToSearch // All depositors that we are monitoring for
   );
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(currentChainId, 24, 0);
   const searchConfig: EventSearchConfig = {
-    fromBlock,
-    toBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[currentChainId] || 10_000,
+    fromBlock: hubPoolClient.eventSearchConfig.fromBlock,
+    toBlock: hubPoolClient.eventSearchConfig.toBlock,
+    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookBack,
   };
   const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
   const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
@@ -101,11 +88,10 @@ async function resolveRelatedTxnReceipts(
   addressesToSearch: string[],
   currentChainId: number,
   targetDestinationChainId: number,
-  latestBlockToFinalize: number
+  hubPoolClient: HubPoolClient
 ): Promise<DecodedCCTPMessage[]> {
-  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch);
-  const filteredReceipts = allReceipts.filter((receipt) => receipt.blockNumber >= latestBlockToFinalize);
-  return resolveCCTPRelatedTxns(filteredReceipts, currentChainId, targetDestinationChainId);
+  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch, hubPoolClient);
+  return resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
