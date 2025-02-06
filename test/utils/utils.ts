@@ -10,7 +10,17 @@ import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
 import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
-import { BigNumber, isDefined, spreadEvent, toBN, toBNWei, toWei, utf8ToHex, ZERO_ADDRESS } from "../../src/utils";
+import {
+  BigNumber,
+  isDefined,
+  spreadEvent,
+  toBN,
+  toBNWei,
+  toWei,
+  utf8ToHex,
+  ZERO_ADDRESS,
+  getMessageHash,
+} from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
@@ -340,6 +350,7 @@ export async function depositV3(
     transactionIndex,
     logIndex,
     ...spreadEvent(args),
+    messageHash: args.messageHash ?? getMessageHash(args.message),
   };
   if (isLegacyDeposit) {
     depositObject.outputToken = outputToken;
@@ -397,13 +408,19 @@ export async function fillV3Relay(
 
   const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
 
+  const parsedEvent = spreadEvent(args);
   return {
     destinationChainId,
     blockNumber,
     transactionHash,
     transactionIndex,
     logIndex,
-    ...spreadEvent(args),
+    ...parsedEvent,
+    messageHash: args.messageHash ?? getMessageHash(args.message),
+    relayExecutionInfo: {
+      ...parsedEvent.relayExecutionInfo,
+      updatedMessageHash: getMessageHash(parsedEvent.relayExecutionInfo.updatedMessage),
+    },
   };
 }
 
