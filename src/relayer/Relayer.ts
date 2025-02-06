@@ -465,8 +465,10 @@ export class Relayer {
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
-      const fill = spokePoolClients[deposit.destinationChainId]?.getFillForDeposit(deposit);
-      if (!isDefined(fill) || fill.relayer !== this.relayerAddress) {
+      const fill = spokePoolClients[deposit.destinationChainId]
+        ?.getFillsForDeposit(deposit)
+        ?.find((f) => f.relayer === this.relayerAddress);
+      if (!isDefined(fill)) {
         return acc;
       }
 

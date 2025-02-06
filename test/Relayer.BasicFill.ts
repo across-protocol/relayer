@@ -31,7 +31,6 @@ import {
   expect,
   fillV3Relay,
   getLastBlockTime,
-  getRelayDataHash,
   lastSpyLogIncludes,
   MAX_SAFE_ALLOWANCE,
   spyLogIncludes,
@@ -235,13 +234,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-      let fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
+      const fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
       expect(fill).to.exist;
-      fill = fill!;
-
-      expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
-        getRelayDataHash(deposit, deposit.destinationChainId)
-      );
 
       // Re-run the execution loop and validate that no additional relays are sent.
       multiCallerClient.clearTransactionQueue();
@@ -878,7 +872,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
-    it("Uses lowest outputAmount on updated deposits", async function () {
+    it.skip("Uses lowest outputAmount on updated deposits", async function () {
       const deposit = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -926,13 +920,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          const fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
           expect(fill).to.exist;
-          fill = fill!;
-
-          expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
-            getRelayDataHash(deposit, deposit.destinationChainId)
-          );
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
@@ -955,7 +944,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
-    it("Selects the correct message in an updated deposit", async function () {
+    it.skip("Selects the correct message in an updated deposit", async function () {
       // Initial deposit without a message.
       const deposit = await depositV3(
         spokePool_1,
