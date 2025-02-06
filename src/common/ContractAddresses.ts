@@ -76,7 +76,7 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xE06B3B73708C38a72107e4afdBA37C76eCB3A57B",
+      address: "0xD59d70d887F34669BA695Fe9ABb8848b70de6171",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     opUSDCBridge_480: {
@@ -99,6 +99,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_690: {
       address: "0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_130: {
+      address: "0x81014F44b0a345033bB2b3B21C7a1A308B35fEeA",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_1135: {
@@ -264,6 +268,23 @@ export const CONTRACT_ADDRESSES: {
     eth: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+  },
+  [CHAIN_IDs.DOCTOR_WHO]: {
+    cctpMessageTransmitter: {
+      address: "0x353bE9E2E38AB1D19104534e4edC21c643Df86f4",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x4e744b28E787c3aD0e810eD65A24461D4ac5a762",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
   [CHAIN_IDs.SONEIUM]: {
