@@ -131,11 +131,8 @@ export class Relayer {
     }
 
     await updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
       "V3FundsDeposited",
-      "RequestedSpeedUpDeposit",
       "RequestedSpeedUpV3Deposit",
-      "FilledRelay",
       "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
