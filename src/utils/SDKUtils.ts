@@ -55,6 +55,7 @@ export const {
   getL1TokenInfo,
   getUsdcSymbol,
   Profiler,
+  toBytes32,
 } = sdk.utils;
 
 export const {

@@ -22,6 +22,7 @@ import {
   ZERO_ADDRESS,
   Profiler,
   formatGwei,
+  toBytes32,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -1006,7 +1007,7 @@ export class Relayer {
           [
             deposit,
             repaymentChainId,
-            this.relayerAddress,
+            toBytes32(this.relayerAddress),
             deposit.updatedOutputAmount,
             deposit.updatedRecipient,
             deposit.updatedMessage,
