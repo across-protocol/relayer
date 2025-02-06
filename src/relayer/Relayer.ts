@@ -979,8 +979,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestSlowFill",
-      args: [convertRelayDataParamsToBytes32(deposit)],
+      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
+      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1015,14 +1015,14 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          "fillRelayWithUpdatedDeposit",
+          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
           " with updated parameters ",
           [
-            convertRelayDataParamsToBytes32(deposit),
+            process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit,
             repaymentChainId,
-            toBytes32(this.relayerAddress),
+            process.env.ENABLE_V6 ? toBytes32(this.relayerAddress) : this.relayerAddress,
             deposit.updatedOutputAmount,
-            toBytes32(deposit.updatedRecipient),
+            process.env.ENABLE_V6 ? toBytes32(deposit.updatedRecipient) : deposit.updatedRecipient,
             deposit.updatedMessage,
             deposit.speedUpSignature,
           ],

@@ -1323,17 +1323,17 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = "executeSlowRelayLeaf";
+    const method = process.env.ENABLE_V6 ? "executeSlowRelayLeaf" : "executeV3SlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
-    const args = [
+    const args = process.env.ENABLE_V6 ? [
       {
         ...leaf,
         relayData: relayDataWithBytes32Params,
       },
       rootBundleId,
       proof,
-    ];
+    ] : [leaf, rootBundleId, proof];
 
     return { method, args };
   }
