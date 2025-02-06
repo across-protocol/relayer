@@ -901,9 +901,15 @@ describe("Dataworker: Load bundle data", async function () {
           spokePoolClients
         );
         // Fill with invalid repayment address gets repaid on destination chain now.
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(fillV3Events[0].args.depositId);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[1].depositId).to.equal(fillV3Events[1].args.depositId);
-        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(fillV3Events[2].args.depositId);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+          fillV3Events[0].args.depositId
+        );
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[1].depositId).to.equal(
+          fillV3Events[1].args.depositId
+        );
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
+          fillV3Events[2].args.depositId
+        );
       });
       // This is essentially a copy of the first test in this block, with the addition of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is refunded on lite chain to msg.sender", async function () {
