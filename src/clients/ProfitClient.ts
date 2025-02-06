@@ -204,7 +204,10 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(deposit: Deposit, relayer: string): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(
+    deposit: Omit<Deposit, "messageHash">,
+    relayer: string
+  ): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
