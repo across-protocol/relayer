@@ -900,30 +900,10 @@ describe("Dataworker: Load bundle data", async function () {
           getDefaultBlockRange(5),
           spokePoolClients
         );
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(depositV3Events.length);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-          fillV3Events.map((event) => event.args.depositId)
-        );
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
-          fillV3Events.map(() => lpFeePct)
-        );
-        const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
-        const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
-        expect(totalV3LpFees).to.equal(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].realizedLpFees);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].totalRefundAmount).to.equal(
-          totalGrossRefundAmount.sub(totalV3LpFees)
-        );
-        const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].refunds).to.deep.equal({
-          [relayer.address]: fillV3Events
-            .slice(0, fillV3Events.length - 1)
-            .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
-            .mul(refundAmountPct)
-            .div(fixedPointAdjustment),
-          [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
-            .mul(refundAmountPct)
-            .div(fixedPointAdjustment),
-        });
+        // Fill with invalid repayment address gets repaid on destination chain now.
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(fillV3Events[0].args.depositId);
+        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[1].depositId).to.equal(fillV3Events[1].args.depositId);
+        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(fillV3Events[2].args.depositId);
       });
       // This is essentially a copy of the first test in this block, with the addition of the change to the config store.
       it("Fill with bytes32 relayer with lite chain deposit is refunded on lite chain to msg.sender", async function () {
