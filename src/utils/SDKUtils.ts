@@ -58,6 +58,7 @@ export const {
   getMessageHash,
   getRelayEventKey,
   toBytes32,
+  validateFillForDeposit,
 } = sdk.utils;
 
 export const {

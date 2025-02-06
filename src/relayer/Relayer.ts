@@ -22,6 +22,7 @@ import {
   ZERO_ADDRESS,
   Profiler,
   formatGwei,
+  validateFillForDeposit,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -467,7 +468,15 @@ export class Relayer {
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
-      const fill = spokePoolClients[deposit.destinationChainId]?.getFillForDeposit(deposit);
+      const fills = spokePoolClients[deposit.destinationChainId]
+        ?.getFillsForDeposit(deposit)
+        .map((fill) => validateFillForDeposit(fill, deposit));
+      let fill;
+      if (isDefined(fills) && fills.length > 0) {
+        // There should only ever be one valid fill per deposit.
+        assert(fills.length === 1);
+        fill = fills[0];
+      }
       if (!isDefined(fill) || fill.relayer !== this.relayerAddress) {
         return acc;
       }
