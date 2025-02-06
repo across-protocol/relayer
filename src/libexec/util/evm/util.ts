@@ -26,11 +26,11 @@ export function getEventFilter(contract: Contract, eventName: string, filterArgs
  * @returns An argument array for input to an Ethers EventFilter.
  */
 export function getEventFilterArgs(relayer?: string): { [event: string]: (null | string)[] } {
-  const FilledRelay = !isDefined(relayer)
+  const FilledV3Relay = !isDefined(relayer)
     ? undefined
     : [null, null, null, null, null, null, null, null, null, null, relayer];
 
-  return { FilledRelay, FilledV3Relay: FilledRelay };
+  return { FilledV3Relay };
 }
 
 /**
