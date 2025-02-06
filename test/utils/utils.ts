@@ -336,7 +336,7 @@ export async function depositV3(
   ]);
   const txnReceipt = await txnResponse.wait();
 
-  const _topic = "V3FundsDeposited";
+  const _topic = "FundsDeposited";
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
@@ -400,7 +400,7 @@ export async function fillV3Relay(
 
   await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
 
-  const events = await spokePool.queryFilter(spokePool.filters.FilledV3Relay());
+  const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
   let args = lastEvent!.args;
   assert.exists(args);
