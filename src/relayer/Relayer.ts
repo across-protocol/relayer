@@ -131,8 +131,11 @@ export class Relayer {
     }
 
     await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
       "V3FundsDeposited",
+      "RequestedSpeedUpDeposit",
       "RequestedSpeedUpV3Deposit",
+      "FilledRelay",
       "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
@@ -464,10 +467,8 @@ export class Relayer {
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
-      const fill = spokePoolClients[deposit.destinationChainId]
-        ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer === this.relayerAddress);
-      if (!isDefined(fill)) {
+      const fill = spokePoolClients[deposit.destinationChainId]?.getFillForDeposit(deposit);
+      if (!isDefined(fill) || fill.relayer !== this.relayerAddress) {
         return acc;
       }
 
