@@ -176,7 +176,7 @@ export function _buildSlowRelayRoot(bundleSlowFillsV3: BundleSlowFills): {
   const sortedLeaves = [...slowRelayLeaves].sort((relayA, relayB) => {
     // Note: Smaller ID numbers will come first
     if (relayA.relayData.originChainId === relayB.relayData.originChainId) {
-      return relayA.relayData.depositId - relayB.relayData.depositId;
+      return relayA.relayData.depositId.lt(relayB.relayData.depositId) ? -1 : 1;
     } else {
       return relayA.relayData.originChainId - relayB.relayData.originChainId;
     }

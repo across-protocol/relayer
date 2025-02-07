@@ -54,6 +54,7 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -61,6 +62,8 @@ import {
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
+
+const { getMessageHash, getRelayEventKey } = sdkUtils;
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
@@ -1113,7 +1116,7 @@ export class Dataworker {
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
-                event.originChainId === leaf.relayData.originChainId && event.depositId === leaf.relayData.depositId
+                event.originChainId === leaf.relayData.originChainId && event.depositId.eq(leaf.relayData.depositId)
             );
 
             // Only return true if no leaf was found in the list of executed leaves.
@@ -1190,21 +1193,17 @@ export class Dataworker {
 
     const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
-      const { relayData, chainId: slowFillChainId } = slowFill;
+      const { relayData, chainId: destinationChainId } = slowFill;
+      const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(sortedFills, (fill) => {
-        if (
-          !(
-            fill.depositId === relayData.depositId &&
-            fill.originChainId === relayData.originChainId &&
-            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
-          )
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const fill = _.findLast(
+        sortedFills,
+        (fill) =>
+          fill.depositId.eq(relayData.depositId) &&
+          fill.originChainId === relayData.originChainId &&
+          getRelayEventKey(fill) === getRelayEventKey({ ...relayData, messageHash, destinationChainId })
+      );
 
       return fill;
     });
@@ -1290,7 +1289,7 @@ export class Dataworker {
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
         `Origin chain: ${relayData.originChainId}\n` +
         `Destination chain:${chainId}\n` +
-        `Deposit Id: ${relayData.depositId}\n` +
+        `Deposit Id: ${relayData.depositId.toString()}\n` +
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
@@ -1324,9 +1323,19 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = "executeV3SlowRelayLeaf";
+    const method = process.env.ENABLE_V6 ? "executeSlowRelayLeaf" : "executeV3SlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
-    const args = [leaf, rootBundleId, proof];
+    const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
+    const args = process.env.ENABLE_V6
+      ? [
+          {
+            ...leaf,
+            relayData: relayDataWithBytes32Params,
+          },
+          rootBundleId,
+          proof,
+        ]
+      : [leaf, rootBundleId, proof];
 
     return { method, args };
   }
@@ -2214,10 +2223,27 @@ export class Dataworker {
             rootBundleId,
             leaf.leafId
           );
-          const duplicateEvents = await client.spokePool.queryFilter(
+          // Temporarily query old spoke pool events as well to ease migration:
+          const legacySpokePoolAbi = [
+            "event ExecutedRelayerRefundRoot(uint256 amountToReturn,uint256 indexed chainId,uint256[] refundAmounts,uint32 indexed rootBundleId,uint32 indexed leafId,address l2TokenAddress,address[] refundAddresses,address caller)",
+          ];
+          const prevSpoke = new Contract(client.spokePool.address, legacySpokePoolAbi, client.spokePool.signer);
+          const legacyEventFilter = prevSpoke.filters.ExecutedRelayerRefundRoot(
+            null, // amountToReturn
+            leaf.chainId,
+            null, // refundAmounts
+            rootBundleId,
+            leaf.leafId
+          );
+          const _duplicateEvents = await client.spokePool.queryFilter(
             eventFilter,
             client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
           );
+          const legacyDuplicateEvents = await prevSpoke.queryFilter(
+            legacyEventFilter,
+            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
+          );
+          const duplicateEvents = _duplicateEvents.concat(legacyDuplicateEvents);
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",

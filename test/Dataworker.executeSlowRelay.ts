@@ -10,7 +10,7 @@ import {
   originChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3, requestSlowFill } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay, requestSlowFill } from "./utils";
 import { interfaces } from "@across-protocol/sdk";
 
 // Tested
@@ -45,6 +45,7 @@ describe("Dataworker: Execute slow relays", async function () {
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
   it("Executes V3 slow fills", async function () {
+    process.env.ENABLE_V6 = "true";
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -103,6 +104,7 @@ describe("Dataworker: Execute slow relays", async function () {
     const fills = spokePoolClients[destinationChainId].getFills();
     expect(fills.length).to.equal(1);
     expect(fills[0].relayExecutionInfo.fillType).to.equal(interfaces.FillType.SlowFill);
+    process.env.ENABLE_V6 = "false";
   });
   it("Ignores V3 slow fills that were replaced by a fast fill", async function () {
     await updateAllClients();
@@ -158,7 +160,7 @@ describe("Dataworker: Execute slow relays", async function () {
     expect(multiCallerClient.transactionCount()).to.equal(1);
 
     // Replace slow fill, and check that it no longer tries to get executed by dataworker.
-    await fillV3(spokePool_2, relayer, deposit);
+    await fillV3Relay(spokePool_2, deposit, relayer);
     await updateAllClients();
     multiCallerClient.clearTransactionQueue();
     await dataworkerInstance.executeSlowRelayLeaves(spokePoolClients, new BalanceAllocator(providers));

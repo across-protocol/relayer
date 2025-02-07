@@ -128,6 +128,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.DOCTOR_WHO]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
