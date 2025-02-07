@@ -21,7 +21,7 @@ export function getEventFilter(contract: Contract, eventName: string, filterArgs
 
 /**
  * Get a general event filter mapping to be used for filtering SpokePool contract events.
- * This is currently only useful for filtering the relayer address on FilledV3Relay events.
+ * This is currently only useful for filtering the relayer address on FilledRelay events.
  * @param relayer Optional relayer address to filter on.
  * @returns An argument array for input to an Ethers EventFilter.
  */
@@ -30,7 +30,7 @@ export function getEventFilterArgs(relayer?: string): { [event: string]: (null |
     ? undefined
     : [null, null, null, null, null, null, null, null, null, null, relayer];
 
-  return { FilledRelay, FilledV3Relay: FilledRelay };
+  return { FilledRelay };
 }
 
 /**
