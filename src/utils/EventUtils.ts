@@ -188,7 +188,7 @@ export class EventManager {
    */
   hashEvent(event: Log): string {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    const _args = Object.values(args).join("-");
+    const _args = Object.values(args).sort().join("-");
     const key = `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${_args}`;
     return ethersUtils.id(key);
   }
