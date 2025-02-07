@@ -63,7 +63,7 @@ export async function lineaL1ToL2Finalizer(
 
   const searchConfig: EventSearchConfig = {
     fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.eventSearchConfig.toBlock,
+    toBlock: l1SpokePoolClient.latestBlockSearched,
     maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
 

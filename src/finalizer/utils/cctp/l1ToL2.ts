@@ -80,7 +80,7 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
   );
   const searchConfig: EventSearchConfig = {
     fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.eventSearchConfig.toBlock,
+    toBlock: l1SpokePoolClient.latestBlockSearched,
     maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
   const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
