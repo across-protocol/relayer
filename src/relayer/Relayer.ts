@@ -21,10 +21,13 @@ import {
   TransactionResponse,
   Profiler,
   formatGwei,
+  toBytes32,
+  validateFillForDeposit,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -130,8 +133,11 @@ export class Relayer {
     }
 
     await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
       "V3FundsDeposited",
+      "RequestedSpeedUpDeposit",
       "RequestedSpeedUpV3Deposit",
+      "FilledRelay",
       "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
@@ -464,10 +470,16 @@ export class Relayer {
 
     const deposits = originSpoke.getDeposits({ fromBlock, toBlock });
     const commitment = deposits.reduce((acc, deposit) => {
-      const fill = spokePoolClients[deposit.destinationChainId]
+      const fills = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer === this.relayerAddress);
-      if (!isDefined(fill)) {
+        ?.filter((fill) => validateFillForDeposit(fill, deposit).valid);
+      let fill;
+      if (isDefined(fills) && fills.length > 0) {
+        // There should only ever be one valid fill per deposit.
+        assert(fills.length === 1);
+        fill = fills[0];
+      }
+      if (!isDefined(fill) || fill.relayer !== this.relayerAddress) {
         return acc;
       }
 
@@ -967,8 +979,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestV3SlowFill",
-      args: [deposit],
+      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
+      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1003,16 +1015,26 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          "fillV3RelayWithUpdatedDeposit",
+          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
           " with updated parameters ",
-          [
-            deposit,
-            repaymentChainId,
-            deposit.updatedOutputAmount,
-            deposit.updatedRecipient,
-            deposit.updatedMessage,
-            deposit.speedUpSignature,
-          ],
+          process.env.ENABLE_V6
+            ? [
+                convertRelayDataParamsToBytes32(deposit),
+                repaymentChainId,
+                toBytes32(this.relayerAddress),
+                deposit.updatedOutputAmount,
+                toBytes32(deposit.updatedRecipient),
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ]
+            : [
+                deposit,
+                repaymentChainId,
+                deposit.updatedOutputAmount,
+                deposit.updatedRecipient,
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;

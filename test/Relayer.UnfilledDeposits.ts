@@ -285,6 +285,7 @@ describe("Relayer: Unfilled Deposits", async function () {
   });
 
   it("Correctly selects unfilled deposit with updated fee", async function () {
+    process.env.ENABLE_V6 = "true";
     const delta = await spokePool_1.depositQuoteTimeBuffer(); // seconds
 
     // perform simple deposit
@@ -320,17 +321,17 @@ describe("Relayer: Unfilled Deposits", async function () {
         deposit.depositId,
         originChainId,
         updatedOutputAmount,
-        deposit.recipient,
+        sdkUtils.toBytes32(deposit.recipient),
         deposit.message
       );
 
       await spokePool_1
         .connect(depositor)
-        .speedUpV3Deposit(
-          depositor.address,
+        .speedUpDeposit(
+          sdkUtils.toBytes32(depositor.address),
           deposit.depositId,
           updatedOutputAmount,
-          deposit.recipient,
+          sdkUtils.toBytes32(deposit.recipient),
           deposit.message,
           signature
         );
@@ -350,9 +351,11 @@ describe("Relayer: Unfilled Deposits", async function () {
       expect(unfilledDeposit.deposit.outputAmount).to.deep.eq(outputAmount);
       expect(unfilledDeposit.deposit.updatedOutputAmount).to.deep.eq(updatedOutputAmount);
     });
+    process.env.ENABLE_V6 = "false";
   });
 
   it("Does not double fill deposit when updating fee after fill", async function () {
+    process.env.ENABLE_V6 = "true";
     const deposit = await depositV3(
       spokePool_1,
       destinationChainId,
@@ -366,10 +369,6 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    expect(sdkUtils.getRelayDataHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
-      sdkUtils.getRelayDataHash(deposit, deposit.destinationChainId)
-    );
-
     await fillV3Relay(spokePool_2, deposit, relayer);
 
     await updateAllClients();
@@ -383,17 +382,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       deposit.depositId,
       originChainId,
       updatedOutputAmount,
-      deposit.recipient,
+      sdkUtils.toBytes32(deposit.recipient),
       deposit.message
     );
 
     await spokePool_1
       .connect(depositor)
-      .speedUpV3Deposit(
-        depositor.address,
+      .speedUpDeposit(
+        sdkUtils.toBytes32(depositor.address),
         deposit.depositId,
         updatedOutputAmount,
-        deposit.recipient,
+        sdkUtils.toBytes32(deposit.recipient),
         deposit.message,
         signature
       );
@@ -401,6 +400,7 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(0);
+    process.env.ENABLE_V6 = "false";
   });
 
   it("Batch-computes LP fees correctly", async function () {
