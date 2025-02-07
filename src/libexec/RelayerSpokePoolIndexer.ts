@@ -195,12 +195,7 @@ async function run(argv: string[]): Promise<void> {
   };
 
   if (latestBlock.number > startBlock) {
-    const events = [
-      "FundsDeposited",
-      "FilledRelay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ];
+    const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     const _spokePool = spokePool.connect(quorumProvider);
     await Promise.all([resolveOldestTime(_spokePool, startBlock), scrapeEvents(_spokePool, events, opts)]);
   }
