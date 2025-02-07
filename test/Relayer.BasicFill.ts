@@ -3,7 +3,15 @@ import hre from "hardhat";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { averageBlockTime, bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
+import {
+  averageBlockTime,
+  bnZero,
+  bnOne,
+  bnUint256Max,
+  getNetworkName,
+  getAllUnfilledDeposits,
+  getMessageHash,
+} from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -872,7 +880,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
-    it.skip("Uses lowest outputAmount on updated deposits", async function () {
+    it("Uses lowest outputAmount on updated deposits", async function () {
+      process.env.ENABLE_V6 = "true";
       const deposit = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -929,8 +938,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(fill.relayExecutionInfo.updatedRecipient).to.not.equal(deposit.recipient);
           expect(fill.relayExecutionInfo.updatedRecipient).to.equal(update.recipient);
 
-          expect(fill.relayExecutionInfo.updatedMessage).to.equal(deposit.message);
-          expect(fill.relayExecutionInfo.updatedMessage.toString()).to.equal(update.message);
+          expect(fill.relayExecutionInfo.updatedMessageHash).to.equal(deposit.messageHash);
+          expect(fill.relayExecutionInfo.updatedMessageHash.toString()).to.equal(getMessageHash(update.message));
         }
       }
 
@@ -942,9 +951,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         expect((await receipts).length).to.equal(0);
       }
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
+      process.env.ENABLE_V6 = "false";
     });
 
-    it.skip("Selects the correct message in an updated deposit", async function () {
+    it("Selects the correct message in an updated deposit", async function () {
+      process.env.ENABLE_V6 = "true";
       // Initial deposit without a message.
       const deposit = await depositV3(
         spokePool_1,
@@ -987,6 +998,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
+      process.env.ENABLE_V6 = "false";
     });
   });
 });

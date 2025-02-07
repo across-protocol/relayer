@@ -22,11 +22,13 @@ import {
   ZERO_ADDRESS,
   Profiler,
   formatGwei,
+  toBytes32,
   validateFillForDeposit,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -977,8 +979,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestV3SlowFill",
-      args: [deposit],
+      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
+      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1013,16 +1015,26 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          "fillV3RelayWithUpdatedDeposit",
+          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
           " with updated parameters ",
-          [
-            deposit,
-            repaymentChainId,
-            deposit.updatedOutputAmount,
-            deposit.updatedRecipient,
-            deposit.updatedMessage,
-            deposit.speedUpSignature,
-          ],
+          process.env.ENABLE_V6
+            ? [
+                convertRelayDataParamsToBytes32(deposit),
+                repaymentChainId,
+                toBytes32(this.relayerAddress),
+                deposit.updatedOutputAmount,
+                toBytes32(deposit.updatedRecipient),
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ]
+            : [
+                deposit,
+                repaymentChainId,
+                deposit.updatedOutputAmount,
+                deposit.updatedRecipient,
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;
