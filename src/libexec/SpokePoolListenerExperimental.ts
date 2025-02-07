@@ -55,6 +55,11 @@ const _chains = {
   [CHAIN_IDs.ZORA]: chains.zora,
 } as const;
 
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
  * @param spokePool Ethers Constract instance.
@@ -89,7 +94,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   const providers = urls.map((url) =>
     createPublicClient({
       chain: _chains[chainId],
-      transport: webSocket(url, { name: getOriginFromURL(url) }),
+      transport: webSocket(url),
+      name: getOriginFromURL(url),
     })
   );
 
