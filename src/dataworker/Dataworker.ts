@@ -2223,10 +2223,27 @@ export class Dataworker {
             rootBundleId,
             leaf.leafId
           );
-          const duplicateEvents = await client.spokePool.queryFilter(
+          // Temporarily query old spoke pool events as well to ease migration:
+          const legacySpokePoolAbi = [
+            "event ExecutedRelayerRefundRoot(uint256 amountToReturn,uint256 indexed chainId,uint256[] refundAmounts,uint32 indexed rootBundleId,uint32 indexed leafId,address l2TokenAddress,address[] refundAddresses,address caller)",
+          ];
+          const prevSpoke = new Contract(client.spokePool.address, legacySpokePoolAbi, client.spokePool.signer);
+          const legacyEventFilter = prevSpoke.filters.ExecutedRelayerRefundRoot(
+            null, // amountToReturn
+            leaf.chainId,
+            null, // refundAmounts
+            rootBundleId,
+            leaf.leafId
+          );
+          const _duplicateEvents = await client.spokePool.queryFilter(
             eventFilter,
             client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
           );
+          const legacyDuplicateEvents = await prevSpoke.queryFilter(
+            legacyEventFilter,
+            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
+          );
+          const duplicateEvents = _duplicateEvents.concat(legacyDuplicateEvents);
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",
