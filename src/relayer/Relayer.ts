@@ -1017,15 +1017,24 @@ export class Relayer {
       : [
           process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
           " with updated parameters ",
-          [
-            process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit,
-            repaymentChainId,
-            process.env.ENABLE_V6 ? toBytes32(this.relayerAddress) : this.relayerAddress,
-            deposit.updatedOutputAmount,
-            process.env.ENABLE_V6 ? toBytes32(deposit.updatedRecipient) : deposit.updatedRecipient,
-            deposit.updatedMessage,
-            deposit.speedUpSignature,
-          ],
+          process.env.ENABLE_V6
+            ? [
+                convertRelayDataParamsToBytes32(deposit),
+                repaymentChainId,
+                toBytes32(this.relayerAddress),
+                deposit.updatedOutputAmount,
+                toBytes32(deposit.updatedRecipient),
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ]
+            : [
+                deposit,
+                repaymentChainId,
+                deposit.updatedOutputAmount,
+                deposit.updatedRecipient,
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;
