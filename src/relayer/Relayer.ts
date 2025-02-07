@@ -473,7 +473,7 @@ export class Relayer {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
         ?.find((f) => f.relayer === this.relayerAddress);
-      if (!isDefined(fill) || !validateFillForDeposit(fill, deposit).valid) {
+      if (!isDefined(fill)) {
         return acc;
       }
 
