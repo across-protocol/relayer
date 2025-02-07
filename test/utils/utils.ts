@@ -53,7 +53,6 @@ export const {
   modifyRelayHelper,
   randomAddress,
 } = utils;
-export const { getRelayDataHash } = sdkUtils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
@@ -336,7 +335,7 @@ export async function depositV3(
   ]);
   const txnReceipt = await txnResponse.wait();
 
-  const _topic = "V3FundsDeposited";
+  const _topic = "FundsDeposited";
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
@@ -363,7 +362,8 @@ export async function updateDeposit(
   deposit: Deposit,
   depositor: SignerWithAddress
 ): Promise<string> {
-  const { updatedRecipient, updatedOutputAmount, updatedMessage } = deposit;
+  const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
+  const updatedRecipient = sdkUtils.toBytes32(updatedRecipientAddress!);
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));
   assert.ok(isDefined(updatedMessage));
@@ -372,14 +372,14 @@ export async function updateDeposit(
     deposit.depositId,
     deposit.originChainId,
     updatedOutputAmount!,
-    updatedRecipient!,
+    updatedRecipient,
     updatedMessage!
   );
 
   await spokePool
     .connect(depositor)
-    .speedUpV3Deposit(
-      depositor.address,
+    .speedUpDeposit(
+      sdkUtils.toBytes32(depositor.address),
       deposit.depositId,
       updatedOutputAmount,
       updatedRecipient,
@@ -400,7 +400,7 @@ export async function fillV3Relay(
 
   await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
 
-  const events = await spokePool.queryFilter(spokePool.filters.FilledV3Relay());
+  const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
   let args = lastEvent!.args;
   assert.exists(args);
@@ -445,11 +445,11 @@ export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct:
       const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
       const slowFillLeaf: SlowFillLeaf = {
         relayData: {
-          depositor: deposit.depositor,
-          recipient: deposit.recipient,
-          exclusiveRelayer: deposit.exclusiveRelayer,
-          inputToken: deposit.inputToken,
-          outputToken: deposit.outputToken,
+          depositor: sdkUtils.toBytes32(deposit.depositor),
+          recipient: sdkUtils.toBytes32(deposit.recipient),
+          exclusiveRelayer: sdkUtils.toBytes32(deposit.exclusiveRelayer),
+          inputToken: sdkUtils.toBytes32(deposit.inputToken),
+          outputToken: sdkUtils.toBytes32(deposit.outputToken),
           inputAmount: deposit.inputAmount,
           outputAmount: deposit.outputAmount,
           originChainId: deposit.originChainId,

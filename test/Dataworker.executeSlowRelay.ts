@@ -45,6 +45,7 @@ describe("Dataworker: Execute slow relays", async function () {
     } = await setupDataworker(ethers, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, 0));
   });
   it("Executes V3 slow fills", async function () {
+    process.env.ENABLE_V6 = "true";
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -103,6 +104,7 @@ describe("Dataworker: Execute slow relays", async function () {
     const fills = spokePoolClients[destinationChainId].getFills();
     expect(fills.length).to.equal(1);
     expect(fills[0].relayExecutionInfo.fillType).to.equal(interfaces.FillType.SlowFill);
+    process.env.ENABLE_V6 = "false";
   });
   it("Ignores V3 slow fills that were replaced by a fast fill", async function () {
     await updateAllClients();

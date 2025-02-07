@@ -240,13 +240,13 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
     // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
     // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
-    if (eventName === "V3FundsDeposited") {
+    if (eventName === "V3FundsDeposited" || eventName === "FundsDeposited") {
       const { depositId } = event.args;
       assert(isDefined(depositId));
 
       const depositEvent = {
         ...spreadEventWithBlockNumber(event),
-        messageHash: getMessageHash(event.args.message),
+        messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
       } as DepositWithBlock;
       const depositHash = getRelayEventKey(depositEvent);
       if (isDefined(this.depositHashes[depositHash])) {

@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.32.tgz#402cccb942f9dc4eb8dde5de7cf801835338c673"
   integrity sha512-vSh0pKTE2mwM97Bv9WYCgJ51Pnw29xSKnfbgoSuEhCGrw6GGMeElcwiUqQeZNlF8eMn16y7KcymXR9X4i2sTMA==
 
-"@across-protocol/contracts@3.0.26-beta.1", "@across-protocol/contracts@^3.0.26-beta.1":
-  version "3.0.26-beta.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-3.0.26-beta.1.tgz#4885c84e9d1780e44238c35c570d5489d16aaab3"
-  integrity sha512-PY67GrA2TZioninrDHD1Kz/YU+MjqSgQ2omzXx8onkHIIRic5hZqBuicRcECY+3zrJyFwHI80srA05NJhyHH1A==
+"@across-protocol/contracts@4.0.0", "@across-protocol/contracts@^4.0.0":
+  version "4.0.0"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.0.tgz#d263f23ae37e0e71b66d9f3c760ffe6d2af9dccd"
+  integrity sha512-T6hmHc7x5E/RGslV8f0Ufs6hwLdDJ3ll3cXvfvqTsUkptS8QUyUGkdqrjIn5K1tydioDYDcQkIaCYBDoyq/9vQ==
   dependencies:
     "@across-protocol/constants" "^3.1.32"
     "@coral-xyz/anchor" "^0.30.1"
@@ -54,14 +54,14 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@^4.0.4":
-  version "4.0.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.0.4.tgz#5789f2829d5409150370015a9ad66e1e5a81a3f7"
-  integrity sha512-Lvsse/vTJfH3Ws4mJ43iN4volA0w7NLh2jEmvSgcSUPOXgI+oGucmWMP0pDrxGH6H6OLnGuNfIzklDJXtxwe0Q==
+"@across-protocol/sdk@^4.1.1":
+  version "4.1.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.1.tgz#fed816afa5e0e28e54469f6b44e306b8c7ab0a0c"
+  integrity sha512-SQkBcKWkBKj9aNqSylAS+FDEwJ0w2mN0T20Vn0PqVbmsnkmsAUA56+ksxNgPIBFDglIki5W1CqrCDE8wxxU5gg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.32"
-    "@across-protocol/contracts" "3.0.26-beta.1"
+    "@across-protocol/contracts" "4.0.0"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
