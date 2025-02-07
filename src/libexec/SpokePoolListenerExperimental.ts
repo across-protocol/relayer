@@ -56,9 +56,9 @@ const _chains = {
 } as const;
 
 // Teach BigInt how to be represented as JSON.
-(BigInt.prototype as any).toJSON = function() {
-    return this.toString()
-}
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
