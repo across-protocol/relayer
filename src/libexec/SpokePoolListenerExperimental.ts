@@ -55,6 +55,11 @@ const _chains = {
   [CHAIN_IDs.ZORA]: chains.zora,
 } as const;
 
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function() {
+    return this.toString()
+}
+
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
  * @param spokePool Ethers Constract instance.
