@@ -22,7 +22,6 @@ import {
   Profiler,
   formatGwei,
   toBytes32,
-  validateFillForDeposit,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
