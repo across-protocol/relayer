@@ -422,7 +422,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
       ]);
     });
     it("Executes mainnet slow fill leaves", async function () {
-      process.env.ENABLE_V6 = "true";
       // In this test, we verify slow fill leaves are executed after mainnet pool leaves.
 
       const slowFillAmount = toBNWei("1");
