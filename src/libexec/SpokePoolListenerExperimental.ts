@@ -94,7 +94,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   const providers = urls.map((url) =>
     createPublicClient({
       chain: _chains[chainId],
-      transport: webSocket(url, { name: getOriginFromURL(url) }),
+      transport: webSocket(url),
+      name: getOriginFromURL(url),
     })
   );
 
