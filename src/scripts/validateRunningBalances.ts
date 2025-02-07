@@ -58,7 +58,7 @@ import {
   chainIsOPStack,
 } from "../utils";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain } from "../dataworker/DataworkerUtils";
+import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
 import { Log, ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
@@ -554,9 +554,17 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       ]);
 
       const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
+      const reconstructedBundleData = await dataworker._proposeRootBundle(
+        blockRangesImpliedByBundleEndBlocks,
+        spokePoolClients,
+        blockRangesImpliedByBundleEndBlocks[0][1],
+        // Load data from Arweave to reconstruct bundle so we can pass in these "light" spoke pool clients
+        // that haven't loaded all the Bridge events.
+        true,
+        false
+      );
       const output = {
-        slowFills: (await dataworker.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClientsForBundle))
-          .leaves,
+        slowFills: _buildSlowRelayRoot(reconstructedBundleData.bundleData.bundleSlowFillsV3).leaves,
         bundleSpokePoolClients: spokePoolClientsForBundle,
       };
       slowRootCache[key] = output;
