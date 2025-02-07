@@ -422,7 +422,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
       ]);
     });
     it("Executes mainnet slow fill leaves", async function () {
-      process.env.ENABLE_V6 = "true";
       // In this test, we verify slow fill leaves are executed after mainnet pool leaves.
 
       const slowFillAmount = toBNWei("1");
@@ -485,7 +484,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // Execute mainnet refund leaf after mainnet pool leaf. Then update exchange rates to execute non-mainnet pool leaf.
       const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
       expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal(["executeRootBundle", "executeSlowRelayLeaf"]);
-      process.env.ENABLE_V6 = "false";
     });
     it("No non-mainnet leaves", async function () {
       // In this test, check that if there are no mainnet leaves, then the dataworker should just execute non
