@@ -22,7 +22,6 @@ import {
   Profiler,
   formatGwei,
   toBytes32,
-  validateFillForDeposit,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -473,7 +472,7 @@ export class Relayer {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
         ?.find((f) => f.relayer === this.relayerAddress);
-      if (!isDefined(fill) || !validateFillForDeposit(fill, deposit).valid) {
+      if (!isDefined(fill)) {
         return acc;
       }
 
