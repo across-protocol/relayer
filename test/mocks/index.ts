@@ -8,3 +8,4 @@ export * from "./MockTokenClient";
 export * from "./MockTransactionClient";
 export * from "./MockInventoryClient";
 export * from "./MockSpokePoolClient";
+export * from "./MockArweaveClient";

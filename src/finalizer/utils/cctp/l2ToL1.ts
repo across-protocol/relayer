@@ -8,10 +8,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
   compareAddressesSimple,
-  getBlockForTimestamp,
-  getCurrentTime,
-  getNetworkName,
-  getRedisCache,
   groupObjectCountsByProp,
   Multicall2Call,
   isDefined,
@@ -27,21 +23,13 @@ export async function cctpL2toL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
-  const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
-  const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(spokePoolClient.chainId, lookback, undefined, redis);
-  logger.debug({
-    at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
-    message: `MessageSent event filter for ${getNetworkName(spokePoolClient.chainId)} to L1`,
-    fromBlock,
-  });
   const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(
     cctpMessageReceiverDetails.address,
     cctpMessageReceiverDetails.abi,
     hubPoolClient.hubPool.provider
   );
-  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId, fromBlock);
+  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId);
   const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
     decodedMessages,
@@ -65,8 +53,7 @@ export async function cctpL2toL1Finalizer(
 
 async function resolveRelatedTxnReceipts(
   client: SpokePoolClient,
-  targetDestinationChainId: number,
-  latestBlockToFinalize: number
+  targetDestinationChainId: number
 ): Promise<DecodedCCTPMessage[]> {
   const sourceChainId = client.chainId;
   // Dedup the txnReceipt list because there might be multiple tokens bridged events in the same txn hash.
@@ -74,10 +61,8 @@ async function resolveRelatedTxnReceipts(
   const uniqueTxnHashes = new Set<string>();
   client
     .getTokensBridged()
-    .filter(
-      (bridgeEvent) =>
-        bridgeEvent.blockNumber >= latestBlockToFinalize &&
-        compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
+    .filter((bridgeEvent) =>
+      compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
     )
     .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
 
