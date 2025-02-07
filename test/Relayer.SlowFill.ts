@@ -183,6 +183,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
   });
 
   it("Correctly requests slow fill for v3 Deposits if insufficient token balance", async function () {
+    process.env.ENABLE_V6 = "true";
     // Transfer away a lot of the relayers funds to simulate the relayer having insufficient funds.
     const balance = await erc20_1.balanceOf(relayer.address);
     await erc20_2.connect(relayer).transfer(depositor.address, balance.sub(amountToDeposit));
@@ -228,5 +229,6 @@ describe("Relayer: Initiates slow fill requests", async function () {
       expect((await receipts).length).to.equal(0);
     }
     expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    process.env.ENABLE_V6 = "false";
   });
 });
