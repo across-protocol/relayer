@@ -242,9 +242,7 @@ async function run(argv: string[]): Promise<void> {
   if (latestBlock.number > startBlock) {
     const events = [
       "FundsDeposited",
-      "V3FundsDeposited",
       "FilledRelay",
-      "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
@@ -256,7 +254,7 @@ async function run(argv: string[]): Promise<void> {
   oldestTime ??= latestBlock.timestamp;
 
   // Events to listen for.
-  const events = ["FundsDeposited", "V3FundsDeposited", "FilledRelay", "FilledV3Relay"];
+  const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
