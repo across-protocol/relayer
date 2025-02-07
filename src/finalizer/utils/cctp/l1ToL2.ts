@@ -24,20 +24,21 @@ export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
   _signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[spokePoolClient.chainId].cctpMessageTransmitter;
+  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[l2SpokePoolClient.chainId].cctpMessageTransmitter;
   const contract = new ethers.Contract(
     cctpMessageReceiverDetails.address,
     cctpMessageReceiverDetails.abi,
-    spokePoolClient.spokePool.provider
+    l2SpokePoolClient.spokePool.provider
   );
   const decodedMessages = await resolveRelatedTxnReceipts(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
-    spokePoolClient.chainId,
-    hubPoolClient
+    l2SpokePoolClient.chainId,
+    l1SpokePoolClient
   );
   const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
@@ -45,13 +46,17 @@ export async function cctpL1toL2Finalizer(
     (message: { status: CCTPMessageStatus }) => message.status
   );
   logger.debug({
-    at: `Finalizer#CCTPL1ToL2Finalizer:${spokePoolClient.chainId}`,
-    message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP L1 to ${spokePoolClient.chainId}`,
+    at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
+    message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP L1 to ${l2SpokePoolClient.chainId}`,
     statusesGrouped,
   });
 
   return {
-    crossChainMessages: await generateDepositData(unprocessedMessages, hubPoolClient.chainId, spokePoolClient.chainId),
+    crossChainMessages: await generateDepositData(
+      unprocessedMessages,
+      hubPoolClient.chainId,
+      l2SpokePoolClient.chainId
+    ),
     callData: await generateMultiCallData(contract, unprocessedMessages),
   };
 }
@@ -59,7 +64,7 @@ export async function cctpL1toL2Finalizer(
 async function findRelevantTxnReceiptsForCCTPDeposits(
   currentChainId: number,
   addressesToSearch: string[],
-  hubPoolClient: HubPoolClient
+  l1SpokePoolClient: SpokePoolClient
 ): Promise<TransactionReceipt[]> {
   const provider = getCachedProvider(currentChainId);
   const tokenMessengerContract = new Contract(
@@ -74,9 +79,9 @@ async function findRelevantTxnReceiptsForCCTPDeposits(
     addressesToSearch // All depositors that we are monitoring for
   );
   const searchConfig: EventSearchConfig = {
-    fromBlock: hubPoolClient.eventSearchConfig.fromBlock,
-    toBlock: hubPoolClient.eventSearchConfig.toBlock,
-    maxBlockLookBack: hubPoolClient.eventSearchConfig.maxBlockLookBack,
+    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: l1SpokePoolClient.eventSearchConfig.toBlock,
+    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
   const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
   const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
@@ -88,9 +93,13 @@ async function resolveRelatedTxnReceipts(
   addressesToSearch: string[],
   currentChainId: number,
   targetDestinationChainId: number,
-  hubPoolClient: HubPoolClient
+  l1SpokePoolClient: SpokePoolClient
 ): Promise<DecodedCCTPMessage[]> {
-  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(currentChainId, addressesToSearch, hubPoolClient);
+  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(
+    currentChainId,
+    addressesToSearch,
+    l1SpokePoolClient
+  );
   return resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
 }
 
