@@ -211,7 +211,14 @@ async function run(argv: string[]): Promise<void> {
   oldestTime ??= latestBlock.timestamp;
 
   // Events to listen for.
-  const events = ["FundsDeposited", "V3FundsDeposited", "RequestedSpeedUpDeposit", "RequestedSpeedUpV3Deposit", "FilledRelay", "FilledV3Relay"];
+  const events = [
+    "FundsDeposited",
+    "V3FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "RequestedSpeedUpV3Deposit",
+    "FilledRelay",
+    "FilledV3Relay",
+  ];
   const eventMgr = new EventManager(logger, chainId, quorum);
   const providers = getWSProviders(chainId, quorum);
   let nProviders = providers.length;
