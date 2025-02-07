@@ -78,7 +78,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           erc20_2.address,
           amountToDeposit
         );
-        await spokePoolClient_1.update(["V3FundsDeposited"]);
+        await spokePoolClient_1.update(["FundsDeposited"]);
 
         // Mine fill, update spoke pool client to advance its latest block searched far enough such that the
         // fillStatuses() call and findFillEvent() queries work but ignore the fill event to force the Bundle Client

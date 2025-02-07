@@ -86,6 +86,9 @@ export async function updateMonitorClients(clients: MonitorClients): Promise<voi
     "V3FundsDeposited",
     "RequestedSpeedUpV3Deposit",
     "FilledV3Relay",
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
   ]);
   const allL1Tokens = clients.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   await clients.crossChainTransferClient.update(allL1Tokens);

@@ -1,9 +1,14 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
 import { getParamType, utils } from ".";
+import _ from "lodash";
+import { convertRelayDataParamsToBytes32 } from "./DepositUtils";
 
 export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillLeaf> {
-  const hashFn = (input: SlowFillLeaf) => {
+  const hashFn = (_input: SlowFillLeaf) => {
+    // Clone the input so we can mutate it.
+    const input = _.cloneDeep(_input);
+    input.relayData = convertRelayDataParamsToBytes32(input.relayData);
     const verifyFn = "verifyV3SlowRelayFulfillment";
     const paramType = getParamType("MerkleLibTest", verifyFn, "slowFill");
     return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));

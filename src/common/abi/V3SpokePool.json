@@ -1,0 +1,279 @@
+[
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "depositor",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "recipient",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "exclusiveRelayer",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "inputToken",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "outputToken",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "inputAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "outputAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "originChainId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint32",
+            "name": "depositId",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "fillDeadline",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "exclusivityDeadline",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "message",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct V3SpokePoolInterface.V3RelayData",
+        "name": "relayData",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint256",
+        "name": "repaymentChainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "updatedOutputAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "updatedRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "updatedMessage",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "depositorSignature",
+        "type": "bytes"
+      }
+    ],
+    "name": "fillV3RelayWithUpdatedDeposit",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "depositor",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "recipient",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "exclusiveRelayer",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "inputToken",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "outputToken",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "inputAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "outputAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "originChainId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint32",
+            "name": "depositId",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "fillDeadline",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "exclusivityDeadline",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "message",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct V3SpokePoolInterface.V3RelayData",
+        "name": "relayData",
+        "type": "tuple"
+      }
+    ],
+    "name": "requestV3SlowFill",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "depositor",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "recipient",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "exclusiveRelayer",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "inputToken",
+                "type": "address"
+              },
+              {
+                "internalType": "address",
+                "name": "outputToken",
+                "type": "address"
+              },
+              {
+                "internalType": "uint256",
+                "name": "inputAmount",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "outputAmount",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint256",
+                "name": "originChainId",
+                "type": "uint256"
+              },
+              {
+                "internalType": "uint32",
+                "name": "depositId",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "fillDeadline",
+                "type": "uint32"
+              },
+              {
+                "internalType": "uint32",
+                "name": "exclusivityDeadline",
+                "type": "uint32"
+              },
+              {
+                "internalType": "bytes",
+                "name": "message",
+                "type": "bytes"
+              }
+            ],
+            "internalType": "struct V3SpokePoolInterface.V3RelayData",
+            "name": "relayData",
+            "type": "tuple"
+          },
+          {
+            "internalType": "uint256",
+            "name": "chainId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "updatedOutputAmount",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct V3SpokePoolInterface.V3SlowFill",
+        "name": "slowFillLeaf",
+        "type": "tuple"
+      },
+      {
+        "internalType": "uint32",
+        "name": "rootBundleId",
+        "type": "uint32"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "executeV3SlowRelayLeaf",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

@@ -19,13 +19,14 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
-  ZERO_ADDRESS,
   Profiler,
   formatGwei,
+  toBytes32,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -131,8 +132,11 @@ export class Relayer {
     }
 
     await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
       "V3FundsDeposited",
+      "RequestedSpeedUpDeposit",
       "RequestedSpeedUpV3Deposit",
+      "FilledRelay",
       "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
@@ -181,6 +185,11 @@ export class Relayer {
       at: "Relayer::runMaintenance",
       message: "Completed relayer maintenance.",
     });
+  }
+
+  fillIsExclusive(deposit: Deposit): boolean {
+    const currentTime = this.clients.spokePoolClients[deposit.destinationChainId].getCurrentTime();
+    return deposit.exclusivityDeadline >= currentTime;
   }
 
   /**
@@ -292,11 +301,7 @@ export class Relayer {
       return false;
     }
 
-    if (
-      deposit.exclusiveRelayer !== ZERO_ADDRESS &&
-      deposit.exclusivityDeadline > currentTime &&
-      getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
-    ) {
+    if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
       return false;
     }
 
@@ -638,7 +643,7 @@ export class Relayer {
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
     if (slowDepositors?.includes(depositor)) {
-      if (fillStatus === FillStatus.Unfilled) {
+      if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
           message: "Initiating slow fill for grey listed depositor",
@@ -967,8 +972,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: "requestV3SlowFill",
-      args: [deposit],
+      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
+      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1003,16 +1008,26 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          "fillV3RelayWithUpdatedDeposit",
+          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
           " with updated parameters ",
-          [
-            deposit,
-            repaymentChainId,
-            deposit.updatedOutputAmount,
-            deposit.updatedRecipient,
-            deposit.updatedMessage,
-            deposit.speedUpSignature,
-          ],
+          process.env.ENABLE_V6
+            ? [
+                convertRelayDataParamsToBytes32(deposit),
+                repaymentChainId,
+                toBytes32(this.relayerAddress),
+                deposit.updatedOutputAmount,
+                toBytes32(deposit.updatedRecipient),
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ]
+            : [
+                deposit,
+                repaymentChainId,
+                deposit.updatedOutputAmount,
+                deposit.updatedRecipient,
+                deposit.updatedMessage,
+                deposit.speedUpSignature,
+              ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;
