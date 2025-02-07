@@ -19,7 +19,6 @@ import {
   winston,
   fixedPointAdjustment,
   TransactionResponse,
-  ZERO_ADDRESS,
   Profiler,
   formatGwei,
   toBytes32,
@@ -189,6 +188,11 @@ export class Relayer {
     });
   }
 
+  fillIsExclusive(deposit: Deposit): boolean {
+    const currentTime = this.clients.spokePoolClients[deposit.destinationChainId].getCurrentTime();
+    return deposit.exclusivityDeadline >= currentTime;
+  }
+
   /**
    * @description For a given deposit, apply relayer-specific filtering to determine whether it should be filled.
    * @param deposit Deposit object.
@@ -298,11 +302,7 @@ export class Relayer {
       return false;
     }
 
-    if (
-      deposit.exclusiveRelayer !== ZERO_ADDRESS &&
-      deposit.exclusivityDeadline > currentTime &&
-      getAddress(deposit.exclusiveRelayer) !== this.relayerAddress
-    ) {
+    if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
       return false;
     }
 
@@ -650,7 +650,7 @@ export class Relayer {
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
     if (slowDepositors?.includes(depositor)) {
-      if (fillStatus === FillStatus.Unfilled) {
+      if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
           message: "Initiating slow fill for grey listed depositor",
