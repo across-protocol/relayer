@@ -272,9 +272,7 @@ export class Relayer {
     }
 
     [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer].forEach((address) => {
-      try {
-        sdkUtils.toAddress(address);
-      } catch (err) {
+      if (!sdkUtils.isValidEvmAddress(address)) {
         this.logger.debug({
           at: "Relayer::filterDeposit",
           message: `Skipping ${srcChain} deposit due to invalid address.`,
