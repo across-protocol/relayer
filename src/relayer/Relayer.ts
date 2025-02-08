@@ -228,6 +228,18 @@ export class Relayer {
       return false;
     }
 
+    [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer, deposit.inputToken, deposit.outputToken].forEach((address) => {
+      if (!sdkUtils.isValidEvmAddress(address)) {
+        this.logger.debug({
+          at: "Relayer::filterDeposit",
+          message: `Skipping ${srcChain} deposit due to invalid address.`,
+          address,
+          deposit,
+        });
+        return false;
+      }
+    });
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -270,17 +282,6 @@ export class Relayer {
       });
       return false;
     }
-
-    [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer].forEach((address) => {
-      if (!sdkUtils.isValidEvmAddress(address)) {
-        this.logger.debug({
-          at: "Relayer::filterDeposit",
-          message: `Skipping ${srcChain} deposit due to invalid address.`,
-          deposit,
-        });
-        return false;
-      }
-    });
 
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
       this.logger.debug({
