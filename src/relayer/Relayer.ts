@@ -242,6 +242,7 @@ export class Relayer {
         message: `Skipping ${srcChain} deposit due to invalid address.`,
         deposit,
       });
+      return false;
     }
 
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
