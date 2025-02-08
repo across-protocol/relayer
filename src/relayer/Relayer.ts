@@ -500,7 +500,7 @@ export class Relayer {
       }
 
       const fillAmount = profitClient.getFillAmountInUsd(deposit);
-      return acc.add(fillAmount ?? bnZero)
+      return acc.add(fillAmount ?? bnZero);
     }, bnZero);
 
     return commitment;
