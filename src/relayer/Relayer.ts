@@ -271,6 +271,19 @@ export class Relayer {
       return false;
     }
 
+    [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer].forEach((address) => {
+      try {
+        sdkUtils.toAddress(address);
+      } catch (err) {
+        this.logger.debug({
+          at: "Relayer::filterDeposit",
+          message: `Skipping ${srcChain} deposit due to invalid address.`,
+          deposit,
+        });
+        return false;
+      }
+    });
+
     if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
