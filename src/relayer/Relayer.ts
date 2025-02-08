@@ -574,7 +574,9 @@ export class Relayer {
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        if (isDefined(unfilledAmountUsd)) {
+          agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        }
         return agg;
       }, {});
 
@@ -698,6 +700,9 @@ export class Relayer {
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        if (!isDefined(fillAmountUsd)) {
+          return;
+        }
         const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
