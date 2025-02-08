@@ -13,7 +13,7 @@ export async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: DecodedCCTPMessage[],
   logger: winston.Logger,
-  l2ChainId
+  l2ChainId: number
 ): Promise<(Multicall2Call | undefined)[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
