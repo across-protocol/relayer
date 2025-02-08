@@ -593,9 +593,7 @@ export class Relayer {
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        if (isDefined(unfilledAmountUsd)) {
-          agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
-        }
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
       }, {});
 
