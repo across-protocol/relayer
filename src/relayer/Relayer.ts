@@ -230,7 +230,6 @@ export class Relayer {
 
     const badAddress = [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer, deposit.inputToken, deposit.outputToken].some((address) => {
       try {
-        console.log(`xxx checking address: ${address}.`);
         ethersUtils.getAddress(address);
       } catch {
         return true;
