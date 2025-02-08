@@ -1,21 +1,18 @@
-import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
 import {
-  Contract,
   Signer,
   TOKEN_SYMBOLS_MAP,
-  assert,
   compareAddressesSimple,
   groupObjectCountsByProp,
-  Multicall2Call,
   isDefined,
   winston,
   convertFromWei,
 } from "../../../utils";
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { generateMultiCallData } from "./utils";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
@@ -41,13 +38,14 @@ export async function cctpL2toL1Finalizer(
     statusesGrouped,
   });
 
+  const callData = await generateMultiCallData(contract, unprocessedMessages, logger, spokePoolClient.chainId);
   return {
     crossChainMessages: await generateWithdrawalData(
-      unprocessedMessages,
+      unprocessedMessages.filter((_message, i) => isDefined(callData[i])),
       spokePoolClient.chainId,
       hubPoolClient.chainId
     ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    callData: callData.filter((_message, i) => isDefined(callData[i])),
   };
 }
 
@@ -72,31 +70,6 @@ async function resolveRelatedTxnReceipts(
   );
 
   return resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
-}
-
-/**
- * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
- * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
- * @param messages The messages to generate transactions for.
- * @returns A list of populated transactions that can be consumed by the Multicall2 contract.
- */
-async function generateMultiCallData(
-  messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
-): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
-  return Promise.all(
-    messages.map(async (message) => {
-      const txn = (await messageTransmitter.populateTransaction.receiveMessage(
-        message.messageBytes,
-        message.attestation
-      )) as TransactionRequest;
-      return {
-        target: txn.to,
-        callData: txn.data,
-      };
-    })
-  );
 }
 
 /**
