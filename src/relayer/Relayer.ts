@@ -228,6 +228,29 @@ export class Relayer {
       return false;
     }
 
+    const badAddress = [
+      deposit.depositor,
+      deposit.recipient,
+      deposit.exclusiveRelayer,
+      deposit.inputToken,
+      deposit.outputToken,
+    ].some((address) => {
+      try {
+        ethersUtils.getAddress(address);
+      } catch {
+        return true;
+      }
+    });
+
+    if (badAddress) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit due to invalid address.`,
+        deposit,
+      });
+      return false;
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -477,7 +500,7 @@ export class Relayer {
       }
 
       const fillAmount = profitClient.getFillAmountInUsd(deposit);
-      return acc.add(fillAmount);
+      return acc.add(fillAmount ?? bnZero);
     }, bnZero);
 
     return commitment;
@@ -570,7 +593,7 @@ export class Relayer {
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
       }, {});
 
@@ -694,6 +717,9 @@ export class Relayer {
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        if (!isDefined(fillAmountUsd)) {
+          return;
+        }
         const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
