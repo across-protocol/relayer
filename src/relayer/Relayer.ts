@@ -228,7 +228,13 @@ export class Relayer {
       return false;
     }
 
-    const badAddress = [deposit.depositor, deposit.recipient, deposit.exclusiveRelayer, deposit.inputToken, deposit.outputToken].some((address) => {
+    const badAddress = [
+      deposit.depositor,
+      deposit.recipient,
+      deposit.exclusiveRelayer,
+      deposit.inputToken,
+      deposit.outputToken,
+    ].some((address) => {
       try {
         ethersUtils.getAddress(address);
       } catch {
