@@ -635,7 +635,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       BondManager: ZERO_ADDRESS,
       OptimismPortal: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
       L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: ZERO_ADDRESS,
+      OptimismPortal2: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
       DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
