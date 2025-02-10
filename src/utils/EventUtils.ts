@@ -202,6 +202,7 @@ export class EventManager {
 
         this.markEventProcessed(event);
         quorumEvents.push(event);
+        return false;
       });
     });
 
