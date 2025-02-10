@@ -51,7 +51,6 @@ import {
   assert,
   CHAIN_IDs,
   chainIsOPStack,
-  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
@@ -67,8 +66,8 @@ let silentLogger: winston.Logger;
 const rootCache = {};
 
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
-  [CHAIN_IDs.MAINNET]: { [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: 31.745443 },
-  [CHAIN_IDs.BASE]: { [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.BASE]]: 25 },
+  [CHAIN_IDs.MAINNET]: { ["USDC"]: 31.745443 },
+  [CHAIN_IDs.BASE]: { ["USDC"]: 25 },
 };
 
 export async function runScript(baseSigner: Signer): Promise<void> {
@@ -482,7 +481,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).some(([chainId, tokenExcesses]) => {
+  const unexpectedExcess = Object.entries(excesses).filter(([chainId, tokenExcesses]) => {
     return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
@@ -493,10 +492,11 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       // like WBTC but its a coarse filter to reduce noise.
     });
   });
-  if (unexpectedExcess) {
+  if (unexpectedExcess.length > 0) {
     logger.error({
       at: "validateRunningBalances#index",
       message: "Unexpected excess found",
+      unexpectedExcess: Object.fromEntries(unexpectedExcess),
     });
   }
 
