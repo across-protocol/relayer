@@ -84,6 +84,23 @@ export class EventManager {
   }
 
   /**
+   * For a given Log, verify whether it has already been processed.
+   * @param quorumEvents An array of Log instances that have met quorum.
+   * @param event A new event having met quorum.
+   * @returns void
+   */
+  protected filterDuplicates(quorumEvents: Log[], event: Log): void {
+    // Protect against re-sending this event if it later arrives from another provider.
+    const eventKey = this.hashEvent(event);
+    if (this.finalisedEvents[eventKey]) {
+      // This event has already been submitted; nothing to do.
+      return;
+    }
+    this.finalisedEvents[eventKey] = true;
+    quorumEvents.push(event);
+  }
+
+  /**
    * For a given Log, identify its quorum based on the number of unique providers that have supplied it.
    * @param event A Log instance with appended provider information.
    * @returns The number of unique providers that reported this event.
