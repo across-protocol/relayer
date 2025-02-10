@@ -117,9 +117,17 @@ describe("EventManager: Event Handling ", async function () {
   });
 
   it("Hashes events correctly", async function () {
-    const log = eventTemplate;
-    const hash = eventMgr.hashEvent(log);
-    expect(hash).to.exist;
+    const log1 = eventTemplate;
+    const hash1 = eventMgr.hashEvent(log1);
+    expect(hash1).to.exist;
+
+    const log2 = { ...log1, logIndex: log1.logIndex + 1 };
+    const hash2 = eventMgr.hashEvent(log2);
+    expect(hash2).to.not.equal(hash1);
+
+    const log3 = { ...log2, logIndex: log2.logIndex - 1 };
+    const hash3 = eventMgr.hashEvent(log3);
+    expect(hash3).to.equal(hash1);
   });
 
   it("Does not submit duplicate events", async function () {
