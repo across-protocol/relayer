@@ -253,11 +253,14 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
     // Create a block range that would make the slow fill requests appear to be in an "older" bundle.
     const destinationChainBlockRange = [lastSlowFillRequestBlock + 1, getDefaultBlockRange(5)[0][1]];
+    const originChainBlockRange = [deposits[deposits.length - 1].blockNumber + 1, getDefaultBlockRange(5)[0][1]];
     // Substitute destination chain bundle block range.
     const bundleBlockRanges = getDefaultBlockRange(5);
     const destinationChainIndex =
       dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(destinationChainId);
     bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
+    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+    bundleBlockRanges[originChainIndex] = originChainBlockRange;
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, {
       ...spokePoolClients,
       [originChainId]: spokePoolClient_1,
@@ -265,8 +268,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     });
 
     // All fills and deposits are valid
+    expect(data1.bundleDepositsV3).to.deep.equal({});
     expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
-    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
 
     // There are two "unexecutable slow fills" because there are two deposits that have "equivalent" input
     // and output tokens AND:
@@ -309,11 +312,16 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     provider._setTransaction(invalidFillEvent.transactionHash, { from: invalidRelayer });
     mockDestinationSpokePoolClient.spokePool = spokeWrapper;
 
-    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+    // Substitute bundle block ranges.
+    const bundleBlockRanges = getDefaultBlockRange(5);
+    const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
+    const originChainBlockRange = [deposits[deposits.length - 1].blockNumber + 1, getDefaultBlockRange(5)[0][1]];
+    bundleBlockRanges[originChainIndex] = originChainBlockRange;
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
 
     // The fill cannot be refunded but there is still an unexecutable slow fill leaf we need to refund.
     expect(data1.bundleFillsV3).to.deep.equal({});
-    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.bundleDepositsV3).to.deep.equal({});
     expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
     const logs = spy.getCalls().filter((x) => x.lastArg.message.includes("unrepayable"));
     expect(logs.length).to.equal(1);
