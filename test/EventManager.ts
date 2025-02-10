@@ -122,7 +122,7 @@ describe("EventManager: Event Handling ", async function () {
     expect(hash).to.exist;
   });
 
-  it.only("Does not submit duplicate events", async function () {
+  it("Does not submit duplicate events", async function () {
     expect(quorum).to.equal(2);
 
     const [provider1, provider2, provider3, provider4] = providers;
