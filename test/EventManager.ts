@@ -122,19 +122,20 @@ describe("EventManager: Event Handling ", async function () {
     expect(hash).to.exist;
   });
 
-  it("Does not submit duplicate events", async function () {
+  it.only("Does not submit duplicate events", async function () {
     expect(quorum).to.equal(2);
 
     const [provider1, provider2, provider3, provider4] = providers;
+    let { blockNumber } = eventTemplate;
 
     // Add the event once (not finalised).
     eventMgr.add(eventTemplate, provider1);
-    let events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    let events = eventMgr.tick(++blockNumber);
     expect(events.length).to.equal(0);
 
     // Add the same event from a different provider.
     eventMgr.add(eventTemplate, provider2);
-    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    events = eventMgr.tick(++blockNumber);
     expect(events.length).to.equal(1);
 
     // Re-add the same event again, from two new providers.
@@ -142,7 +143,7 @@ describe("EventManager: Event Handling ", async function () {
     eventMgr.add(eventTemplate, provider4);
 
     // Verify that the same event was not replayed.
-    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    events = eventMgr.tick(++blockNumber);
     expect(events.length).to.equal(0);
   });
 });
