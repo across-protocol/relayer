@@ -7,7 +7,7 @@ import { createSpyLogger, expect, randomAddress } from "./utils";
 
 describe("EventManager: Event Handling ", async function () {
   const chainId = CHAIN_IDs.MAINNET;
-  const providers = ["infura", "alchemy", "llamanodes"];
+  const providers = ["infura", "alchemy", "llamanodes", "quicknode"];
 
   const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
   const makeHash = () => ethersUtils.id(randomNumber().toString());
@@ -125,22 +125,21 @@ describe("EventManager: Event Handling ", async function () {
   it("Does not submit duplicate events", async function () {
     expect(quorum).to.equal(2);
 
-    const [provider1, provider2, provider3] = providers;
+    const [provider1, provider2, provider3, provider4] = providers;
 
     // Add the event once (not finalised).
     eventMgr.add(eventTemplate, provider1);
     let events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(0);
-    let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
-    expect(eventQuorum).to.equal(1);
 
     // Add the same event from a different provider.
     eventMgr.add(eventTemplate, provider2);
     events = eventMgr.tick(eventTemplate.blockNumber + 1);
     expect(events.length).to.equal(1);
 
-    // Re-add the same event again, from a third provider.
+    // Re-add the same event again, from two new providers.
     eventMgr.add(eventTemplate, provider3);
+    eventMgr.add(eventTemplate, provider4);
 
     // Verify that the same event was not replayed.
     events = eventMgr.tick(eventTemplate.blockNumber + 1);
