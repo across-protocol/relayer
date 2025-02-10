@@ -121,4 +121,29 @@ describe("EventManager: Event Handling ", async function () {
     const hash = eventMgr.hashEvent(log);
     expect(hash).to.exist;
   });
+
+  it("Does not submit duplicate events", async function () {
+    expect(quorum).to.equal(2);
+
+    const [provider1, provider2, provider3] = providers;
+
+    // Add the event once (not finalised).
+    eventMgr.add(eventTemplate, provider1);
+    let events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    expect(events.length).to.equal(0);
+    let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+    expect(eventQuorum).to.equal(1);
+
+    // Add the same event from a different provider.
+    eventMgr.add(eventTemplate, provider2);
+    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    expect(events.length).to.equal(1);
+
+    // Re-add the same event again, from a third provider.
+    eventMgr.add(eventTemplate, provider3);
+
+    // Verify that the same event was not replayed.
+    events = eventMgr.tick(eventTemplate.blockNumber + 1);
+    expect(events.length).to.equal(0);
+  });
 });
