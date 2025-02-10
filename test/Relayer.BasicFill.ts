@@ -3,7 +3,15 @@ import hre from "hardhat";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { averageBlockTime, bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits } from "../src/utils";
+import {
+  averageBlockTime,
+  bnZero,
+  bnOne,
+  bnUint256Max,
+  getNetworkName,
+  getAllUnfilledDeposits,
+  getMessageHash,
+} from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -31,7 +39,6 @@ import {
   expect,
   fillV3Relay,
   getLastBlockTime,
-  getRelayDataHash,
   lastSpyLogIncludes,
   MAX_SAFE_ALLOWANCE,
   spyLogIncludes,
@@ -235,13 +242,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
       await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-      let fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
+      const fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
       expect(fill).to.exist;
-      fill = fill!;
-
-      expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
-        getRelayDataHash(deposit, deposit.destinationChainId)
-      );
 
       // Re-run the execution loop and validate that no additional relays are sent.
       multiCallerClient.clearTransactionQueue();
@@ -926,13 +928,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          const fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
           expect(fill).to.exist;
-          fill = fill!;
-
-          expect(getRelayDataHash(fill, fill.destinationChainId)).to.equal(
-            getRelayDataHash(deposit, deposit.destinationChainId)
-          );
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
@@ -940,8 +937,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(fill.relayExecutionInfo.updatedRecipient).to.not.equal(deposit.recipient);
           expect(fill.relayExecutionInfo.updatedRecipient).to.equal(update.recipient);
 
-          expect(fill.relayExecutionInfo.updatedMessage).to.equal(deposit.message);
-          expect(fill.relayExecutionInfo.updatedMessage.toString()).to.equal(update.message);
+          expect(fill.relayExecutionInfo.updatedMessageHash).to.equal(deposit.messageHash);
+          expect(fill.relayExecutionInfo.updatedMessageHash.toString()).to.equal(getMessageHash(update.message));
         }
       }
 

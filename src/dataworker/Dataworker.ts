@@ -54,6 +54,7 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -61,6 +62,8 @@ import {
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
+
+const { getMessageHash, getRelayEventKey } = sdkUtils;
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
@@ -1190,21 +1193,17 @@ export class Dataworker {
 
     const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
-      const { relayData, chainId: slowFillChainId } = slowFill;
+      const { relayData, chainId: destinationChainId } = slowFill;
+      const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(sortedFills, (fill) => {
-        if (
-          !(
-            fill.depositId.eq(relayData.depositId) &&
-            fill.originChainId === relayData.originChainId &&
-            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
-          )
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const fill = _.findLast(
+        sortedFills,
+        (fill) =>
+          fill.depositId.eq(relayData.depositId) &&
+          fill.originChainId === relayData.originChainId &&
+          getRelayEventKey(fill) === getRelayEventKey({ ...relayData, messageHash, destinationChainId })
+      );
 
       return fill;
     });
@@ -1324,9 +1323,17 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = "executeV3SlowRelayLeaf";
+    const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
-    const args = [leaf, rootBundleId, proof];
+    const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
+    const args = [
+      {
+        ...leaf,
+        relayData: relayDataWithBytes32Params,
+      },
+      rootBundleId,
+      proof,
+    ];
 
     return { method, args };
   }
