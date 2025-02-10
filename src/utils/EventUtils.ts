@@ -52,6 +52,7 @@ type QuorumEvent = Log & { providers: string[] };
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
+  public readonly finalisedEvents: { [eventKey: string]: boolean } = {};
 
   private blockNumber: number;
 
@@ -108,6 +109,12 @@ export class EventManager {
     // already found in the `eventHashes` array, then at least one provider has already supplied it.
     const events = (this.events[event.blockNumber] ??= []);
     const storedEvent = this.findEvent(event);
+
+    const eventKey = this.hashEvent(event);
+    if (this.finalisedEvents[eventKey]) {
+      // Nothing to do - this event has already been handled.
+      return;
+    }
 
     // Store or update the set of events for this block number.
     if (!isDefined(storedEvent)) {
@@ -173,6 +180,11 @@ export class EventManager {
         }
 
         quorumEvents.push(event);
+
+        // Protect against re-sending this event if it later arrives from another provider.
+        const eventKey = this.hashEvent(event);
+        this.finalisedEvents[eventKey] = true;
+
         return false;
       });
     });
