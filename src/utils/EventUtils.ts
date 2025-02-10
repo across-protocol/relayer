@@ -86,7 +86,7 @@ export class EventManager {
   /**
    * For a given Log, verify whether it has already been processed.
    * @param event An Log instance to check.
-   * @returns void
+   * @returns True if the event has been processed, else false.
    */
   protected isEventProcessed(event: Log): boolean {
     // Protect against re-sending this event if it later arrives from another provider.
