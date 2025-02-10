@@ -24,11 +24,10 @@
 
 // Example usage:
 // Look back the most recent 32 bundles:
-// $ ts-node ./src/scripts/validateRunningBalances.ts
-// Look back from 64 to 32 bundles ago:
-// $ PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
-// Look back from 256 to 128 bundles ago:
-// $ BUNDLES_COUNT=128 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
+// $ BUNDLES_COUNT=32 ts-node ./src/scripts/validateRunningBalances.ts
+// Validate single chain and/or token:
+// $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
+// $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,
@@ -37,7 +36,6 @@ import {
   Logger,
   toBN,
   fromWei,
-  isDefined,
   Contract,
   ERC20,
   getProvider,
@@ -55,39 +53,47 @@ import {
   chainIsOPStack,
 } from "../utils";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain } from "../dataworker/DataworkerUtils";
-import { Log, ProposedRootBundle, SpokePoolClientsByChain, SlowFillLeaf } from "../interfaces";
+import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
+import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
+import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 
 config();
 let logger: winston.Logger;
+let silentLogger: winston.Logger;
 
-const slowRootCache = {};
+const rootCache = {};
 
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
-  [10]: { ["USDC"]: 15.336508 }, // On May 4th, USDC was sent to the SpokePool here: https://optimistic.etherscan.io/tx/0x5f53293fe6a27ff9897d4dde445fd6aab46f841ca641befea48beef62014a549
-  [42161]: { ["WBTC"]: 1.9988628 }, // On May 15th, WBTC slow fill was produced here that is not executed: https://etherscan.io/tx/0xe339869271cb4f558faedbf9beed6f5b5440d395367743e5f12b13a4c199bdd6
+  [CHAIN_IDs.MAINNET]: { ["USDC"]: 31.745443 },
+  [CHAIN_IDs.BASE]: { ["USDC"]: 25 },
 };
 
-export async function runScript(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  logger = _logger;
-
-  const { clients, dataworker, config } = await createDataworker(logger, baseSigner);
-
-  const bundlesToValidate = Number(process.env.BUNDLES_COUNT ?? 32);
-  // @dev: Set page to something higher than 1 to look for older bundles. For example, set this to 1 to look up
-  // bundle data from 64 bundles ago up to 32 bundles before HEAD.
-  const page = Number(process.env.PAGE ?? 0);
-  // @dev: Throw out most recent bundle as its leaves might not have executed, so that's why we add 1 to the lookback.
-  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles()).slice(
-    page * bundlesToValidate + 1
-  );
+export async function runScript(baseSigner: Signer): Promise<void> {
+  // @dev We use this silent logger to suppress most of the logs arising from updating dataworker clients and
+  // reconstructing bundles, because these can get really noisy. We want to highlight the logs related to computing
+  // excesses so we'll use the non-silent logger for those logs only.
+  silentLogger = winston.createLogger({
+    level: "debug",
+    transports: [createConsoleTransport()],
+    silent: true,
+  });
+  logger = winston.createLogger({
+    level: "debug",
+    transports: [createConsoleTransport()],
+  });
+  const { clients, dataworker, config } = await createDataworker(silentLogger, baseSigner);
+  const bundlesToValidate = Number(process.env.BUNDLES_COUNT ?? 8);
+  const validatedBundles = sortEventsDescending(clients.hubPoolClient.getValidatedRootBundles());
   const excesses: { [chainId: number]: { [l1Token: string]: string[] } } = {};
 
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
-  const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + 4];
+  const BUNDLE_LOOKBACK = 8; // The number of prior bundles to look back for when attempting to reconstruct
+  // bundle data for arbitrary bundle. For example, setting this to 8 ensures that we'll be validating a bundle X
+  // using SpokePool clients that have events from as old the bundle X-8 to X.
+  const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + BUNDLE_LOOKBACK];
   const _oldestBundleEndBlocks = oldestBundleToLookupEventsFor.bundleEvaluationBlockNumbers.map((x) => x.toNumber());
   const oldestBundleEndBlocks = Object.fromEntries(
     dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
@@ -102,15 +108,23 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
       ];
     })
   );
+  logger.debug({
+    message: "Updating all clients, please wait... ",
+    spokePoolClientEventSearchFromBlocks: oldestBundleEndBlocks,
+  });
   const spokePoolClients = await _createSpokePoolClients(oldestBundleEndBlocks);
   await Promise.all(
     Object.values(spokePoolClients).map((client) => client.update(["RelayedRootBundle", "ExecutedRelayerRefundRoot"]))
   );
+  logger.debug({
+    message: "Finished updating all clients",
+  });
 
-  for (let x = 0; x < bundlesToValidate; x++) {
-    let mrkdwn = "";
+  // @dev: Ignore the most recent bundle as its leaves might not have executed, so start x at 1.
+  for (let x = 1; x < bundlesToValidate; x++) {
+    const logs: string[] = [];
     const mostRecentValidatedBundle = validatedBundles[x];
-    mrkdwn += `Bundle proposed at ${mostRecentValidatedBundle.transactionHash}`;
+    const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
       clients.hubPoolClient.latestBlockSearched;
@@ -126,9 +140,15 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
       if (spokePoolClients[leaf.chainId] === undefined) {
         continue;
       }
+      if (process.env.SINGLE_CHAIN && leaf.chainId !== Number(process.env.SINGLE_CHAIN)) {
+        continue;
+      }
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
         const tokenInfo = clients.hubPoolClient.getTokenInfo(clients.hubPoolClient.chainId, l1Token);
+        if (process.env.SINGLE_TOKEN && tokenInfo.symbol !== process.env.SINGLE_TOKEN) {
+          continue;
+        }
         if (!excesses[leaf.chainId]) {
           excesses[leaf.chainId] = {};
         }
@@ -136,7 +156,7 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           excesses[leaf.chainId][tokenInfo.symbol] = [];
         }
 
-        mrkdwn += `\n\tLeaf for chain ID ${leaf.chainId} and token ${tokenInfo.symbol} (${l1Token})`;
+        logs.push(`**** Chain ${leaf.chainId} - ${tokenInfo.symbol} (${l1Token}) ****`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
         const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
@@ -146,13 +166,14 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           mostRecentValidatedBundle.bundleEvaluationBlockNumbers[
             dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
           ];
-        mrkdwn += `\n\t\t- Bundle end block: ${bundleEndBlockForChain.toNumber()}`;
+        logs.push(`- Bundle end block for chain: ${bundleEndBlockForChain.toNumber()}`);
         let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
           spokePoolClients[leaf.chainId].spokePool.address,
           {
             blockTag: bundleEndBlockForChain.toNumber(),
           }
         );
+        logs.push(`- Token balance at bundle end block: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
 
         // To paint a more accurate picture of the excess, we need to check that the previous bundle's leaf
         // has been executed by the time that we snapshot the spoke pool's token balance (at the bundle end block).
@@ -167,16 +188,20 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             .getRelayerRefundExecutions()
             .find((e) => e.rootBundleId === previousRelayedRootBundle.rootBundleId && e.l2TokenAddress === l2Token);
           if (previousLeafExecution) {
-            mrkdwn += `\n\t\t- Previous leaf executed at block ${previousLeafExecution.blockNumber}`;
+            logs.push(`- Previous leaf executed at block ${previousLeafExecution.blockNumber}`);
             const previousLeafExecutedAfterBundleEndBlockForChain =
               previousLeafExecution.blockNumber > bundleEndBlockForChain.toNumber();
-            mrkdwn += `\n\t\t- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`;
+            logs.push(
+              `- Previous relayer refund leaf executed after bundle end block for chain: ${previousLeafExecutedAfterBundleEndBlockForChain}`
+            );
             if (previousLeafExecutedAfterBundleEndBlockForChain) {
               const previousLeafRefundAmount = previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero);
-              mrkdwn += `\n\t\t- Subtracting previous leaf's amountToReturn (${fromWei(
-                previousLeafExecution.amountToReturn.toString(),
-                decimals
-              )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`;
+              logs.push(
+                `- Subtracting previous leaf's amountToReturn (${fromWei(
+                  previousLeafExecution.amountToReturn.toString(),
+                  decimals
+                )}) and refunds (${fromWei(previousLeafRefundAmount.toString(), decimals)}) from token balance`
+              );
               tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock
                 .sub(previousLeafExecution.amountToReturn)
                 .sub(previousLeafExecution.refundAmounts.reduce((a, b) => a.add(b), bnZero));
@@ -206,11 +231,8 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             if (previousPoolRebalanceLeaf) {
               const previousNetSendAmount =
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
-              mrkdwn += `\n\t\t- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`;
+              logs.push(`- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
               if (previousNetSendAmount.gt(bnZero)) {
-                console.log(
-                  `Looking for previous net send amount between  blocks ${previousBundleEndBlockForChain.toNumber()} and ${bundleEndBlockForChain.toNumber()}`
-                );
                 const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
                 let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
@@ -254,10 +276,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
                   ).filter((e) => e.args.value.eq(previousNetSendAmount));
                 }
                 if (depositsToSpokePool.length === 0) {
-                  mrkdwn += `\n\t\t- Adding previous leaf's netSendAmount (${fromWei(
-                    previousNetSendAmount.toString(),
-                    decimals
-                  )}) to token balance because it did not arrive at spoke pool before bundle end block.`;
+                  logs.push(
+                    `- Adding previous leaf's netSendAmount (${fromWei(
+                      previousNetSendAmount.toString(),
+                      decimals
+                    )}) to token balance because it arrived at spoke pool between the previous bundle end block and the current bundle end block.`
+                  );
                   tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.add(previousNetSendAmount);
                 }
               }
@@ -267,11 +291,12 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
           // Check if previous bundle has any slow fills that haven't executed by the time of the bundle end block.
           if (previousRelayedRootBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT) {
             // Not many bundles are expected to have slow fills so we can load them as necessary.
-            const { slowFills, bundleSpokePoolClients } = await _constructSlowRootForBundle(
+            const { bundleData } = await _reconstructBundleData(
               previousValidatedBundle,
-              validatedBundles[x + 1 + 2],
+              validatedBundles[x + 2 + BUNDLE_LOOKBACK],
               mostRecentValidatedBundle
             );
+            const slowFills = _buildSlowRelayRoot(bundleData.bundleSlowFillsV3).leaves;
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
             // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
@@ -279,56 +304,68 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
             );
 
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
+              let totalSlowFillAmount = bnZero;
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
-                const destinationChainId = slowFillForChain.chainId;
-                const fillsForSameDeposit = bundleSpokePoolClients[destinationChainId]
-                  .getFillsForOriginChain(slowFillForChain.relayData.originChainId)
-                  .filter(
-                    (f) =>
-                      f.blockNumber <= bundleEndBlockForChain.toNumber() &&
-                      f.depositId.eq(slowFillForChain.relayData.depositId)
-                  );
-
-                const lastFill = sortEventsDescending(fillsForSameDeposit)[0];
+                const fillStatus = await spokePoolClients[leaf.chainId].relayFillStatus(
+                  slowFillForChain.relayData,
+                  bundleEndBlockForChain.toNumber(),
+                  leaf.chainId
+                );
 
                 // For v3 slow fills if there is a matching fast fill, then the fill is completed.
-                const unexecutedAmount = isDefined(lastFill) ? bnZero : slowFillForChain.updatedOutputAmount;
-                if (unexecutedAmount.gt(bnZero)) {
-                  mrkdwn += `\n\t\t- subtracting leftover amount from previous bundle's unexecuted slow fill: ${fromWei(
-                    unexecutedAmount.toString(),
-                    decimals
-                  )}`;
+                if (fillStatus === sdkInterfaces.FillStatus.RequestedSlowFill) {
+                  const unexecutedAmount = slowFillForChain.updatedOutputAmount;
+                  totalSlowFillAmount = totalSlowFillAmount.add(unexecutedAmount);
+                  logs.push(
+                    `    - Subtracting leftover amount from previous bundle's unexecuted slow fill #${slowFillForChain.relayData.depositId.toNumber()}: ${fromWei(
+                      unexecutedAmount.toString(),
+                      decimals
+                    )}`
+                  );
                   tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(unexecutedAmount);
                 }
               }
+              logs.push(
+                `- Subtracted total unexecuted slow fill amount from previous bundle: ${fromWei(
+                  totalSlowFillAmount.toString(),
+                  decimals
+                )}`
+              );
             }
           }
         }
 
         if (mostRecentValidatedBundle.slowRelayRoot !== EMPTY_MERKLE_ROOT) {
+          const { bundleData } = await _reconstructBundleData(
+            mostRecentValidatedBundle,
+            validatedBundles[x + 1 + BUNDLE_LOOKBACK],
+            validatedBundles[x - 1]
+          );
           // If bundle has slow fills in it, then these are funds that need to be taken out of the spoke pool balance.
           // The slow fill amount will be captured in the netSendAmount as a positive value, so we need to cancel that out.
-
           // Not many bundles are expected to have slow fills so we can load them as necessary.
-          const { slowFills } = await _constructSlowRootForBundle(
-            mostRecentValidatedBundle,
-            validatedBundles[x + 1 + 2],
-            mostRecentValidatedBundle
-          );
+          const slowFills = _buildSlowRelayRoot(bundleData.bundleSlowFillsV3).leaves;
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
             (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
+            let totalSlowFillAmount = bnZero;
             for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
               const amountSentForSlowFill = slowFillForChain.updatedOutputAmount;
               if (amountSentForSlowFill.gt(0)) {
-                mrkdwn += `\n\t\t- subtracting amount sent for slow fill: ${fromWei(
-                  amountSentForSlowFill.toString(),
-                  decimals
-                )}`;
+                logs.push(
+                  `    - Subtracting amount sent for slow fill: ${fromWei(amountSentForSlowFill.toString(), decimals)}`
+                );
                 tokenBalanceAtBundleEndBlock = tokenBalanceAtBundleEndBlock.sub(amountSentForSlowFill);
+                totalSlowFillAmount = totalSlowFillAmount.add(amountSentForSlowFill);
               }
             }
+            logs.push(
+              `- Subtracted total slow fill amount from current bundle: ${fromWei(
+                totalSlowFillAmount.toString(),
+                decimals
+              )}`
+            );
           }
         }
 
@@ -349,7 +386,6 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
           // If we get here, then either the relayer refund root was not relayed from the Hub to the
           // Spoke yet or the refund leaf has not been executed.
-          const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
           const reconstructedBundleData = await dataworker._proposeRootBundle(
             bundleBlockRanges,
             spokePoolClients,
@@ -415,23 +451,25 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
         } else {
           const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
           excess = excess.sub(executedRelayerRefund);
-          mrkdwn += `\n\t\t- executedRelayerRefund: ${fromWei(executedRelayerRefund.toString(), decimals)}`;
+          logs.push(`- Subtracted executed relayer refund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
         }
 
         // Excess should theoretically be 0 but can be positive due to past accounting errors in computing running
         // balances. If excess is negative, then that means L2 leaves are unexecuted and the protocol could be
         // stuck
         excesses[leaf.chainId][tokenInfo.symbol].push(fromWei(excess.toString(), decimals));
-        mrkdwn += `\n\t\t- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`;
-        mrkdwn += `\n\t\t- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`;
-        mrkdwn += `\n\t\t- excess: ${fromWei(excess.toString(), decimals)}`;
-        mrkdwn += `\n\t\t- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`;
+        logs.push(`- tokenBalance: ${fromWei(tokenBalanceAtBundleEndBlock.toString(), decimals)}`);
+        logs.push(`- netSendAmount: ${fromWei(netSendAmount.toString(), decimals)}`);
+        logs.push(`- runningBalance: ${fromWei(runningBalance.toString(), decimals)}`);
+        logs.push(`- excess: ${fromWei(excess.toString(), decimals)}`);
       }
     }
     logger.debug({
       at: "validateRunningBalances#index",
       message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
-      mrkdwn,
+      proposalTxnHash: mostRecentValidatedBundle.transactionHash,
+      bundleBlockRanges: JSON.stringify(bundleBlockRanges),
+      logs,
     });
   }
 
@@ -443,36 +481,38 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
     expectedExcesses,
     excesses,
   });
-  const unexpectedExcess = Object.entries(excesses).some(([chainId, tokenExcesses]) => {
+  const unexpectedExcess = Object.entries(excesses).filter(([chainId, tokenExcesses]) => {
     return Object.entries(tokenExcesses).some(([l1Token, excesses]) => {
       // We only care about the latest excess, because sometimes excesses can appear in historical bundles
       // due to ordering of executing leaves. As long as the excess resets back to 0 eventually it is fine.
       const excess = Number(excesses[0]);
       // Subtract any expected excesses
       const excessForChain = excess - (expectedExcesses[chainId]?.[l1Token] ?? 0);
-      return excessForChain > 0.05 || excessForChain < -0.05;
+      return excessForChain > 1 || excessForChain < -1; // This will not capture any tokens that have large unit values
+      // like WBTC but its a coarse filter to reduce noise.
     });
   });
-  if (unexpectedExcess) {
+  if (unexpectedExcess.length > 0) {
     logger.error({
       at: "validateRunningBalances#index",
       message: "Unexpected excess found",
+      unexpectedExcess: Object.fromEntries(unexpectedExcess),
     });
   }
 
   /**
    *
-   * @param bundle The bundle we want to construct a slow root for.
-   * @param olderBundle Some bundle older than `bundle` whose end blocks we'll use to as the fromBlocks
-   * when constructing custom spoke pool clients to query slow fills for `bundle`.
-   * @param futureBundle Some bundle newer than `bundle` whose end blocks we'll use to as the toBlocks
+   * @param bundle The bundle proposal we want to reconstruct bundle data for
+   * @param olderBundle Some bundle older than `bundle` whose end blocks we'll use to set the fromBlocks
+   * when constructing custom spoke pool clients.
+   * @param futureBundle Some bundle newer than `bundle` whose end blocks we'll use to set the toBlocks
    */
-  async function _constructSlowRootForBundle(
+  async function _reconstructBundleData(
     bundle: ProposedRootBundle,
     olderBundle: ProposedRootBundle,
     futureBundle: ProposedRootBundle
-  ): Promise<{ slowFills: SlowFillLeaf[]; bundleSpokePoolClients: SpokePoolClientsByChain }> {
-    // Construct custom spoke pool clients to query events needed to build slow roots.
+  ): Promise<{ bundleData: BundleData; bundleSpokePoolClients: SpokePoolClientsByChain }> {
+    // Construct custom spoke pool clients to query events needed to reconstruct bundle.
     const spokeClientFromBlocks = Object.fromEntries(
       dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
         // If chain was not active at the time of the older bundle, then set from blocks to undefined
@@ -508,12 +548,9 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
       })
     );
     const key = `${JSON.stringify(spokeClientFromBlocks)}-${JSON.stringify(spokeClientToBlocks)}`;
-    if (!slowRootCache[key]) {
+    if (!rootCache[key]) {
       const spokePoolClientsForBundle = await constructSpokePoolClientsWithStartBlocks(
-        winston.createLogger({
-          level: "debug",
-          transports: [createConsoleTransport()],
-        }),
+        silentLogger,
         clients.hubPoolClient,
         config,
         baseSigner,
@@ -529,15 +566,23 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
       ]);
 
       const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
+      const reconstructedBundleData = await dataworker._proposeRootBundle(
+        blockRangesImpliedByBundleEndBlocks,
+        spokePoolClients,
+        blockRangesImpliedByBundleEndBlocks[0][1],
+        // Load data from Arweave to reconstruct bundle so we can pass in these "light" spoke pool clients
+        // that haven't loaded all the Bridge events.
+        true,
+        false
+      );
       const output = {
-        slowFills: (await dataworker.buildSlowRelayRoot(blockRangesImpliedByBundleEndBlocks, spokePoolClientsForBundle))
-          .leaves,
+        bundleData: reconstructedBundleData.bundleData,
         bundleSpokePoolClients: spokePoolClientsForBundle,
       };
-      slowRootCache[key] = output;
+      rootCache[key] = output;
       return output;
     } else {
-      return slowRootCache[key];
+      return rootCache[key];
     }
   }
 
@@ -569,21 +614,28 @@ export async function runScript(_logger: winston.Logger, baseSigner: Signer): Pr
    * @returns A dictionary of chain ID to SpokePoolClient.
    */
   async function _createSpokePoolClients(fromBlocks: { [chainId: number]: number }) {
-    return constructSpokePoolClientsWithStartBlocks(logger, clients.hubPoolClient, config, baseSigner, fromBlocks, {});
+    return constructSpokePoolClientsWithStartBlocks(
+      silentLogger,
+      clients.hubPoolClient,
+      config,
+      baseSigner,
+      fromBlocks,
+      {}
+    );
   }
 }
 
-export async function run(_logger: winston.Logger): Promise<void> {
+export async function run(): Promise<void> {
   try {
     // This script inherits the TokenClient, and it attempts to update token approvals. The disputer already has the
     // necessary token approvals in place, so use its address. nb. This implies the script can only be used on mainnet.
     const voidSigner = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
     const baseSigner = await getSigner({ keyType: "void", cleanEnv: true, roAddress: voidSigner });
-    await runScript(_logger, baseSigner);
+    await runScript(baseSigner);
   } finally {
-    await disconnectRedisClients(logger);
+    await disconnectRedisClients(Logger);
   }
 }
 
 // eslint-disable-next-line no-process-exit
-void run(Logger).then(() => process.exit(0));
+void run().then(() => process.exit(0));
