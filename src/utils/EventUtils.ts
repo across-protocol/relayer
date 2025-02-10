@@ -89,15 +89,21 @@ export class EventManager {
    * @param event A new event having met quorum.
    * @returns void
    */
-  protected filterDuplicates(quorumEvents: Log[], event: Log): void {
+  protected isEventProcessed(event: Log): boolean {
     // Protect against re-sending this event if it later arrives from another provider.
     const eventKey = this.hashEvent(event);
-    if (this.finalisedEvents[eventKey]) {
-      // This event has already been submitted; nothing to do.
-      return;
-    }
+    return this.finalisedEvents[eventKey];
+  }
+
+  /**
+   * For a given Log, mark it has having been been processed.
+   * @param event A new event having met quorum.
+   * @returns void
+   */
+  protected markEventProcessed(event: Log): void {
+    // Protect against re-sending this event if it later arrives from another provider.
+    const eventKey = this.hashEvent(event);
     this.finalisedEvents[eventKey] = true;
-    quorumEvents.push(event);
   }
 
   /**
@@ -122,9 +128,7 @@ export class EventManager {
   add(event: Log, provider: string): void {
     assert(!event.removed);
 
-    const eventKey = this.hashEvent(event);
-    if (this.finalisedEvents[eventKey]) {
-      // Nothing to do - this event has already been handled.
+    if (this.isEventProcessed(event)) {
       return;
     }
 
@@ -196,13 +200,8 @@ export class EventManager {
           return true; // No quorum; retain for next time.
         }
 
+        this.markEventProcessed(event);
         quorumEvents.push(event);
-
-        // Protect against re-sending this event if it later arrives from another provider.
-        const eventKey = this.hashEvent(event);
-        this.finalisedEvents[eventKey] = true;
-
-        return false;
       });
     });
 
