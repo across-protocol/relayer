@@ -122,16 +122,16 @@ export class EventManager {
   add(event: Log, provider: string): void {
     assert(!event.removed);
 
-    // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
-    // already found in the `eventHashes` array, then at least one provider has already supplied it.
-    const events = (this.events[event.blockNumber] ??= []);
-    const storedEvent = this.findEvent(event);
-
     const eventKey = this.hashEvent(event);
     if (this.finalisedEvents[eventKey]) {
       // Nothing to do - this event has already been handled.
       return;
     }
+
+    // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
+    // already found in the `eventHashes` array, then at least one provider has already supplied it.
+    const events = (this.events[event.blockNumber] ??= []);
+    const storedEvent = this.findEvent(event);
 
     // Store or update the set of events for this block number.
     if (!isDefined(storedEvent)) {
