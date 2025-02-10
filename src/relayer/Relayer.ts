@@ -206,7 +206,6 @@ export class Relayer {
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
-
     const relayKey = sdkUtils.getRelayEventKey(deposit);
 
     // Helper to mark a deposit as filled. This is useful when it should not be considered in future loops
