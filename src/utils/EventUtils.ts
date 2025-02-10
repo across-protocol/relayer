@@ -52,7 +52,7 @@ type QuorumEvent = Log & { providers: string[] };
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
-  public readonly finalisedEvents: { [eventKey: string]: boolean } = {};
+  public readonly processedEvents: Set<string> = new Set();
 
   private blockNumber: number;
 
@@ -92,7 +92,7 @@ export class EventManager {
   protected isEventProcessed(event: Log): boolean {
     // Protect against re-sending this event if it later arrives from another provider.
     const eventKey = this.hashEvent(event);
-    return this.finalisedEvents[eventKey];
+    return this.processedEvents.has(eventKey);
   }
 
   /**
@@ -103,7 +103,7 @@ export class EventManager {
   protected markEventProcessed(event: Log): void {
     // Protect against re-sending this event if it later arrives from another provider.
     const eventKey = this.hashEvent(event);
-    this.finalisedEvents[eventKey] = true;
+    this.processedEvents.add(eventKey);
   }
 
   /**
