@@ -85,8 +85,7 @@ export class EventManager {
 
   /**
    * For a given Log, verify whether it has already been processed.
-   * @param quorumEvents An array of Log instances that have met quorum.
-   * @param event A new event having met quorum.
+   * @param event An Log instance to check.
    * @returns void
    */
   protected isEventProcessed(event: Log): boolean {
@@ -97,7 +96,7 @@ export class EventManager {
 
   /**
    * For a given Log, mark it has having been been processed.
-   * @param event A new event having met quorum.
+   * @param event A Log instance to mark processed.
    * @returns void
    */
   protected markEventProcessed(event: Log): void {
