@@ -216,7 +216,18 @@ export class EventManager {
    */
   hashEvent(event: Log): string {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    const _args = Object.values(args).sort().join("-");
+    const _args = Object.keys(args)
+      .sort()
+      .map((k) => {
+        const val = args[k];
+        // When val is a nested object, flatten and stringify it. Assume no nested objects.
+        return typeof val === "object"
+          ? Object.keys(val).sort().map((k) => val[k]).join("-")
+          : val;
+      })
+     .flat()
+     .join("-");
+
     const key = `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${_args}`;
     return ethersUtils.id(key);
   }
