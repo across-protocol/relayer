@@ -3,7 +3,7 @@ import { OnChainMessageStatus } from "@consensys/linea-sdk";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { CONTRACT_ADDRESSES } from "../../../common";
 import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
@@ -11,7 +11,6 @@ import {
   findMessageFromTokenBridge,
   findMessageFromUsdcBridge,
   findMessageSentEvents,
-  getBlockRangeByHoursOffsets,
   getL1MessageServiceContractFromL1ClaimingService,
   initLineaSdk,
 } from "./common";
@@ -39,8 +38,8 @@ export async function lineaL1ToL2Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _spokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
@@ -62,19 +61,10 @@ export async function lineaL1ToL2Finalizer(
     hubPoolClient.hubPool.provider
   );
 
-  // Optimize block range for querying Linea's MessageSent events on L1.
-  const { fromBlock, toBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 7, 0);
-  logger.debug({
-    at: "Finalizer#LineaL1ToL2Finalizer",
-    message: "Linea MessageSent event filter",
-    fromBlock,
-    toBlock,
-  });
-
   const searchConfig: EventSearchConfig = {
-    fromBlock,
-    toBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: l1SpokePoolClient.latestBlockSearched,
+    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
 
   const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
@@ -100,7 +90,7 @@ export async function lineaL1ToL2Finalizer(
     const messageStatus = await getL1ToL2MessageStatusUsingCustomProvider(
       l2MessageServiceContract,
       _messageHash,
-      _spokePoolClient.spokePool.provider
+      l2SpokePoolClient.spokePool.provider
     );
     return {
       messageSender: _from,

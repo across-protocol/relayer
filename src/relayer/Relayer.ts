@@ -228,6 +228,29 @@ export class Relayer {
       return false;
     }
 
+    const badAddress = [
+      deposit.depositor,
+      deposit.recipient,
+      deposit.exclusiveRelayer,
+      deposit.inputToken,
+      deposit.outputToken,
+    ].some((address) => {
+      try {
+        ethersUtils.getAddress(address);
+      } catch {
+        return true;
+      }
+    });
+
+    if (badAddress) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit due to invalid address.`,
+        deposit,
+      });
+      return false;
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -477,7 +500,7 @@ export class Relayer {
       }
 
       const fillAmount = profitClient.getFillAmountInUsd(deposit);
-      return acc.add(fillAmount);
+      return acc.add(fillAmount ?? bnZero);
     }, bnZero);
 
     return commitment;
@@ -570,7 +593,7 @@ export class Relayer {
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
       }, {});
 
@@ -694,6 +717,9 @@ export class Relayer {
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        if (!isDefined(fillAmountUsd)) {
+          return;
+        }
         const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
@@ -938,7 +964,7 @@ export class Relayer {
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
         deposit,
@@ -972,8 +998,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
-      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
+      method: "requestSlowFill",
+      args: [convertRelayDataParamsToBytes32(deposit)],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1008,26 +1034,17 @@ export class Relayer {
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillV3Relay", "", [deposit, repaymentChainId]]
       : [
-          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
+          "fillRelayWithUpdatedDeposit",
           " with updated parameters ",
-          process.env.ENABLE_V6
-            ? [
-                convertRelayDataParamsToBytes32(deposit),
-                repaymentChainId,
-                toBytes32(this.relayerAddress),
-                deposit.updatedOutputAmount,
-                toBytes32(deposit.updatedRecipient),
-                deposit.updatedMessage,
-                deposit.speedUpSignature,
-              ]
-            : [
-                deposit,
-                repaymentChainId,
-                deposit.updatedOutputAmount,
-                deposit.updatedRecipient,
-                deposit.updatedMessage,
-                deposit.speedUpSignature,
-              ],
+          [
+            convertRelayDataParamsToBytes32(deposit),
+            repaymentChainId,
+            toBytes32(this.relayerAddress),
+            deposit.updatedOutputAmount,
+            toBytes32(deposit.updatedRecipient),
+            deposit.updatedMessage,
+            deposit.speedUpSignature,
+          ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;

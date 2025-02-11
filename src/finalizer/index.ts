@@ -246,6 +246,7 @@ export async function finalize(
           hubSigner,
           hubPoolClient,
           client,
+          spokePoolClients[hubChainId],
           l1ToL2AddressesToFinalize
         );
 
