@@ -33,13 +33,17 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
   ) {
     // Lint Appeasement
     _l1Token;
+    const useLegacyAtomicDepositor = (process.env.LEGACY_ATOMIC_DEPOSITOR_CHAINS ?? []).includes(String(l2chainId));
+    const gateway = useLegacyAtomicDepositor
+      ? CONTRACT_ADDRESSES[hubChainId].legacyAtomicDepositor.address
+      : CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address;
     super(
       l2chainId,
       hubChainId,
       l1Signer,
       l2SignerOrProvider,
-      // To keep existing logic, we should use ataomic depositor as the l1 bridge
-      [CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address]
+      // To keep existing logic, we should use atomic depositor as the l1 bridge
+      [gateway]
     );
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
@@ -48,9 +52,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
-    this.useLegacyAtomicDepositor = (process.env.LEGACY_ATOMIC_DEPOSITOR_CHAINS ?? []).includes(String(l2chainId));
-
-    if (this.useLegacyAtomicDepositor) {
+    if (useLegacyAtomicDepositor) {
       const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
         CONTRACT_ADDRESSES[hubChainId].legacyAtomicDepositor;
       this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
@@ -61,8 +63,8 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     }
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
-
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
+    this.useLegacyAtomicDepositor = useLegacyAtomicDepositor;
   }
 
   async constructL1ToL2Txn(
