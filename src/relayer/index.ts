@@ -19,7 +19,7 @@ const ACTIVE_RELAYER_EXPIRY = 600; // 10 minutes.
 const {
   RUN_IDENTIFIER: runIdentifier,
   BOT_IDENTIFIER: botIdentifier = "across-relayer",
-  RELAYER_MAX_STARTUP_DELAY = "120"
+  RELAYER_MAX_STARTUP_DELAY = "120",
 } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
