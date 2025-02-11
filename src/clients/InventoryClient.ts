@@ -624,7 +624,7 @@ export class InventoryClient {
     l1Token: string,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
-    const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRoot();
+    const { root: latestPoolRebalanceRoot, blockRanges } = await this.bundleDataClient.getLatestPoolRebalanceRootFromArweave();
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
 
     const mark = this.profiler.start("getLatestRunningBalances");
