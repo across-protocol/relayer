@@ -139,7 +139,7 @@ describe("EventManager: Event Handling ", async function () {
         f: {
           h: 7,
           i: 8,
-          g: 6
+          g: 6,
         },
         a: 1,
         d: 4,
@@ -157,9 +157,9 @@ describe("EventManager: Event Handling ", async function () {
         f: {
           g: 6,
           h: 7,
-          i: 8
+          i: 8,
         },
-      }
+      },
     };
 
     const hash1 = eventMgr.hashEvent(log);
