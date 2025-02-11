@@ -708,8 +708,8 @@ export class Monitor {
       hubPoolClient,
       this.clients.configStoreClient,
       hubPoolClient.hasPendingProposal()
-      ? hubPoolClient.getLatestProposedRootBundle()
-      : hubPoolClient.getNthFullyExecutedRootBundle(-1)
+        ? hubPoolClient.getLatestProposedRootBundle()
+        : hubPoolClient.getNthFullyExecutedRootBundle(-1)
     );
     // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
     // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
