@@ -19,6 +19,7 @@ import WETH_ABI from "../../common/abi/Weth.json";
 export class OpStackWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
+  private useLegacyAtomicDepositor: boolean;
   private readonly hubPoolAddress: string;
 
   private readonly l2Gas = 200000;
@@ -47,8 +48,17 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    this.useLegacyAtomicDepositor = (process.env.LEGACY_ATOMIC_DEPOSITOR_CHAINS ?? []).includes(String(l2chainId));
+
+    if (this.useLegacyAtomicDepositor) {
+      const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
+        CONTRACT_ADDRESSES[hubChainId].legacyAtomicDepositor;
+      this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    } else {
+      const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
+        CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
+      this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    }
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
 
@@ -61,16 +71,24 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositETHTo", [
-      toAddress,
-      this.l2Gas,
-      "0x",
-    ]);
-    return Promise.resolve({
-      contract: this.atomicDepositor,
-      method: "bridgeWeth",
-      args: [this.l2chainId, amount, amount, bnZero, bridgeCalldata],
-    });
+    if (this.useLegacyAtomicDepositor) {
+      return Promise.resolve({
+        contract: this.atomicDepositor,
+        method: "bridgeWethToOvm",
+        args: [toAddress, amount, this.l2Gas, this.l2chainId],
+      });
+    } else {
+      const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositETHTo", [
+        toAddress,
+        this.l2Gas,
+        "0x",
+      ]);
+      return Promise.resolve({
+        contract: this.atomicDepositor,
+        method: "bridgeWeth",
+        args: [this.l2chainId, amount, amount, bnZero, bridgeCalldata],
+      });
+    }
   }
 
   private convertEventListToBridgeEvents(events: Log[]): BridgeEvents {

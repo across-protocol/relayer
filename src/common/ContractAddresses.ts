@@ -2,6 +2,7 @@ import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
+import LEGACY_ATOMIC_DEPOSITOR_ABI from "./abi/LegacyAtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
@@ -78,6 +79,10 @@ export const CONTRACT_ADDRESSES: {
     atomicDepositor: {
       address: "0x64668fbD18b967b46DD22dc8675134D91efeDd8d",
       abi: ATOMIC_DEPOSITOR_ABI,
+    },
+    legacyAtomicDepositor: {
+      address: "0xD59d70d887F34669BA695Fe9ABb8848b70de6171",
+      abi: LEGACY_ATOMIC_DEPOSITOR_ABI,
     },
     opUSDCBridge_480: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
