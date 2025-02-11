@@ -43,6 +43,7 @@ import {
   sortEventsDescending,
   getWidestPossibleExpectedBlockRange,
   utils,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -752,7 +753,16 @@ export class Monitor {
       ),
     ]);
 
-    const poolRebalanceLeaves = poolRebalanceRoot.root.leaves;
+    const poolRebalanceLeaves = _buildPoolRebalanceRoot(
+      lastProposedBundleBlockRanges[0][1],
+      lastProposedBundleBlockRanges[0][1],
+      poolRebalanceRoot.bundleDepositsV3,
+      poolRebalanceRoot.bundleFillsV3,
+      poolRebalanceRoot.bundleSlowFillsV3,
+      poolRebalanceRoot.unexecutableSlowFills,
+      poolRebalanceRoot.expiredDepositsToRefundV3,
+      this.clients
+    ).leaves;
 
     // Get the pool rebalance leaf amounts.
     const enabledTokens = [...hubPoolClient.getL1Tokens()];
