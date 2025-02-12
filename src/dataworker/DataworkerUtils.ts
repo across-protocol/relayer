@@ -138,9 +138,7 @@ export async function blockRangesAreInvalidForSpokeClients(
           const safeExpiryWindow = maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds;
           if (expiryWindow < safeExpiryWindow) {
             return {
-              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${
-                endBlockTimestamps[chainId]
-              } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
+              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${endBlockTimestamps[chainId]} - spokePoolClient.eventSearchConfig.fromBlock timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
               chainId,
             };
           }
