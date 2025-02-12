@@ -646,7 +646,8 @@ export class InventoryClient {
           l1Token
         );
         const proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
-          latestValidatedBundle.blockNumber
+          latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
+          // event we grabbed above.
         );
         const lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
         const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
