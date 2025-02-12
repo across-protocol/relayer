@@ -124,23 +124,22 @@ export async function blockRangesAreInvalidForSpokeClients(
         const conservativeBundleFrequencySeconds = Number(
           process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
         );
-        if (
-          spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock &&
+        if (spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock) {
           // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
           // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
           // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
           // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
           // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
           // is sent pretty late into the deposit's expiry period.
-          endBlockTimestamps[chainId] - spokePoolClient.getOldestTime() <
-            maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds
-        ) {
-          return {
-            reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${
-              endBlockTimestamps[chainId]
-            } - spokePoolClient.getOldestTime ${spokePoolClient.getOldestTime()} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
-            chainId,
-          };
+          const oldestTime = await spokePoolClient.getTimeAt(spokePoolClient.eventSearchConfig.fromBlock);
+          const expiryWindow = endBlockTimestamps[chainId] - oldestTime;
+          const safeExpiryWindow = maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds;
+          if (expiryWindow < safeExpiryWindow) {
+            return {
+              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${endBlockTimestamps[chainId]} - spokePoolClient.eventSearchConfig.fromBlock timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
+              chainId,
+            };
+          }
         }
       }
       // We must now assume that all newly expired deposits at the time of the bundle end blocks are contained within
