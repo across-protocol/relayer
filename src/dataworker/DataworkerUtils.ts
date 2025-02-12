@@ -131,9 +131,7 @@ export async function blockRangesAreInvalidForSpokeClients(
           // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
           // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
           // is sent pretty late into the deposit's expiry period.
-          const oldestTime = await spokePoolClient.spokePool.getCurrentTime({
-            blockTag: spokePoolClient.eventSearchConfig.fromBlock,
-          });
+          const oldestTime = await spokePoolClient.getTimeAt(spokePoolClient.eventSearchConfig.fromBlock);
           const expiryWindow = endBlockTimestamps[chainId] - oldestTime;
           const safeExpiryWindow = maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds;
           if (expiryWindow < safeExpiryWindow) {
