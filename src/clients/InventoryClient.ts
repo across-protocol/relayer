@@ -631,7 +631,7 @@ export class InventoryClient {
         const chainIdIndex = chainIds.indexOf(chainId);
 
         // We need to find the latest validated running balance for this chain and token.
-        const _lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        const lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
           this.hubPoolClient.latestBlockSearched,
           chainId,
           l1Token
@@ -652,25 +652,20 @@ export class InventoryClient {
         // seen in the spoke pool client's lookback. It would be very odd however for there to be deposits or refunds
         // for a token and chain without there being a validated root bundle containing the token, so really the
         // following check will be hit if the chain's running balance is very stale. The best way to check
-        // its running balance at that point is to query the token balance directly.
+        // its running balance at that point is to query the token balance directly but this is still potentially
+        // inaccurate if someone sent tokens directly to the contract, and it incurs an extra RPC call so we avoid
+        // it for now. The default running balance will be 0, and this function is primarily designed to choose
+        // which chains have too many running balances and therefore should be selected for repayment, so returning
+        // 0 here means this chain will never be selected for repayment as a "slow withdrawal" chain.
         let lastValidatedBundleEndBlock = 0;
         let proposedRootBundle: ProposedRootBundle | undefined;
-        let tokenBalanceFallback: BigNumber | undefined;
         if (latestValidatedBundle) {
           proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
             latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
             // event we grabbed above.
           );
           lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-        } else {
-          const token = new Contract(l2Token, ERC20.abi, this.tokenClient.spokePoolClients[chainId].spokePool.provider);
-          // @dev running balances are negative if the spoke pool has a token balance, so always multiple the
-          // balanceOf result by -1
-          tokenBalanceFallback = (
-            await token.balanceOf(this.tokenClient.spokePoolClients[chainId].spokePool.address)
-          ).mul(-1);
         }
-        const lastValidatedRunningBalance = proposedRootBundle ? _lastValidatedRunningBalance : tokenBalanceFallback;
         const upcomingDepositsAfterLastValidatedBundle = this.bundleDataClient.getUpcomingDepositAmount(
           chainId,
           l2Token,
@@ -703,7 +698,6 @@ export class InventoryClient {
             upcomingRefunds: upcomingRefundsAfterLastValidatedBundle,
             bundleEndBlock: lastValidatedBundleEndBlock,
             proposedRootBundle: proposedRootBundle?.transactionHash,
-            tokenBalanceFallback,
           },
         ];
       })
