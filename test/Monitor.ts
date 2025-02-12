@@ -49,7 +49,7 @@ describe("Monitor", async function () {
   const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
-  let dataworker: SignerWithAddress, depositor: SignerWithAddress;
+  let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
   let dataworkerInstance: Dataworker;
   let bundleDataClient: BundleDataClient;
   let configStoreClient: ConfigStoreClient;
@@ -96,6 +96,7 @@ describe("Monitor", async function () {
       dataworker,
       dataworkerInstance,
       depositor,
+      relayer,
       erc20_1: l2Token,
       erc20_2,
       l1Token_1: l1Token,
@@ -140,7 +141,7 @@ describe("Monitor", async function () {
       WHITELISTED_RELAYERS: "",
       MONITOR_REPORT_ENABLED: "true",
       MONITOR_REPORT_INTERVAL: "10",
-      MONITORED_RELAYERS: `["${depositor.address}"]`,
+      MONITORED_RELAYERS: `["${relayer.address}"]`,
     };
     const monitorConfig = new MonitorConfig(defaultMonitorEnvVars);
 
@@ -163,7 +164,7 @@ describe("Monitor", async function () {
     const providers = Object.fromEntries(
       Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.spokePool.provider])
     );
-    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [depositor.address]);
+    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [relayer.address]);
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
@@ -236,8 +237,10 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
 
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
-      "60000000000000000000000"
+    // setupDataworker seeds relayer with 10 * 1500 erc20_2, erc20_1, and l1Token_1 tokens on two different
+    // spoke pools, adding to a total of 6 * 10 * 1500 = 90,000 tokens.
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
+      "90000000000000000000000"
     );
   });
 
@@ -256,7 +259,7 @@ describe("Monitor", async function () {
       l1Token.address,
       outputAmount
     );
-    const fill = await fillV3Relay(spokePool_2, deposit, depositor);
+    const fill = await fillV3Relay(spokePool_2, deposit, relayer);
     await monitorInstance.update();
 
     // Have the data worker propose a new bundle.
@@ -273,10 +276,10 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     const relayerRefund = await computeRelayerRefund({ ...deposit, paymentChainId: fill.repaymentChainId });
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(relayerRefund);
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(relayerRefund);
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
@@ -290,8 +293,8 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(relayerRefund);
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(relayerRefund);
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
@@ -319,12 +322,12 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[depositor.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     // Simulate some pending cross chain transfers.
     crossChainTransferClient.increaseOutstandingTransfer(
-      depositor.address,
+      relayer.address,
       l1Token.address,
       l2Token.address,
       toBN(5),
@@ -332,7 +335,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
-      reports[depositor.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reports[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
   });
 
@@ -349,7 +352,7 @@ describe("Monitor", async function () {
       l1Token.address,
       amountToDeposit.mul(99).div(100)
     );
-    await fillV3Relay(spokePool_2, deposit, depositor);
+    await fillV3Relay(spokePool_2, deposit, relayer);
     await monitorInstance.update();
 
     // Have the data worker propose a new bundle.

@@ -4,6 +4,7 @@ import { SpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { ZKSyncWethBridge, ZKSyncBridge } from "../../src/adapter/bridges";
 import { bnZero } from "../../src/utils";
+import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   ethers,
   expect,
@@ -13,6 +14,7 @@ import {
   getContractFactory,
   randomAddress,
   toBN,
+  smock,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
 import * as zksync from "zksync-ethers";
@@ -133,6 +135,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     );
 
     // Point the adapter to the proper bridges.
+    await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[MAINNET].zkSyncMailbox.address); // So a contract is deployed to the 0x32400...000324 contract address
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
     l2Eth = await (await getContractFactory("MockWETH9", depositor)).deploy();
@@ -151,7 +154,8 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
   describe("WETH bridge", function () {
     it("Get L1 deposits: EOA", async function () {
-      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, depositAmount, 0, 0, ZERO_ADDRESS);
+      // await adapter.sendTokenToTargetChain(monitoredEoa, WETH.addresses[MAINNET], l2Weth.address, depositAmount, false);
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, depositAmount, bnZero, "0x");
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
@@ -217,7 +221,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       });
 
       // Make a single l1 -> l2 deposit.
-      await atomicDepositor.bridgeWethToZkSync(monitoredEoa, depositAmount, 0, 0, ZERO_ADDRESS);
+      await atomicDepositor.bridgeWeth(ZK_SYNC, depositAmount, depositAmount, bnZero, "0x");
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
         l1Weth,
         monitoredEoa,
@@ -933,3 +937,11 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
   });
 });
+
+async function makeFake(contractName: string, address: string) {
+  const _interface = CONTRACT_ADDRESSES[1][contractName]?.abi;
+  if (_interface === undefined) {
+    throw new Error(`${contractName} is not a valid contract name`);
+  }
+  return await smock.fake(_interface, { address });
+}

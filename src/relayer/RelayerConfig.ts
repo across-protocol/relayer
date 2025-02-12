@@ -89,13 +89,10 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_INDEXER,
       RELAYER_TRY_MULTICALL_CHAINS,
-      RELAYER_USE_GENERIC_ADAPTER,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
     } = env;
     super(env);
-
-    this.useGenericAdapter = RELAYER_USE_GENERIC_ADAPTER === "true";
 
     // External indexing is dependent on looping mode being configured.
     this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
@@ -105,12 +102,8 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationChains = JSON.parse(RELAYER_DESTINATION_CHAINS ?? "[]");
 
     // Empty means all tokens.
-    this.relayerTokens = RELAYER_TOKENS
-      ? JSON.parse(RELAYER_TOKENS).map((token) => ethers.utils.getAddress(token))
-      : [];
-    this.slowDepositors = SLOW_DEPOSITORS
-      ? JSON.parse(SLOW_DEPOSITORS).map((depositor) => ethers.utils.getAddress(depositor))
-      : [];
+    this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) => ethers.utils.getAddress(token));
+    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) => ethers.utils.getAddress(depositor));
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
@@ -262,7 +255,7 @@ export class RelayerConfig extends CommonConfig {
     // Transform deposit confirmation requirements into an array of ascending
     // deposit confirmations, sorted by the corresponding threshold in USD.
     this.minDepositConfirmations = {};
-    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET) {
+    if (this.hubPoolChainId !== CHAIN_IDs.MAINNET && !isDefined(MIN_DEPOSIT_CONFIRMATIONS)) {
       // Sub in permissive defaults for testnet.
       const standardConfig = { usdThreshold: toBNWei(Number.MAX_SAFE_INTEGER), minConfirmations: 1 };
       Object.values(TESTNET_CHAIN_IDs).forEach((chainId) => (this.minDepositConfirmations[chainId] = [standardConfig]));

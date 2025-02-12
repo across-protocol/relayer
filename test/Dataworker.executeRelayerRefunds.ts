@@ -1,5 +1,5 @@
 import { BundleDataClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { MAX_UINT_VAL, toBN } from "../src/utils";
+import { buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBN, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -8,7 +8,7 @@ import {
   repaymentChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3 } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
@@ -16,7 +16,7 @@ import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract, hubPool: Contract, hubPoolClient: HubPoolClient;
+let l1Token_1: Contract, hubPool: Contract, hubPoolClient: HubPoolClient, spokePool_4: Contract;
 let depositor: SignerWithAddress;
 
 let dataworkerInstance: Dataworker, multiCallerClient: MultiCallerClient;
@@ -39,6 +39,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       spokePool_1,
       erc20_1,
       spokePool_2,
+      spokePool_4,
       erc20_2,
       l1Token_1,
       depositor,
@@ -63,7 +64,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
@@ -103,6 +104,35 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
     await multiCallerClient.executeTxnQueues();
   });
+  it("Modifies BalanceAllocator when executing hub chain leaf", async function () {
+    const refundLeaves: RelayerRefundLeaf[] = [
+      {
+        amountToReturn: toBNWei("1"),
+        chainId: hubPoolClient.chainId,
+        refundAmounts: [],
+        leafId: 0,
+        l2TokenAddress: l1Token_1.address,
+        refundAddresses: [],
+      },
+    ];
+    const relayerRefundTree = buildRelayerRefundTree(refundLeaves);
+    const balanceAllocator = await getNewBalanceAllocator();
+    await spokePool_4.relayRootBundle(
+      relayerRefundTree.getHexRoot(),
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
+    await l1Token_1.mint(spokePool_4.address, amountToDeposit);
+    await updateAllClients();
+    await dataworkerInstance._executeRelayerRefundLeaves(
+      refundLeaves,
+      balanceAllocator,
+      spokePoolClients[hubPoolClient.chainId],
+      relayerRefundTree,
+      true,
+      0
+    );
+    expect(balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address)).to.equal(toBNWei("-1"));
+  });
   describe("Computing refunds for bundles", function () {
     let relayer: SignerWithAddress;
     let bundleDataClient: BundleDataClient;
@@ -125,7 +155,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // Submit a valid fill.
-      await fillV3(spokePool_2, relayer, deposit1, destinationChainId);
+      await fillV3Relay(spokePool_2, deposit1, relayer, destinationChainId);
 
       await updateAllClients();
     });
@@ -211,7 +241,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // Submit a valid fill.
-      await fillV3(spokePool_2, relayer, deposit2, destinationChainId);
+      await fillV3Relay(spokePool_2, deposit2, relayer, destinationChainId);
       await updateAllClients();
 
       // Validate another bundle:

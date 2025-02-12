@@ -27,6 +27,7 @@ import {
   getNetworkName,
   getUnfilledDeposits,
   mapAsync,
+  getEndBlockBuffers,
   parseUnits,
   providers,
   toBN,
@@ -40,11 +41,13 @@ import {
   isDefined,
   resolveTokenDecimals,
   sortEventsDescending,
+  getWidestPossibleExpectedBlockRange,
+  utils,
 } from "../utils";
-
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -294,6 +297,36 @@ export class Monitor {
         mrkdwn,
       });
     }
+    Object.entries(reports).forEach(([relayer, balanceTable]) => {
+      Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
+        const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
+        if (!decimals) {
+          throw new Error(`No decimals found for ${tokenSymbol}`);
+        }
+        Object.entries(columns).forEach(([chainName, cell]) => {
+          if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
+            Object.entries(cell).forEach(([balanceType, balance]) => {
+              // Don't log zero balances.
+              if (balance.isZero()) {
+                return;
+              }
+              this.logger.debug({
+                at: "Monitor#reportRelayerBalances",
+                message: "Machine-readable single balance report",
+                relayer,
+                tokenSymbol,
+                decimals,
+                chainName,
+                balanceType,
+                balanceInWei: balance.toString(),
+                balance: Number(utils.formatUnits(balance, decimals)),
+                datadog: true,
+              });
+            });
+          }
+        });
+      });
+    });
   }
 
   // Update current balances of all tokens on each supported chain for each relayer.
@@ -606,6 +639,8 @@ export class Monitor {
 
     const hubPoolClient = this.clients.hubPoolClient;
     const monitoredTokenSymbols = this.monitorConfig.monitoredTokenSymbols;
+
+    // Define the chain IDs in the same order as `enabledChainIds` so that block range ordering is preserved.
     const chainIds =
       this.monitorConfig.monitoredSpokePoolChains.length !== 0
         ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
@@ -614,14 +649,105 @@ export class Monitor {
     const l2TokenForChain = (chainId: number, symbol: string) => {
       return TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
     };
-    const currentSpokeBalances = {};
     const pendingRelayerRefunds = {};
     const pendingRebalanceRoots = {};
 
-    // Get the pool rebalance leaves of the currently outstanding proposed root bundle.
-    const poolRebalanceRoot = await this.clients.bundleDataClient.getLatestPoolRebalanceRoot();
+    // Take the validated bundles from the hub pool client.
+    const validatedBundles = sortEventsDescending(hubPoolClient.getValidatedRootBundles()).slice(
+      0,
+      this.monitorConfig.bundlesCount
+    );
+
+    // Fetch the data from the latest root bundle.
+    const bundle = hubPoolClient.getLatestProposedRootBundle();
+    // If there is an outstanding root bundle, then add it to the bundles to check. Otherwise, ignore it.
+    const bundlesToCheck = validatedBundles
+      .map((validatedBundle) => validatedBundle.transactionHash)
+      .includes(bundle.transactionHash)
+      ? validatedBundles
+      : [...validatedBundles, bundle];
+
+    const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
+      this.clients.bundleDataClient.chainIdListForBundleEvaluationBlockNumbers,
+      hubPoolClient.latestBlockSearched,
+      hubPoolClient.chainId
+    );
+    const enabledChainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
+
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Mainnet root bundles in scope",
+      validatedBundles,
+      outstandingBundle: bundle,
+    });
+
+    const slowFillBlockRange = getWidestPossibleExpectedBlockRange(
+      enabledChainIds,
+      this.clients.spokePoolClients,
+      getEndBlockBuffers(enabledChainIds, this.clients.bundleDataClient.blockRangeEndBlockBuffer),
+      this.clients,
+      hubPoolClient.latestBlockSearched,
+      this.clients.configStoreClient.getEnabledChains(hubPoolClient.latestBlockSearched)
+    );
+    const blockRangeTail = bundle.bundleEvaluationBlockNumbers.map((endBlockForChain, idx) => {
+      const endBlockNumber = Number(endBlockForChain);
+      const spokeLatestBlockSearched = this.clients.spokePoolClients[enabledChainIds[idx]]?.latestBlockSearched ?? 0;
+      return spokeLatestBlockSearched === 0
+        ? [endBlockNumber, endBlockNumber]
+        : [endBlockNumber + 1, spokeLatestBlockSearched > endBlockNumber ? spokeLatestBlockSearched : endBlockNumber];
+    });
+
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Block ranges to search",
+      slowFillBlockRange,
+      blockRangeTail,
+    });
+
+    // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
+    // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
+    // all the spoke pools.
+    const [
+      poolRebalanceRoot,
+      currentBundleData,
+      accountedBundleRefunds,
+      unaccountedBundleRefunds,
+      currentSpokeBalances,
+    ] = await Promise.all([
+      this.clients.bundleDataClient.getLatestPoolRebalanceRoot(),
+      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, false),
+      mapAsync(bundlesToCheck, async (proposedBundle) =>
+        this.clients.bundleDataClient.getPendingRefundsFromBundle(proposedBundle)
+      ),
+      this.clients.bundleDataClient.getApproximateRefundsForBlockRange(enabledChainIds, blockRangeTail),
+      Object.fromEntries(
+        await mapAsync(chainIds, async (chainId) => {
+          const spokePool = this.clients.spokePoolClients[chainId].spokePool.address;
+          const l2TokenAddresses = monitoredTokenSymbols
+            .map((symbol) => l2TokenForChain(chainId, symbol))
+            .filter(isDefined);
+          const balances = Object.fromEntries(
+            await mapAsync(l2TokenAddresses, async (l2Token) => [
+              l2Token,
+              (
+                await this._getBalances([
+                  {
+                    token: l2Token,
+                    chainId: chainId,
+                    account: spokePool,
+                  },
+                ])
+              )[0],
+            ])
+          );
+          return [chainId, balances];
+        })
+      ),
+    ]);
+
     const poolRebalanceLeaves = poolRebalanceRoot.root.leaves;
 
+    // Get the pool rebalance leaf amounts.
     const enabledTokens = [...hubPoolClient.getL1Tokens()];
     for (const leaf of poolRebalanceLeaves) {
       if (!chainIds.includes(leaf.chainId)) {
@@ -635,29 +761,20 @@ export class Monitor {
       });
     }
 
-    // Take the validated bundles from the hub pool client.
-    const validatedBundles = sortEventsDescending(hubPoolClient.getValidatedRootBundles()).slice(
-      0,
-      this.monitorConfig.bundlesCount
-    );
-    const previouslyValidatedBundleRefunds: CombinedRefunds[] = await mapAsync(
-      validatedBundles,
-      async (bundle) => await this.clients.bundleDataClient.getPendingRefundsFromBundle(bundle)
-    );
+    this.logger.debug({
+      at: "Monitor#checkSpokePoolRunningBalances",
+      message: "Print pool rebalance leaves",
+      poolRebalanceRootLeaves: poolRebalanceLeaves,
+    });
 
-    // Here are the current outstanding refunds.
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
-
-    // Calculate the pending refunds and the spoke pool balances in parallel.
+    // Calculate the pending refunds.
     for (const chainId of chainIds) {
-      const spokePool = this.clients.spokePoolClients[chainId].spokePool.address;
       const l2TokenAddresses = monitoredTokenSymbols
         .map((symbol) => l2TokenForChain(chainId, symbol))
         .filter(isDefined);
-      currentSpokeBalances[chainId] = {};
       pendingRelayerRefunds[chainId] = {};
-      void (await mapAsync(l2TokenAddresses, async (l2Token) => {
-        const pendingValidatedDeductions = previouslyValidatedBundleRefunds
+      l2TokenAddresses.forEach((l2Token) => {
+        const pendingValidatedDeductions = accountedBundleRefunds
           .map((refund) => refund[chainId]?.[l2Token])
           .filter(isDefined)
           .reduce(
@@ -668,7 +785,7 @@ export class Monitor {
               ),
             bnZero
           );
-        const nextBundleDeductions = nextBundleRefunds
+        const nextBundleDeductions = [unaccountedBundleRefunds]
           .map((refund) => refund[chainId]?.[l2Token])
           .filter(isDefined)
           .reduce(
@@ -679,19 +796,35 @@ export class Monitor {
               ),
             bnZero
           );
-        const totalObligations = pendingValidatedDeductions.add(nextBundleDeductions);
-        currentSpokeBalances[chainId][l2Token] = (
-          await this._getBalances([
-            {
-              token: l2Token,
-              chainId: chainId,
-              account: spokePool,
-            },
-          ])
-        )[0];
-        pendingRelayerRefunds[chainId][l2Token] = totalObligations;
-      }));
+        pendingRelayerRefunds[chainId][l2Token] = pendingValidatedDeductions.add(nextBundleDeductions);
+      });
+
+      this.logger.debug({
+        at: "Monitor#checkSpokePoolRunningBalances",
+        message: "Print refund amounts for chainId",
+        chainId,
+        pendingDeductions: pendingRelayerRefunds[chainId],
+      });
     }
+
+    // Get the slow fill amounts. Only do this step if there were slow fills in the most recent root bundle.
+    Object.entries(currentBundleData.bundleSlowFillsV3)
+      .filter(([chainId]) => chainIds.includes(+chainId))
+      .map(([chainId, bundleSlowFills]) => {
+        const l2TokenAddresses = monitoredTokenSymbols
+          .map((symbol) => l2TokenForChain(+chainId, symbol))
+          .filter(isDefined);
+        Object.entries(bundleSlowFills)
+          .filter(([l2Token]) => l2TokenAddresses.includes(l2Token))
+          .map(([l2Token, fills]) => {
+            const pendingSlowFillAmounts = fills
+              .map((fill) => fill.outputAmount)
+              .filter(isDefined)
+              .reduce((totalAmounts, outputAmount) => totalAmounts.add(outputAmount), bnZero);
+            pendingRelayerRefunds[chainId][l2Token] =
+              pendingRelayerRefunds[chainId][l2Token].sub(pendingSlowFillAmounts);
+          });
+      });
 
     // Print the output: The current spoke pool balance, the amount of refunds to payout, the pending pool rebalances, and then the sum of the three.
     let tokenMarkdown =
@@ -1158,5 +1291,14 @@ export class Monitor {
         return decimals;
       })
     );
+  }
+
+  private _tokenEnabledForNetwork(tokenSymbol: string, networkName: string): boolean {
+    for (const [chainId, network] of Object.entries(PUBLIC_NETWORKS)) {
+      if (network.name === networkName) {
+        return isDefined(TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[chainId]);
+      }
+    }
+    return false;
   }
 }

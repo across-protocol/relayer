@@ -1,9 +1,10 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { SpokePoolClient } from "../../src/clients";
-import { ArbitrumAdapter } from "../../src/clients/bridges/ArbitrumAdapter";
+import { BaseChainAdapter } from "../../src/adapter";
+import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
-import { chainIdsToCctpDomains } from "../../src/common";
+import { chainIdsToCctpDomains, SUPPORTED_TOKENS } from "../../src/common";
 import { hashCCTPSourceAndNonce } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
@@ -24,7 +25,7 @@ let cctpMessageTransmitterContract: Contract;
 
 let adapter: ArbitrumAdapter;
 
-class ArbitrumAdapterTest extends ArbitrumAdapter {
+class ArbitrumAdapter extends BaseChainAdapter {
   setL1Bridge(address: string, bridge: Contract) {
     this.bridges[address].l1Bridge = bridge;
   }
@@ -59,13 +60,31 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       fromBlock: 0,
     });
 
-    adapter = new ArbitrumAdapterTest(
-      logger,
+    const l1Signer = l1SpokePoolClient.spokePool.signer;
+    const l2Signer = l2SpokePoolClient.spokePool.signer;
+    const bridges = {
+      [l1Token]: new ArbitrumOrbitBridge(CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET, l1Signer, l2Signer, l1Token),
+      [l1UsdcAddress]: new UsdcTokenSplitterBridge(
+        CHAIN_IDs.ARBITRUM,
+        CHAIN_IDs.MAINNET,
+        l1Signer,
+        l2Signer,
+        l1UsdcAddress
+      ),
+    };
+
+    adapter = new ArbitrumAdapter(
       {
         [CHAIN_IDs.ARBITRUM]: l2SpokePoolClient,
         [CHAIN_IDs.MAINNET]: l1SpokePoolClient,
       },
-      [monitoredEoa]
+      CHAIN_IDs.ARBITRUM,
+      CHAIN_IDs.MAINNET,
+      [monitoredEoa],
+      logger,
+      SUPPORTED_TOKENS[CHAIN_IDs.ARBITRUM], // Supported Tokens.
+      bridges,
+      1
     );
 
     // Set the adapter bridges to appropriate contracts.

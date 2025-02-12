@@ -4,14 +4,17 @@ import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { RelayData } from "../src/interfaces";
+import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
   formatFeePct,
   getDeploymentBlockNumber,
   getNetworkName,
+  getProvider,
   getSigner,
   isDefined,
   resolveTokenSymbols,
@@ -31,8 +34,6 @@ type RelayerFeeQuery = {
   skipAmountLimit?: string;
   timestamp?: number;
 };
-
-const { ACROSS_API_HOST = "across.to" } = process.env;
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -86,8 +87,9 @@ function printFill(destinationChainId: number, log: LogDescription): void {
 }
 
 async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
+  const hubChainId = sdkUtils.chainIsProd(params.originChainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
   const path = "api/suggested-fees";
-  const url = `https://${ACROSS_API_HOST}/${path}`;
+  const url = `https://${getAcrossHost(hubChainId)}/${path}`;
 
   try {
     const quote = await axios.get(url, { timeout, params });
@@ -194,7 +196,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const tokenSymbol = token.symbol.toUpperCase();
   const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
-  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(fromChainId));
+  const provider = await getProvider(fromChainId);
   signer = signer.connect(provider);
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
 
@@ -246,7 +248,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     throw new Error(`Missing or malformed transaction hash: ${txnHash}`);
   }
 
-  const originProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(originChainId));
+  const originProvider = await getProvider(originChainId);
   const originSpokePool = await utils.getSpokePoolContract(originChainId);
   const spokePools: { [chainId: number]: Contract } = {};
 
@@ -321,7 +323,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     }
 
     const sender = await signer.getAddress();
-    const destProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(destinationChainId));
+    const destProvider = await getProvider(destinationChainId);
     const destSigner = signer.connect(destProvider);
 
     const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
@@ -348,7 +350,7 @@ async function dumpConfig(args: Record<string, number | string>, _signer: Signer
   const _spokePool = await utils.getSpokePoolContract(chainId);
 
   const hubChainId = utils.resolveHubChainId(chainId);
-  const spokeProvider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
+  const spokeProvider = await getProvider(chainId);
   const spokePool = _spokePool.connect(spokeProvider);
 
   const [spokePoolChainId, hubPool, crossDomainAdmin, weth, _currentTime] = await Promise.all([
@@ -436,7 +438,7 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
     return false;
   }
 
-  const provider = new ethers.providers.StaticJsonRpcProvider(utils.getProviderUrl(chainId));
+  const provider = await getProvider(chainId);
   const spokePool = (await utils.getSpokePoolContract(chainId)).connect(provider);
 
   let deposits: Log[] = [];

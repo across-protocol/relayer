@@ -106,8 +106,10 @@ export class BaseChainAdapter {
 
   async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
     const unavailableTokens: string[] = [];
-    const tokensToApprove = (
-      await mapAsync(
+    // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
+    // each bridge supports (if applicable).
+    const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
+      mapAsync(
         l1Tokens.map((token) => [token, this.bridges[token]?.l1Gateways] as [string, string[]]),
         async ([l1Token, bridges]) => {
           const erc20 = ERC20.connect(l1Token, this.getSigner(this.hubChainId));
@@ -126,8 +128,34 @@ export class BaseChainAdapter {
           });
           return { token: erc20, bridges: bridgesToApprove };
         }
-      )
-    ).filter(({ bridges }) => bridges.length > 0);
+      ),
+      mapAsync(
+        Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
+        async (bridge) => {
+          const gasToken = bridge.gasToken;
+          const erc20 = ERC20.connect(gasToken, this.getSigner(this.hubChainId));
+          const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
+            const senderAddress = await erc20.signer.getAddress();
+            const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress, gateway));
+            if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
+              await setTokenAllowanceInCache(gasToken, senderAddress, gateway, allowance);
+            }
+            return !aboveAllowanceThreshold(allowance);
+          });
+          return { token: erc20, bridges: bridgesToApprove };
+        }
+      ),
+    ]);
+    // Dedup the `gasTokensToApprove` array so that we don't approve the same bridge to send the same token multiple times.
+    const tokenBridgePairs = gasTokensToApprove.map(({ token, bridges }) => `${token.address}_${bridges.join("_")}`);
+    const tokensToApprove = gasTokensToApprove
+      .filter(({ token, bridges }, idx) => {
+        const tokenBridgePair = `${token.address}_${bridges.join("_")}`;
+        return tokenBridgePairs.indexOf(tokenBridgePair) === idx;
+      })
+      .concat(bridgeTokensToApprove)
+      .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract", { unavailableTokens });
     }
@@ -208,7 +236,12 @@ export class BaseChainAdapter {
     }
 
     const value = ethBalance.sub(target);
-    this.log("Wrapping ETH", { threshold, target, value, ethBalance }, "debug", "wrapEthIfAboveThreshold");
+    this.log(
+      `Wrapping ETH on chain ${getNetworkName(this.chainId)}`,
+      { threshold, target, value, ethBalance },
+      "debug",
+      "wrapEthIfAboveThreshold"
+    );
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =

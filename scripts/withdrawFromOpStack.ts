@@ -14,13 +14,14 @@ import {
   fromWei,
   blockExplorerLink,
   CHAIN_IDs,
+  ZERO_ADDRESS,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { askYesNoQuestion, getOvmSpokePoolContract } from "./utils";
 
 import minimist from "minimist";
 
-const cliArgs = ["amount", "chainId"];
+const cliArgs = ["amount", "chainId", "token"];
 const args = minimist(process.argv.slice(2), {
   string: cliArgs,
 });
@@ -30,6 +31,7 @@ const args = minimist(process.argv.slice(2), {
 // \ --amount 3000000000000000000
 // \ --chainId 1135
 // \ --wallet gckms
+// \ --token WETH
 // \ --keys bot1
 
 export async function run(): Promise<void> {
@@ -41,11 +43,10 @@ export async function run(): Promise<void> {
   const signerAddr = await baseSigner.getAddress();
   const chainId = parseInt(args.chainId);
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
-  const l2Token = TOKEN_SYMBOLS_MAP.WETH?.addresses[chainId];
-  assert(l2Token, `WETH not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
+  const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
+  assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
   const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
   console.log("Fetched L1 token info:", l1TokenInfo);
-  assert(l1TokenInfo.symbol === "ETH", "Only WETH withdrawals are supported for now.");
   const amount = args.amount;
   const amountFromWei = ethers.utils.formatUnits(amount, l1TokenInfo.decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
@@ -54,33 +55,52 @@ export async function run(): Promise<void> {
   const currentBalance = await erc20.balanceOf(signerAddr);
   const currentEthBalance = await connectedSigner.getBalance();
   console.log(
-    `Current WETH balance for account ${signerAddr}: ${fromWei(currentBalance, l1TokenInfo.decimals)} ${l2Token}`
+    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(
+      currentBalance,
+      l1TokenInfo.decimals
+    )} ${l2Token}`
   );
-  console.log(`Current ETH balance for account ${signerAddr}: ${fromWei(currentEthBalance, l1TokenInfo.decimals)}`);
+  console.log(`Current ETH balance for account ${signerAddr}: ${fromWei(currentEthBalance)}`);
 
-  // First offer user option to unwrap WETH into ETH.
-  const weth = new Contract(l2Token, WETH9.abi, connectedSigner);
-  if (await askYesNoQuestion(`\nUnwrap ${amount} of WETH @ ${weth.address}?`)) {
-    const unwrap = await weth.withdraw(amount);
-    console.log(`Submitted transaction: ${blockExplorerLink(unwrap.hash, chainId)}.`);
-    const receipt = await unwrap.wait();
-    console.log("Unwrap complete...", receipt);
+  // First offer user option to unwrap WETH into ETH
+  if (l1TokenInfo.symbol === "ETH") {
+    const weth = new Contract(l2Token, WETH9.abi, connectedSigner);
+    if (await askYesNoQuestion(`\nUnwrap ${amount} of WETH @ ${weth.address}?`)) {
+      const unwrap = await weth.withdraw(amount);
+      console.log(`Submitted transaction: ${blockExplorerLink(unwrap.hash, chainId)}.`);
+      const receipt = await unwrap.wait();
+      console.log("Unwrap complete...", receipt);
+    }
   }
 
-  // Now, submit a withdrawal:
+  // Now, submit a withdrawal. This might fail if the ERC20 uses a non-standard OVM bridge to withdraw.
   const ovmStandardBridgeObj = CONTRACT_ADDRESSES[chainId].ovmStandardBridge;
   assert(CONTRACT_ADDRESSES[chainId].ovmStandardBridge, "ovmStandardBridge for chain not found in CONTRACT_ADDRESSES");
   const ovmStandardBridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
-  const bridgeETHToArgs = [
-    signerAddr, // to
-    200_000, // minGasLimit
-    "0x", // extraData
-    { value: amount }, // msg.value
-  ];
+  const bridgeArgs =
+    l1TokenInfo.symbol === "ETH"
+      ? [
+          signerAddr, // to
+          200_000, // minGasLimit
+          "0x", // extraData
+          { value: amount }, // msg.value
+        ]
+      : [
+          l2Token, // _localToken
+          TOKEN_SYMBOLS_MAP[args.token]?.addresses[CHAIN_IDs.MAINNET], // Remote token to be received on L1 side. If the
+          // remoteL1Token on the other chain does not recognize the local token as the correct
+          // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
+          // this chain.
+          signerAddr, // _to
+          amount, // _amount
+          200_000, // minGasLimit
+          "0x", // _data
+        ];
 
+  const functionNameToCall = l1TokenInfo.symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
   console.log(
-    `Submitting bridgeETHTo on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
-    ...bridgeETHToArgs
+    `Submitting ${functionNameToCall} on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
+    ...bridgeArgs
   );
 
   // Sanity check that the ovmStandardBridge contract is the one we expect by comparing its stored addresses
@@ -98,10 +118,12 @@ export async function run(): Promise<void> {
     l1StandardBridge === expectedL1StandardBridge,
     `Unexpected L1 standard bridge address in ovmStandardBridge contract, expected: ${expectedL1StandardBridge}, got: ${l1StandardBridge}`
   );
+  const customTokenBridge = await spokePool.tokenBridges(l2Token);
+  assert(customTokenBridge === ZERO_ADDRESS, `Custom token bridge set for token ${l2Token} (${customTokenBridge})`);
   if (!(await askYesNoQuestion("\nDo you want to proceed?"))) {
     return;
   }
-  const withdrawal = await ovmStandardBridge.bridgeETHTo(...bridgeETHToArgs);
+  const withdrawal = await ovmStandardBridge[functionNameToCall](...bridgeArgs);
   console.log(`Submitted withdrawal: ${blockExplorerLink(withdrawal.hash, chainId)}.`);
   const receipt = await withdrawal.wait();
   console.log("Receipt", receipt);

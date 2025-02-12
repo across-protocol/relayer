@@ -15,6 +15,7 @@ import {
   getOriginFromURL,
   getProvider,
   getRedisCache,
+  getSpokePool,
   getWSProviders,
   Logger,
   winston,
@@ -116,17 +117,23 @@ async function listen(
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["lookback", "relayer"],
+    string: ["lookback", "relayer", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
-  const { chainId, lookback, relayer = null, maxBlockRange = 10_000 } = args;
+  const { chainid: chainId, lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
   assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
+
+  let { spokepool: spokePoolAddr } = args;
+  assert(
+    !isDefined(spokePoolAddr) || ethersUtils.isAddress(spokePoolAddr),
+    `Invalid SpokePool address (${spokePoolAddr})`
+  );
 
   chain = getNetworkName(chainId);
 
@@ -151,16 +158,21 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Skipping lookback on ${chain}.` });
   }
 
+  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  if (!isDefined(spokePoolAddr)) {
+    ({ address: spokePoolAddr } = spokePool);
+  }
+
   const opts = {
-    quorum,
+    spokePool: spokePoolAddr,
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
     filterArgs: getEventFilterArgs(relayer),
+    quorum,
   };
 
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
-  const spokePool = await utils.getSpokePoolContract(chainId);
 
   process.on("SIGHUP", () => {
     logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
@@ -176,13 +188,19 @@ async function run(argv: string[]): Promise<void> {
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Scraping previous ${chain} events.`, opts });
 
   if (latestBlock.number > startBlock) {
-    const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
+    const events = [
+      "FundsDeposited",
+      "FilledRelay",
+      "RequestedSpeedUpDeposit",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ];
     const _spokePool = spokePool.connect(quorumProvider);
     await scrapeEvents(_spokePool, events, opts);
   }
 
   // Events to listen for.
-  const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
+  const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
   const providers = getWSProviders(chainId, quorum);
   let nProviders = providers.length;

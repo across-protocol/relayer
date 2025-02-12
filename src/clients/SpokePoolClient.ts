@@ -2,9 +2,20 @@ import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
-import { Log } from "../interfaces";
+import { Log, DepositWithBlock } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
-import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
+import {
+  bnZero,
+  EventSearchConfig,
+  getNetworkName,
+  isDefined,
+  MakeOptional,
+  winston,
+  BigNumber,
+  getRelayEventKey,
+  getMessageHash,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -76,14 +87,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    */
   protected startWorker(): void {
     const {
-      eventSearchConfig: { fromBlock, maxBlockLookBack: blockRange },
+      eventSearchConfig: { fromBlock, maxBlockLookBack: blockrange },
+      spokePool: { address: spokepool },
     } = this;
-    const opts = { blockRange, lookback: `@${fromBlock}` };
+    const opts = { spokepool, blockrange, lookback: `@${fromBlock}` };
 
     const args = Object.entries(opts)
       .map(([k, v]) => [`--${k}`, `${v}`])
       .flat();
-    this.worker = spawn("node", [this.indexerPath, "--chainId", this.chainId.toString(), ...args], {
+    this.worker = spawn("node", [this.indexerPath, "--chainid", this.chainId.toString(), ...args], {
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     });
 
@@ -223,11 +235,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
     // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
     // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
-    if (eventName === "V3FundsDeposited") {
+    if (eventName === "V3FundsDeposited" || eventName === "FundsDeposited") {
       const { depositId } = event.args;
       assert(isDefined(depositId));
 
-      const depositHash = this.getDepositHash({ depositId, originChainId: this.chainId });
+      const depositEvent = {
+        ...spreadEventWithBlockNumber(event),
+        messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
+      } as DepositWithBlock;
+      const depositHash = getRelayEventKey(depositEvent);
       if (isDefined(this.depositHashes[depositHash])) {
         delete this.depositHashes[depositHash];
         this.logger.warn({
@@ -276,9 +292,11 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     // Find the latest deposit Ids, and if there are no new events, fall back to already stored values.
     const fundsDeposited = eventsToQuery.indexOf("V3FundsDeposited");
+    const _firstDepositId = events[fundsDeposited].at(0)?.args?.depositId;
+    const _latestDepositId = events[fundsDeposited].at(-1)?.args?.depositId;
     const [firstDepositId, latestDepositId] = [
-      events[fundsDeposited].at(0)?.args?.depositId ?? this.getDeposits().at(0) ?? 0,
-      events[fundsDeposited].at(-1)?.args?.depositId ?? this.getDeposits().at(-1) ?? 0,
+      isDefined(_firstDepositId) ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
+      isDefined(_latestDepositId) ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,
     ];
 
     return {

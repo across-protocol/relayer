@@ -1,6 +1,6 @@
 import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../../src/clients";
-import { GenericAdapterManager } from "../../src/adapter/AdapterManager"; // Tested
+import { AdapterManager } from "../../src/clients/bridges";
 import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
 import {
   bnToHex,
@@ -8,6 +8,7 @@ import {
   toBNWei,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
+  bnZero,
   cctpAddressToBytes32,
 } from "../../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "../mocks";
@@ -30,7 +31,7 @@ const mockSpokePoolClients: {
   [chainId: number]: SpokePoolClient;
 } = {};
 let relayer: SignerWithAddress, owner: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
-let adapterManager: AdapterManager; // tested
+let adapterManager: AdapterManager;
 
 // Atomic depositor
 let l1AtomicDepositor: FakeContract;
@@ -78,7 +79,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await seedMocks();
-    adapterManager = new GenericAdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
+    adapterManager = new AdapterManager(spyLogger, mockSpokePoolClients, hubPoolClient, [relayer.address]);
 
     await constructChainSpecificFakes();
 
@@ -174,11 +175,17 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
-      relayer.address, // to
+    const bridgeCalldata = l1OptimismBridge.interface.encodeFunctionData("depositETHTo", [
+      relayer.address,
+      l2Gas,
+      "0x",
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId, // chainId
       amountToSend, // amount
-      l2Gas, // l2Gas
-      chainId // chainId
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
   });
 
@@ -218,9 +225,13 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToPolygon).to.have.been.calledWith(
-      relayer.address, // to
-      amountToSend // amount
+    const bridgeCalldata = l1PolygonRootChainManager.interface.encodeFunctionData("depositEtherFor", [relayer.address]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId,
+      amountToSend, // amount
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
   });
 
@@ -313,14 +324,28 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWith(
+    const fee = await l1MailboxContract.l2TransactionBaseCost(
+      await l1MailboxContract.provider.getGasPrice(),
+      2_000_000,
+      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT
+    );
+    const bridgeCalldata = l1MailboxContract.interface.encodeFunctionData("requestL2Transaction", [
       relayer.address,
       amountToSend,
+      "0x",
       2_000_000,
       zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT,
-      relayer.address
+      [],
+      relayer.address,
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId,
+      amountToSend.add(fee),
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
-    expect(l1AtomicDepositor.bridgeWethToZkSync).to.have.been.calledWithValue(toBN(0));
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWithValue(toBN(0));
   });
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
@@ -379,11 +404,17 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    expect(l1AtomicDepositor.bridgeWethToOvm).to.have.been.calledWith(
-      relayer.address, // to
+    const bridgeCalldata = l1BaseBridge.interface.encodeFunctionData("depositETHTo", [
+      relayer.address,
+      adapterManager.adapters[chainId].bridges[mainnetTokens.weth].l2Gas,
+      "0x",
+    ]);
+    expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
+      chainId, // chainId
       amountToSend, // amount
-      l2Gas, // l2Gas
-      chainId // chainId
+      amountToSend,
+      bnZero,
+      bridgeCalldata
     );
   });
 });
@@ -428,8 +459,8 @@ async function constructChainSpecificFakes() {
 
   // Arbitrum contracts
   l1ArbitrumBridge = await makeFake(
-    "arbitrumErc20GatewayRouter",
-    CONTRACT_ADDRESSES[1].arbitrumErc20GatewayRouter.address
+    "orbitErc20GatewayRouter_42161",
+    CONTRACT_ADDRESSES[1].orbitErc20GatewayRouter_42161.address
   );
 
   // zkSync contracts

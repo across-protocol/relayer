@@ -20,7 +20,7 @@ import {
   sinon,
   spyLogIncludes,
   depositV3,
-  fillV3,
+  fillV3Relay,
 } from "./utils";
 
 // Tested
@@ -78,7 +78,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     // Mine blocks so event blocks are less than latest minus buffer.
     for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
       await hre.network.provider.send("evm_mine");

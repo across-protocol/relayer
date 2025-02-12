@@ -171,7 +171,7 @@ export function generateMarkdownForRootBundle(
     assert(
       inputAmount.gte(updatedOutputAmount),
       "Unexpected output amount for slow fill on" +
-        ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId}`
+        ` ${getNetworkName(leaf.relayData.originChainId)} depositId ${leaf.relayData.depositId.toString()}`
     );
 
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.

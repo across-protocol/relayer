@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, EventFilter } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, winston } from "../../../utils";
+import { getNetworkName, isDefined, paginatedEventQuery, Profiler, winston } from "../../../utils";
 import { Log, ScraperOpts } from "../../types";
 
 /**
@@ -21,16 +21,16 @@ export function getEventFilter(contract: Contract, eventName: string, filterArgs
 
 /**
  * Get a general event filter mapping to be used for filtering SpokePool contract events.
- * This is currently only useful for filtering the relayer address on FilledV3Relay events.
+ * This is currently only useful for filtering the relayer address on FilledRelay events.
  * @param relayer Optional relayer address to filter on.
  * @returns An argument array for input to an Ethers EventFilter.
  */
 export function getEventFilterArgs(relayer?: string): { [event: string]: (null | string)[] } {
-  const FilledV3Relay = !isDefined(relayer)
+  const FilledRelay = !isDefined(relayer)
     ? undefined
     : [null, null, null, null, null, null, null, null, null, null, relayer];
 
-  return { FilledV3Relay };
+  return { FilledRelay };
 }
 
 /**
@@ -45,8 +45,12 @@ export async function scrapeEvents(
   spokePool: Contract,
   eventName: string,
   opts: ScraperOpts & { toBlock: number },
-  logger: winston.Logger
+  logger?: winston.Logger
 ): Promise<Log[]> {
+  const profiler = new Profiler({
+    logger,
+    at: "scrapeEvents",
+  });
   const { lookback, deploymentBlock, filterArgs, maxBlockRange, toBlock } = opts;
   const { chainId } = await spokePool.provider.getNetwork();
   const chain = getNetworkName(chainId);
@@ -55,13 +59,14 @@ export async function scrapeEvents(
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
   const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
 
-  const tStart = performance.now();
+  const mark = profiler.start("paginatedEventQuery");
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
   const events = await paginatedEventQuery(spokePool, filter, searchConfig);
-  const tStop = performance.now();
-  logger.debug({
-    at: "scrapeEvents",
-    message: `Scraped ${events.length} ${chain} ${eventName} events in ${Math.round((tStop - tStart) / 1000)} seconds`,
+  mark.stop({
+    message: `Scraped ${events.length} ${chain} ${eventName} events.`,
+    numEvents: events.length,
+    chain,
+    eventName,
     searchConfig,
   });
 
