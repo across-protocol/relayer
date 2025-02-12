@@ -631,8 +631,8 @@ export class InventoryClient {
         const chainIdIndex = chainIds.indexOf(chainId);
 
         // We need to find the latest validated running balance for this chain and token.
-        const runningBalanceForToken = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-          this.bundleDataClient.spokePoolClients[chainId].latestBlockSearched,
+        const lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+          this.hubPoolClient.latestBlockSearched,
           chainId,
           l1Token
         ).runningBalance;
@@ -641,30 +641,35 @@ export class InventoryClient {
         // - minus total deposit amount on chain since the latest validated end block
         // - plus total refund amount on chain since the latest validated end block
         const latestValidatedBundle = this.hubPoolClient.getLatestExecutedRootBundleContainingL1Token(
-          this.bundleDataClient.spokePoolClients[chainId].latestBlockSearched,
+          this.hubPoolClient.latestBlockSearched,
           chainId,
           l1Token
         );
         const proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
           latestValidatedBundle.blockNumber
         );
-        const bundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+        const lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
         const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
-        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, bundleEndBlock);
+        const upcomingDepositsAfterLastValidatedBundle = this.bundleDataClient.getUpcomingDepositAmount(
+          chainId,
+          l2Token,
+          lastValidatedBundleEndBlock
+        );
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
         const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
-        const upcomingRefunds = allBundleRefunds.pop(); // @dev upcoming refunds are always pushed last into this list.
+        // @dev upcoming refunds are always pushed last into this list, that's why we can pop() it.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
-        const upcomingRefundForChain = Object.values(upcomingRefunds?.[chainId]?.[l2Token] ?? {}).reduce(
-          (acc, curr) => acc.add(curr),
-          bnZero
-        );
+        const upcomingRefundsAfterLastValidatedBundle = Object.values(
+          allBundleRefunds.pop()?.[chainId]?.[l2Token] ?? {}
+        ).reduce((acc, curr) => acc.add(curr), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
-        const latestRunningBalance = runningBalanceForToken.sub(upcomingDeposits).add(upcomingRefundForChain);
+        const latestRunningBalance = lastValidatedRunningBalance
+          .sub(upcomingDepositsAfterLastValidatedBundle)
+          .add(upcomingRefundsAfterLastValidatedBundle);
         // A negative running balance means that the spoke has a balance. If the running balance is positive, then the hub
         // owes it funds and its below target so we don't want to take additional repayment.
         const absLatestRunningBalance = latestRunningBalance.lt(0) ? latestRunningBalance.abs() : toBN(0);
@@ -672,17 +677,18 @@ export class InventoryClient {
           chainId,
           {
             absLatestRunningBalance,
-            lastProposedRunningBalance: runningBalanceForToken,
-            depositsPostProposal: upcomingDeposits,
-            refundsPostProposal: upcomingRefundForChain,
-            bundleEndBlock,
-            proposedRootBundle: proposedRootBundle.transactionHash
+            lastValidatedRunningBalance,
+            upcomingDeposits: upcomingDepositsAfterLastValidatedBundle,
+            upcomingRefunds: upcomingRefundsAfterLastValidatedBundle,
+            bundleEndBlock: lastValidatedBundleEndBlock,
+            proposedRootBundle: proposedRootBundle.transactionHash,
           },
         ];
       })
     );
     mark.stop({
-      message: "Time to get running balances",
+      message: `Time to get running balances for ${l1Token}`,
+      chainsToEvaluate,
       runningBalances,
     });
     return Object.fromEntries(Object.entries(runningBalances).map(([k, v]) => [k, v.absLatestRunningBalance]));
