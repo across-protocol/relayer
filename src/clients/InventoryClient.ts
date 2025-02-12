@@ -624,26 +624,20 @@ export class InventoryClient {
     l1Token: string,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
-    const { root: latestPoolRebalanceRoot, blockRanges } =
-      await this.bundleDataClient.getLatestPoolRebalanceRootFromArweave();
-    const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-
     const mark = this.profiler.start("getLatestRunningBalances");
+    const latestPoolRebalanceRoot = await this.bundleDataClient.getPendingPoolRebalanceLeavesFromArweave();
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
-        const chainIdIndex = chainIds.indexOf(chainId);
-        const blockRange = blockRanges[chainIdIndex];
-
         // We need to find the latest proposed running balance for this chain and token. It may not have been
         // proposed in the last or pending bundle, so we need to be prepared to call the hub pool client and look
         // back for an older bundle.
         let runningBalanceForToken: BigNumber;
 
-        const leaf = latestPoolRebalanceRoot.leaves.find((leaf) => leaf.chainId === chainId);
+        const leaf = latestPoolRebalanceRoot?.leaves.find((leaf) => leaf.chainId === chainId);
         const l1TokenIndex = leaf?.l1Tokens.indexOf(l1Token);
         if (leaf === undefined || l1TokenIndex === -1) {
           runningBalanceForToken = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-            blockRange[1],
+            this.bundleDataClient.spokePoolClients[chainId].latestBlockSearched,
             chainId,
             l1Token
           ).runningBalance;
@@ -655,7 +649,11 @@ export class InventoryClient {
         // Approximate latest running balance as last known proposed running balance...
         // - minus total deposit amount on chain since the latest end block proposed
         // - plus total refund amount on chain since the latest end block proposed
-        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, blockRange[1]);
+        const upcomingDeposits = this.bundleDataClient.getUpcomingDepositAmount(
+          chainId,
+          l2Token,
+          this.bundleDataClient.spokePoolClients[chainId].latestBlockSearched
+        );
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
