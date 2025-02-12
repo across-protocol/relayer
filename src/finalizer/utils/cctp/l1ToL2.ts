@@ -1,4 +1,4 @@
-import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
+import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -7,11 +7,9 @@ import {
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
-  assert,
   getCachedProvider,
   groupObjectCountsByProp,
   isDefined,
-  Multicall2Call,
   paginatedEventQuery,
   winston,
   convertFromWei,
@@ -19,6 +17,7 @@ import {
 import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { uniqWith } from "lodash";
+import { generateMultiCallData } from "./utils";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -51,13 +50,14 @@ export async function cctpL1toL2Finalizer(
     statusesGrouped,
   });
 
+  const callData = await generateMultiCallData(contract, unprocessedMessages, logger, l2SpokePoolClient.chainId);
   return {
     crossChainMessages: await generateDepositData(
-      unprocessedMessages,
+      unprocessedMessages.filter((_message, i) => isDefined(callData[i])),
       hubPoolClient.chainId,
       l2SpokePoolClient.chainId
     ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    callData: callData.filter((_message, i) => isDefined(callData[i])),
   };
 }
 
@@ -101,31 +101,6 @@ async function resolveRelatedTxnReceipts(
     l1SpokePoolClient
   );
   return resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
-}
-
-/**
- * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
- * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
- * @param messages The messages to generate transactions for.
- * @returns A list of populated transactions that can be consumed by the Multicall2 contract.
- */
-async function generateMultiCallData(
-  messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
-): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
-  return Promise.all(
-    messages.map(async (message) => {
-      const txn = (await messageTransmitter.populateTransaction.receiveMessage(
-        message.messageBytes,
-        message.attestation
-      )) as TransactionRequest;
-      return {
-        target: txn.to,
-        callData: txn.data,
-      };
-    })
-  );
 }
 
 /**
