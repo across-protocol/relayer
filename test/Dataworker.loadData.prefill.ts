@@ -24,8 +24,8 @@ import {
   TransactionResponse,
   spreadEventWithBlockNumber,
 } from "../src/utils";
-import { MockBundleDataClient, MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils, constants as sdkConstants, providers } from "@across-protocol/sdk";
+import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
+import { interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
 let erc20_1: Contract, erc20_2: Contract;
@@ -59,9 +59,6 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
-    (configStoreClient as unknown as MockConfigStoreClient).setConfigStoreVersion(
-      sdkConstants.PRE_FILL_MIN_CONFIG_STORE_VERSION
-    );
   });
 
   describe("Tests with real events", function () {
