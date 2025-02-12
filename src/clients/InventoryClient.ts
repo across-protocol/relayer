@@ -620,7 +620,7 @@ export class InventoryClient {
    * @param l1Token
    * @returns Dictionary keyed by chain ID of the absolute value of the latest running balance for the l1Token.
    */
-  async getLatestRunningBalances(
+  private async _getLatestRunningBalances(
     l1Token: string,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
@@ -722,7 +722,7 @@ export class InventoryClient {
    * excess running balance over the spoke pool target balance. If the absolute running balance is 0, then
    * the excess percentage is 0. If the target is 0, then the excess percentage is infinite.
    */
-  _getExcessRunningBalancePcts(
+  private _getExcessRunningBalancePcts(
     excessRunningBalances: { [chainId: number]: BigNumber },
     l1Token: string,
     refundAmount: BigNumber
@@ -779,7 +779,7 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      this.excessRunningBalancePromises[l1Token] = this.getLatestRunningBalances(l1Token, chainsToEvaluate);
+      this.excessRunningBalancePromises[l1Token] = this._getLatestRunningBalances(l1Token, chainsToEvaluate);
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
