@@ -29,7 +29,7 @@ import {
   getNativeTokenSymbol,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { Deposit } from "../interfaces";
+import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -631,7 +631,7 @@ export class InventoryClient {
         const chainIdIndex = chainIds.indexOf(chainId);
 
         // We need to find the latest validated running balance for this chain and token.
-        const lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
+        const _lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
           this.hubPoolClient.latestBlockSearched,
           chainId,
           l1Token
@@ -645,12 +645,32 @@ export class InventoryClient {
           chainId,
           l1Token
         );
-        const proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
-          latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
-          // event we grabbed above.
-        );
-        const lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
         const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+
+        // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
+        // default the bundle end block to 0. This will force getUpcomingDepositAmount to count any deposit
+        // seen in the spoke pool client's lookback. It would be very odd however for there to be deposits or refunds
+        // for a token and chain without there being a validated root bundle containing the token, so really the
+        // following check will be hit if the chain's running balance is very stale. The best way to check
+        // its running balance at that point is to query the token balance directly.
+        let lastValidatedBundleEndBlock = 0;
+        let proposedRootBundle: ProposedRootBundle | undefined;
+        let tokenBalanceFallback: BigNumber | undefined;
+        if (latestValidatedBundle) {
+          proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
+            latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
+            // event we grabbed above.
+          );
+          lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+        } else {
+          const token = new Contract(l2Token, ERC20.abi, this.tokenClient.spokePoolClients[chainId].spokePool.provider);
+          // @dev running balances are negative if the spoke pool has a token balance, so always multiple the
+          // balanceOf result by -1
+          tokenBalanceFallback = (
+            await token.balanceOf(this.tokenClient.spokePoolClients[chainId].spokePool.address)
+          ).mul(-1);
+        }
+        const lastValidatedRunningBalance = proposedRootBundle ? _lastValidatedRunningBalance : tokenBalanceFallback;
         const upcomingDepositsAfterLastValidatedBundle = this.bundleDataClient.getUpcomingDepositAmount(
           chainId,
           l2Token,
@@ -682,7 +702,8 @@ export class InventoryClient {
             upcomingDeposits: upcomingDepositsAfterLastValidatedBundle,
             upcomingRefunds: upcomingRefundsAfterLastValidatedBundle,
             bundleEndBlock: lastValidatedBundleEndBlock,
-            proposedRootBundle: proposedRootBundle.transactionHash,
+            proposedRootBundle: proposedRootBundle?.transactionHash,
+            tokenBalanceFallback,
           },
         ];
       })
