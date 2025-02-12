@@ -35,7 +35,6 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { PoolRebalanceRoot } from "../dataworker/Dataworker";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -676,6 +675,8 @@ export class InventoryClient {
             lastProposedRunningBalance: runningBalanceForToken,
             depositsPostProposal: upcomingDeposits,
             refundsPostProposal: upcomingRefundForChain,
+            bundleEndBlock,
+            proposedRootBundle: proposedRootBundle.transactionHash
           },
         ];
       })
