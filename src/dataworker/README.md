@@ -128,41 +128,41 @@ flowchart TD
 A fill must match a deposit on every shared parameter that they have in common. The matched deposit does not have to be in the same bundle as the fill. A fill contains the following [event parameter](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L124)'s:
 
 ```solidity
-event FilledV3Relay(
-    address inputToken,
-    address outputToken,
+event FilledRelay(
+    bytes32 inputToken,
+    bytes32 outputToken,
     uint256 inputAmount,
     uint256 outputAmount,
     uint256 repaymentChainId,
     uint256 indexed originChainId,
-    uint32 indexed depositId,
+    uint256 indexed depositId,
     uint32 fillDeadline,
     uint32 exclusivityDeadline,
-    address exclusiveRelayer,
-    address indexed relayer,
-    address depositor,
-    address recipient,
+    bytess32 exclusiveRelayer,
+    bytes32 indexed relayer,
+    bytes32 depositor,
+    bytes32 recipient,
     bytes message,
-    V3RelayExecutionEventInfo relayExecutionInfo
+    RelayExecutionEventInfo relayExecutionInfo
 );
 ```
 
 A [deposit](https://github.com/across-protocol/contracts/blob/a663586e8619bc74cb1da2375107bd5eef0f3144/contracts/interfaces/V3SpokePoolInterface.sol#L99) contains:
 
 ```solidity
-event V3FundsDeposited(
-    address inputToken,
-    address outputToken,
+event FundsDeposited(
+    bytes32 inputToken,
+    bytes32 outputToken,
     uint256 inputAmount,
     uint256 outputAmount,
     uint256 indexed destinationChainId,
-    uint32 indexed depositId,
+    uint256 indexed depositId,
     uint32 quoteTimestamp,
     uint32 fillDeadline,
     uint32 exclusivityDeadline,
-    address indexed depositor,
-    address recipient,
-    address exclusiveRelayer,
+    bytes32 indexed depositor,
+    bytes32 recipient,
+    bytes32 exclusiveRelayer,
     bytes message
 );
 ```
