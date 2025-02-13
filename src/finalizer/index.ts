@@ -128,7 +128,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
-  [CHAIN_IDs.DOCTOR_WHO]: {
+  [CHAIN_IDs.UNICHAIN]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
@@ -481,7 +481,6 @@ export class FinalizerConfig extends DataworkerConfig {
   readonly chainsToFinalize: number[];
   readonly addressesToMonitorForL1L2Finalizer: string[];
   readonly finalizationStrategy: FinalizationType;
-  readonly testnet: boolean;
 
   constructor(env: ProcessEnv) {
     const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS, L1_L2_FINALIZER_MONITOR_ADDRESS } = env;

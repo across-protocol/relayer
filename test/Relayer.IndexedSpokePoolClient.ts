@@ -81,7 +81,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
   let spokePool: Contract;
   let spokePoolClient: MockIndexedSpokePoolClient;
   let currentTime: number;
-  let oldestTime: number;
 
   /**
    * postEvents() and removeEvent() emulate the indexer's corresponding functions. The indexer uses
@@ -92,7 +91,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
     const message: SpokePoolClientMessage = {
       blockNumber,
       currentTime,
-      oldestTime,
       nEvents: events.length,
       data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
     };
@@ -124,7 +122,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
     );
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
-    oldestTime = currentTime - 7200;
   });
 
   it("Correctly receives and unpacks SpokePoolEventsAdded messages from indexer", async function () {
@@ -138,7 +135,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
     await spokePoolClient.update();
 
     expect(spokePoolClient.latestBlockSearched).to.equal(blockNumber);
-    expect(spokePoolClient.getOldestTime()).to.equal(oldestTime);
 
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);

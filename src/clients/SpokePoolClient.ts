@@ -31,7 +31,6 @@ type SpokePoolEventRemoved = {
 type SpokePoolEventsAdded = {
   blockNumber: number;
   currentTime: number;
-  oldestTime: number;
   nEvents: number; // Number of events.
   data: string;
 };
@@ -53,7 +52,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   private worker: ChildProcess;
   private pendingBlockNumber: number;
   private pendingCurrentTime: number;
-  private pendingOldestTime: number;
 
   private pendingEvents: Log[][];
   private pendingEventsRemoved: Log[];
@@ -169,7 +167,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     assert(isSpokePoolEventsAdded(message), `Expected ${this.chain} SpokePoolEventsAdded message`);
 
-    const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
+    const { blockNumber, currentTime, nEvents, data } = message;
     if (nEvents > 0) {
       const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
       assert(
@@ -197,9 +195,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     this.pendingBlockNumber = blockNumber;
     this.pendingCurrentTime = currentTime;
-    if (!isDefined(this.pendingOldestTime) && oldestTime > 0) {
-      this.pendingOldestTime = oldestTime;
-    }
   }
 
   /**
@@ -307,7 +302,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     return {
       success: true,
       currentTime: this.pendingCurrentTime,
-      oldestTime: this.pendingOldestTime,
       firstDepositId,
       latestDepositId,
       searchEndBlock: this.pendingBlockNumber,

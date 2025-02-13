@@ -2,7 +2,7 @@ import { clients, interfaces } from "@across-protocol/sdk";
 import { Deposit } from "../../src/interfaces";
 export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
   public maxFillDeadlineOverride?: number;
-  public oldestBlockTimestampOverride?: number;
+  public blockTimestampOverride: Record<number, number> = {};
   private relayFillStatuses: Record<string, interfaces.FillStatus> = {};
 
   public setMaxFillDeadlineOverride(maxFillDeadlineOverride?: number): void {
@@ -13,12 +13,12 @@ export class MockSpokePoolClient extends clients.mocks.MockSpokePoolClient {
     return this.maxFillDeadlineOverride ?? super.getMaxFillDeadlineInRange(startBlock, endBlock);
   }
 
-  public setOldestBlockTimestampOverride(oldestBlockTimestampOverride?: number): void {
-    this.oldestBlockTimestampOverride = oldestBlockTimestampOverride;
+  public setBlockTimestamp(block: number, timestamp: number): void {
+    this.blockTimestampOverride[block] = timestamp;
   }
 
-  public getOldestTime(): number {
-    return this.oldestBlockTimestampOverride ?? super.getOldestTime();
+  public async getTimeAt(block: number): Promise<number> {
+    return Promise.resolve(this.blockTimestampOverride[block]) ?? super.getTimeAt(block);
   }
 
   public setRelayFillStatus(deposit: Deposit, fillStatus: interfaces.FillStatus): void {

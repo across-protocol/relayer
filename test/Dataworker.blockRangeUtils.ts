@@ -321,9 +321,13 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds
     );
     // override oldest spoke pool client's oldest time searched to be realistic (i.e. not zero)
-    mockSpokePoolClient.setOldestBlockTimestampOverride(originSpokePoolClient.getOldestTime());
+    mockSpokePoolClient.setBlockTimestamp(
+      mockSpokePoolClient.eventSearchConfig.fromBlock,
+      endBlockTimestamps[originChainId] - 1
+    );
     const expectedTimeBetweenOldestAndEndBlockTimestamp =
-      endBlockTimestamps[originChainId] - mockSpokePoolClient.getOldestTime();
+      endBlockTimestamps[originChainId] -
+      (await mockSpokePoolClient.getTimeAt(mockSpokePoolClient.eventSearchConfig.fromBlock));
     assert(
       expectedTimeBetweenOldestAndEndBlockTimestamp > 0,
       "unrealistic time between oldest and end block timestamp"
@@ -360,7 +364,10 @@ describe("Dataworker block range-related utility methods", async function () {
     const oldestBlockTimestampOverride =
       endBlockTimestamps[originChainId] - fillDeadlineOverride - CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS - 1;
     assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
-    mockSpokePoolClient.setOldestBlockTimestampOverride(oldestBlockTimestampOverride);
+    mockSpokePoolClient.setBlockTimestamp(
+      mockSpokePoolClient.eventSearchConfig.fromBlock,
+      oldestBlockTimestampOverride
+    );
     result = await blockRangesAreInvalidForSpokeClients(
       { [originChainId]: mockSpokePoolClient as SpokePoolClient },
       blockRanges,
@@ -374,7 +381,10 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
     // the client calls from the contracts.
-    mockSpokePoolClient.setOldestBlockTimestampOverride(undefined);
+    mockSpokePoolClient.setBlockTimestamp(
+      mockSpokePoolClient.eventSearchConfig.fromBlock,
+      oldestBlockTimestampOverride
+    );
     mockSpokePoolClient.setMaxFillDeadlineOverride(undefined);
     fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
     // length as time between oldest time and end block timestamp so it should be a valid block range.

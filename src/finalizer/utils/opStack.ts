@@ -81,7 +81,7 @@ export async function opStackFinalizer(
         !(
           chainId === CHAIN_IDs.BASE ||
           chainId === CHAIN_IDs.OPTIMISM ||
-          chainId === CHAIN_IDs.DOCTOR_WHO ||
+          chainId === CHAIN_IDs.UNICHAIN ||
           chainId === CHAIN_IDs.BASE_SEPOLIA ||
           chainId === CHAIN_IDs.OPTIMISM_SEPOLIA
         )
