@@ -78,7 +78,13 @@ export async function opStackFinalizer(
       (e) =>
         // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
         !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
-        !(chainId === CHAIN_IDs.BASE || chainId === CHAIN_IDs.OPTIMISM || chainId === CHAIN_IDs.DOCTOR_WHO)
+        !(
+          chainId === CHAIN_IDs.BASE ||
+          chainId === CHAIN_IDs.OPTIMISM ||
+          chainId === CHAIN_IDs.DOCTOR_WHO ||
+          chainId === CHAIN_IDs.BASE_SEPOLIA ||
+          chainId === CHAIN_IDs.OPTIMISM_SEPOLIA
+        )
     ),
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {

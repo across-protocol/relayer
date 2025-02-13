@@ -685,6 +685,53 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+
+  // Testnets
+  [CHAIN_IDs.LISK_SEPOLIA]: {
+    l1: {
+      AddressManager: "0x27Bb4A7cd8FB20cb816BF4Aac668BF841bb3D5d3",
+      L1CrossDomainMessenger: "0x857824E6234f7733ecA4e9A76804fd1afa1A3A2C",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_4202.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0xe3d90F21490686Ec7eF37BE788E02dfC12787264",
+      L2OutputOracle: "0xA0E35F56C318DE1bD5D9ca6A94Fe7e37C5663348",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.BLAST_SEPOLIA]: {
+    l1: {
+      AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
+      L1CrossDomainMessenger: "0x9338F298F29D3918D5D1Feb209aeB9915CC96333",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_168587773.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x2757E4430e694F27b73EC9C02257cab3a498C8C5",
+      L2OutputOracle: "0x311fF72DfE214ADF97618DD2E731637E8F41bD8c",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.MODE_SEPOLIA]: {
+    l1: {
+      AddressManager: "0x83D45725d6562d8CD717673D6bb4c67C07dC1905",
+      L1CrossDomainMessenger: "0xc19a60d9E8C27B9A43527c3283B4dd8eDC8bE15C",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_919.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x320e1580effF37E008F1C92700d1eBa47c1B23fD",
+      L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
+      OptimismPortal2: ZERO_ADDRESS,
+      DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
 };
 
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {

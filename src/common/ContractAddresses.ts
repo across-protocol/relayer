@@ -461,6 +461,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xFBb0621E0B23b5478B630BD55a5f21f67730B0F1",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_919: {
+      address: "0xbC5C679879B2965296756CD959C3C739769995E2",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     ovmStandardBridge_168587773: {
       address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -472,6 +476,10 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    atomicDepositor: {
+      address: "0xDf9ADb0aA08Fd3F7bC41440Dc37370Fc9BD80f91",
+      abi: ATOMIC_DEPOSITOR_ABI,
     },
     polygonBridge: {
       address: "", // FIXME. Can leave undefined for now due to no IM on Sepolia.
@@ -499,6 +507,14 @@ export const CONTRACT_ADDRESSES: {
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0xaCF1ceeF35caAc005e15888dDb8A3515C41B4872",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -545,10 +561,26 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     withdrawableErc20: {
       abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
     },
   },
   [CHAIN_IDs.SCROLL_SEPOLIA]: {
@@ -557,4 +589,20 @@ export const CONTRACT_ADDRESSES: {
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
   },
+  /*
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x1F622c406DedB82119EAfADB09E64e7e36A6844b",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+ */
 };
