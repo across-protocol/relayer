@@ -131,6 +131,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
   [CHAIN_IDs.SEPOLIA]: 10000,
 };
 
@@ -168,6 +169,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
 };
 
@@ -219,6 +221,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
 };
 
@@ -317,6 +320,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.LENS_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
   [CHAIN_IDs.SCROLL_SEPOLIA]: ["WETH", "USDC", "USDT", "WBTC"],
@@ -449,6 +453,33 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.ZORA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
+
+  // Testnet
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.BASE_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.BLAST_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.SEPOLIA]]: BlastBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.LISK_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.MODE_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.POLYGON_AMOY]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
   },
 };
 
