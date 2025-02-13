@@ -291,26 +291,6 @@ export const spokesThatHoldEthAndWeth = [
   CHAIN_IDs.ZORA,
 ];
 
-/**
- * An official mapping of chain IDs to CCTP domains. This mapping is separate from chain identifiers
- * and is an internal mapping maintained by Circle.
- * @link https://developers.circle.com/stablecoins/docs/supported-domains
- */
-export const chainIdsToCctpDomains: { [chainId: number]: number } = {
-  [CHAIN_IDs.MAINNET]: 0,
-  [CHAIN_IDs.OPTIMISM]: 2,
-  [CHAIN_IDs.ARBITRUM]: 3,
-  [CHAIN_IDs.BASE]: 6,
-  [CHAIN_IDs.POLYGON]: 7,
-  [CHAIN_IDs.UNICHAIN]: 10,
-  // Testnet
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 2,
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 3,
-  [CHAIN_IDs.BASE_SEPOLIA]: 6,
-  [CHAIN_IDs.POLYGON_AMOY]: 7,
-};
-
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ALEPH_ZERO]: ["USDT", "WETH"],
