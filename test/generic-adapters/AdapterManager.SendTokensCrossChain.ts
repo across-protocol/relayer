@@ -1,7 +1,7 @@
 import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../../src/clients";
 import { AdapterManager } from "../../src/clients/bridges";
-import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
+import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   bnToHex,
   getL2TokenAddresses,
@@ -10,6 +10,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   bnZero,
   cctpAddressToBytes32,
+  getCctpDomainForChainId,
 } from "../../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "../mocks";
 import {
@@ -151,7 +152,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
-      chainIdsToCctpDomains[chainId], // destinationDomain
+      getCctpDomainForChainId(chainId), // destinationDomain
       cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
       mainnetTokens.usdc // token
     );
@@ -203,7 +204,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
-      chainIdsToCctpDomains[chainId], // destinationDomain
+      getCctpDomainForChainId(chainId), // destinationDomain
       cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
       mainnetTokens.usdc // token
     );
@@ -255,7 +256,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
-      chainIdsToCctpDomains[chainId], // destinationDomain
+      getCctpDomainForChainId(chainId), // destinationDomain
       cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
       mainnetTokens.usdc // token
     );
@@ -361,7 +362,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
-      chainIdsToCctpDomains[chainId], // destinationDomain
+      getCctpDomainForChainId(chainId), // destinationDomain
       cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
       mainnetTokens.usdc // token
     );
