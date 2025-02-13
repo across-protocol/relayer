@@ -589,7 +589,6 @@ export const CONTRACT_ADDRESSES: {
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
   },
-  /*
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     cctpTokenMessenger: {
       address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
@@ -604,5 +603,4 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
   },
- */
 };

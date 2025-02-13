@@ -83,7 +83,8 @@ export async function opStackFinalizer(
           chainId === CHAIN_IDs.OPTIMISM ||
           chainId === CHAIN_IDs.UNICHAIN ||
           chainId === CHAIN_IDs.BASE_SEPOLIA ||
-          chainId === CHAIN_IDs.OPTIMISM_SEPOLIA
+          chainId === CHAIN_IDs.OPTIMISM_SEPOLIA ||
+          chainId === CHAIN_IDs.UNICHAIN_SEPOLIA
         )
     ),
     (e) => {
