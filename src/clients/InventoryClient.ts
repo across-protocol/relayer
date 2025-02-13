@@ -311,9 +311,7 @@ export class InventoryClient {
     // been executed.
     if (!isDefined(this.bundleRefundsPromise)) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      mark = this.profiler.start("bundleRefunds", {
-        l1Token,
-      });
+      mark = this.profiler.start(`bundleRefunds for ${l1Token}`);
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
