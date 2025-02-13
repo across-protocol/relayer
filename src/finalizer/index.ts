@@ -134,7 +134,19 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
-    finalizeOnL1: [cctpL2toL1Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.MODE_SEPOLIA]: {
@@ -442,8 +454,8 @@ export async function constructFinalizerClients(
   if (configuredChainIds.length === 0) {
     throw new Error("No chains configured for finalizer");
   }
-  if (!configuredChainIds.includes(CHAIN_IDs.MAINNET)) {
-    configuredChainIds.push(CHAIN_IDs.MAINNET);
+  if (!configuredChainIds.includes(config.hubPoolChainId)) {
+    configuredChainIds.push(config.hubPoolChainId);
   }
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
