@@ -4,8 +4,8 @@ import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
-import { chainIdsToCctpDomains, SUPPORTED_TOKENS } from "../../src/common";
-import { hashCCTPSourceAndNonce } from "../../src/utils";
+import { SUPPORTED_TOKENS } from "../../src/common";
+import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
@@ -172,7 +172,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[CHAIN_IDs.ARBITRUM],
+        getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
         ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
@@ -182,12 +182,12 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[CHAIN_IDs.ARBITRUM],
+        getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
         ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(chainIdsToCctpDomains[CHAIN_IDs.MAINNET], processedNonce),
+        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
         processedNonce
       );
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1UsdcAddress]);
