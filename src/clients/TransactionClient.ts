@@ -95,6 +95,7 @@ export class TransactionClient {
       }
 
       let response: TransactionResponse;
+      const start = performance.now();
       try {
         response = await this._submit(txn, nonce);
       } catch (error) {
@@ -102,6 +103,7 @@ export class TransactionClient {
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
+          duration: Math.round(performance.now() - start),
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
           errorMessage: isError(error) ? (error as Error).message : undefined,
           error: stringifyThrownValue(error),
@@ -110,17 +112,19 @@ export class TransactionClient {
         return txnResponses;
       }
 
-      nonce = response.nonce + 1;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
+      this.logger.info({
+        at: "TransactionClient#submit",
+        message: `Completed ${networkName} transaction submission! 🧙`,
+        duration: Math.round(performance.now() - start),
+        mrkdwn,
+      });
+
+      nonce = response.nonce + 1;
       txnResponses.push(response);
     }
 
-    this.logger.info({
-      at: "TransactionClient#submit",
-      message: `Completed ${networkName} transaction submission! 🧙`,
-      mrkdwn,
-    });
 
     return txnResponses;
   }
