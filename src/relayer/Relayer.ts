@@ -851,7 +851,7 @@ export class Relayer {
     const profiler = this.profiler.start(`${chain} transaction submission.`);
     pendingTxnReceipts[chainId] = multiCallerClient.executeTxnQueue(chainId, simulate);
     const txnReceipts = await pendingTxnReceipts[chainId];
-    profiler.stop({ message: `Completed ${chain} transaction submission.`, txnReceipts });
+    profiler.stop({ message: `Completed ${chain} transaction submission.`, nTxns: txnReceipts.length, txnReceipts });
 
     delete pendingTxnReceipts[chainId];
 
