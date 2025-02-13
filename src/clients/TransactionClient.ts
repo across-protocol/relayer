@@ -59,7 +59,7 @@ export class TransactionClient {
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
-    const networkName = getNetworkName(chainId);
+    const chain = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
 
     this.logger.debug({
@@ -101,13 +101,15 @@ export class TransactionClient {
       } catch (error) {
         this.logger.info({
           at: "TransactionClient#submit",
-          message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
+          message: `Transaction ${idx + 1} submission on ${chain} failed or timed out.`,
           mrkdwn,
-          duration: Math.round(performance.now() - start),
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
           errorMessage: isError(error) ? (error as Error).message : undefined,
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
+          chain,
+          duration: Math.round(performance.now() - start),
+          datadog: true,
         });
         return txnResponses;
       }
@@ -116,9 +118,11 @@ export class TransactionClient {
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       this.logger.info({
         at: "TransactionClient#submit",
-        message: `Completed ${networkName} transaction submission! 🧙`,
-        duration: Math.round(performance.now() - start),
+        message: `Completed ${chain} transaction submission! 🧙`,
         mrkdwn,
+        duration: Math.round(performance.now() - start),
+        chain,
+        datadog: true,
       });
 
       nonce = response.nonce + 1;
