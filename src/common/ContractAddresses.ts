@@ -275,7 +275,7 @@ export const CONTRACT_ADDRESSES: {
       abi: WETH_ABI,
     },
   },
-  [CHAIN_IDs.DOCTOR_WHO]: {
+  [CHAIN_IDs.UNICHAIN]: {
     cctpMessageTransmitter: {
       address: "0x353bE9E2E38AB1D19104534e4edC21c643Df86f4",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
