@@ -5,7 +5,7 @@ import * as zksync from "zksync-ethers";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 
-/* For both the canonical bridge (this bridge) and the ZkSync Weth
+/* For both the canonical bridge (this bridge) and the ZkStackWethBridge
  * bridge, we need to assume that the l1 and l2 signers contain
  * associated providers, since we need to get information about
  * addresses and gas prices (this is also why `constructL1toL2Txn`
@@ -49,7 +49,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    // The zkStack bridges need to know information relating to the l2 gas price bid.
+    // The zkStack bridges need to know the l2 gas price bid beforehand. If this bid is too small, the transaction will revert.
     const txBaseCost = await this._txBaseCost();
     const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, l1Token, amount);
 
@@ -116,8 +116,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   async _txBaseCost(): Promise<BigNumber> {
     const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(this.getL1Bridge().provider!);
 
-    // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying, in this case,
-    // the bridge hub contract.
+    // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying, a system contract. In this case,
+    // the system contract to query is the bridge hub contract.
     const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
     const l2Gas = await this.getL1Bridge().l2TransactionBaseCost(
       this.l2chainId,

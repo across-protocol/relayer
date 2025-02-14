@@ -505,7 +505,8 @@ export const CONTRACT_ADDRESSES: {
       address: "0x236D1c3Ff32Bd0Ca26b72Af287E895627c0478cE",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
     },
-    // The shared bridge is needed to approve the token, but we do not need its ABI.
+    // The shared bridge is the "spender" of the token we wish to bridge, so we only
+    // need its contract address so that we may approve it.
     zkStackSharedBridge_3771: {
       address: "0x6F03861D12E6401623854E494beACd66BC46e6F0",
     },
