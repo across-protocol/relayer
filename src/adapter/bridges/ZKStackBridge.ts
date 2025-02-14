@@ -1,6 +1,19 @@
-import { Contract, BigNumber, Signer, EventSearchConfig, Provider, ethers, TOKEN_SYMBOLS_MAP } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  ethers,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  paginatedEventQuery,
+  ZERO_ADDRESS,
+  isContractDeployedToAddress,
+} from "../../utils";
+import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -15,6 +28,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
   readonly l2GasLimit = BigNumber.from(2_000_000);
   readonly sharedBridgeAddress;
+  readonly l2GasToken;
+  readonly l2WrappedGasToken;
+  readonly hubPool;
 
   constructor(
     l2chainId: number,
@@ -39,8 +55,20 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
     this.sharedBridgeAddress = sharedBridgeAddress;
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkSyncDefaultErc20Bridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkStackBridge;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+
+    // This bridge treats hub pool transfers differently from EOA rebalances, so we must know the hub pool address.
+    const { address: hubPoolAddress, abi: hubPoolAbi } = CONTRACT_ADDRESSES[hubChainId].hubPool;
+    this.hubPool = new Contract(hubPoolAddress, hubPoolAbi);
+
+    // We need the L2 gas token contract for ZkStack since this contract mints directly to the recipient
+    // when a bridge is completed.
+    const { address: l2GasTokenAddress, abi: l2GasTokenAbi } = CONTRACT_ADDRESSES[l2chainId].gasToken;
+    const { address: l2WrappedGasTokenAddress, abi: l2WrappedGasTokenAbi } =
+      CONTRACT_ADDRESSES[l2chainId].wrappedGasToken;
+    this.l2GasToken = new Contract(l2GasTokenAddress, l2GasTokenAbi, l2SignerOrProvider);
+    this.l2WrappedGasToken = new Contract(l2WrappedGasTokenAddress, l2WrappedGasTokenAbi, l2SignerOrProvider);
   }
 
   async constructL1ToL2Txn(
@@ -97,7 +125,35 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    return Promise.resolve({});
+    // If the fromAddress is the hub pool then ignore the query. This is because for calculating cross-chain
+    // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
+    // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
+    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+      return Promise.resolve({});
+    }
+
+    const [_isL1Contract, isL2Contract] = await Promise.all([
+      this._isContract(fromAddress, this.getL1Bridge().provider!),
+      this._isContract(toAddress, this.getL2Bridge().provider!),
+    ]);
+    let allEvents = {};
+    if (isL2Contract) {
+      allEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
+        .filter((e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token))
+        .map((e) => {
+          return {
+            ...processEvent(e, "amount", "to", "to"),
+            from: this.hubPool.address,
+          };
+        });
+      return {
+        [this.resolveL2TokenAddress(l1Token)]: allEvents as BridgeEvent[],
+      };
+    } else {
+      // TBD
+      _isL1Contract;
+      return Promise.resolve({});
+    }
   }
 
   async queryL2BridgeFinalizationEvents(
@@ -106,7 +162,43 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    return Promise.resolve({});
+    // Ignore hub pool queries for the same reason as above.
+    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+      return Promise.resolve({});
+    }
+    const bridgingGasToken = l1Token === this.gasToken;
+
+    const [isL1Contract, isL2Contract] = await Promise.all([
+      this._isContract(fromAddress, this.getL1Bridge().provider!),
+      this._isContract(toAddress, this.getL2Bridge().provider!),
+    ]);
+    const aliasedSender = isL1Contract ? zksync.utils.applyL1ToL2Alias(fromAddress) : fromAddress;
+    let allEvents = [];
+    if (bridgingGasToken) {
+      if (isL2Contract) {
+        allEvents = await paginatedEventQuery(
+          this.l2GasToken,
+          this.l2GasToken.filters.Transfer(aliasedSender, toAddress),
+          eventConfig
+        );
+      } else {
+        const [events, wrapEvents] = await Promise.all([
+          paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
+          paginatedEventQuery(
+            this.l2WrappedGasToken,
+            this.l2WrappedGasToken.filters.Transfer(ZERO_ADDRESS, toAddress),
+            eventConfig
+          ),
+        ]);
+        allEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
+      }
+      return {
+        [this.resolveL2TokenAddress(l1Token)]: allEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
+      };
+    } else {
+      // TBD
+      return Promise.resolve({});
+    }
   }
 
   _secondBridgeCalldata(toAddress: string, l1Token: string, amount: BigNumber): string {
@@ -126,5 +218,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       this.gasPerPubdataLimit
     );
     return l2Gas;
+  }
+
+  async _isContract(address: string, provider: Provider): Promise<boolean> {
+    return isContractDeployedToAddress(address, provider);
   }
 }

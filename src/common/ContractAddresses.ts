@@ -507,11 +507,12 @@ export const CONTRACT_ADDRESSES: {
     },
     // The shared bridge is the "spender" of the token we wish to bridge, so we only
     // need its contract address so that we may approve it.
-    zkStackSharedBridge_3771: {
+    zkStackSharedBridge_37111: {
       address: "0x6F03861D12E6401623854E494beACd66BC46e6F0",
     },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
+      abi: HUB_POOL_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
@@ -549,9 +550,17 @@ export const CONTRACT_ADDRESSES: {
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
     // TODO: Rename to zkstack once zkstack adapters are made.
-    zkSyncDefaultErc20Bridge: {
+    zkStackBridge: {
       address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+    gasToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    wrappedGasToken: {
+      address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
+      abi: WETH_ABI,
     },
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
