@@ -216,8 +216,26 @@ export class EventManager {
    */
   hashEvent(event: Log): string {
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, args } = event;
-    const _args = Object.values(args).join("-");
+    const _args = this.flattenObject(args);
     const key = `${eventName}-${blockNumber}-${blockHash}-${transactionHash}-${transactionIndex}-${logIndex}-${_args}`;
     return ethersUtils.id(key);
+  }
+
+  /**
+   * Recurse through an object and sort its keys in order to produce an ordered string of values.
+   * @param obj Object to iterate through.
+   * @returns string A hyphenated string containing all arguments of the object, sorted by key.
+   */
+  private flattenObject(obj: Record<string, unknown>): string {
+    const args = Object.keys(obj)
+      .sort()
+      .map((k) => {
+        const val = obj[k];
+        // When val is a nested object, recursively flatten and stringify it.
+        return typeof val === "object" ? this.flattenObject(val as Record<string, unknown>) : val;
+      })
+      .join("-");
+
+    return args;
   }
 }
