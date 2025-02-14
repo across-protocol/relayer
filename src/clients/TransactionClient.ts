@@ -125,8 +125,8 @@ export class TransactionClient {
         datadog: true,
       });
 
-      nonce = response.nonce + 1;
       txnResponses.push(response);
+      nonce = response.nonce + 1;
     }
 
 
