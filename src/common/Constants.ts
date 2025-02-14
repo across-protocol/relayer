@@ -382,6 +382,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -480,6 +481,9 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
   },
 };
 
@@ -740,6 +744,21 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    l1: {
+      AddressManager: "0xEf1295ED471DFEC101691b946fb6B4654E88f98A",
+      L1CrossDomainMessenger: "0x448A37330A60494E666F6DD60aD48d930AEbA381",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_1301.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
+      DisputeGameFactory: "	0xeff73e5aa3B9AEC32c659Aa3E00444d20a84394b",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
