@@ -291,9 +291,9 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     });
 
     // Find the latest deposit Ids, and if there are no new events, fall back to already stored values.
-    const fundsDeposited = eventsToQuery.indexOf("V3FundsDeposited");
-    const _firstDepositId = events[fundsDeposited].at(0)?.args?.depositId;
-    const _latestDepositId = events[fundsDeposited].at(-1)?.args?.depositId;
+    const fundsDeposited = eventsToQuery.indexOf("FundsDeposited");
+    const _firstDepositId = events[fundsDeposited]?.at(0)?.args?.depositId;
+    const _latestDepositId = events[fundsDeposited]?.at(-1)?.args?.depositId;
     const [firstDepositId, latestDepositId] = [
       isDefined(_firstDepositId) ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
       isDefined(_latestDepositId) ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,

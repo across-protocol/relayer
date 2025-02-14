@@ -83,9 +83,6 @@ export async function updateMonitorClients(clients: MonitorClients): Promise<voi
   await updateSpokePoolClients(clients.spokePoolClients, [
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-    "V3FundsDeposited",
-    "RequestedSpeedUpV3Deposit",
-    "FilledV3Relay",
     "FundsDeposited",
     "RequestedSpeedUpDeposit",
     "FilledRelay",

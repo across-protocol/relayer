@@ -43,10 +43,11 @@ import {
   sortEventsDescending,
   getWidestPossibleExpectedBlockRange,
   utils,
+  _buildPoolRebalanceRoot,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
-import { CombinedRefunds } from "../dataworker/DataworkerUtils";
+import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
@@ -704,6 +705,13 @@ export class Monitor {
       blockRangeTail,
     });
 
+    const lastProposedBundleBlockRanges = getImpliedBundleBlockRanges(
+      hubPoolClient,
+      this.clients.configStoreClient,
+      hubPoolClient.hasPendingProposal()
+        ? hubPoolClient.getLatestProposedRootBundle()
+        : hubPoolClient.getNthFullyExecutedRootBundle(-1)
+    );
     // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
     // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
     // all the spoke pools.
@@ -714,8 +722,8 @@ export class Monitor {
       unaccountedBundleRefunds,
       currentSpokeBalances,
     ] = await Promise.all([
-      this.clients.bundleDataClient.getLatestPoolRebalanceRoot(),
-      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, false),
+      this.clients.bundleDataClient.loadData(lastProposedBundleBlockRanges, this.clients.spokePoolClients, true),
+      this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, true),
       mapAsync(bundlesToCheck, async (proposedBundle) =>
         this.clients.bundleDataClient.getPendingRefundsFromBundle(proposedBundle)
       ),
@@ -745,7 +753,16 @@ export class Monitor {
       ),
     ]);
 
-    const poolRebalanceLeaves = poolRebalanceRoot.root.leaves;
+    const poolRebalanceLeaves = _buildPoolRebalanceRoot(
+      lastProposedBundleBlockRanges[0][1],
+      lastProposedBundleBlockRanges[0][1],
+      poolRebalanceRoot.bundleDepositsV3,
+      poolRebalanceRoot.bundleFillsV3,
+      poolRebalanceRoot.bundleSlowFillsV3,
+      poolRebalanceRoot.unexecutableSlowFills,
+      poolRebalanceRoot.expiredDepositsToRefundV3,
+      this.clients
+    ).leaves;
 
     // Get the pool rebalance leaf amounts.
     const enabledTokens = [...hubPoolClient.getL1Tokens()];
