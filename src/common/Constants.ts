@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
+import { chainIsOPStack, CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -254,19 +254,16 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
 export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
-  [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.UNICHAIN]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.INK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
-  [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.REDSTONE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.SONEIUM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.WORLD_CHAIN]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.ZORA]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
+
+// Auto-populate OP stack defaults.
+Object.values(CHAIN_IDs)
+  .filter(chainIsOPStack)
+  .forEach((chainId) => {
+    DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
+  });
+
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
 export const BLOCK_NUMBER_TTL = 60;
