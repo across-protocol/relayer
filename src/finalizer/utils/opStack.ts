@@ -24,6 +24,7 @@ import {
   ethers,
   Multicall2Call,
   paginatedEventQuery,
+  getCctpDomainForChainId,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -78,7 +79,7 @@ export async function opStackFinalizer(
       (e) =>
         // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
         !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
-        !(chainId === CHAIN_IDs.BASE || chainId === CHAIN_IDs.OPTIMISM || chainId === CHAIN_IDs.DOCTOR_WHO)
+        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
     ),
     (e) => {
       if (e.blockNumber >= latestBlockToProve) {

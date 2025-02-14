@@ -16,7 +16,6 @@ import {
   compareAddressesSimple,
   Multicall2Call,
   TOKEN_SYMBOLS_MAP,
-  CHAIN_IDs,
   sortEventsAscending,
   toBNWei,
 } from "../../utils";
@@ -27,7 +26,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
 
-const CHAIN_ID = CHAIN_IDs.POLYGON;
+let CHAIN_ID;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
@@ -52,6 +51,7 @@ export async function polygonFinalizer(
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
+  CHAIN_ID = chainId;
 
   const posClient = await getPosClient(signer);
   const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
