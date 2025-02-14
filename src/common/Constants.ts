@@ -264,7 +264,6 @@ Object.values(CHAIN_IDs)
     DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
 
-
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
 export const BLOCK_NUMBER_TTL = 60;
 
