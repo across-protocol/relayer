@@ -311,9 +311,7 @@ export class InventoryClient {
     // been executed.
     if (!isDefined(this.bundleRefundsPromise)) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      mark = this.profiler.start("bundleRefunds", {
-        l1Token,
-      });
+      mark = this.profiler.start(`bundleRefunds for ${l1Token}`);
       this.bundleRefundsPromise = this.getAllBundleRefunds();
     }
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
@@ -662,9 +660,14 @@ export class InventoryClient {
         if (latestValidatedBundle) {
           proposedRootBundle = this.hubPoolClient.getLatestFullyExecutedRootBundle(
             latestValidatedBundle.blockNumber // The ProposeRootBundle event must precede the ExecutedRootBundle
-            // event we grabbed above.
+            // event we grabbed above. However, it might not exist if the ExecutedRootBundle event is old enough
+            // that the preceding ProposeRootBundle is older than the lookback. In this case, leave the
+            // last validated bundle end block as 0, since it must be before the earliest lookback block since it was
+            // before the ProposeRootBundle event and we can't even find that.
           );
-          lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+          if (proposedRootBundle) {
+            lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+          }
         }
         const upcomingDepositsAfterLastValidatedBundle = this.bundleDataClient.getUpcomingDepositAmount(
           chainId,
