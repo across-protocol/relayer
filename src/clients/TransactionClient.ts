@@ -59,7 +59,7 @@ export class TransactionClient {
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
-    const networkName = getNetworkName(chainId);
+    const chain = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
 
     this.logger.debug({
@@ -95,32 +95,39 @@ export class TransactionClient {
       }
 
       let response: TransactionResponse;
+      const start = performance.now();
       try {
         response = await this._submit(txn, nonce);
       } catch (error) {
         this.logger.info({
           at: "TransactionClient#submit",
-          message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
+          message: `Transaction ${idx + 1} submission on ${chain} failed or timed out.`,
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
           errorMessage: isError(error) ? (error as Error).message : undefined,
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
+          chain,
+          duration: Math.round(performance.now() - start),
+          datadog: true,
         });
         return txnResponses;
       }
 
-      nonce = response.nonce + 1;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
-      txnResponses.push(response);
-    }
+      this.logger.info({
+        at: "TransactionClient#submit",
+        message: `Completed ${chain} transaction submission! 🧙`,
+        mrkdwn,
+        duration: Math.round(performance.now() - start),
+        chain,
+        datadog: true,
+      });
 
-    this.logger.info({
-      at: "TransactionClient#submit",
-      message: `Completed ${networkName} transaction submission! 🧙`,
-      mrkdwn,
-    });
+      txnResponses.push(response);
+      nonce = response.nonce + 1;
+    }
 
     return txnResponses;
   }
