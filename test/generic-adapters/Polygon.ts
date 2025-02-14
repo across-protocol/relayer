@@ -14,8 +14,7 @@ import {
   toBN,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
-import { hashCCTPSourceAndNonce } from "../../src/utils";
-import { chainIdsToCctpDomains } from "../../src/common";
+import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
 
 const { MAINNET, POLYGON } = CHAIN_IDs;
 const { USDC, WETH, WBTC } = TOKEN_SYMBOLS_MAP;
@@ -824,7 +823,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[POLYGON],
+        getCctpDomainForChainId(POLYGON),
         ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
@@ -834,12 +833,12 @@ describe("Cross Chain Adapter: Polygon", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[POLYGON],
+        getCctpDomainForChainId(POLYGON),
         ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await l2MessageTransmitter.setUsedNonce(
-        hashCCTPSourceAndNonce(chainIdsToCctpDomains[MAINNET], processedNonce),
+        hashCCTPSourceAndNonce(getCctpDomainForChainId(MAINNET), processedNonce),
         processedNonce
       );
 
@@ -941,7 +940,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[POLYGON],
+        getCctpDomainForChainId(POLYGON),
         ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
@@ -1006,7 +1005,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Finalise the ongoing deposit on the destination chain.
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
       await l2MessageTransmitter.setUsedNonce(
-        hashCCTPSourceAndNonce(chainIdsToCctpDomains[MAINNET], unprocessedNonce),
+        hashCCTPSourceAndNonce(getCctpDomainForChainId(MAINNET), unprocessedNonce),
         unprocessedNonce
       );
       receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
