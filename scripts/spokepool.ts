@@ -19,7 +19,7 @@ import {
   isDefined,
   resolveTokenSymbols,
   toBN,
-  toBytes32
+  toBytes32,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -141,18 +141,13 @@ async function getRelayerQuote(
       fillDeadline,
     } = quoteData;
 
-    [
-      totalRelayFee,
-      exclusiveRelayer,
-      exclusivityDeadline,
-      quoteTimestamp,
-      estimatedFillTime,
-      fillDeadline
-    ].forEach((field) => {
-      if (!isDefined(field)) {
-        throw new Error("Incomplete suggested-fees response");
+    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime, fillDeadline].forEach(
+      (field) => {
+        if (!isDefined(field)) {
+          throw new Error("Incomplete suggested-fees response");
+        }
       }
-    });
+    );
 
     return {
       totalRelayFee: toBN(totalRelayFee),
