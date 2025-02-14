@@ -35,6 +35,7 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
+import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -499,6 +500,14 @@ export const CONTRACT_ADDRESSES: {
     },
     orbitErc20Gateway_421614: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
+    zkStackBridgeHub: {
+      address: "0x236D1c3Ff32Bd0Ca26b72Af287E895627c0478cE",
+      abi: ZKSTACK_BRIDGE_HUB_ABI,
+    },
+    // The shared bridge is needed to approve the token, but we do not need its ABI.
+    zkStackSharedBridge_3771: {
+      address: "0x6F03861D12E6401623854E494beACd66BC46e6F0",
     },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",

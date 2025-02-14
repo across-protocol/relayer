@@ -18,6 +18,8 @@ import {
   ScrollERC20Bridge,
   OpStackUSDCBridge,
   UsdcCCTPBridge,
+  ZKStackBridge,
+  ZKStackWethBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -361,7 +363,6 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LENS_SEPOLIA]: ZKSyncBridge, // TODO
   [CHAIN_IDs.LINEA]: LineaBridge,
   [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
@@ -374,6 +375,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
   [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
   // Testnets:
+  [CHAIN_IDs.LENS_SEPOLIA]: ZKStackBridge,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
@@ -480,6 +482,9 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+  },
+  [CHAIN_IDs.LENS_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
   },
 };
 
