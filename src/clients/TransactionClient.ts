@@ -129,7 +129,6 @@ export class TransactionClient {
       nonce = response.nonce + 1;
     }
 
-
     return txnResponses;
   }
 }
