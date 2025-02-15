@@ -912,6 +912,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           depositor
         );
 
+        await relayerInstance.runMaintenance(); // Flush any ignored deposits.
         await updateAllClients();
         const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
         if (update.ignored) {
@@ -928,8 +929,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          const fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
           expect(fill).to.exist;
+          fill = fill!;
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
@@ -992,6 +994,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       );
 
       await updateAllClients();
+      await relayerInstance.runMaintenance(); // Flush any ignored deposits.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
