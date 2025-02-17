@@ -470,6 +470,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_1301: {
+      address: "0xea58fcA6849d79EAd1f26608855c2D6407d54Ce2",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
