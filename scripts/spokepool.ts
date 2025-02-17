@@ -19,6 +19,7 @@ import {
   isDefined,
   resolveTokenSymbols,
   toBN,
+  toBytes32,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -40,8 +41,8 @@ const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
 const { isAddress } = ethers.utils;
 
-const DEPOSIT_EVENT = "V3FundsDeposited";
-const FILL_EVENT = "FilledV3Relay";
+const DEPOSIT_EVENT = "FundsDeposited";
+const FILL_EVENT = "FilledRelay";
 
 function printDeposit(originChainId: number, log: LogDescription): void {
   const { inputToken } = log.args;
@@ -114,6 +115,7 @@ async function getRelayerQuote(
   exclusiveRelayer: string;
   exclusivityDeadline: number;
   quoteTimestamp: number;
+  fillDeadline: number;
 }> {
   const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
   let quoteAccepted = false;
@@ -136,13 +138,16 @@ async function getRelayerQuote(
       exclusivityDeadline,
       timestamp: quoteTimestamp,
       estimatedFillTimeSec: estimatedFillTime,
+      fillDeadline,
     } = quoteData;
 
-    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime].forEach((field) => {
-      if (!isDefined(field)) {
-        throw new Error("Incomplete suggested-fees response");
+    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime, fillDeadline].forEach(
+      (field) => {
+        if (!isDefined(field)) {
+          throw new Error("Incomplete suggested-fees response");
+        }
       }
-    });
+    );
 
     return {
       totalRelayFee: toBN(totalRelayFee),
@@ -150,6 +155,7 @@ async function getRelayerQuote(
       exclusivityDeadline: Number(exclusivityDeadline),
       estimatedFillTime: Number(estimatedFillTime),
       quoteTimestamp: Number(quoteTimestamp),
+      fillDeadline: Number(fillDeadline),
     };
   };
 
@@ -157,10 +163,11 @@ async function getRelayerQuote(
   let exclusiveRelayer: string;
   let exclusivityDeadline: number;
   let quoteTimestamp: number;
+  let fillDeadline: number;
   do {
     let totalRelayFee: BigNumber;
     let estimatedFillTime: number;
-    ({ totalRelayFee, exclusivityDeadline, exclusiveRelayer, quoteTimestamp, estimatedFillTime } =
+    ({ totalRelayFee, exclusivityDeadline, exclusiveRelayer, quoteTimestamp, estimatedFillTime, fillDeadline } =
       await suggestedFees());
 
     outputAmount = amount.sub(totalRelayFee);
@@ -171,14 +178,14 @@ async function getRelayerQuote(
     quoteAccepted = await utils.askYesNoQuestion(quote);
   } while (!quoteAccepted);
 
-  return { outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp };
+  return { outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, fillDeadline };
 }
 
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
   const [recipient, message] = [args.recipient ?? depositor, args.message ?? sdkConsts.EMPTY_MESSAGE].map(String);
-  const exclusiveRelayer = args.exclusiveRelayer;
+  const exclusiveRelayer = String(args.exclusiveRelayer);
   const exclusivityDeadline = Number(args.exclusivityDeadline);
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
@@ -209,23 +216,19 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     await approval.wait();
     console.log("Approval complete...");
   }
-  const [depositQuote, currentTime, fillDeadlineBuffer] = await Promise.all([
-    getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message),
-    spokePool.getCurrentTime(),
-    spokePool.fillDeadlineBuffer(),
-  ]);
+  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
 
-  const deposit = await spokePool.depositExclusive(
-    depositor,
-    recipient,
-    token.address,
-    AddressZero, // outputToken
+  const deposit = await spokePool.deposit(
+    toBytes32(depositor),
+    toBytes32(recipient),
+    toBytes32(token.address),
+    toBytes32(AddressZero), // outputToken
     amount,
     depositQuote.outputAmount,
     toChainId,
-    exclusiveRelayer ?? depositQuote.exclusiveRelayer,
+    toBytes32(exclusiveRelayer ?? depositQuote.exclusiveRelayer),
     depositQuote.quoteTimestamp,
-    Number(currentTime) + Number(fillDeadlineBuffer),
+    depositQuote.fillDeadline,
     exclusivityDeadline ?? depositQuote.exclusivityDeadline,
     message
   );
@@ -306,7 +309,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     toLiteChain: false, // Not relevant
   };
   const fill = isDefined(slow)
-    ? await destSpokePool.populateTransaction.requestV3SlowFill(deposit)
+    ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
     : await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
@@ -399,7 +402,7 @@ async function _fetchDeposit(spokePool: Contract, _depositId: number | string): 
   const deploymentBlockNumber = getDeploymentBlockNumber("SpokePool", chainId);
   const latestBlockNumber = await spokePool.provider.getBlockNumber();
   console.log(`Searching for depositId ${depositId} between ${deploymentBlockNumber} and ${latestBlockNumber}.`);
-  const filter = spokePool.filters.V3FundsDeposited(null, null, null, null, null, depositId);
+  const filter = spokePool.filters.FundsDeposited(null, null, null, null, null, depositId);
 
   // @note: Querying over such a large block range typically only works on top-tier providers.
   // @todo: Narrow the block range for the depositId, subject to this PR:
