@@ -1,4 +1,3 @@
-import assert from "assert";
 import {
   Contract,
   BigNumber,
@@ -9,6 +8,7 @@ import {
   bnZero,
   compareAddressesSimple,
   paginatedEventQuery,
+  isDefined,
 } from "../../utils";
 import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
@@ -16,7 +16,6 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 
-const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor;
   private readonly l2Weth;
@@ -41,7 +40,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // will be unused, so you do not need to define it.
     const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].l2Weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
-    if (this.gasToken === ZERO_ADDRESS) {
+    if (!isDefined(this.gasToken)) {
       const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].l2Eth;
       this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     }
@@ -53,7 +52,6 @@ export class ZKStackWethBridge extends ZKStackBridge {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(l1Token === ETH_TOKEN_ADDRESS);
     const txBaseCost = await this._txBaseCost();
     const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, l1Token, bnZero);
 
@@ -70,7 +68,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         secondBridgeCalldata,
       ],
     ]);
-    const usingCustomGasToken = this.gasToken !== ZERO_ADDRESS;
+    const usingCustomGasToken = isDefined(this.gasToken);
     const netValue = usingCustomGasToken ? amount : amount.add(txBaseCost);
     const feeAmount = usingCustomGasToken ? txBaseCost : bnZero;
 
@@ -133,7 +131,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
 
     // Events change slightly if the L2 has a custom gas token.
-    const usingCustomGasToken = this.gasToken !== ZERO_ADDRESS;
+    const usingCustomGasToken = isDefined(this.gasToken);
 
     // Since we are bridging WETH, we know that the L1 address _is_ a contract, since it is either the hub pool
     // or the atomic depositor initiating the transaction.

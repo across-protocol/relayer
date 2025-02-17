@@ -484,7 +484,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
     atomicDepositor: {
-      address: "0xDf9ADb0aA08Fd3F7bC41440Dc37370Fc9BD80f91",
+      address: "0xdf87d6eFd856D6145Fcd387252cefD12868AC593",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     polygonRootChainManager: {
