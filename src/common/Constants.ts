@@ -486,7 +486,7 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
-  }
+  },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
   },

@@ -36,6 +36,7 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
+import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -514,6 +515,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackSharedBridge_37111: {
       address: "0x6F03861D12E6401623854E494beACd66BC46e6F0",
     },
+    nativeTokenVault_37111: {
+      address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
       abi: HUB_POOL_ABI,
@@ -553,7 +558,6 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
-    // TODO: Rename to zkstack once zkstack adapters are made.
     zkStackBridge: {
       address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
@@ -564,6 +568,10 @@ export const CONTRACT_ADDRESSES: {
     },
     wrappedGasToken: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
+      abi: WETH_ABI,
+    },
+    l2Weth: {
+      address: "0xaA91D645D7a6C1aeaa5988e0547267B77d33fe16",
       abi: WETH_ABI,
     },
   },

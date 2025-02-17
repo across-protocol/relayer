@@ -1,3 +1,4 @@
+import assert from "assert";
 import {
   Contract,
   BigNumber,
@@ -9,11 +10,12 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   ZERO_ADDRESS,
+  ZERO_BYTES,
   isContractDeployedToAddress,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
+import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -31,6 +33,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   readonly l2GasToken;
   readonly l2WrappedGasToken;
   readonly hubPool;
+  readonly tokenVault;
 
   constructor(
     l2chainId: number,
@@ -69,6 +72,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       CONTRACT_ADDRESSES[l2chainId].wrappedGasToken;
     this.l2GasToken = new Contract(l2GasTokenAddress, l2GasTokenAbi, l2SignerOrProvider);
     this.l2WrappedGasToken = new Contract(l2WrappedGasTokenAddress, l2WrappedGasTokenAbi, l2SignerOrProvider);
+
+    // The contract which emits the events we wish to track is the L1NativeTokenVault.
+    const { address: tokenVaultAddress, abi: tokenVaultAbi } =
+      CONTRACT_ADDRESSES[hubChainId][`nativeTokenVault_${l2chainId}`];
+    this.tokenVault = new Contract(tokenVaultAddress, tokenVaultAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
@@ -132,13 +140,12 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       return Promise.resolve({});
     }
 
-    const [_isL1Contract, isL2Contract] = await Promise.all([
-      this._isContract(fromAddress, this.getL1Bridge().provider!),
-      this._isContract(toAddress, this.getL2Bridge().provider!),
-    ]);
-    let allEvents = {};
+    // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
+    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    let processedEvents;
+    // If we are sending tokens to an L2 contract, then we can just look at the hub pool tokens relayed function since we assume the hub pool is sending tokens to the spoke pool.
     if (isL2Contract) {
-      allEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
+      processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
         .filter((e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token))
         .map((e) => {
           return {
@@ -146,14 +153,24 @@ export class ZKStackBridge extends BaseBridgeAdapter {
             from: this.hubPool.address,
           };
         });
-      return {
-        [this.resolveL2TokenAddress(l1Token)]: allEvents as BridgeEvent[],
-      };
     } else {
-      // TBD
-      _isL1Contract;
-      return Promise.resolve({});
+      // Otherwise, we will need to query the token vault directly. We are either bridging an ERC20 token or the custom gas token.
+      // The bridge contract does not emit the address of the token -- it instead emits an asset ID string, which we
+      // must query from the l1TokenVault contract.
+      const assetId = await this.tokenVault.assetId(l1Token);
+      assert(assetId !== ZERO_BYTES); // Assert the asset id we are querying is supported by the bridge.
+
+      processedEvents = (
+        await paginatedEventQuery(
+          this.tokenVault,
+          this.tokenVault.filters.BridgeBurn(this.l2chainId, assetId, fromAddress),
+          eventConfig
+        )
+      ).map((e) => processEvent(e, "amount", "receiver", "sender"));
     }
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents,
+    };
   }
 
   async queryL2BridgeFinalizationEvents(
@@ -168,37 +185,29 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     }
     const bridgingGasToken = l1Token === this.gasToken;
 
-    const [isL1Contract, isL2Contract] = await Promise.all([
-      this._isContract(fromAddress, this.getL1Bridge().provider!),
-      this._isContract(toAddress, this.getL2Bridge().provider!),
-    ]);
+    const isL1Contract = await this._isContract(fromAddress, this.getL1Bridge().provider!);
     const aliasedSender = isL1Contract ? zksync.utils.applyL1ToL2Alias(fromAddress) : fromAddress;
-    let allEvents = [];
-    if (bridgingGasToken) {
-      if (isL2Contract) {
-        allEvents = await paginatedEventQuery(
-          this.l2GasToken,
-          this.l2GasToken.filters.Transfer(aliasedSender, toAddress),
-          eventConfig
-        );
-      } else {
-        const [events, wrapEvents] = await Promise.all([
-          paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
-          paginatedEventQuery(
-            this.l2WrappedGasToken,
-            this.l2WrappedGasToken.filters.Transfer(ZERO_ADDRESS, toAddress),
-            eventConfig
-          ),
-        ]);
-        allEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
-      }
-      return {
-        [this.resolveL2TokenAddress(l1Token)]: allEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
-      };
+    let processedEvents;
+    if (!bridgingGasToken) {
+      processedEvents = await paginatedEventQuery(
+        this.l2GasToken,
+        this.l2GasToken.filters.Transfer(aliasedSender, toAddress),
+        eventConfig
+      );
     } else {
-      // TBD
-      return Promise.resolve({});
+      const [events, wrapEvents] = await Promise.all([
+        paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
+        paginatedEventQuery(
+          this.l2WrappedGasToken,
+          this.l2WrappedGasToken.filters.Transfer(ZERO_ADDRESS, toAddress),
+          eventConfig
+        ),
+      ]);
+      processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
+    };
   }
 
   _secondBridgeCalldata(toAddress: string, l1Token: string, amount: BigNumber): string {
