@@ -134,7 +134,6 @@ export class ZKStackWethBridge extends ZKStackBridge {
 
     // Events change slightly if the L2 has a custom gas token.
     const usingCustomGasToken = this.gasToken !== ZERO_ADDRESS;
-    const ethContract = usingCustomGasToken ? this.l2Weth : this.l2Eth;
 
     // Since we are bridging WETH, we know that the L1 address _is_ a contract, since it is either the hub pool
     // or the atomic depositor initiating the transaction.
@@ -143,6 +142,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     if (isL2Contract || usingCustomGasToken) {
       // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
       // query ETH.
+      const ethContract = usingCustomGasToken ? this.l2Weth : this.l2Eth;
       processedEvents = await paginatedEventQuery(
         ethContract,
         ethContract.filters.Transfer(aliasedSender, toAddress),
