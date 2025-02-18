@@ -53,9 +53,9 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
-  protected async _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
+  protected async _submit(txn: AugmentedTransaction): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
-    return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    return runTransaction(this.logger, contract, method, args, value, gasLimit);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
@@ -70,16 +70,11 @@ export class TransactionClient {
     // Transactions are submitted sequentially to avoid nonce collisions. More
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
-    let nonce: number | null = null;
     for (let idx = 0; idx < txns.length; ++idx) {
       const txn = txns[idx];
 
       if (txn.chainId !== chainId) {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
-      }
-
-      if (nonce !== null) {
-        this.logger.debug({ at: "TransactionClient#submit", message: `Using nonce ${nonce}.` });
       }
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
@@ -96,7 +91,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, nonce);
+        response = await this._submit(txn);
       } catch (error) {
         this.logger.info({
           at: "TransactionClient#submit",
@@ -110,7 +105,6 @@ export class TransactionClient {
         return txnResponses;
       }
 
-      nonce = response.nonce + 1;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
