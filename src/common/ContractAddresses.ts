@@ -2,7 +2,6 @@ import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
-import LEGACY_ATOMIC_DEPOSITOR_ABI from "./abi/LegacyAtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
@@ -79,10 +78,6 @@ export const CONTRACT_ADDRESSES: {
     atomicDepositor: {
       address: "0x64668fbD18b967b46DD22dc8675134D91efeDd8d",
       abi: ATOMIC_DEPOSITOR_ABI,
-    },
-    legacyAtomicDepositor: {
-      address: "0xD59d70d887F34669BA695Fe9ABb8848b70de6171",
-      abi: LEGACY_ATOMIC_DEPOSITOR_ABI,
     },
     opUSDCBridge_480: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
@@ -467,6 +462,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_168587773: {
       address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_1301: {
+      address: "0xea58fcA6849d79EAd1f26608855c2D6407d54Ce2",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     cctpMessageTransmitter: {
