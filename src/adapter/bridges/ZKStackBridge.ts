@@ -39,10 +39,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: string
   ) {
-    // Lint Appeasement
-    _l1Token;
     const sharedBridgeAddress = CONTRACT_ADDRESSES[hubChainId][`zkStackSharedBridge_${l2chainId}`].address;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [sharedBridgeAddress]);
 
@@ -72,7 +71,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     this.l2GasToken = new Contract(l2GasTokenAddress, l2GasTokenAbi, l2SignerOrProvider);
     this.l2WrappedGasToken = new Contract(l2WrappedGasTokenAddress, l2WrappedGasTokenAbi, l2SignerOrProvider);
 
-    // The contract which emits the events we wish to track is the L1NativeTokenVault.
+    // The contract which emits the bridge events we wish to track is the L1NativeTokenVault.
     const { address: tokenVaultAddress, abi: tokenVaultAbi } =
       CONTRACT_ADDRESSES[hubChainId][`nativeTokenVault_${l2chainId}`];
     this.tokenVault = new Contract(tokenVaultAddress, tokenVaultAbi, l1Signer);
@@ -184,7 +183,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     }
     const bridgingGasToken = l1Token === this.gasToken;
 
-    // Optinally alias the l1 sender.
+    // Optionally alias the l1 sender.
     const isL1Contract = await this._isContract(fromAddress, this.getL1Bridge().provider!);
     const aliasedSender = isL1Contract ? zksync.utils.applyL1ToL2Alias(fromAddress) : fromAddress;
     let processedEvents;
@@ -195,7 +194,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         eventConfig
       );
     } else {
-      // We unfortunately can't assume that the wrapped native token will emit transfer, so we need to query the deposit event instead on the native token.
+      // We unfortunately can't assume that the wrapped native token will emit an event when minting new tokens (i.e. a Transfer from the zero address), so we instead query the transfer of the native token to the wrapped native token contract.
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
         paginatedEventQuery(
@@ -218,7 +217,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   async _txBaseCost(): Promise<BigNumber> {
     const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(this.getL1Bridge().provider!);
 
-    // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying, a system contract. In this case,
+    // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying a system contract. In this case,
     // the system contract to query is the bridge hub contract.
     const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
     const l2Gas = await this.getL1Bridge().l2TransactionBaseCost(

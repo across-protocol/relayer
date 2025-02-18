@@ -37,7 +37,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     this.l1Gateways = [atomicDepositorAddress];
 
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
-    // will be unused, so you do not need to define it.
+    // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
     const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].l2Weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
     if (!isDefined(this.gasToken)) {
