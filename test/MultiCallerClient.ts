@@ -34,8 +34,8 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
 
-  valueTxnCount(): number {
-    return this.txnCount(this.valueTxns);
+  nonMulticallTxnCount(): number {
+    return this.txnCount(this.nonMulticallTxns);
   }
 
   multiCallTransactionCount(): number {
@@ -68,7 +68,15 @@ describe("MultiCallerClient", async function () {
 
   it("Correctly enqueues value transactions", async function () {
     chainIds.forEach((chainId) => multiCaller.enqueueTransaction({ chainId, value: toBN(1) } as AugmentedTransaction));
-    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.nonMulticallTxnCount()).to.equal(chainIds.length);
+    expect(multiCaller.transactionCount()).to.equal(chainIds.length);
+  });
+
+  it("Correctly enqueues non-multicall transactions", async function () {
+    chainIds.forEach((chainId) =>
+      multiCaller.enqueueTransaction({ chainId, nonMulticall: true } as AugmentedTransaction)
+    );
+    expect(multiCaller.nonMulticallTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.transactionCount()).to.equal(chainIds.length);
   });
 
@@ -87,10 +95,11 @@ describe("MultiCallerClient", async function () {
     chainIds.forEach((chainId) => {
       multiCaller.enqueueTransaction({ chainId } as AugmentedTransaction);
       multiCaller.enqueueTransaction({ chainId, value: bnOne } as AugmentedTransaction);
+      multiCaller.enqueueTransaction({ chainId, nonMulticall: true } as AugmentedTransaction);
     });
-    expect(multiCaller.valueTxnCount()).to.equal(chainIds.length);
     expect(multiCaller.multiCallTransactionCount()).to.equal(chainIds.length);
-    expect(multiCaller.transactionCount()).to.equal(2 * chainIds.length);
+    expect(multiCaller.nonMulticallTxnCount()).to.equal(2 * chainIds.length);
+    expect(multiCaller.transactionCount()).to.equal(3 * chainIds.length);
   });
 
   it("Propagates input transaction gasLimits: internal multicall", async function () {
@@ -269,6 +278,33 @@ describe("MultiCallerClient", async function () {
       const results = await multiCaller.executeTxnQueues();
       expect(Object.values(results).flat().length).to.equal(fail ? 0 : (nTxns + 1) * chainIds.length);
     }
+  });
+
+  it("Submits non-multicall txns", async function () {
+    const nTxns = 3;
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      const chainId = chainIds[0];
+      const txnRequest: AugmentedTransaction = {
+        chainId,
+        contract: {
+          address,
+          interface: { encodeFunctionData },
+          multicall: 1,
+        } as unknown as Contract,
+        method: "test",
+        args: [{ result: txnClientPassResult }],
+        nonMulticall: true,
+        message: `Test nonMulticall transaction (${txn}/${nTxns}) on chain ${chainId}`,
+        mrkdwn: `Sample markdown string for chain ${chainId} transaction`,
+      };
+
+      multiCaller.enqueueTransaction(txnRequest);
+    }
+    expect(multiCaller.transactionCount()).to.equal(nTxns);
+
+    // Should have nTxns since non-multicall txns are not batched.
+    const results = await multiCaller.executeTxnQueues();
+    expect(Object.values(results).flat().length).to.equal(nTxns);
   });
 
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {

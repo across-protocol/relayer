@@ -9,6 +9,7 @@ import {
   constructSpokePoolClientsWithLookback,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
+import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
 export interface MonitorClients extends Clients {
   bundleDataClient: BundleDataClient;
@@ -17,9 +18,6 @@ export interface MonitorClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
   tokenTransferClient: TokenTransferClient;
 }
-
-import { GenericAdapterManager } from "../adapter/AdapterManager";
-import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
 export async function constructMonitorClients(
   config: MonitorConfig,
@@ -56,8 +54,7 @@ export async function constructMonitorClients(
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
-  const adapterManagerConstructor = config.useGenericAdapter ? GenericAdapterManager : AdapterManager;
-  const adapterManager = new adapterManagerConstructor(logger, spokePoolClients, hubPoolClient, [
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
     signerAddr,
     hubPoolClient.hubPool.address,
     ...spokePoolAddresses,
@@ -86,9 +83,9 @@ export async function updateMonitorClients(clients: MonitorClients): Promise<voi
   await updateSpokePoolClients(clients.spokePoolClients, [
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-    "V3FundsDeposited",
-    "RequestedSpeedUpV3Deposit",
-    "FilledV3Relay",
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
   ]);
   const allL1Tokens = clients.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   await clients.crossChainTransferClient.update(allL1Tokens);

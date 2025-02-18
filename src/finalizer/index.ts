@@ -116,6 +116,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.SONEIUM]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
@@ -124,9 +128,25 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.UNICHAIN]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
-    finalizeOnL1: [cctpL2toL1Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.MODE_SEPOLIA]: {
@@ -238,6 +258,7 @@ export async function finalize(
           hubSigner,
           hubPoolClient,
           client,
+          spokePoolClients[hubChainId],
           l1ToL2AddressesToFinalize
         );
 
@@ -330,7 +351,9 @@ export async function finalize(
 
   if (finalizations.length > 0) {
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
-    // safety features
+    // safety features. This only works because we assume all finalizer transactions are
+    // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
+    // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
     let txnHashLookup: Record<number, string[]> = {};
     try {
@@ -431,8 +454,8 @@ export async function constructFinalizerClients(
   if (configuredChainIds.length === 0) {
     throw new Error("No chains configured for finalizer");
   }
-  if (!configuredChainIds.includes(CHAIN_IDs.MAINNET)) {
-    configuredChainIds.push(CHAIN_IDs.MAINNET);
+  if (!configuredChainIds.includes(config.hubPoolChainId)) {
+    configuredChainIds.push(config.hubPoolChainId);
   }
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,

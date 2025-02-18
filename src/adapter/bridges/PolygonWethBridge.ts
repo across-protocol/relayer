@@ -5,6 +5,7 @@ import {
   Signer,
   EventSearchConfig,
   Provider,
+  bnZero,
   ZERO_ADDRESS,
   getL2TokenAddresses,
 } from "../../utils";
@@ -18,6 +19,7 @@ import { processEvent } from "../utils";
  */
 export class PolygonWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
+  protected rootChainManager: Contract;
 
   constructor(
     l2chainId: number,
@@ -33,10 +35,13 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     const l2TokenAddresses = getL2TokenAddresses(l1Token);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonWethBridge;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
+    const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
+      CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
+    this.rootChainManager = new Contract(rootChainManagerAddress, rootChainManagerAbi, l1Signer);
 
     // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
@@ -49,10 +54,11 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const bridgeCalldata = this.rootChainManager.interface.encodeFunctionData("depositEtherFor", [toAddress]);
     return Promise.resolve({
       contract: this.atomicDepositor,
-      method: "bridgeWethToPolygon",
-      args: [toAddress, amount.toString()],
+      method: "bridgeWeth",
+      args: [this.l2chainId, amount, amount, bnZero, bridgeCalldata],
     });
   }
 

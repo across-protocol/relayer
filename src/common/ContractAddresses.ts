@@ -44,7 +44,7 @@ export const CONTRACT_ADDRESSES: {
     };
   };
 } = {
-  1: {
+  [CHAIN_IDs.MAINNET]: {
     lineaMessageService: {
       address: "0xd19d4B5d358258f05D7B411E21A1460D11B0876F",
       abi: LINEA_MESSAGE_SERVICE_ABI,
@@ -76,11 +76,15 @@ export const CONTRACT_ADDRESSES: {
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
     atomicDepositor: {
-      address: "0xb505EB8E884cA548508bd7806631b6C1BC25C1f8",
+      address: "0x64668fbD18b967b46DD22dc8675134D91efeDd8d",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     opUSDCBridge_480: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    opUSDCBridge_1868: {
+      address: "0xC67A8c5f22b40274Ca7C4A56Db89569Ee2AD3FAb",
       abi: OP_USDC_BRIDGE_ABI,
     },
     // Since there are multiple ovmStandardBridges on mainnet for different OP Stack chains, we append the chain id of the Op
@@ -97,8 +101,16 @@ export const CONTRACT_ADDRESSES: {
       address: "0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_130: {
+      address: "0x81014F44b0a345033bB2b3B21C7a1A308B35fEeA",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     ovmStandardBridge_1135: {
       address: "0x2658723Bf70c7667De6B25F99fcce13A16D25d08",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_1868: {
+      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_8453: {
@@ -204,7 +216,7 @@ export const CONTRACT_ADDRESSES: {
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
   },
-  10: {
+  [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
       abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
@@ -229,7 +241,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  137: {
+  [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
       abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
     },
@@ -248,7 +260,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000001010",
     },
   },
-  324: {
+  [CHAIN_IDs.ZK_SYNC]: {
     zkSyncDefaultErc20Bridge: {
       address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
@@ -258,7 +270,37 @@ export const CONTRACT_ADDRESSES: {
       abi: WETH_ABI,
     },
   },
-  480: {
+  [CHAIN_IDs.UNICHAIN]: {
+    cctpMessageTransmitter: {
+      address: "0x353bE9E2E38AB1D19104534e4edC21c643Df86f4",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x4e744b28E787c3aD0e810eD65A24461D4ac5a762",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.SONEIUM]: {
+    opUSDCBridge: {
+      address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    eth: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.WORLD_CHAIN]: {
     opUSDCBridge: {
       address: "0xbD80b06d3dbD0801132c6689429aC09Ca6D27f82",
       abi: OP_USDC_BRIDGE_ABI,
@@ -271,7 +313,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
-  690: {
+  [CHAIN_IDs.REDSTONE]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -280,7 +322,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
-  1135: {
+  [CHAIN_IDs.LISK]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -289,7 +331,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
-  8453: {
+  [CHAIN_IDs.BASE]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -306,7 +348,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  34443: {
+  [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -315,7 +357,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
-  57073: {
+  [CHAIN_IDs.INK]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -324,7 +366,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
-  81457: {
+  [CHAIN_IDs.BLAST]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -337,7 +379,7 @@ export const CONTRACT_ADDRESSES: {
       abi: BLAST_BRIDGE_ABI,
     },
   },
-  42161: {
+  [CHAIN_IDs.ARBITRUM]: {
     erc20Gateway: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
@@ -350,7 +392,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  41455: {
+  [CHAIN_IDs.ALEPH_ZERO]: {
     erc20Gateway: {
       address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
@@ -360,7 +402,7 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBSYS_L2_ABI,
     },
   },
-  59144: {
+  [CHAIN_IDs.LINEA]: {
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_MESSAGE_SERVICE_ABI,
@@ -377,7 +419,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
-  534352: {
+  [CHAIN_IDs.SCROLL]: {
     scrollGatewayRouter: {
       address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
@@ -401,7 +443,84 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   // Testnets
-  11155111: {
+  [CHAIN_IDs.SEPOLIA]: {
+    ovmStandardBridge_4202: {
+      address: "0x1Fb30e446eA791cd1f011675E5F3f5311b70faF5",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_84532: {
+      address: "0xfd0Bf71F60660E2f608ed56e1659C450eB113120",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_11155420: {
+      address: "0xFBb0621E0B23b5478B630BD55a5f21f67730B0F1",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_919: {
+      address: "0xbC5C679879B2965296756CD959C3C739769995E2",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_168587773: {
+      address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_1301: {
+      address: "0xea58fcA6849d79EAd1f26608855c2D6407d54Ce2",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    atomicDepositor: {
+      address: "0xDf9ADb0aA08Fd3F7bC41440Dc37370Fc9BD80f91",
+      abi: ATOMIC_DEPOSITOR_ABI,
+    },
+    polygonRootChainManager: {
+      address: "0x34F5A25B627f50Bb3f5cAb72807c4D4F405a9232",
+      abi: POLYGON_ROOT_CHAIN_MANAGER_ABI,
+    },
+    polygonBridge: {
+      address: "0x4258C75b752c812B7Fa586bdeb259f2d4bd17f4F",
+      abi: POLYGON_BRIDGE_ABI,
+    },
+    polygonWethBridge: {
+      address: "0x930C824C1e423a4b4949C665c4e92BD8f6ccF04e",
+      abi: POLYGON_BRIDGE_ABI,
+    },
+    orbitErc20GatewayRouter_421614: {
+      address: "0xcE18836b233C83325Cc8848CA4487e94C6288264",
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_421614: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
+    hubPool: {
+      address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
+    },
+  },
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    erc20Gateway: {
+      abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0xaCF1ceeF35caAc005e15888dDb8A3515C41B4872",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+  },
+  [CHAIN_IDs.BASE_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
@@ -411,20 +530,76 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  84532: {
-    cctpMessageTransmitter: {
-      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
-      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+  [CHAIN_IDs.BLAST_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.LENS_SEPOLIA]: {
+    // TODO: Rename to zkstack once zkstack adapters are made.
+    zkSyncDefaultErc20Bridge: {
+      address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
+      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.LISK_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.MODE_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
     cctpTokenMessenger: {
       address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
   },
-  59140: {
-    l2MessageService: {
-      address: "0xC499a572640B64eA1C8c194c43Bc3E19940719dC",
-      abi: LINEA_MESSAGE_SERVICE_ABI,
+  [CHAIN_IDs.POLYGON_AMOY]: {
+    withdrawableErc20: {
+      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
+    },
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+  },
+  [CHAIN_IDs.SCROLL_SEPOLIA]: {
+    scrollGatewayRouter: {
+      address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
+      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    cctpTokenMessenger: {
+      address: "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5",
+      abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpMessageTransmitter: {
+      address: "0x1F622c406DedB82119EAfADB09E64e7e36A6844b",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
   },
 };
