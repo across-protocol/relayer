@@ -36,6 +36,7 @@ import {
   mapAsync,
   paginatedEventQuery,
   getCctpDomainForChainId,
+  isJsonRpcError,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -61,16 +62,18 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS = {
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: viemChains.optimismSepolia,
   [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.BASE]: viemChains.base,
   [CHAIN_IDs.REDSTONE]: viemChains.redstone,
   [CHAIN_IDs.LISK]: viemChains.lisk,
   [CHAIN_IDs.ZORA]: viemChains.zora,
   [CHAIN_IDs.MODE]: viemChains.mode,
-  // @dev The following chains do not have "portal" contracts listed in the Viem chain definitions.
-  // They have non-standard interfaces for withdrawing from L2 to L1
-  // [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
+  [CHAIN_IDs.SONEIUM]: viemChains.soneium,
+  // // @dev The following chians don't have correct a correct Viem chain object.
+  // [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
+  // [CHAIN_IDs.INK]: viemChains.ink,
+  // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
   // [CHAIN_IDs.BLAST]: viemChains.blast,
 };
 
@@ -92,8 +95,6 @@ export async function opStackFinalizer(
   const { chainId } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
   const networkName = getNetworkName(chainId);
-
-  const crossChainMessenger = getOptimismClient(chainId, signer);
 
   // Optimism withdrawals take 7 days to finalize, while proofs are ready as soon as an L1 txn containing the L2
   // withdrawal is posted to Mainnet, so ~30 mins.
@@ -214,6 +215,32 @@ export async function opStackFinalizer(
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
 
+  const getCustomTransportFromEthersProvider = (providerChainId: number) => {
+    return viem.custom(
+      {
+        async request({ method, params }) {
+          const provider = getCachedProvider(providerChainId, true);
+          try {
+            return await provider.send(method, params);
+          } catch (error: any) {
+            // Ethers encodes RPC errors differently than Viem expects it so if the error is a JSON RPC error,
+            // decode it in a way that Viem can gracefully handle.
+            if (isJsonRpcError(error)) {
+              throw error.error;
+            } else {
+              throw error;
+            }
+          }
+        },
+      },
+      {
+        // Viem has many native options that we can use to replicate our ethers' RetryProvider but the easiest
+        // way to  migrate for now is to force all requests through our RetryProvider and disable all retry, quorum,
+        // caching, and other logic in the Viem transport.
+        retryCount: 0,
+      }
+    );
+  };
   // @dev Experimental: try using Viem if its available for this chain. Eventually we should
   // fully migrate from SDK to Viem. Note, the Viem "provider" is not easily translateable from the ethers.js provider,
   // so any RPC requests sent from the Viem client will likely not inherit benefits of our custom RetryProvider such
@@ -231,13 +258,13 @@ export async function opStackFinalizer(
     const publicClientL1 = viem
       .createPublicClient({
         chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
-        transport: viem.http(getCachedProvider(hubChainId, true).providers[0].connection.url),
+        transport: getCustomTransportFromEthersProvider(hubChainId),
       })
       .extend(publicActionsL1() as any) as unknown as viem.PublicClient & PublicActionsL1;
     const publicClientL2 = viem
       .createPublicClient({
         chain: VIEM_OP_STACK_CHAINS[chainId],
-        transport: viem.http(getCachedProvider(chainId, true).providers[0].connection.url),
+        transport: getCustomTransportFromEthersProvider(chainId),
       })
       .extend(publicActionsL2() as any) as unknown as viem.PublicClient & PublicActionsL2;
     const uniqueTokenhashes = {};
@@ -353,6 +380,7 @@ export async function opStackFinalizer(
     callData = viemTxns.callData;
     crossChainTransfers = viemTxns.withdrawals;
   } else {
+    const crossChainMessenger = getOptimismClient(chainId, signer);
     const proofs = await multicallOptimismL1Proofs(
       chainId,
       recentTokensBridgedEvents,

@@ -31,6 +31,23 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
 }
 
+export function isJsonRpcError(response: unknown): { code: number; message: string; data?: unknown } | undefined {
+  if (!sdkProviders.RpcError.is(response)) {
+    return;
+  }
+
+  try {
+    const error = JSON.parse(response.body);
+    if (!sdkProviders.JsonRpcError.is(error)) {
+      return;
+    }
+
+    return error.error;
+  } catch {
+    return;
+  }
+}
+
 /**
  * Return the env-defined quorum configured for `chainId`, or 1 if no quorum has been defined.
  * @param chainId Chain ID to query for quorum.
