@@ -2,7 +2,7 @@ import { utils } from "@across-protocol/sdk";
 import { Signer } from "ethers";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 
-import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../src/common";
+import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   OpStackWethBridge,
   OpStackDefaultERC20Bridge,
@@ -15,7 +15,7 @@ import { SpokePoolClient } from "../../src/clients";
 
 import { ZERO_ADDRESS } from "../constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger, toBN } from "../utils";
-import { hashCCTPSourceAndNonce } from "../../src/utils";
+import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
 
 const atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 const l1WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
@@ -274,7 +274,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[CHAIN_IDs.OPTIMISM],
+        getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
         ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
@@ -284,12 +284,12 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        chainIdsToCctpDomains[CHAIN_IDs.OPTIMISM],
+        getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
         ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(chainIdsToCctpDomains[CHAIN_IDs.MAINNET], processedNonce),
+        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
         processedNonce
       );
 

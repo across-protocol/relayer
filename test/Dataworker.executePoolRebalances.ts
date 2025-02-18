@@ -483,7 +483,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
       // Execute mainnet refund leaf after mainnet pool leaf. Then update exchange rates to execute non-mainnet pool leaf.
       const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
-      expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal(["executeRootBundle", "executeV3SlowRelayLeaf"]);
+      expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal(["executeRootBundle", "executeSlowRelayLeaf"]);
     });
     it("No non-mainnet leaves", async function () {
       // In this test, check that if there are no mainnet leaves, then the dataworker should just execute non

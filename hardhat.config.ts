@@ -46,6 +46,12 @@ const config: HardhatUserConfig = {
       saveDeployments: true,
       chainId: 1,
     },
+    sepolia: {
+      url: "https://ethereum-sepolia-rpc.publicnode.com",
+      accounts: { mnemonic },
+      saveDeployments: true,
+      chainId: 11155111,
+    },
     kovan: {
       url: getNodeUrl("kovan", true, 42),
       accounts: { mnemonic },

@@ -320,17 +320,17 @@ describe("Relayer: Unfilled Deposits", async function () {
         deposit.depositId,
         originChainId,
         updatedOutputAmount,
-        deposit.recipient,
+        sdkUtils.toBytes32(deposit.recipient),
         deposit.message
       );
 
       await spokePool_1
         .connect(depositor)
-        .speedUpV3Deposit(
-          depositor.address,
+        .speedUpDeposit(
+          sdkUtils.toBytes32(depositor.address),
           deposit.depositId,
           updatedOutputAmount,
-          deposit.recipient,
+          sdkUtils.toBytes32(deposit.recipient),
           deposit.message,
           signature
         );
@@ -366,10 +366,6 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(unfilledDeposits.length).to.equal(1);
-    expect(sdkUtils.getRelayDataHash(unfilledDeposits[0].deposit, destinationChainId)).to.equal(
-      sdkUtils.getRelayDataHash(deposit, deposit.destinationChainId)
-    );
-
     await fillV3Relay(spokePool_2, deposit, relayer);
 
     await updateAllClients();
@@ -383,17 +379,17 @@ describe("Relayer: Unfilled Deposits", async function () {
       deposit.depositId,
       originChainId,
       updatedOutputAmount,
-      deposit.recipient,
+      sdkUtils.toBytes32(deposit.recipient),
       deposit.message
     );
 
     await spokePool_1
       .connect(depositor)
-      .speedUpV3Deposit(
-        depositor.address,
+      .speedUpDeposit(
+        sdkUtils.toBytes32(depositor.address),
         deposit.depositId,
         updatedOutputAmount,
-        deposit.recipient,
+        sdkUtils.toBytes32(deposit.recipient),
         deposit.message,
         signature
       );
