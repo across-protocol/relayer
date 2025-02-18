@@ -2,9 +2,20 @@ import assert from "assert";
 import { ChildProcess, spawn } from "child_process";
 import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
-import { Log } from "../interfaces";
+import { Log, DepositWithBlock } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
-import { EventSearchConfig, getNetworkName, isDefined, MakeOptional, winston } from "../utils";
+import {
+  bnZero,
+  EventSearchConfig,
+  getNetworkName,
+  isDefined,
+  MakeOptional,
+  winston,
+  BigNumber,
+  getRelayEventKey,
+  getMessageHash,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -20,7 +31,6 @@ type SpokePoolEventRemoved = {
 type SpokePoolEventsAdded = {
   blockNumber: number;
   currentTime: number;
-  oldestTime: number;
   nEvents: number; // Number of events.
   data: string;
 };
@@ -42,7 +52,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
   private worker: ChildProcess;
   private pendingBlockNumber: number;
   private pendingCurrentTime: number;
-  private pendingOldestTime: number;
 
   private pendingEvents: Log[][];
   private pendingEventsRemoved: Log[];
@@ -158,7 +167,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     assert(isSpokePoolEventsAdded(message), `Expected ${this.chain} SpokePoolEventsAdded message`);
 
-    const { blockNumber, currentTime, oldestTime, nEvents, data } = message;
+    const { blockNumber, currentTime, nEvents, data } = message;
     if (nEvents > 0) {
       const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
       assert(
@@ -186,9 +195,6 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     this.pendingBlockNumber = blockNumber;
     this.pendingCurrentTime = currentTime;
-    if (!isDefined(this.pendingOldestTime) && oldestTime > 0) {
-      this.pendingOldestTime = oldestTime;
-    }
   }
 
   /**
@@ -229,11 +235,15 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
     // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
     // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
-    if (eventName === "V3FundsDeposited") {
+    if (eventName === "V3FundsDeposited" || eventName === "FundsDeposited") {
       const { depositId } = event.args;
       assert(isDefined(depositId));
 
-      const depositHash = this.getDepositHash({ depositId, originChainId: this.chainId });
+      const depositEvent = {
+        ...spreadEventWithBlockNumber(event),
+        messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
+      } as DepositWithBlock;
+      const depositHash = getRelayEventKey(depositEvent);
       if (isDefined(this.depositHashes[depositHash])) {
         delete this.depositHashes[depositHash];
         this.logger.warn({
@@ -281,16 +291,17 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     });
 
     // Find the latest deposit Ids, and if there are no new events, fall back to already stored values.
-    const fundsDeposited = eventsToQuery.indexOf("V3FundsDeposited");
+    const fundsDeposited = eventsToQuery.indexOf("FundsDeposited");
+    const _firstDepositId = events[fundsDeposited]?.at(0)?.args?.depositId;
+    const _latestDepositId = events[fundsDeposited]?.at(-1)?.args?.depositId;
     const [firstDepositId, latestDepositId] = [
-      events[fundsDeposited].at(0)?.args?.depositId ?? this.getDeposits().at(0) ?? 0,
-      events[fundsDeposited].at(-1)?.args?.depositId ?? this.getDeposits().at(-1) ?? 0,
+      isDefined(_firstDepositId) ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
+      isDefined(_latestDepositId) ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,
     ];
 
     return {
       success: true,
       currentTime: this.pendingCurrentTime,
-      oldestTime: this.pendingOldestTime,
       firstDepositId,
       latestDepositId,
       searchEndBlock: this.pendingBlockNumber,

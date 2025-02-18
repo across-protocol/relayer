@@ -138,7 +138,9 @@ describe("InventoryClient: Refund chain selection", async function () {
     beforeEach(async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
-        depositId: 0,
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
         originChainId: MAINNET,
         destinationChainId: OPTIMISM,
         depositor: owner.address,
@@ -316,7 +318,9 @@ describe("InventoryClient: Refund chain selection", async function () {
     beforeEach(async function () {
       const inputAmount = toBNWei(1);
       sampleDepositData = {
-        depositId: 0,
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
         originChainId: POLYGON,
         destinationChainId: OPTIMISM,
         depositor: owner.address,
@@ -486,7 +490,9 @@ describe("InventoryClient: Refund chain selection", async function () {
       (inventoryClient as MockInventoryClient).setBalanceOnChainForL1Token(undefined);
       const inputAmount = toBNWei(1);
       sampleDepositData = {
-        depositId: 0,
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
         originChainId: POLYGON,
         destinationChainId: MAINNET,
         depositor: owner.address,
@@ -567,7 +573,9 @@ describe("InventoryClient: Refund chain selection", async function () {
 
       const inputAmount = toMegaWei(100);
       sampleDepositData = {
-        depositId: 0,
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
         originChainId: ARBITRUM,
         destinationChainId: OPTIMISM,
         depositor: owner.address,

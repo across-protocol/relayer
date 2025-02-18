@@ -29,6 +29,9 @@ export interface AugmentedTransaction {
   canFailInSimulation?: boolean;
   // Optional batch ID to use to group transactions
   groupId?: string;
+  // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
+  // with other transactions.
+  nonMulticall?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;

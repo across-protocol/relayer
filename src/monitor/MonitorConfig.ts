@@ -1,6 +1,6 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getNativeTokenAddressForChain } from "../utils";
+import { ethers, getNativeTokenAddressForChain, isDefined } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -66,7 +66,6 @@ export class MonitorConfig extends CommonConfig {
       REFILL_BALANCES,
       REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
-      MONITOR_USE_GENERIC_ADAPTER,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
@@ -82,8 +81,6 @@ export class MonitorConfig extends CommonConfig {
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
     };
-
-    this.useGenericAdapter = MONITOR_USE_GENERIC_ADAPTER === "true";
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
@@ -146,12 +143,12 @@ export class MonitorConfig extends CommonConfig {
     if (MONITORED_BALANCES) {
       this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
         ({ errorThreshold, warnThreshold, account, token, chainId }) => {
-          if (!errorThreshold && !warnThreshold) {
+          if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
             throw new Error("Must provide either an errorThreshold or a warnThreshold");
           }
 
           let parsedErrorThreshold: number | null = null;
-          if (errorThreshold) {
+          if (isDefined(errorThreshold)) {
             if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
             }
@@ -159,7 +156,7 @@ export class MonitorConfig extends CommonConfig {
           }
 
           let parsedWarnThreshold: number | null = null;
-          if (warnThreshold) {
+          if (isDefined(warnThreshold)) {
             if (Number.isNaN(Number(errorThreshold))) {
               throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
             }

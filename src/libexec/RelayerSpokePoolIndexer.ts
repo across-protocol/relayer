@@ -34,7 +34,6 @@ const WS_PONG_TIMEOUT = WS_PING_INTERVAL / 2;
 let logger: winston.Logger;
 let chain: string;
 let stop = false;
-let oldestTime = 0;
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
@@ -50,7 +49,7 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
   );
 
   if (!stop) {
-    postEvents(toBlock, oldestTime, currentTime, events.flat());
+    postEvents(toBlock, currentTime, events.flat());
   }
 }
 
@@ -84,7 +83,7 @@ async function listen(
     // Post an update to the parent. Do this irrespective of whether there were new events or not, since there's
     // information in blockNumber and currentTime alone.
     if (!stop) {
-      postEvents(blockNumber, oldestTime, currentTime, events);
+      postEvents(blockNumber, currentTime, events);
     }
   });
 
@@ -188,23 +187,20 @@ async function run(argv: string[]): Promise<void> {
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
   logger.debug({ at: "RelayerSpokePoolIndexer::run", message: `Scraping previous ${chain} events.`, opts });
 
-  // The SpokePoolClient reports on the timestamp of the oldest block searched. The relayer likely doesn't need this,
-  // but resolve it anyway for consistency with the main SpokePoolClient implementation.
-  const resolveOldestTime = async (spokePool: Contract, blockTag: ethersProviders.BlockTag) => {
-    oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
-  };
-
   if (latestBlock.number > startBlock) {
-    const events = ["V3FundsDeposited", "FilledV3Relay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
+    const events = [
+      "FundsDeposited",
+      "FilledRelay",
+      "RequestedSpeedUpDeposit",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ];
     const _spokePool = spokePool.connect(quorumProvider);
-    await Promise.all([resolveOldestTime(_spokePool, startBlock), scrapeEvents(_spokePool, events, opts)]);
+    await scrapeEvents(_spokePool, events, opts);
   }
 
-  // If no lookback was specified then default to the timestamp of the latest block.
-  oldestTime ??= latestBlock.timestamp;
-
   // Events to listen for.
-  const events = ["V3FundsDeposited", "RequestedSpeedUpV3Deposit", "FilledV3Relay"];
+  const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
   const providers = getWSProviders(chainId, quorum);
   let nProviders = providers.length;
