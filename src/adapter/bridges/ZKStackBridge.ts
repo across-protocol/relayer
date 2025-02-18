@@ -9,7 +9,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   paginatedEventQuery,
-  ZERO_ADDRESS,
   ZERO_BYTES,
   isContractDeployedToAddress,
 } from "../../utils";
@@ -185,6 +184,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     }
     const bridgingGasToken = l1Token === this.gasToken;
 
+    // Optinally alias the l1 sender.
     const isL1Contract = await this._isContract(fromAddress, this.getL1Bridge().provider!);
     const aliasedSender = isL1Contract ? zksync.utils.applyL1ToL2Alias(fromAddress) : fromAddress;
     let processedEvents;
@@ -195,11 +195,12 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         eventConfig
       );
     } else {
+      // We unfortunately can't assume that the wrapped native token will emit transfer, so we need to query the deposit event instead on the native token.
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
         paginatedEventQuery(
-          this.l2WrappedGasToken,
-          this.l2WrappedGasToken.filters.Transfer(ZERO_ADDRESS, toAddress),
+          this.l2GasToken,
+          this.l2GasToken.filters.Transfer(toAddress, this.l2WrappedGasToken.address),
           eventConfig
         ),
       ]);

@@ -14,8 +14,8 @@ import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
-import * as zksync from "zksync-ethers";
 
+const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor;
   private readonly l2Weth;
@@ -53,7 +53,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
-    const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, l1Token, bnZero);
+    const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero);
 
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
       [
@@ -133,9 +133,6 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // Events change slightly if the L2 has a custom gas token.
     const usingCustomGasToken = isDefined(this.gasToken);
 
-    // Since we are bridging WETH, we know that the L1 address _is_ a contract, since it is either the hub pool
-    // or the atomic depositor initiating the transaction.
-    const aliasedSender = zksync.utils.applyL1ToL2Alias(fromAddress);
     let processedEvents;
     if (isL2Contract || usingCustomGasToken) {
       // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
@@ -143,13 +140,13 @@ export class ZKStackWethBridge extends ZKStackBridge {
       const ethContract = usingCustomGasToken ? this.l2Weth : this.l2Eth;
       processedEvents = await paginatedEventQuery(
         ethContract,
-        ethContract.filters.Transfer(aliasedSender, toAddress),
+        ethContract.filters.Transfer(ZERO_ADDRESS, toAddress),
         eventConfig
       );
     } else {
       // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
       const [events, wrapEvents] = await Promise.all([
-        paginatedEventQuery(this.l2Eth, this.l2Eth.filters.Transfer(aliasedSender, toAddress), eventConfig),
+        paginatedEventQuery(this.l2Eth, this.l2Eth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
         paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
       ]);
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);

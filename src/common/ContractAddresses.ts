@@ -508,7 +508,7 @@ export const CONTRACT_ADDRESSES: {
     // The shared bridge is the "spender" of the token we wish to bridge, so we only
     // need its contract address so that we may approve it.
     zkStackSharedBridge_37111: {
-      address: "0x6F03861D12E6401623854E494beACd66BC46e6F0",
+      address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
     },
     nativeTokenVault_37111: {
       address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
