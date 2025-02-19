@@ -176,7 +176,6 @@ export class Relayer {
     await inventoryClient.rebalanceInventoryIfNeeded();
     await inventoryClient.withdrawExcessBalances();
 
-
     // Flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
     this.ignoredDeposits = {};
 
