@@ -1,46 +1,45 @@
 [
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "token",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "_userFrom",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "_userTo",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "gateway",
-          "type": "address"
-        }
-      ],
-      "name": "TransferRouted",
-      "type": "event"
-    },
-    {
-        "inputs": [
-          { "internalType": "address", "name": "_token", "type": "address" },
-          { "internalType": "address", "name": "_to", "type": "address" },
-          { "internalType": "uint256", "name": "_amount", "type": "uint256" },
-          { "internalType": "bytes", "name": "_data", "type": "bytes" }
-        ],
-        "name": "outboundTransfer",
-        "outputs": [{ "internalType": "bytes", "name": "", "type": "bytes" }],
-        "stateMutability": "payable",
-        "type": "function"
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "_userFrom",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "_userTo",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "gateway",
+        "type": "address"
       }
-  ]
-  
+    ],
+    "name": "TransferRouted",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_token", "type": "address" },
+      { "internalType": "address", "name": "_to", "type": "address" },
+      { "internalType": "uint256", "name": "_amount", "type": "uint256" },
+      { "internalType": "bytes", "name": "_data", "type": "bytes" }
+    ],
+    "name": "outboundTransfer",
+    "outputs": [{ "internalType": "bytes", "name": "", "type": "bytes" }],
+    "stateMutability": "payable",
+    "type": "function"
+  }
+]
