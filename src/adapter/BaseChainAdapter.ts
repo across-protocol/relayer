@@ -1,4 +1,4 @@
-import { SpokePoolClient } from "../clients";
+import { MultiCallerClient, SpokePoolClient } from "../clients";
 import {
   AnyObject,
   BigNumber,
@@ -23,12 +23,14 @@ import {
   filterAsync,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
+  getL1TokenInfo,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
+import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 
 export type SupportedL1Token = string;
 export type SupportedTokenSymbol = string;
@@ -46,6 +48,7 @@ export class BaseChainAdapter {
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
+    protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -165,6 +168,27 @@ export class BaseChainAdapter {
     }
     const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
+  }
+
+  async withdrawTokenFromL2(address: string, l2Token: string, amount: BigNumber, simMode: boolean): Promise<string[]> {
+    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+    if (!isDefined(this.l2Bridges[l1TokenInfo.address])) {
+      this.logger.warn({
+        at: `${this.adapterName}#withdrawTokenFromL2`,
+        message: `No L2 bridge configured for ${l1TokenInfo.symbol} on chain ${this.chainId}, cannot withdraw from L2`,
+      });
+      return [];
+    }
+    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
+      address,
+      l2Token,
+      l1TokenInfo.address,
+      amount
+    );
+    const multicallerClient = new MultiCallerClient(this.logger);
+    txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+    const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
+    return txnReceipts[this.chainId];
   }
 
   async sendTokenToTargetChain(
