@@ -316,6 +316,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "WETH"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
+  [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
   [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
@@ -477,13 +478,14 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge, // Only support CCTP USDC.
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
   },
 };
 
