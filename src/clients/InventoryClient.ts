@@ -512,11 +512,6 @@ export class InventoryClient {
       const chainShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken);
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      const cumulativeVirtualBalanceWithShortfall = cumulativeVirtualBalance.sub(chainShortfall);
-      // Add in the amount to be repaid if we were to select this chain into the chain virtual balance, unless
-      // the chain is the destination chain. If the chain is the destination chain, then the amount sent in
-      // outputAmount should approximately be equal to the inputAmount minus fees, but for the sake of choosing
-      // a repayment chain, these fees are not relevant.
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
@@ -532,14 +527,13 @@ export class InventoryClient {
       );
       // To correctly compute the allocation % for this destination chain, we need to add all upcoming refunds for the
       // equivalents of l1Token on all chains.
-      const cumulativeVirtualBalanceWithShortfallPostRefunds =
-        cumulativeVirtualBalanceWithShortfall.add(cumulativeRefunds);
+      const cumulativeVirtualBalancePostRefunds = cumulativeVirtualBalance.add(cumulativeRefunds);
 
       // Compute what the balance will be on the target chain, considering this relay and the finalization of the
       // transfers that are currently flowing through the canonical bridge.
       const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
         .mul(this.scalar)
-        .div(cumulativeVirtualBalanceWithShortfallPostRefunds);
+        .div(cumulativeVirtualBalancePostRefunds);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
@@ -582,8 +576,7 @@ export class InventoryClient {
           chainVirtualBalanceWithShortfall,
           chainVirtualBalanceWithShortfallPostRelay,
           cumulativeVirtualBalance,
-          cumulativeVirtualBalanceWithShortfall,
-          cumulativeVirtualBalanceWithShortfallPostRefunds,
+          cumulativeVirtualBalancePostRefunds,
           targetPct: formatUnits(tokenConfig.targetPct, 18),
           targetOverage: formatUnits(targetOverageBuffer, 18),
           effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
@@ -962,7 +955,10 @@ export class InventoryClient {
               this.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
                 .toString()
-            )}.\n`;
+            )}.` +
+            ` This chain has a shortfall of ${formatter(
+              this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
+            )} ${symbol}.\n`;
         }
       }
 
