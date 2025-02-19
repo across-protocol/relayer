@@ -27,12 +27,16 @@ import {
   getUsdcSymbol,
   Profiler,
   getNativeTokenSymbol,
+  getL1TokenInfo,
+  Signer,
+  chainIsOPStack,
+  chainIsOrbit,
 } from "../utils";
-import { HubPoolClient, TokenClient, BundleDataClient } from ".";
+import { HubPoolClient, TokenClient, BundleDataClient, MultiCallerClient, AugmentedTransaction } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
-import { SLOW_WITHDRAWAL_CHAINS } from "../common";
+import { CONTRACT_ADDRESSES, SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 
@@ -1109,6 +1113,185 @@ export class InventoryClient {
     }
   }
 
+  async withdrawExcessBalances(): Promise<void> {
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
+
+    const chainIds = this.getEnabledL2Chains();
+    type L2Withdrawal = { l2Token: string; amountToWithdraw: BigNumber };
+    const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
+
+    for (const l1Token of this.getL1Tokens()) {
+      chainIds.forEach((chainId) => {
+        if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
+          return;
+        }
+
+        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
+        l2Tokens.forEach((l2Token) => {
+          const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
+          const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+          if (!isDefined(tokenConfig)) {
+            return;
+          }
+          // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
+          const { excessThresholdBalance, excessTargetBalance } = tokenConfig;
+          if (
+            isDefined(excessThresholdBalance) &&
+            isDefined(excessTargetBalance) &&
+            currentBalance.gte(excessThresholdBalance)
+          ) {
+            withdrawalsRequired[chainId] ??= [];
+            withdrawalsRequired[chainId].push({
+              l2Token,
+              amountToWithdraw: currentBalance.sub(excessTargetBalance),
+            });
+          }
+        });
+      });
+    }
+
+    if (Object.keys(withdrawalsRequired).length === 0) {
+      this.log("No excess balances to withdraw");
+      return;
+    } else {
+      this.log("Excess balances to withdraw", { withdrawalsRequired });
+    }
+
+    // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
+    // pull tokens from the msg.sender.
+    const multicallerClient = new MultiCallerClient(this.logger);
+    Object.keys(withdrawalsRequired).forEach((_chainId) => {
+      const chainId = Number(_chainId);
+      withdrawalsRequired[chainId].forEach((withdrawal) => {
+        const { l2Token, amountToWithdraw } = withdrawal;
+        const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
+        const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
+        if (chainIsOPStack(chainId)) {
+          const ovmStandardBridgeObj = CONTRACT_ADDRESSES[chainId].ovmStandardBridge;
+          assert(ovmStandardBridgeObj, `ovmStandardBridge for ${chainId} not found in CONTRACT_ADDRESSES`);
+          const ovmStandardBridge = new Contract(
+            ovmStandardBridgeObj.address,
+            ovmStandardBridgeObj.abi,
+            this._getL2Signer(chainId)
+          );
+          if (l1TokenInfo.symbol === "ETH") {
+            const weth = this._getWethContract(chainId, l2Token);
+            const unwrapTxn: AugmentedTransaction = {
+              contract: weth,
+              chainId: Number(chainId),
+              method: "withdraw",
+              args: [amountToWithdraw],
+              nonMulticall: true,
+              message: "🎰 Unwrapped WETH on OpStack before withdrawing to L1",
+              mrkdwn: `Unwrapped ${formatter(
+                amountToWithdraw.toString()
+              )} WETH before withdrawing from ${getNetworkName(chainId)} to L1`,
+            };
+            multicallerClient.enqueueTransaction(unwrapTxn);
+            const withdrawTxn: AugmentedTransaction = {
+              contract: ovmStandardBridge,
+              chainId: Number(chainId),
+              method: "bridgeETHTo",
+              args: [
+                this.relayer, // to
+                200_000, // minGasLimit
+                "0x", // extraData
+              ],
+              nonMulticall: true,
+              value: amountToWithdraw,
+              message: "🎰 Withdrew OpStack WETH to L1",
+              mrkdwn: `Withdrew ${formatter(amountToWithdraw.toString())} ${l1TokenInfo.symbol} from ${getNetworkName(
+                chainId
+              )} to L1`,
+            };
+            multicallerClient.enqueueTransaction(withdrawTxn);
+          } else {
+            const withdrawTxn: AugmentedTransaction = {
+              contract: ovmStandardBridge,
+              chainId: Number(chainId),
+              method: "bridgeERC20To",
+              args: [
+                l2Token, // _localToken
+                l1TokenInfo.address, // Remote token to be received on L1 side. If the
+                // remoteL1Token on the other chain does not recognize the local token as the correct
+                // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
+                // this chain.
+                this.relayer, // _to
+                amountToWithdraw, // _amount
+                200_000, // minGasLimit
+                "0x", // _data
+              ],
+              nonMulticall: true,
+              message: "🎰 Withdrew OpStack ERC20 to L1",
+              mrkdwn: `Withdrew ${formatter(amountToWithdraw.toString())} ${l1TokenInfo.symbol} ${getNetworkName(
+                chainId
+              )} to L1`,
+            };
+            multicallerClient.enqueueTransaction(withdrawTxn);
+          }
+        } else if (chainIsOrbit(chainId)) {
+          const nativeTokenSymbol = getNativeTokenSymbol(chainId);
+          if (l1TokenInfo.symbol === nativeTokenSymbol) {
+            this.logger.warn({
+              at: "InventoryClient",
+              message: "Native token withdrawals for orbit chain is not supported",
+            });
+          } else {
+            const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+            assert(arbErc20GatewayObj, `arbErc20GatewayObj for ${chainId} not found in CONTRACT_ADDRESSES`);
+            const contract = new Contract(
+              arbErc20GatewayObj.address,
+              arbErc20GatewayObj.abi,
+              this._getL2Signer(chainId)
+            );
+            const withdrawTxn: AugmentedTransaction = {
+              contract,
+              chainId: Number(chainId),
+              method: "outboundTransfer",
+              args: [
+                l1TokenInfo.address, // l1Token
+                this.relayer, // to
+                amountToWithdraw, // amount
+                "0x", // data
+              ],
+              nonMulticall: true,
+              message: "🎰 Withdrew Orbit ERC20 to L1",
+              mrkdwn: `Withdrew ${formatter(amountToWithdraw.toString())} ${l1TokenInfo.symbol} from ${getNetworkName(
+                chainId
+              )} to L1`,
+            };
+            multicallerClient.enqueueTransaction(withdrawTxn);
+          }
+        } else {
+          this.logger.warn({
+            at: "InventoryClient",
+            message: `Chain ${getNetworkName(chainId)} is not supported for L2->L1 excess withdrawals`,
+          });
+        }
+      });
+    });
+    const txnReceipts = await multicallerClient.executeTxnQueues(this.simMode);
+    Object.keys(txnReceipts).forEach((chainId) => {
+      this.logger.debug({
+        at: "InventoryClient",
+        message: `L2->L1 withdrawals on ${getNetworkName(chainId)} submitted`,
+        chainId,
+        withdrawalsRequired: withdrawalsRequired[chainId].map((withdrawal: L2Withdrawal) => {
+          const l1TokenInfo = getL1TokenInfo(withdrawal.l2Token, Number(chainId));
+          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+          return {
+            l2Token: l1TokenInfo.symbol,
+            amountToWithdraw: formatter(withdrawal.amountToWithdraw.toString()),
+          };
+        }),
+        txnReceipt: txnReceipts[chainId],
+      });
+    });
+  }
+
   constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
     const logData: {
       [symbol: string]: {
@@ -1178,10 +1361,19 @@ export class InventoryClient {
   }
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
-    const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
-    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
+    const l2Weth = this._getWethContract(chainId, _l2Weth);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
+  }
+
+  _getWethContract(chainId: number, _l2Weth: string): Contract {
+    const l2Signer = this._getL2Signer(chainId);
+    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
+    return l2Weth;
+  }
+
+  _getL2Signer(chainId: number): Signer {
+    return this.tokenClient.spokePoolClients[chainId].spokePool.signer;
   }
 
   async setL1TokenApprovals(): Promise<void> {

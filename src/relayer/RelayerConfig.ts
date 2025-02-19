@@ -33,6 +33,7 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingRebalancesEnabled: boolean;
+  readonly simModeEnabled: boolean;
   readonly sendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: string[];
@@ -80,6 +81,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
+      SIM_MODE,
       SEND_REBALANCES,
       SEND_MESSAGE_RELAYS,
       SEND_SLOW_RELAYS,
@@ -171,8 +173,22 @@ export class RelayerConfig extends CommonConfig {
         chainId: string,
         rawTokenConfig: TokenBalanceConfig
       ): TokenBalanceConfig => {
-        const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = rawTokenConfig;
-        const tokenConfig: TokenBalanceConfig = { targetPct, thresholdPct, targetOverageBuffer };
+        const {
+          targetPct,
+          thresholdPct,
+          unwrapWethThreshold,
+          unwrapWethTarget,
+          targetOverageBuffer,
+          excessThresholdBalance,
+          excessTargetBalance,
+        } = rawTokenConfig;
+        const tokenConfig: TokenBalanceConfig = {
+          targetPct,
+          thresholdPct,
+          targetOverageBuffer,
+          excessTargetBalance,
+          excessThresholdBalance,
+        };
 
         assert(
           targetPct !== undefined && thresholdPct !== undefined,
@@ -184,6 +200,15 @@ export class RelayerConfig extends CommonConfig {
         );
         tokenConfig.targetPct = toBNWei(targetPct).div(100);
         tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
+
+        if (isDefined(excessThresholdBalance) && isDefined(excessTargetBalance)) {
+          assert(
+            toBN(excessThresholdBalance).gt(toBN(excessTargetBalance)),
+            `excessThresholdBalance must be > excessTargetBalance for ${l1Token} on ${chainId}`
+          );
+          tokenConfig.excessThresholdBalance = toBN(excessThresholdBalance);
+          tokenConfig.excessTargetBalance = toBN(excessTargetBalance);
+        }
 
         // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
         // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
@@ -244,6 +269,7 @@ export class RelayerConfig extends CommonConfig {
     );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
+    this.simModeEnabled = SIM_MODE === "true";
     this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";

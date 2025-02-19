@@ -169,9 +169,12 @@ export class Relayer {
       tokenClient.clearTokenData();
       await tokenClient.update();
       await inventoryClient.rebalanceInventoryIfNeeded();
+      // After computing allocation %'s and rebalancing from L1 to L2, send any excess balances back to L1. We could
+      // re-update token balances here if we think the rebalance from L1 to L2 function took a long time to run.
+      await inventoryClient.withdrawExcessBalances();
     }
 
-    // Unwrap WETH after filling deposits, but before rebalancing.
+    // Unwrap WETH after filling deposits.
     await inventoryClient.unwrapWeth();
 
     // Flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)

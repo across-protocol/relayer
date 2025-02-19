@@ -7,6 +7,12 @@ export type TokenBalanceConfig = {
   thresholdPct: BigNumber; // Threshold, below which, we will execute a rebalance.
   unwrapWethThreshold?: BigNumber; // Threshold for ETH to trigger WETH unwrapping to maintain ETH balance.
   unwrapWethTarget?: BigNumber; // Amount of WETH to unwrap to refill ETH. Unused if unwrapWethThreshold is undefined.
+  excessThresholdBalance?: BigNumber; // Threshold for excess token balance to trigger a slow transfer from Spoke to Hub.
+  // Typically set on Lite chains where the relayer filling deposits from the chain has no choice but to take
+  // repayment on that chain and subsequently builds up a large balance over time that it otherwise has no ability
+  // to rebalance.
+  excessTargetBalance?: BigNumber; // When the balance on a chain exceeds the excessThresholdBalance, withdraw
+  // tokens down to this target balance.
 };
 
 export type ChainTokenConfig = {
