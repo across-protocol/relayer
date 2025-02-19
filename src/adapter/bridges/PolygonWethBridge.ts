@@ -32,7 +32,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
     // either the SDK, or the constants dependency in the SDK, is not
     // up-to-date.
-    const l2TokenAddresses = getL2TokenAddresses(l1Token);
+    const l2TokenAddresses = getL2TokenAddresses(l1Token, hubChainId);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonWethBridge;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
