@@ -66,7 +66,7 @@ export async function run(): Promise<void> {
   // Now, submit a withdrawal:
   let contract: Contract, functionName: string, functionArgs: any[];
   if (l1TokenInfo.symbol !== nativeTokenSymbol) {
-    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
     contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
     functionName = "outboundTransfer";
     functionArgs = [

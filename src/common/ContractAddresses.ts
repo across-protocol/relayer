@@ -380,7 +380,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ARBITRUM]: {
-    erc20Gateway: {
+    erc20GatewayRouter: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
     cctpMessageTransmitter: {
@@ -393,8 +393,8 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
-    erc20Gateway: {
-      address: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
+    erc20GatewayRouter: {
+      address: "0xD296d45171B97720D3aBdb68B0232be01F1A9216",
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
     arbSys: {
@@ -504,7 +504,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
-    erc20Gateway: {
+    erc20GatewayRouter: {
       abi: ARBITRUM_ERC20_GATEWAY_L2_ABI,
     },
     cctpTokenMessenger: {

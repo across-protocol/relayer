@@ -1236,7 +1236,7 @@ export class InventoryClient {
               message: "Native token withdrawals for orbit chain is not supported",
             });
           } else {
-            const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+            const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
             assert(arbErc20GatewayObj, `arbErc20GatewayObj for ${chainId} not found in CONTRACT_ADDRESSES`);
             const contract = new Contract(
               arbErc20GatewayObj.address,

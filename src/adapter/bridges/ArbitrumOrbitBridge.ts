@@ -49,7 +49,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const { l1: l1Address, l2: l2Address } =
       CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].erc20Gateway.abi;
+    const l2Abi = CONTRACT_ADDRESSES[l2chainId].erc20GatewayRouter.abi;
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 

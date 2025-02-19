@@ -135,11 +135,11 @@ export async function arbStackFinalizer(
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
   if (getOrbitNetwork(chainId) !== undefined && withdrawalToAddresses.length > 0) {
-    // ERC20 withdrawals emit events in the erc20Gateway.
+    // ERC20 withdrawals emit events in the erc20GatewayRouter.
     // Native token withdrawals emit events in the ArbSys contract.
     const l2ArbSys = CONTRACT_ADDRESSES[chainId].arbSys;
     const arbSys = new Contract(l2ArbSys.address, l2ArbSys.abi, spokePoolClient.spokePool.provider);
-    const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+    const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
     const arbitrumGateway = new Contract(
       l2Erc20Gateway.address,
       l2Erc20Gateway.abi,
