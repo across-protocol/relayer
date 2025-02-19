@@ -1116,26 +1116,64 @@ export class InventoryClient {
     type L2Withdrawal = { l2Token: string; amountToWithdraw: BigNumber };
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
-    for (const l1Token of this.getL1Tokens()) {
-      chainIds.forEach((chainId) => {
+    await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      await sdkUtils.forEachAsync(chainIds, async (chainId) => {
         if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-        l2Tokens.forEach((l2Token) => {
+        await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
           const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
           if (!isDefined(tokenConfig)) {
             return;
           }
           // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
-          const { excessThresholdBalance, excessTargetBalance } = tokenConfig;
+          const { excessThresholdBalance, excessTargetBalance, maxL2WithdrawalPeriodSeconds, maxL2WithdrawalVolume } =
+            tokenConfig;
+
+          const l1TokenInfo = getL1TokenInfo(l2Token, Number(chainId));
+          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
           if (
             isDefined(excessThresholdBalance) &&
             isDefined(excessTargetBalance) &&
             currentBalance.gte(excessThresholdBalance)
           ) {
+            const desiredWithdrawalAmount = currentBalance.sub(excessTargetBalance);
+            if (isDefined(maxL2WithdrawalVolume)) {
+              const totalWithdrawalVolume = await this.adapterManager.getL2WithdrawalAmount(
+                maxL2WithdrawalPeriodSeconds,
+                chainId,
+                this.relayer,
+                l2Token
+              );
+              const totalWithdrawalVolumePostWithdrawal = totalWithdrawalVolume.add(desiredWithdrawalAmount);
+              if (totalWithdrawalVolumePostWithdrawal.gte(maxL2WithdrawalVolume)) {
+                this.log(
+                  `Withdrawal of ${formatter(
+                    desiredWithdrawalAmount.toString()
+                  )} would push total volume for the last ${maxL2WithdrawalPeriodSeconds} seconds over the limit of ${formatter(
+                    maxL2WithdrawalVolume.toString()
+                  )} for ${l1TokenInfo.symbol} on ${getNetworkName(chainId)}.`,
+                  {
+                    currentBalance: formatter(currentBalance.toString()),
+                    excessThresholdBalance: formatter(excessThresholdBalance.toString()),
+                    excessTargetBalance: formatter(excessTargetBalance.toString()),
+                    desiredWithdrawalAmount: formatter(desiredWithdrawalAmount.toString()),
+                    totalWithdrawalVolume: formatter(totalWithdrawalVolume.toString()),
+                    maxTransferAmount: formatter(maxL2WithdrawalVolume.sub(totalWithdrawalVolume).toString()),
+                  }
+                );
+                return;
+              }
+
+              // For now, we do not support partial desired withdrawals where the desired amount would push the
+              // total withdrawal volume over the limit. This is because in practice this could lead to withdrawing
+              // very small amounts over the bridge, unless we set a minimum withdrawal amount. This means that we'll
+              // delay occasionally some withdrawals until the total withdrawal volume goes down, but this should be
+              // relatively infrequent and we can change this logic in the future.
+            }
             withdrawalsRequired[chainId] ??= [];
             withdrawalsRequired[chainId].push({
               l2Token,
@@ -1144,7 +1182,7 @@ export class InventoryClient {
           }
         });
       });
-    }
+    });
 
     if (Object.keys(withdrawalsRequired).length === 0) {
       this.log("No excess balances to withdraw");

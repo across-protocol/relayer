@@ -13,6 +13,8 @@ export type TokenBalanceConfig = {
   // to rebalance.
   excessTargetBalance?: BigNumber; // When the balance on a chain exceeds the excessThresholdBalance, withdraw
   // tokens down to this target balance.
+  maxL2WithdrawalVolume?: BigNumber; // Maximum amount of tokens to withdraw from L2 over the period.
+  maxL2WithdrawalPeriodSeconds?: number; // Period over which maxL2WithdrawalVolume is enforced.
 };
 
 export type ChainTokenConfig = {

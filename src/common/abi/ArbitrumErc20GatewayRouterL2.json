@@ -41,5 +41,24 @@
     "outputs": [{ "internalType": "bytes", "name": "", "type": "bytes" }],
     "stateMutability": "payable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_token",
+        "type": "address"
+      }
+    ],
+    "name": "getGateway",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "gateway",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ]

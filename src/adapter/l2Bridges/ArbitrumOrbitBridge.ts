@@ -1,7 +1,17 @@
 import { CONTRACT_ADDRESSES } from "../../common";
-import { BigNumber, Contract, createFormatFunction, getL1TokenInfo, getNetworkName, Signer } from "../../utils";
+import {
+  BigNumber,
+  Contract,
+  createFormatFunction,
+  EventSearchConfig,
+  getL1TokenInfo,
+  getNetworkName,
+  paginatedEventQuery,
+  Signer,
+} from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
+import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer) {
@@ -36,5 +46,30 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       )} to L1`,
     };
     return [withdrawTxn];
+  }
+
+  async getL2WithdrawalAmount(
+    eventConfig: EventSearchConfig,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber> {
+    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const erc20GatewayForToken = await this.l2Bridge.getGateway(l1TokenInfo.address);
+    const gatewayContract = new Contract(erc20GatewayForToken, ARBITRUM_ERC20_GATEWAY_L2_ABI, this.l2Signer);
+    const withdrawalEvents = await paginatedEventQuery(
+      gatewayContract,
+      gatewayContract.filters.WithdrawalInitiated(
+        null, // l1Token non-indexed
+        fromAddress // from
+      ),
+      eventConfig
+    );
+    const withdrawalAmount = withdrawalEvents.reduce((totalAmount, event) => {
+      if (event.args.l1Token === l1TokenInfo.address) {
+        return totalAmount.add(event.args._amount);
+      }
+      return totalAmount;
+    }, BigNumber.from(0));
+    return withdrawalAmount;
   }
 }

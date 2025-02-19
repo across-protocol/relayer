@@ -160,6 +160,16 @@ export class AdapterManager {
     return txnReceipts;
   }
 
+  async getL2WithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    chainId: number | string,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber> {
+    chainId = Number(chainId);
+    return await this.adapters[chainId].getL2WithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
+  }
+
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
   // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
   // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2

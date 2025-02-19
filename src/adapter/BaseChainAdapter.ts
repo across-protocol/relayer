@@ -24,6 +24,9 @@ import {
   mapAsync,
   TOKEN_SYMBOLS_MAP,
   getL1TokenInfo,
+  getBlockForTimestamp,
+  getCurrentTime,
+  bnZero,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -189,6 +192,23 @@ export class BaseChainAdapter {
     txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
     const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
     return txnReceipts[this.chainId];
+  }
+
+  async getL2WithdrawalAmount(lookbackPeriodSeconds: number, fromAddress: string, l2Token: string): Promise<BigNumber> {
+    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+    if (!isDefined(this.l2Bridges[l1TokenInfo.address])) {
+      this.logger.warn({
+        at: `${this.adapterName}#withdrawTokenFromL2`,
+        message: `No L2 bridge configured for ${l1TokenInfo.symbol} on chain ${this.chainId}, cannot withdraw from L2`,
+      });
+      return bnZero;
+    }
+    const searchFromBlock = await getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds);
+    const eventSearchConfig: EventSearchConfig = {
+      fromBlock: searchFromBlock,
+      toBlock: this.baseL2SearchConfig.toBlock,
+    };
+    return await this.l2Bridges[l1TokenInfo.address].getL2WithdrawalAmount(eventSearchConfig, fromAddress, l2Token);
   }
 
   async sendTokenToTargetChain(

@@ -1,5 +1,5 @@
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { BigNumber, Contract, Signer } from "../../utils";
+import { BigNumber, Contract, EventSearchConfig, Signer } from "../../utils";
 
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
@@ -12,4 +12,10 @@ export abstract class BaseL2BridgeAdapter {
     l1Token: string,
     amount: BigNumber
   ): AugmentedTransaction[];
+
+  abstract getL2WithdrawalAmount(
+    eventSearchConfig: EventSearchConfig,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber>;
 }
