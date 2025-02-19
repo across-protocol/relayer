@@ -1,6 +1,7 @@
 import { CONTRACT_ADDRESSES } from "../../common";
 import {
   BigNumber,
+  bnZero,
   Contract,
   createFormatFunction,
   EventSearchConfig,
@@ -75,7 +76,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     );
     const withdrawalAmount = withdrawalEvents.reduce((totalAmount, event) => {
       return totalAmount.add(event.args.amount);
-    }, BigNumber.from(0));
+    }, bnZero);
     return withdrawalAmount;
   }
 }

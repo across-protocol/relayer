@@ -1,6 +1,7 @@
 import { CONTRACT_ADDRESSES } from "../../common";
 import {
   BigNumber,
+  bnZero,
   Contract,
   createFormatFunction,
   EventSearchConfig,
@@ -69,7 +70,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
         return totalAmount.add(event.args._amount);
       }
       return totalAmount;
-    }, BigNumber.from(0));
+    }, bnZero);
     return withdrawalAmount;
   }
 }
