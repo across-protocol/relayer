@@ -72,11 +72,11 @@ export class ZKStackWethBridge extends ZKStackBridge {
     const netValue = usingCustomGasToken ? amount : amount.add(txBaseCost);
     const feeAmount = usingCustomGasToken ? txBaseCost : bnZero;
 
-    return Promise.resolve({
+    return {
       contract: this.getAtomicDepositor(),
       method: "bridgeWeth",
       args: [this.l2chainId, netValue, amount, feeAmount, bridgeCalldata],
-    });
+    };
   }
 
   async queryL1BridgeInitiationEvents(
@@ -89,7 +89,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
     // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
     if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
-      return Promise.resolve({});
+      return {};
     }
 
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
@@ -126,7 +126,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
   ): Promise<BridgeEvents> {
     // Ignore hub pool queries for the same reason as above.
     if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
-      return Promise.resolve({});
+      return {};
     }
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
 

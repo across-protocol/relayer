@@ -118,11 +118,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           ],
         ];
 
-    return Promise.resolve({
+    return {
       contract: this.getL1Bridge(),
       method,
       args,
-    });
+    };
   }
 
   async queryL1BridgeInitiationEvents(
@@ -135,7 +135,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
     // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
     if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
-      return Promise.resolve({});
+      return {};
     }
 
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
@@ -179,7 +179,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     // Ignore hub pool queries for the same reason as above.
     if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
-      return Promise.resolve({});
+      return {};
     }
     const bridgingGasToken = l1Token === this.gasToken;
 
