@@ -28,11 +28,11 @@ import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 export class ZKStackBridge extends BaseBridgeAdapter {
   readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
   readonly l2GasLimit = BigNumber.from(2_000_000);
-  readonly sharedBridgeAddress;
-  readonly l2GasToken;
-  readonly l2WrappedGasToken;
-  readonly hubPool;
-  readonly tokenVault;
+  readonly sharedBridgeAddress: string;
+  readonly l2GasToken: Contract;
+  readonly l2WrappedGasToken: Contract;
+  readonly hubPool: Contract;
+  readonly tokenVault: Contract;
 
   constructor(
     l2chainId: number,

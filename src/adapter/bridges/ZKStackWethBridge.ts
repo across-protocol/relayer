@@ -17,9 +17,9 @@ import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 
 const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
 export class ZKStackWethBridge extends ZKStackBridge {
-  private readonly atomicDepositor;
-  private readonly l2Weth;
-  private readonly l2Eth;
+  private readonly atomicDepositor: Contract;
+  private readonly l2Weth: Contract;
+  private readonly l2Eth: Contract;
 
   constructor(
     l2chainId: number,
