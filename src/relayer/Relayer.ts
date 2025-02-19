@@ -1044,7 +1044,7 @@ export class Relayer {
     );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-      ? ["fillV3Relay", "", [deposit, repaymentChainId]]
+      ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.relayerAddress]]
       : [
           "fillRelayWithUpdatedDeposit",
           " with updated parameters ",
