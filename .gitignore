@@ -7,7 +7,6 @@ coverage
 coverage.json
 typechain*
 dump.rdb*
-inventoryConfig.json
 
 # Hardhat files
 cache
