@@ -66,7 +66,11 @@ export async function runTransaction(
 ): Promise<TransactionResponse> {
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
-  const nonce = (nonces[chainId] ??= await provider.getTransactionCount(await contract.signer.getAddress()));
+
+  // Suppress nonce tracking in test because all chainIds map to one single chain.
+  const nonce = process.env.RELAYER_TEST
+    ? undefined
+    : (nonces[chainId] ??= await provider.getTransactionCount(await contract.signer.getAddress()));
 
   try {
     const priorityFeeScaler =
