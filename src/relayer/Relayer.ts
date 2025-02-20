@@ -52,6 +52,7 @@ export class Relayer {
   private profiler: InstanceType<typeof Profiler>;
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
+  protected ignoredDeposits: { [depositHash: string]: boolean } = {};
   protected inventoryChainIds: number[];
   protected updated = 0;
 
@@ -140,11 +141,8 @@ export class Relayer {
 
     await updateSpokePoolClients(spokePoolClients, [
       "FundsDeposited",
-      "V3FundsDeposited",
       "RequestedSpeedUpDeposit",
-      "RequestedSpeedUpV3Deposit",
       "FilledRelay",
-      "FilledV3Relay",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ]);
@@ -183,7 +181,8 @@ export class Relayer {
     // Unwrap WETH after filling deposits, but before rebalancing.
     await inventoryClient.unwrapWeth();
 
-    // Placeholder: flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
+    // Flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
+    this.ignoredDeposits = {};
 
     // May be less than maintenanceInterval if these blocking calls are slow.
     // Only update `lastMaintenance` here.
@@ -212,6 +211,19 @@ export class Relayer {
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
+    const relayKey = sdkUtils.getRelayEventKey(deposit);
+
+    // Helper to mark a deposit as filled. This is useful when it should not be considered in future loops
+    // i.e. because it is inherently un-fillable given the current runtime configuration.
+    const ignoreDeposit = (): boolean => {
+      this.ignoredDeposits[relayKey] = true;
+      return false;
+    };
+
+    // Deposit has previously been ignored.
+    if (this.ignoredDeposits[relayKey]) {
+      return false;
+    }
 
     // If we don't have the latest code to support this deposit, skip it.
     if (depositVersion > configStoreClient.configStoreVersion) {
@@ -222,7 +234,7 @@ export class Relayer {
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
         deposit,
       });
-      return false;
+      return ignoreDeposit();
     }
 
     if (!this.routeEnabled(originChainId, destinationChainId)) {
@@ -233,7 +245,41 @@ export class Relayer {
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
       });
-      return false;
+      return ignoreDeposit();
+    }
+
+    const badAddress = [
+      deposit.depositor,
+      deposit.recipient,
+      deposit.exclusiveRelayer,
+      deposit.inputToken,
+      deposit.outputToken,
+    ].some((address) => {
+      try {
+        ethersUtils.getAddress(address);
+      } catch {
+        return true;
+      }
+    });
+
+    if (badAddress) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit due to invalid address.`,
+        deposit,
+      });
+      return ignoreDeposit();
+    }
+
+    if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
+        depositor,
+        recipient,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
     }
 
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
@@ -246,7 +292,44 @@ export class Relayer {
         outputToken: deposit.outputToken,
         transactionHash: deposit.transactionHash,
       });
-      return false;
+      return ignoreDeposit();
+    }
+
+    // Skip any L1 tokens that are not specified in the config.
+    // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for unwhitelisted token",
+        deposit,
+        l1Token,
+      });
+      return ignoreDeposit();
+    }
+
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
+        notificationPath: "across-unprofitable-fills",
+      });
+      return ignoreDeposit();
+    }
+
+    // Skip deposit with message if sending fills with messages is not supported.
+    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
+        at: "Relayer::filterDeposit",
+        message: "Skipping fill for deposit with message",
+        depositUpdated: isDepositSpedUp(deposit),
+        deposit,
+      });
+      return ignoreDeposit();
     }
 
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
@@ -279,30 +362,6 @@ export class Relayer {
       return false;
     }
 
-    if (ignoredAddresses?.includes(getAddress(depositor)) || ignoredAddresses?.includes(getAddress(recipient))) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
-        depositor,
-        recipient,
-        transactionHash: deposit.transactionHash,
-      });
-      return false;
-    }
-
-    // Skip any L1 tokens that are not specified in the config.
-    // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
-    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unwhitelisted token",
-        deposit,
-        l1Token,
-      });
-      return false;
-    }
-
     // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
     const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
     if (deposit.fillDeadline <= currentTime) {
@@ -310,30 +369,6 @@ export class Relayer {
     }
 
     if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
-      return false;
-    }
-
-    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit including in-protocol token swap.",
-        originChainId,
-        destinationChainId,
-        outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
-        notificationPath: "across-unprofitable-fills",
-      });
-      return false;
-    }
-
-    // Skip deposit with message if sending fills with messages is not supported.
-    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
-      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-        at: "Relayer::filterDeposit",
-        message: "Skipping fill for deposit with message",
-        depositUpdated: isDepositSpedUp(deposit),
-        deposit,
-      });
       return false;
     }
 
@@ -489,7 +524,7 @@ export class Relayer {
       }
 
       const fillAmount = profitClient.getFillAmountInUsd(deposit);
-      return acc.add(fillAmount);
+      return acc.add(fillAmount ?? bnZero);
     }, bnZero);
 
     return commitment;
@@ -582,7 +617,7 @@ export class Relayer {
       .filter((deposit) => tokenClient.hasBalanceForFill(deposit))
       .reduce((agg, deposit) => {
         const unfilledAmountUsd = profitClient.getFillAmountInUsd(deposit);
-        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd);
+        agg[deposit.originChainId] = (agg[deposit.originChainId] ?? bnZero).add(unfilledAmountUsd ?? bnZero);
         return agg;
       }, {});
 
@@ -706,6 +741,9 @@ export class Relayer {
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+        if (!isDefined(fillAmountUsd)) {
+          return;
+        }
         const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
         // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
@@ -950,7 +988,7 @@ export class Relayer {
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
-      this.logger.warn({
+      this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
         deposit,
@@ -984,8 +1022,8 @@ export class Relayer {
     multiCallerClient.enqueueTransaction({
       chainId: destinationChainId,
       contract: spokePoolClient.spokePool,
-      method: process.env.ENABLE_V6 ? "requestSlowFill" : "requestV3SlowFill",
-      args: [process.env.ENABLE_V6 ? convertRelayDataParamsToBytes32(deposit) : deposit],
+      method: "requestSlowFill",
+      args: [convertRelayDataParamsToBytes32(deposit)],
       message: "Requested slow fill for deposit.",
       mrkdwn: formatSlowFillRequestMarkdown(),
     });
@@ -1018,28 +1056,19 @@ export class Relayer {
     );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-      ? ["fillV3Relay", "", [deposit, repaymentChainId]]
+      ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)]]
       : [
-          process.env.ENABLE_V6 ? "fillRelayWithUpdatedDeposit" : "fillV3RelayWithUpdatedDeposit",
+          "fillRelayWithUpdatedDeposit",
           " with updated parameters ",
-          process.env.ENABLE_V6
-            ? [
-                convertRelayDataParamsToBytes32(deposit),
-                repaymentChainId,
-                toBytes32(this.relayerAddress),
-                deposit.updatedOutputAmount,
-                toBytes32(deposit.updatedRecipient),
-                deposit.updatedMessage,
-                deposit.speedUpSignature,
-              ]
-            : [
-                deposit,
-                repaymentChainId,
-                deposit.updatedOutputAmount,
-                deposit.updatedRecipient,
-                deposit.updatedMessage,
-                deposit.speedUpSignature,
-              ],
+          [
+            convertRelayDataParamsToBytes32(deposit),
+            repaymentChainId,
+            toBytes32(this.relayerAddress),
+            deposit.updatedOutputAmount,
+            toBytes32(deposit.updatedRecipient),
+            deposit.updatedMessage,
+            deposit.speedUpSignature,
+          ],
         ];
 
     const message = `Filled v3 deposit ${messageModifier}🚀`;

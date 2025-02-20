@@ -1,6 +1,6 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, providers as ethersProviders, utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils } from "ethers";
 import { BaseError, Block, createPublicClient, Log as viemLog, webSocket } from "viem";
 import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -35,7 +35,6 @@ let logger: winston.Logger;
 let chainId: number;
 let chain: string;
 let stop = false;
-let oldestTime = 0;
 
 // This mapping is necessary because viem imposes extremely narrow type inference. @todo: Improve?
 const _chains = {
@@ -55,6 +54,11 @@ const _chains = {
   [CHAIN_IDs.ZORA]: chains.zora,
 } as const;
 
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
  * @param spokePool Ethers Constract instance.
@@ -69,7 +73,7 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
   );
 
   if (!stop) {
-    postEvents(toBlock, oldestTime, currentTime, events.flat());
+    postEvents(toBlock, currentTime, events.flat());
   }
 }
 
@@ -89,7 +93,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   const providers = urls.map((url) =>
     createPublicClient({
       chain: _chains[chainId],
-      transport: webSocket(url, { name: getOriginFromURL(url) }),
+      transport: webSocket(url),
+      name: getOriginFromURL(url),
     })
   );
 
@@ -97,7 +102,7 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   const newBlock = (block: Block) => {
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
     const events = eventMgr.tick(blockNumber);
-    postEvents(blockNumber, oldestTime, currentTime, events);
+    postEvents(blockNumber, currentTime, events);
   };
 
   const blockError = (error: Error, provider: string) => {
@@ -233,30 +238,20 @@ async function run(argv: string[]): Promise<void> {
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Scraping previous ${chain} events.`, opts });
 
-  // The SpokePoolClient reports on the timestamp of the oldest block searched. The relayer likely doesn't need this,
-  // but resolve it anyway for consistency with the main SpokePoolClient implementation.
-  const resolveOldestTime = async (spokePool: Contract, blockTag: ethersProviders.BlockTag) => {
-    oldestTime = (await spokePool.getCurrentTime({ blockTag })).toNumber();
-  };
-
   if (latestBlock.number > startBlock) {
     const events = [
       "FundsDeposited",
-      "V3FundsDeposited",
       "FilledRelay",
-      "FilledV3Relay",
+      "RequestedSpeedUpDeposit",
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
     const _spokePool = spokePool.connect(quorumProvider);
-    await Promise.all([resolveOldestTime(_spokePool, startBlock), scrapeEvents(_spokePool, events, opts)]);
+    await scrapeEvents(_spokePool, events, opts);
   }
 
-  // If no lookback was specified then default to the timestamp of the latest block.
-  oldestTime ??= latestBlock.timestamp;
-
   // Events to listen for.
-  const events = ["FundsDeposited", "V3FundsDeposited", "FilledRelay", "FilledV3Relay"];
+  const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });

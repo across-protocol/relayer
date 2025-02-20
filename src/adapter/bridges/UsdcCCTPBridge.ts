@@ -1,5 +1,5 @@
 import { Contract, Signer } from "ethers";
-import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../../common";
+import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -9,6 +9,7 @@ import {
   compareAddressesSimple,
   assert,
   toBN,
+  getCctpDomainForChainId,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
@@ -29,7 +30,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   }
 
   private get l2DestinationDomain(): number {
-    return chainIdsToCctpDomains[this.l2chainId];
+    return getCctpDomainForChainId(this.l2chainId);
   }
 
   private get l1UsdcTokenAddress(): string {

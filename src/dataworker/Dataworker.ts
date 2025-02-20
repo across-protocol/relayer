@@ -1323,19 +1323,17 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = process.env.ENABLE_V6 ? "executeSlowRelayLeaf" : "executeV3SlowRelayLeaf";
+    const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
-    const args = process.env.ENABLE_V6
-      ? [
-          {
-            ...leaf,
-            relayData: relayDataWithBytes32Params,
-          },
-          rootBundleId,
-          proof,
-        ]
-      : [leaf, rootBundleId, proof];
+    const args = [
+      {
+        ...leaf,
+        relayData: relayDataWithBytes32Params,
+      },
+      rootBundleId,
+      proof,
+    ];
 
     return { method, args };
   }
@@ -2223,27 +2221,10 @@ export class Dataworker {
             rootBundleId,
             leaf.leafId
           );
-          // Temporarily query old spoke pool events as well to ease migration:
-          const legacySpokePoolAbi = [
-            "event ExecutedRelayerRefundRoot(uint256 amountToReturn,uint256 indexed chainId,uint256[] refundAmounts,uint32 indexed rootBundleId,uint32 indexed leafId,address l2TokenAddress,address[] refundAddresses,address caller)",
-          ];
-          const prevSpoke = new Contract(client.spokePool.address, legacySpokePoolAbi, client.spokePool.signer);
-          const legacyEventFilter = prevSpoke.filters.ExecutedRelayerRefundRoot(
-            null, // amountToReturn
-            leaf.chainId,
-            null, // refundAmounts
-            rootBundleId,
-            leaf.leafId
-          );
-          const _duplicateEvents = await client.spokePool.queryFilter(
+          const duplicateEvents = await client.spokePool.queryFilter(
             eventFilter,
             client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
           );
-          const legacyDuplicateEvents = await prevSpoke.queryFilter(
-            legacyEventFilter,
-            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
-          );
-          const duplicateEvents = _duplicateEvents.concat(legacyDuplicateEvents);
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",
@@ -2337,7 +2318,7 @@ export class Dataworker {
           mrkdwn,
           // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
           // SpokePool.multicall() is fine.
-          unpermissioned: Number(chainId) === CHAIN_IDs.MAINNET,
+          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,

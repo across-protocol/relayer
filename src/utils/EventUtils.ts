@@ -52,6 +52,7 @@ type QuorumEvent = Log & { providers: string[] };
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
+  public readonly processedEvents: Set<string> = new Set();
 
   private blockNumber: number;
 
@@ -83,6 +84,28 @@ export class EventManager {
   }
 
   /**
+   * For a given Log, verify whether it has already been processed.
+   * @param event An Log instance to check.
+   * @returns True if the event has been processed, else false.
+   */
+  protected isEventProcessed(event: Log): boolean {
+    // Protect against re-sending this event if it later arrives from another provider.
+    const eventKey = this.hashEvent(event);
+    return this.processedEvents.has(eventKey);
+  }
+
+  /**
+   * For a given Log, mark it has having been been processed.
+   * @param event A Log instance to mark processed.
+   * @returns void
+   */
+  protected markEventProcessed(event: Log): void {
+    // Protect against re-sending this event if it later arrives from another provider.
+    const eventKey = this.hashEvent(event);
+    this.processedEvents.add(eventKey);
+  }
+
+  /**
    * For a given Log, identify its quorum based on the number of unique providers that have supplied it.
    * @param event A Log instance with appended provider information.
    * @returns The number of unique providers that reported this event.
@@ -103,6 +126,10 @@ export class EventManager {
    */
   add(event: Log, provider: string): void {
     assert(!event.removed);
+
+    if (this.isEventProcessed(event)) {
+      return;
+    }
 
     // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
     // already found in the `eventHashes` array, then at least one provider has already supplied it.
@@ -172,6 +199,7 @@ export class EventManager {
           return true; // No quorum; retain for next time.
         }
 
+        this.markEventProcessed(event);
         quorumEvents.push(event);
         return false;
       });

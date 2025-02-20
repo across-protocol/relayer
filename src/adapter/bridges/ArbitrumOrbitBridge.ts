@@ -21,11 +21,15 @@ import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
   [CHAIN_IDs.ALEPH_ZERO]: toWei(0.45),
+  // Testnet
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: toWei(0.013),
 };
 
 const maxFeePerGas: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toBN(20e9),
   [CHAIN_IDs.ALEPH_ZERO]: toBN(24e10),
+  // Testnet
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: toBN(20e9),
 };
 
 export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
