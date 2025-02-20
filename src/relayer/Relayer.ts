@@ -87,7 +87,7 @@ export class Relayer {
    * @description Utility method for tasks that should be rate-limited by the relayer maintenance interval.
    */
   protected maintenanceIntervalOpen(): boolean {
-    return getCurrentTime() < this.lastMaintenance + this.config.maintenanceInterval;
+    return getCurrentTime() > this.lastMaintenance + this.config.maintenanceInterval;
   }
 
   /**

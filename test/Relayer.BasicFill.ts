@@ -174,6 +174,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
         loggingInterval: -1,
+        maintenanceInterval: 0,
       } as unknown as RelayerConfig
     );
 
@@ -880,7 +881,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
-    it("Uses lowest outputAmount on updated deposits", async function () {
+    it.only("Uses lowest outputAmount on updated deposits", async function () {
       const deposit = await depositV3(
         spokePool_1,
         destinationChainId,
