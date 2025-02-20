@@ -106,6 +106,10 @@ export class BaseChainAdapter {
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
+  isSupportedL2Bridge(l1Token: string): boolean {
+    return isDefined(this.l2Bridges[l1Token]);
+  }
+
   filterSupportedTokens(l1Tokens: string[]): string[] {
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
@@ -175,11 +179,7 @@ export class BaseChainAdapter {
 
   async withdrawTokenFromL2(address: string, l2Token: string, amount: BigNumber, simMode: boolean): Promise<string[]> {
     const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
-    if (!isDefined(this.l2Bridges[l1TokenInfo.address])) {
-      this.logger.warn({
-        at: `${this.adapterName}#withdrawTokenFromL2`,
-        message: `No L2 bridge configured for ${l1TokenInfo.symbol} on chain ${this.chainId}, cannot withdraw from L2`,
-      });
+    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return [];
     }
     const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
@@ -196,11 +196,7 @@ export class BaseChainAdapter {
 
   async getL2WithdrawalAmount(lookbackPeriodSeconds: number, fromAddress: string, l2Token: string): Promise<BigNumber> {
     const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
-    if (!isDefined(this.l2Bridges[l1TokenInfo.address])) {
-      this.logger.warn({
-        at: `${this.adapterName}#withdrawTokenFromL2`,
-        message: `No L2 bridge configured for ${l1TokenInfo.symbol} on chain ${this.chainId}, cannot withdraw from L2`,
-      });
+    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return bnZero;
     }
     const searchFromBlock = await getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds);
