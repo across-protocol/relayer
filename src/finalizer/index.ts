@@ -538,7 +538,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
           spokePoolClients,
           config.chainsToFinalize.length === 0 ? availableChains : config.chainsToFinalize,
           config.addressesToMonitorForL1L2Finalizer,
-          config.sendingFinalizationsEnabled,
+          config.sendingTransactionsEnabled,
           config.finalizationStrategy
         );
       } else {
