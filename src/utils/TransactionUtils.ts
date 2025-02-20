@@ -33,7 +33,7 @@ export type Multicall2Call = {
   target: string;
 };
 
-const nonces: { [chainId: number]: number } = {};
+const nonceReset: { [chainId: number]: boolean } = {};
 
 const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
 const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
@@ -62,15 +62,16 @@ export async function runTransaction(
   args: unknown,
   value = bnZero,
   gasLimit: BigNumber | null = null,
+  nonce: number | null = null,
   retriesRemaining = 2
 ): Promise<TransactionResponse> {
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
 
-  // Suppress nonce tracking in test because all chainIds map to one single chain.
-  const nonce = process.env.RELAYER_TEST
-    ? undefined
-    : (nonces[chainId] ??= await provider.getTransactionCount(await contract.signer.getAddress()));
+  if (!nonceReset[chainId]) {
+    nonce = await provider.getTransactionCount(await contract.signer.getAddress());
+    nonceReset[chainId] = true;
+  }
 
   try {
     const priorityFeeScaler =
@@ -105,13 +106,10 @@ export async function runTransaction(
       (a, [k, v]) => (v ? ((a[k] = v), a) : a),
       {}
     );
-    const response = await contract[method](...(args as Array<unknown>), txConfig);
-    ++nonces[chainId];
-    return response;
+    return await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
-      delete nonces[chainId]; // Force refresh.
       retriesRemaining -= 1;
       logger.debug({
         at: "TxUtil#runTransaction",
@@ -120,7 +118,7 @@ export async function runTransaction(
         retriesRemaining,
       });
 
-      return await runTransaction(logger, contract, method, args, value, gasLimit, retriesRemaining);
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:

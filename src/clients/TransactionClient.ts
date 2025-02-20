@@ -40,6 +40,8 @@ const { isError } = typeguards;
 const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
 export class TransactionClient {
+  readonly nonces: { [chainId: number]: number } = {};
+
   // eslint-disable-next-line no-useless-constructor
   constructor(readonly logger: winston.Logger) {}
 
@@ -53,9 +55,9 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
-  protected async _submit(txn: AugmentedTransaction): Promise<TransactionResponse> {
+  protected _submit(txn: AugmentedTransaction, nonce?: number): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
-    return runTransaction(this.logger, contract, method, args, value, gasLimit);
+    return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
@@ -77,6 +79,8 @@ export class TransactionClient {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
       }
 
+      const nonce = this.nonces[chainId] ? this.nonces[chainId] + 1 : undefined;
+
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;
       if (gasLimitMultiplier > DEFAULT_GASLIMIT_MULTIPLIER) {
@@ -91,7 +95,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn);
+        response = await this._submit(txn, nonce);
       } catch (error) {
         this.logger.info({
           at: "TransactionClient#submit",
@@ -105,6 +109,7 @@ export class TransactionClient {
         return txnResponses;
       }
 
+      this.nonces[chainId] = response.nonce;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
