@@ -28,7 +28,6 @@ import {
   Profiler,
   getNativeTokenSymbol,
   getL1TokenInfo,
-  Signer,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
