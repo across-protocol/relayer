@@ -1133,7 +1133,7 @@ export class InventoryClient {
             return;
           }
           // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
-          const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE, targetPct, withdrawExcessPeriod } = tokenConfig;
+          const { targetOverageBuffer, targetPct, withdrawExcessPeriod } = tokenConfig;
 
           // Excess withdrawals are activated only for chains where the withdrawExcessPeriod variable is set.
           if (!isDefined(withdrawExcessPeriod)) {
@@ -1151,7 +1151,18 @@ export class InventoryClient {
 
           const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
-          const excessWithdrawThresholdPct = targetPct.mul(targetOverageBuffer).div(this.scalar);
+
+          // We apply a discount on the effective target % because the repayment chain choice
+          // algorithm should never allow the inventory to get above the target pct * target overage buffer.
+          // Withdraw excess when current allocation % is within a small % of the target percentage multiplied
+          // by the target overage buffer.
+          const discountToTargetOverageBuffer = toBNWei("0.95");
+          const targetPctMultiplier = targetOverageBuffer.mul(discountToTargetOverageBuffer).div(this.scalar);
+          assert(
+            targetPctMultiplier.gte(toBNWei("1")),
+            `Target overage buffer multiplied by discount must be >= 1, got ${targetPctMultiplier.toString()}`
+          );
+          const excessWithdrawThresholdPct = targetPct.mul(targetPctMultiplier).div(this.scalar);
 
           const l1TokenInfo = getL1TokenInfo(l2Token, Number(chainId));
           const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
