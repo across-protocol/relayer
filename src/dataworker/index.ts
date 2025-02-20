@@ -122,7 +122,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (config.disputerEnabled) {
         await dataworker.validatePendingRootBundle(
           spokePoolClients,
-          config.sendingDisputesEnabled,
+          config.sendingTransactionsEnabled,
           fromBlocks,
           // @dev Opportunistically publish bundle data to external storage layer since we're reconstructing it in this
           // process, if user has configured it so.
@@ -137,7 +137,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         proposedBundleData = await dataworker.proposeRootBundle(
           spokePoolClients,
           config.rootBundleExecutionThreshold,
-          config.sendingProposalsEnabled,
+          config.sendingTransactionsEnabled,
           fromBlocks
         );
       } else {
@@ -151,7 +151,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
             spokePoolClients,
             balanceAllocator,
-            config.sendingExecutionsEnabled,
+            config.sendingTransactionsEnabled,
             fromBlocks
           );
         }
@@ -161,13 +161,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           await dataworker.executeSlowRelayLeaves(
             spokePoolClients,
             balanceAllocator,
-            config.sendingExecutionsEnabled,
+            config.sendingTransactionsEnabled,
             fromBlocks
           );
           await dataworker.executeRelayerRefundLeaves(
             spokePoolClients,
             balanceAllocator,
-            config.sendingExecutionsEnabled,
+            config.sendingTransactionsEnabled,
             fromBlocks
           );
         }

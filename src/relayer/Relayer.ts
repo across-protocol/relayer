@@ -90,11 +90,11 @@ export class Relayer {
     const { inventoryClient, tokenClient } = this.clients;
     await tokenClient.update();
 
-    if (this.config.sendingRelaysEnabled) {
+    if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
       await tokenClient.setOriginTokenApprovals();
     }
 
-    if (this.config.sendingRebalancesEnabled) {
+    if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
       await inventoryClient.setL1TokenApprovals();
     }
 
@@ -671,7 +671,7 @@ export class Relayer {
       });
       // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
-      if (this.config.sendingRelaysEnabled) {
+      if (this.config.sendingTransactionsEnabled) {
         return;
       }
     }
