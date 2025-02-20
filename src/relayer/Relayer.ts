@@ -160,21 +160,20 @@ export class Relayer {
       return; // Nothing to do.
     }
 
-    const refreshTokenClient = async () => {
-      tokenClient.clearTokenData();
-      await tokenClient.update();
-    };
-
-    await refreshTokenClient();
+    tokenClient.clearTokenData();
+    await tokenClient.update();
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
-    // It's necessary to update token balances in case WETH was wrapped.
-    await refreshTokenClient();
-    await inventoryClient.unwrapWeth();
+    if (this.config.sendingRebalancesEnabled) {
+      // It's necessary to update token balances in case WETH was wrapped.
+      tokenClient.clearTokenData();
+      await tokenClient.update();
+      await inventoryClient.rebalanceInventoryIfNeeded();
+      await inventoryClient.withdrawExcessBalances();
+    }
 
-    await refreshTokenClient();
-    await inventoryClient.rebalanceInventoryIfNeeded();
-    await inventoryClient.withdrawExcessBalances();
+    // Unwrap WETH after filling deposits, but before rebalancing.
+    await inventoryClient.unwrapWeth();
 
     // Flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
     this.ignoredDeposits = {};
