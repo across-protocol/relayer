@@ -1117,6 +1117,10 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      // We do not currently count any outstanding L2->L1 pending withdrawal balance in the cumulative balance
+      // because it can take so long for these withdrawals to finalize (usually >1 day and up to 7 days). Unlike the
+      // L1->L2 pending deposit balances which will finalize in <1 hour in most cases. For allocation % calculations,
+      // these pending withdrawals are therefore ignored.
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
         return;
