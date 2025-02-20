@@ -326,6 +326,19 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
+    // making the same relayer fill a deposit multiple times.
+    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
+      this.logger.error({
+        at: "Relayer::filterDeposit",
+        message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
+        deposit,
+        invalidFills,
+        destinationChainId,
+      });
+      return ignoreDeposit();
+    }
+
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     );
@@ -363,19 +376,6 @@ export class Relayer {
     }
 
     if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
-      return false;
-    }
-
-    // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
-    // making the same relayer fill a deposit multiple times.
-    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
-      this.logger.error({
-        at: "Relayer::filterDeposit",
-        message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit,
-        invalidFills,
-        destinationChainId,
-      });
       return false;
     }
 
