@@ -85,7 +85,7 @@ export class AdapterManager {
               return undefined;
             }
             const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer);
+            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, l1Token);
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
@@ -174,7 +174,7 @@ export class AdapterManager {
     return txnReceipts;
   }
 
-  async getL2WithdrawalAmount(
+  async getL2PendingWithdrawalAmount(
     lookbackPeriodSeconds: number,
     chainId: number | string,
     fromAddress: string,
@@ -182,15 +182,15 @@ export class AdapterManager {
   ): Promise<BigNumber> {
     chainId = Number(chainId);
     const mark = this.profiler.start(
-      `getL2WithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`
+      `getL2PendingWithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`
     );
-    const withdrawalAmount = await this.adapters[chainId].getL2WithdrawalAmount(
+    const withdrawalAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
       lookbackPeriodSeconds,
       fromAddress,
       l2Token
     );
     mark.stop({
-      message: `getL2WithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`,
+      message: `getL2PendingWithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`,
     });
     return withdrawalAmount;
   }

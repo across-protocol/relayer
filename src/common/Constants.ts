@@ -391,7 +391,13 @@ export const CANONICAL_BRIDGE: {
 
 export const CANONICAL_L2_BRIDGE: {
   [chainId: number]: {
-    new (l2chainId: number, hubChainId: number, l2Signer: Signer): BaseL2BridgeAdapter;
+    new (
+      l2chainId: number,
+      hubChainId: number,
+      l2Signer: Signer,
+      l1Provider: Provider | Signer,
+      l1Token: string
+    ): BaseL2BridgeAdapter;
   };
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
@@ -509,7 +515,13 @@ export const CUSTOM_BRIDGE: {
 export const CUSTOM_L2_BRIDGE: {
   [chainId: number]: {
     [tokenAddress: string]: {
-      new (l2chainId: number, hubChainId: number, l2Signer: Signer): BaseL2BridgeAdapter;
+      new (
+        l2chainId: number,
+        hubChainId: number,
+        l2Signer: Signer,
+        l1Provider: Provider | Signer,
+        l1Token: string
+      ): BaseL2BridgeAdapter;
     };
   };
 } = {

@@ -194,17 +194,33 @@ export class BaseChainAdapter {
     return txnReceipts[this.chainId];
   }
 
-  async getL2WithdrawalAmount(lookbackPeriodSeconds: number, fromAddress: string, l2Token: string): Promise<BigNumber> {
+  async getL2PendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber> {
     const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return bnZero;
     }
-    const searchFromBlock = await getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds);
-    const eventSearchConfig: EventSearchConfig = {
-      fromBlock: searchFromBlock,
+    const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
+      getBlockForTimestamp(this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
+      getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds),
+    ]);
+    const l1EventSearchConfig: EventSearchConfig = {
+      fromBlock: l1SearchFromBlock,
+      toBlock: this.baseL1SearchConfig.toBlock,
+    };
+    const l2EventSearchConfig: EventSearchConfig = {
+      fromBlock: l2SearchFromBlock,
       toBlock: this.baseL2SearchConfig.toBlock,
     };
-    return await this.l2Bridges[l1TokenInfo.address].getL2WithdrawalAmount(eventSearchConfig, fromAddress, l2Token);
+    return await this.l2Bridges[l1TokenInfo.address].getL2PendingWithdrawalAmount(
+      l2EventSearchConfig,
+      l1EventSearchConfig,
+      fromAddress,
+      l2Token
+    );
   }
 
   async sendTokenToTargetChain(

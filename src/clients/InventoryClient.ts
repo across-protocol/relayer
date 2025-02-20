@@ -1193,13 +1193,13 @@ export class InventoryClient {
           );
 
           if (shouldWithdrawExcess) {
-            // Check to make sure the total volume withdrawn over the last maxL2WithdrawalPeriodSeconds does not
-            // exceed the maxL2WithdrawalVolume.
+            // Check to make sure the total pending volume withdrawn over the last
+            // maxL2WithdrawalPeriodSeconds does not exceed the maxL2WithdrawalVolume.
             const maxL2WithdrawalVolume = excessWithdrawThresholdPct
               .sub(targetPct)
               .mul(cumulativeBalance)
               .div(this.scalar);
-            const totalWithdrawalVolume = await this.adapterManager.getL2WithdrawalAmount(
+            const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
               withdrawExcessPeriod,
               chainId,
               this.relayer,
@@ -1208,7 +1208,7 @@ export class InventoryClient {
             // If this withdrawal would push the volume over the limit, allow it because the
             // a subsequent withdrawal would be blocked. In other words, the maximum withdrawal volume
             // would still behave as a rate-limit but with some overage allowed.
-            const withdrawalVolumeOverCap = totalWithdrawalVolume.gte(maxL2WithdrawalVolume);
+            const withdrawalVolumeOverCap = pendingWithdrawalAmount.gte(maxL2WithdrawalVolume);
             this.log(
               `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
                 withdrawalVolumeOverCap ? "OVER" : "UNDER"
@@ -1222,10 +1222,10 @@ export class InventoryClient {
                 targetPct: formatUnits(targetPct, 18),
                 maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
                 maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
-                totalWithdrawalVolume: formatter(totalWithdrawalVolume),
+                pendingWithdrawalAmount: formatter(pendingWithdrawalAmount),
               }
             );
-            if (totalWithdrawalVolume.gte(maxL2WithdrawalVolume)) {
+            if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
               return;
             }
             withdrawalsRequired[chainId] ??= [];
