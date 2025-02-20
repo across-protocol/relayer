@@ -1349,19 +1349,10 @@ export class InventoryClient {
   }
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
-    const l2Weth = this._getWethContract(chainId, _l2Weth);
+    const l2Signer = this.tokenClient.spokePoolClients[chainId].spokePool.signer;
+    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
     this.log("Unwrapping WETH", { amount: amount.toString() });
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
-  }
-
-  _getWethContract(chainId: number, _l2Weth: string): Contract {
-    const l2Signer = this._getL2Signer(chainId);
-    const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);
-    return l2Weth;
-  }
-
-  _getL2Signer(chainId: number): Signer {
-    return this.tokenClient.spokePoolClients[chainId].spokePool.signer;
   }
 
   async setL1TokenApprovals(): Promise<void> {
