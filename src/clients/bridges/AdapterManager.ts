@@ -9,12 +9,22 @@ import {
   CANONICAL_L2_BRIDGE,
 } from "../../common/Constants";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
+import {
+  BigNumber,
+  isDefined,
+  winston,
+  Signer,
+  getL2TokenAddresses,
+  TransactionResponse,
+  assert,
+  Profiler,
+} from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
+  private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -97,6 +107,10 @@ export class AdapterManager {
         DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
       );
     });
+    this.profiler = new Profiler({
+      logger: this.logger,
+      at: "AdapterManager",
+    });
     logger.debug({
       at: "AdapterManager#constructor",
       message: "Initialized AdapterManager",
@@ -167,7 +181,18 @@ export class AdapterManager {
     l2Token: string
   ): Promise<BigNumber> {
     chainId = Number(chainId);
-    return await this.adapters[chainId].getL2WithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
+    const mark = this.profiler.start(
+      `getL2WithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`
+    );
+    const withdrawalAmount = await this.adapters[chainId].getL2WithdrawalAmount(
+      lookbackPeriodSeconds,
+      fromAddress,
+      l2Token
+    );
+    mark.stop({
+      message: `getL2WithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`,
+    });
+    return withdrawalAmount;
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
