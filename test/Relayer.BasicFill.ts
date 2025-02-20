@@ -174,7 +174,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
         loggingInterval: -1,
-        maintenanceInterval: 0,
       } as unknown as RelayerConfig
     );
 

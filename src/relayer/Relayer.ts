@@ -84,13 +84,6 @@ export class Relayer {
   }
 
   /**
-   * @description Utility method for tasks that should be rate-limited by the relayer maintenance interval.
-   */
-  protected maintenanceIntervalOpen(): boolean {
-    return getCurrentTime() > this.lastMaintenance + this.config.maintenanceInterval;
-  }
-
-  /**
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
@@ -162,11 +155,11 @@ export class Relayer {
   async runMaintenance(): Promise<void> {
     const { inventoryClient, tokenClient } = this.clients;
 
-    if (!this.maintenanceIntervalOpen()) {
+    const currentTime = getCurrentTime();
+    if (currentTime < this.lastMaintenance + this.config.maintenanceInterval) {
       return; // Nothing to do.
     }
 
-    const currentTime = getCurrentTime();
     tokenClient.clearTokenData();
     await tokenClient.update();
     await inventoryClient.wrapL2EthIfAboveThreshold();
@@ -185,7 +178,6 @@ export class Relayer {
     this.ignoredDeposits = {};
 
     // May be less than maintenanceInterval if these blocking calls are slow.
-    // Only update `lastMaintenance` here.
     this.lastMaintenance = currentTime;
 
     this.logger.debug({
@@ -332,6 +324,19 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
+    // making the same relayer fill a deposit multiple times.
+    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
+      this.logger.error({
+        at: "Relayer::filterDeposit",
+        message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
+        deposit,
+        invalidFills,
+        destinationChainId,
+      });
+      return ignoreDeposit();
+    }
+
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     );
@@ -369,23 +374,6 @@ export class Relayer {
     }
 
     if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
-      return false;
-    }
-
-    // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
-    // making the same relayer fill a deposit multiple times.
-    if (
-      !acceptInvalidFills &&
-      this.maintenanceIntervalOpen() &&
-      invalidFills.some((fill) => fill.relayer === this.relayerAddress)
-    ) {
-      this.logger.error({
-        at: "Relayer::filterDeposit",
-        message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit,
-        invalidFills,
-        destinationChainId,
-      });
       return false;
     }
 
