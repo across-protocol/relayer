@@ -881,7 +881,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       ).to.not.be.undefined;
     });
 
-    it.only("Uses lowest outputAmount on updated deposits", async function () {
+    it("Uses lowest outputAmount on updated deposits", async function () {
       const deposit = await depositV3(
         spokePool_1,
         destinationChainId,
