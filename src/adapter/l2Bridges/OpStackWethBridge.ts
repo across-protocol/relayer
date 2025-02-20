@@ -91,7 +91,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     ]);
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, event) => {
       const matchingFinalizedEvent = withdrawalFinalizedEvents.find((e) =>
-        toBN(e.args._amount.toString()).eq(toBN(event.args._amount.toString()))
+        toBN(e.args.amount.toString()).eq(toBN(event.args.amount.toString()))
       );
       if (!isDefined(matchingFinalizedEvent)) {
         return totalAmount.add(event.args.amount);

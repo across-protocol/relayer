@@ -13,17 +13,17 @@
     "type": "event"
   },
   {
-    "anonymous":false,
-    "inputs":[
-      {"indexed":true,"internalType":"address","name":"localToken","type":"address"},
-      {"indexed":true,"internalType":"address","name":"remoteToken","type":"address"},
-      {"indexed":true,"internalType":"address","name":"from","type":"address"},
-      {"indexed":false,"internalType":"address","name":"to","type":"address"},
-      {"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},
-      {"indexed":false,"internalType":"bytes","name":"extraData","type":"bytes"}
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "localToken", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "remoteToken", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+      { "indexed": false, "internalType": "address", "name": "to", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "bytes", "name": "extraData", "type": "bytes" }
     ],
-    "name":"ERC20BridgeFinalized",
-    "type":"event"
+    "name": "ERC20BridgeFinalized",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -37,15 +37,15 @@
     "type": "event"
   },
   {
-    "anonymous":false,
-    "inputs":[
-      {"indexed":true,"internalType":"address","name":"from","type":"address"},
-      {"indexed":true,"internalType":"address","name":"to","type":"address"},
-      {"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},
-      {"indexed":false,"internalType":"bytes","name":"extraData","type":"bytes"}
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "from", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "bytes", "name": "extraData", "type": "bytes" }
     ],
-    "name":"ETHBridgeFinalized",
-    "type":"event"
+    "name": "ETHBridgeFinalized",
+    "type": "event"
   },
   {
     "inputs": [
