@@ -1117,71 +1117,113 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      const cumulativeBalance = this.getCumulativeBalance(l1Token);
+      if (cumulativeBalance.eq(bnZero)) {
+        return;
+      }
       await sdkUtils.forEachAsync(chainIds, async (chainId) => {
-        if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
+        if (chainId === this.hubPoolClient.chainId || !this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
 
-        const l2Token = this.getRepaymentTokenForL1Token(l1Token, chainId);
-        if (!isDefined(l2Token)) {
-          return;
-        }
-        const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
-        const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
-        if (!isDefined(tokenConfig)) {
-          return;
-        }
-        // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
-        const { excessThresholdBalance, excessTargetBalance, maxL2WithdrawalPeriodSeconds, maxL2WithdrawalVolume } =
-          tokenConfig;
+        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
+        await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
+          const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+          if (!isDefined(tokenConfig)) {
+            return;
+          }
+          // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
+          const { targetOverageBuffer = DEFAULT_TOKEN_OVERAGE, targetPct, withdrawExcessPeriod } = tokenConfig;
 
-        const l1TokenInfo = getL1TokenInfo(l2Token, Number(chainId));
-        const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
-        if (
-          isDefined(excessThresholdBalance) &&
-          isDefined(excessTargetBalance) &&
-          currentBalance.gte(excessThresholdBalance)
-        ) {
-          const desiredWithdrawalAmount = currentBalance.sub(excessTargetBalance);
-          if (isDefined(maxL2WithdrawalVolume)) {
+          // Excess withdrawals are activated only for chains where the withdrawExcessPeriod variable is set.
+          if (!isDefined(withdrawExcessPeriod)) {
+            return;
+          }
+
+          const adapter = this.adapterManager.adapters[chainId];
+          if (!adapter.isSupportedL2Bridge(l1Token)) {
+            this.logger.warn({
+              at: "InventoryClient#withdrawExcessBalances",
+              message: `No L2 bridge configured for ${getNetworkName(chainId)} for token ${l1Token}`,
+            });
+            return;
+          }
+
+          const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          const excessWithdrawThresholdPct = targetPct.mul(targetOverageBuffer).div(this.scalar);
+
+          const l1TokenInfo = getL1TokenInfo(l2Token, Number(chainId));
+          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
+          const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
+          const withdrawPct = currentAllocPct.sub(targetPct);
+          const desiredWithdrawalAmount = cumulativeBalance.mul(withdrawPct).div(this.scalar);
+
+          this.log(
+            `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
+              shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
+            }`,
+            {
+              l1Token,
+              l2Token,
+              currentBalance: formatter(currentBalance),
+              cumulativeBalance: formatter(cumulativeBalance),
+              currentAllocPct: formatUnits(currentAllocPct, 18),
+              excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
+              targetPct: formatUnits(targetPct, 18),
+              withdrawalParams: shouldWithdrawExcess
+                ? {
+                    withdrawPct: formatUnits(withdrawPct, 18),
+                    desiredWithdrawalAmount: formatter(desiredWithdrawalAmount),
+                  }
+                : undefined,
+            }
+          );
+
+          if (shouldWithdrawExcess) {
+            // Check to make sure the total volume withdrawn over the last maxL2WithdrawalPeriodSeconds does not
+            // exceed the maxL2WithdrawalVolume.
+            const maxL2WithdrawalVolume = excessWithdrawThresholdPct
+              .sub(targetPct)
+              .mul(cumulativeBalance)
+              .div(this.scalar);
             const totalWithdrawalVolume = await this.adapterManager.getL2WithdrawalAmount(
-              maxL2WithdrawalPeriodSeconds,
+              withdrawExcessPeriod,
               chainId,
               this.relayer,
               l2Token
             );
-            const totalWithdrawalVolumePostWithdrawal = totalWithdrawalVolume.add(desiredWithdrawalAmount);
-            if (totalWithdrawalVolumePostWithdrawal.gte(maxL2WithdrawalVolume)) {
-              this.log(
-                `Withdrawal of ${formatter(
-                  desiredWithdrawalAmount.toString()
-                )} would push total volume for the last ${maxL2WithdrawalPeriodSeconds} seconds over the limit of ${formatter(
-                  maxL2WithdrawalVolume.toString()
-                )} for ${l1TokenInfo.symbol} on ${getNetworkName(chainId)}.`,
-                {
-                  currentBalance: formatter(currentBalance.toString()),
-                  excessThresholdBalance: formatter(excessThresholdBalance.toString()),
-                  excessTargetBalance: formatter(excessTargetBalance.toString()),
-                  desiredWithdrawalAmount: formatter(desiredWithdrawalAmount.toString()),
-                  totalWithdrawalVolume: formatter(totalWithdrawalVolume.toString()),
-                  maxTransferAmount: formatter(maxL2WithdrawalVolume.sub(totalWithdrawalVolume).toString()),
-                }
-              );
+            // If this withdrawal would push the volume over the limit, allow it because the
+            // a subsequent withdrawal would be blocked. In other words, the maximum withdrawal volume
+            // would still behave as a rate-limit but with some overage allowed.
+            const withdrawalVolumeOverCap = totalWithdrawalVolume.gte(maxL2WithdrawalVolume);
+            this.log(
+              `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
+                withdrawalVolumeOverCap ? "OVER" : "UNDER"
+              } the limit of ${formatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
+                chainId
+              )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${formatter(
+                desiredWithdrawalAmount
+              )}.`,
+              {
+                excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
+                targetPct: formatUnits(targetPct, 18),
+                maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
+                maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
+                totalWithdrawalVolume: formatter(totalWithdrawalVolume),
+              }
+            );
+            if (totalWithdrawalVolume.gte(maxL2WithdrawalVolume)) {
               return;
             }
-
-            // For now, we do not support partial desired withdrawals where the desired amount would push the
-            // total withdrawal volume over the limit. This is because in practice this could lead to withdrawing
-            // very small amounts over the bridge, unless we set a minimum withdrawal amount. This means that we'll
-            // delay occasionally some withdrawals until the total withdrawal volume goes down, but this should be
-            // relatively infrequent and we can change this logic in the future.
+            withdrawalsRequired[chainId] ??= [];
+            withdrawalsRequired[chainId].push({
+              l2Token,
+              amountToWithdraw: desiredWithdrawalAmount,
+            });
           }
-          withdrawalsRequired[chainId] ??= [];
-          withdrawalsRequired[chainId].push({
-            l2Token,
-            amountToWithdraw: currentBalance.sub(excessTargetBalance),
-          });
-        }
+        });
       });
     });
 

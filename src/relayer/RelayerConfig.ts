@@ -177,19 +177,13 @@ export class RelayerConfig extends CommonConfig {
           unwrapWethThreshold,
           unwrapWethTarget,
           targetOverageBuffer,
-          excessThresholdBalance,
-          excessTargetBalance,
-          maxL2WithdrawalPeriodSeconds,
-          maxL2WithdrawalVolume,
+          withdrawExcessPeriod,
         } = rawTokenConfig;
         const tokenConfig: TokenBalanceConfig = {
           targetPct,
           thresholdPct,
           targetOverageBuffer,
-          excessTargetBalance,
-          excessThresholdBalance,
-          maxL2WithdrawalPeriodSeconds,
-          maxL2WithdrawalVolume,
+          withdrawExcessPeriod,
         };
 
         assert(
@@ -203,21 +197,8 @@ export class RelayerConfig extends CommonConfig {
         tokenConfig.targetPct = toBNWei(targetPct).div(100);
         tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
 
-        if (isDefined(excessThresholdBalance) || isDefined(excessTargetBalance)) {
-          assert(
-            isDefined(excessThresholdBalance) && isDefined(excessTargetBalance),
-            `Both excessThresholdBalance and excessTargetBalance must be defined for ${l1Token} on ${chainId}`
-          );
-          assert(
-            toBN(excessThresholdBalance).gt(toBN(excessTargetBalance)),
-            `excessThresholdBalance must be > excessTargetBalance for ${l1Token} on ${chainId}`
-          );
-          tokenConfig.excessThresholdBalance = toBN(excessThresholdBalance);
-          tokenConfig.excessTargetBalance = toBN(excessTargetBalance);
-        }
-        if (isDefined(maxL2WithdrawalVolume)) {
-          tokenConfig.maxL2WithdrawalVolume = toBN(maxL2WithdrawalVolume);
-          tokenConfig.maxL2WithdrawalPeriodSeconds = maxL2WithdrawalPeriodSeconds ?? 7 * 24 * 60 * 60; // 1 week.
+        if (isDefined(withdrawExcessPeriod)) {
+          tokenConfig.withdrawExcessPeriod = withdrawExcessPeriod;
         }
 
         // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
