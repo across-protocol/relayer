@@ -61,7 +61,7 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
 
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
-const VIEM_OP_STACK_CHAINS = {
+const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
   [CHAIN_IDs.OPTIMISM]: viemChains.optimism,
   [CHAIN_IDs.BASE]: viemChains.base,
   [CHAIN_IDs.REDSTONE]: viemChains.redstone,
@@ -70,9 +70,8 @@ const VIEM_OP_STACK_CHAINS = {
   [CHAIN_IDs.MODE]: viemChains.mode,
   [CHAIN_IDs.WORLD_CHAIN]: viemChains.worldchain,
   [CHAIN_IDs.SONEIUM]: viemChains.soneium,
-  // // @dev The following chians don't have correct a correct Viem chain object.
-  // [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
-  // [CHAIN_IDs.INK]: viemChains.ink,
+  [CHAIN_IDs.UNICHAIN]: viemChains.unichain,
+  [CHAIN_IDs.INK]: viemChains.ink,
   // // @dev The following chains have non-standard interfaces or processes for withdrawing from L2 to L1
   // [CHAIN_IDs.BLAST]: viemChains.blast,
 };
@@ -317,6 +316,29 @@ async function viem_multicallOptimismFinalizations(
     OPStackPortalL1,
     signer
   );
+  const sourceId = VIEM_OP_STACK_CHAINS[chainId].sourceId;
+
+  // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
+  // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
+  const viemOpStackTargetChainParam = {
+    contracts: {
+      portal: {
+        [sourceId]: {
+          address: VIEM_OP_STACK_CHAINS[chainId].contracts.portal[sourceId].address,
+        },
+      },
+      l2OutputOracle: {
+        [sourceId]: {
+          address: VIEM_OP_STACK_CHAINS[chainId].contracts?.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress,
+        },
+      },
+      disputeGameFactory: {
+        [sourceId]: {
+          address: VIEM_OP_STACK_CHAINS[chainId].contracts?.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress,
+        },
+      },
+    },
+  };
 
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
@@ -331,7 +353,7 @@ async function viem_multicallOptimismFinalizations(
     const withdrawalStatus: GetWithdrawalStatusReturnType = await publicClientL1.getWithdrawalStatus({
       receipt,
       chain: undefined,
-      targetChain: VIEM_OP_STACK_CHAINS[chainId],
+      targetChain: viemOpStackTargetChainParam,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
@@ -339,7 +361,7 @@ async function viem_multicallOptimismFinalizations(
       const l2Output = await publicClientL1.getL2Output({
         chain: undefined,
         l2BlockNumber: BigInt(event.blockNumber),
-        targetChain: VIEM_OP_STACK_CHAINS[chainId],
+        targetChain: viemOpStackTargetChainParam,
       });
       const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
         chain: undefined,
@@ -364,7 +386,7 @@ async function viem_multicallOptimismFinalizations(
       const { seconds } = await publicClientL1.getTimeToFinalize({
         chain: undefined,
         withdrawalHash: withdrawal.withdrawalHash,
-        targetChain: VIEM_OP_STACK_CHAINS[chainId],
+        targetChain: viemOpStackTargetChainParam,
       });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
