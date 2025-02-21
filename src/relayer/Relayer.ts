@@ -169,6 +169,7 @@ export class Relayer {
       tokenClient.clearTokenData();
       await tokenClient.update();
       await inventoryClient.rebalanceInventoryIfNeeded();
+      await inventoryClient.withdrawExcessBalances();
     }
 
     // Unwrap WETH after filling deposits, but before rebalancing.
