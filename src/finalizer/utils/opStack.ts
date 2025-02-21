@@ -346,6 +346,8 @@ async function viem_multicallOptimismFinalizations(
     const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
 
+    // Ideally we can skip this eth_getTransactionReceipt query but the Receipt type is very convenient
+    // for getting the Withdrawal object from the Viem SDK.
     const receipt = await publicClientL2.getTransactionReceipt({
       hash: event.transactionHash as `0x${string}`,
     });
