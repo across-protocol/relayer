@@ -216,7 +216,7 @@ export async function opStackFinalizer(
   let crossChainTransfers: CrossChainMessage[];
 
   // We are in a hybrid state where ideally we want to use the Viem OpStack SDK for as many chains as possible but
-  // not all chains are easily supported in Viem, so certain chains we'll continue to use the Ethers-based 
+  // not all chains are easily supported in Viem, so certain chains we'll continue to use the Ethers-based
   // Optimism SDK.
   if (VIEM_OP_STACK_CHAINS[chainId]) {
     const viemTxns = await viem_multicallOptimismFinalizations(
@@ -283,7 +283,7 @@ async function viem_multicallOptimismFinalizations(
   const publicClientL1 = viem
     .createPublicClient({
       batch: {
-        multicall: true, 
+        multicall: true,
       },
       chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
       transport: createViemCustomTransportFromEthersProvider(hubChainId),
@@ -295,7 +295,7 @@ async function viem_multicallOptimismFinalizations(
   const publicClientL2 = viem
     .createPublicClient({
       batch: {
-        multicall: true, 
+        multicall: true,
       },
       chain: VIEM_OP_STACK_CHAINS[chainId],
       transport: createViemCustomTransportFromEthersProvider(chainId),
