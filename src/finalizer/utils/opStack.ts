@@ -362,7 +362,7 @@ async function viem_multicallOptimismFinalizations(
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
       const l2Output = await publicClientL1.getL2Output({
-        chain: undefined,
+        chain: VIEM_OP_STACK_CHAINS[hubChainId],
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
