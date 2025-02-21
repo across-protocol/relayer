@@ -10,7 +10,6 @@ import {
   GetWithdrawalStatusReturnType,
   PublicActionsL1,
   PublicActionsL2,
-  getPortalVersion,
 } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
