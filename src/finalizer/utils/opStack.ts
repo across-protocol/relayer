@@ -355,7 +355,7 @@ async function viem_multicallOptimismFinalizations(
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
     const withdrawalStatus: GetWithdrawalStatusReturnType = await publicClientL1.getWithdrawalStatus({
       receipt,
-      chain: undefined,
+      chain: VIEM_OP_STACK_CHAINS[hubChainId],
       targetChain: viemOpStackTargetChainParam,
       logIndex: logIndexesForMessage[i],
     });
@@ -367,7 +367,7 @@ async function viem_multicallOptimismFinalizations(
         targetChain: viemOpStackTargetChainParam,
       });
       const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
-        chain: undefined,
+        chain: VIEM_OP_STACK_CHAINS[chainId],
         withdrawal,
         output: l2Output,
       });
@@ -387,7 +387,7 @@ async function viem_multicallOptimismFinalizations(
       });
     } else if (withdrawalStatus === "waiting-to-finalize") {
       const { seconds } = await publicClientL1.getTimeToFinalize({
-        chain: undefined,
+        chain: VIEM_OP_STACK_CHAINS[hubChainId],
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain: viemOpStackTargetChainParam,
       });
