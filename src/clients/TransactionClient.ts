@@ -55,7 +55,7 @@ export class TransactionClient {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
-  protected _submit(txn: AugmentedTransaction, nonce?: number): Promise<TransactionResponse> {
+  protected _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
@@ -97,6 +97,7 @@ export class TransactionClient {
       try {
         response = await this._submit(txn, nonce);
       } catch (error) {
+        delete this.nonces[chainId];
         this.logger.info({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
