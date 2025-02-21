@@ -10,6 +10,7 @@ import {
   GetWithdrawalStatusReturnType,
   PublicActionsL1,
   PublicActionsL2,
+  getPortalVersion,
 } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
@@ -278,7 +279,7 @@ async function viem_multicallOptimismFinalizations(
     callData: [],
     withdrawals: [],
   };
-  const hubChainId = chainIsProd(chainId) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SEPOLIA;
+  const hubChainId = hubPoolClient.chainId;
   const publicClientL1 = viem
     .createPublicClient({
       batch: {
@@ -305,7 +306,7 @@ async function viem_multicallOptimismFinalizations(
   const logIndexesForMessage = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
   for (const event of events) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
+    uniqueTokenhashes[event.transactionHash] ??= 0;
     const logIndex = uniqueTokenhashes[event.transactionHash];
     logIndexesForMessage.push(logIndex);
     uniqueTokenhashes[event.transactionHash] += 1;
@@ -320,22 +321,25 @@ async function viem_multicallOptimismFinalizations(
 
   // The following viem SDK functions all require the Viem Chain object to either have a portal + disputeGameFactory
   // address defined, or for legacy OpStack chains, the l2OutputOracle address defined.
-  const viemOpStackTargetChainParam = {
+  const { contracts } = VIEM_OP_STACK_CHAINS[chainId];
+  const viemOpStackTargetChainParam: {
+    contracts: {
+      portal: { [sourceId: number]: { address: `0x${string}` } };
+      l2OutputOracle: { [sourceId: number]: { address: `0x${string}` } };
+      disputeGameFactory: { [sourceId: number]: { address: `0x${string}` } };
+    };
+  } = {
     contracts: {
       portal: {
         [sourceId]: {
-          address: VIEM_OP_STACK_CHAINS[chainId].contracts.portal[sourceId].address,
+          address: contracts.portal[sourceId].address,
         },
       },
       l2OutputOracle: {
-        [sourceId]: {
-          address: VIEM_OP_STACK_CHAINS[chainId].contracts?.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress,
-        },
+        [sourceId]: { address: contracts.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress },
       },
       disputeGameFactory: {
-        [sourceId]: {
-          address: VIEM_OP_STACK_CHAINS[chainId].contracts?.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress,
-        },
+        [sourceId]: { address: contracts.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress },
       },
     },
   };
@@ -392,16 +396,18 @@ async function viem_multicallOptimismFinalizations(
         at: `${getNetworkName(chainId)}Finalizer`,
         message: `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
           l1TokenInfo.symbol
-        } is in challenge period for ${seconds / 60 / 60} hours`,
+        } is in challenge period for ${Math.floor(seconds / 3600)} hours`,
       });
     } else if (withdrawalStatus === "ready-to-finalize") {
       // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
       // requires that the msg.sender of the  finalizeWithdrawalTransaction is equal to the address that
-      // submitted the proof. We try-catch both calls to handle this.
+      // submitted the proof.
       // See this comment in OptimismPortal2 for more context on why the new portal requires checking the
       // proof submitter address: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol#L132
       let callData: ethers.PopulatedTransaction;
-      try {
+      const portalVersion: string = await crossChainMessenger.version();
+      const majorVersion = Number(portalVersion.split(".")[0]);
+      if (majorVersion > 3) {
         // Calling OptimismPortal2: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal2.sol
         const numProofSubmitters = await crossChainMessenger.numProofSubmitters(withdrawal.withdrawalHash);
         const proofSubmitter = await crossChainMessenger.proofSubmitters(
@@ -412,7 +418,7 @@ async function viem_multicallOptimismFinalizations(
           withdrawal,
           proofSubmitter
         );
-      } catch (e) {
+      } else {
         // Calling OptimismPortal: https://github.com/ethereum-optimism/optimism/blob/d6bda0339005d98c992c749c137938d515755029/packages/contracts-bedrock/src/L1/OptimismPortal.sol
         callData = await crossChainMessenger.populateTransaction.finalizeWithdrawalTransaction(withdrawal);
       }
