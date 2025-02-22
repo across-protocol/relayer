@@ -4,12 +4,12 @@ import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
-  publicActionsL1,
-  publicActionsL2,
   getWithdrawals,
   GetWithdrawalStatusReturnType,
-  PublicActionsL1,
-  PublicActionsL2,
+  buildProveWithdrawal,
+  getWithdrawalStatus,
+  getL2Output,
+  getTimeToFinalize,
 } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { TokensBridged } from "../../interfaces";
@@ -214,9 +214,6 @@ export async function opStackFinalizer(
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
 
-  // We are in a hybrid state where ideally we want to use the Viem OpStack SDK for as many chains as possible but
-  // not all chains are easily supported in Viem, so certain chains we'll continue to use the Ethers-based
-  // Optimism SDK.
   if (VIEM_OP_STACK_CHAINS[chainId]) {
     const viemTxns = await viem_multicallOptimismFinalizations(
       chainId,
@@ -279,28 +276,20 @@ async function viem_multicallOptimismFinalizations(
     withdrawals: [],
   };
   const hubChainId = hubPoolClient.chainId;
-  const publicClientL1 = viem
-    .createPublicClient({
-      batch: {
-        multicall: true,
-      },
-      chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
-      transport: createViemCustomTransportFromEthersProvider(hubChainId),
-    })
-    // TODO: can't figure out how to get this .extend() typecast to work, despite this code being in
-    // the viem.opStack tutorials
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .extend(publicActionsL1() as any) as unknown as viem.PublicClient & PublicActionsL1;
-  const publicClientL2 = viem
-    .createPublicClient({
-      batch: {
-        multicall: true,
-      },
-      chain: VIEM_OP_STACK_CHAINS[chainId],
-      transport: createViemCustomTransportFromEthersProvider(chainId),
-    })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .extend(publicActionsL2() as any) as unknown as viem.PublicClient & PublicActionsL2;
+  const publicClientL1 = viem.createPublicClient({
+    batch: {
+      multicall: true,
+    },
+    chain: chainIsProd(chainId) ? viemChains.mainnet : viemChains.sepolia,
+    transport: createViemCustomTransportFromEthersProvider(hubChainId),
+  });
+  const publicClientL2 = viem.createPublicClient({
+    batch: {
+      multicall: true,
+    },
+    chain: VIEM_OP_STACK_CHAINS[chainId],
+    transport: createViemCustomTransportFromEthersProvider(chainId),
+  });
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
@@ -353,24 +342,27 @@ async function viem_multicallOptimismFinalizations(
       hash: event.transactionHash as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus: GetWithdrawalStatusReturnType = await publicClientL1.getWithdrawalStatus({
+    const withdrawalStatus: GetWithdrawalStatusReturnType = await getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
-      chain: VIEM_OP_STACK_CHAINS[hubChainId],
+      chain: publicClientL1.chain as viem.Chain,
       targetChain: viemOpStackTargetChainParam,
       logIndex: logIndexesForMessage[i],
     });
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
-      const l2Output = await publicClientL1.getL2Output({
-        chain: VIEM_OP_STACK_CHAINS[hubChainId],
+      const l2Output = await getL2Output(publicClientL1 as viem.Client, {
+        chain: publicClientL1.chain as viem.Chain,
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
-      const { l2OutputIndex, outputRootProof, withdrawalProof } = await publicClientL2.buildProveWithdrawal({
-        chain: VIEM_OP_STACK_CHAINS[chainId],
-        withdrawal,
-        output: l2Output,
-      });
+      const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
+        publicClientL2 as viem.Client,
+        {
+          chain: VIEM_OP_STACK_CHAINS[chainId],
+          withdrawal,
+          output: l2Output,
+        }
+      );
       const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
       const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
       viemTxns.callData.push({
@@ -386,7 +378,7 @@ async function viem_multicallOptimismFinalizations(
         destinationChainId: hubPoolClient.chainId,
       });
     } else if (withdrawalStatus === "waiting-to-finalize") {
-      const { seconds } = await publicClientL1.getTimeToFinalize({
+      const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
         chain: VIEM_OP_STACK_CHAINS[hubChainId],
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain: viemOpStackTargetChainParam,
