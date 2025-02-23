@@ -36,6 +36,7 @@ export async function createDataworker(
 
   const dataworker = new Dataworker(
     _logger,
+    config,
     clients,
     clients.configStoreClient.getChainIdIndicesForBlock(),
     config.maxRelayerRepaymentLeafSizeOverride,
