@@ -263,7 +263,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (ignoredAddresses.has(getAddress(depositor)) || ignoredAddresses.has(getAddress(recipient))) {
+    if (ignoredAddresses?.has(getAddress(depositor)) || ignoredAddresses?.has(getAddress(recipient))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
