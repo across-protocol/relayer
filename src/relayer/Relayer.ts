@@ -337,9 +337,10 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
+		console.log(`xxx checking minDepositConfirmations for ${originChainId} (deposit ${JSON.stringify(deposit, null, 2)}.`);
+    const { minConfirmations } = minDepositConfirmations[originChainId]?.find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
-    );
+    ) ?? { minConfirmations: 1000 };
     const { latestBlockSearched } = spokePoolClients[originChainId];
     if (latestBlockSearched - blockNumber < minConfirmations) {
       this.logger.debug({
