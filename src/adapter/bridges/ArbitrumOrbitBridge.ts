@@ -17,6 +17,7 @@ import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY 
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
+import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
@@ -53,7 +54,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const { l1: l1Address, l2: l2Address } =
       CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].erc20Gateway.abi;
+    const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
 
