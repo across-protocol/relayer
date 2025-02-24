@@ -90,6 +90,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (loop && runIdentifier && redis) {
         if (activeRelayer !== runIdentifier) {
           if (!activeRelayerUpdated) {
+            logger.debug({
+              at: "Relayer#run",
+              message: `Taking over from ${botIdentifier} instance ${activeRelayer}.`,
+            });
             await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
             activeRelayerUpdated = true;
           } else {
