@@ -338,9 +338,15 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    const { minConfirmations = 100_000 } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
+    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
+    if (deposit.fillDeadline <= currentTime) {
+      return ignoreDeposit();
+    }
+
+    const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
-    );
+    ) ?? { minConfirmations: 100_000 };
     const { latestBlockSearched } = spokePoolClients[originChainId];
     if (latestBlockSearched - blockNumber < minConfirmations) {
       this.logger.debug({
@@ -365,12 +371,6 @@ export class Relayer {
         buffer: this.hubPoolBlockBuffer,
         transactionHash: deposit.transactionHash,
       });
-      return false;
-    }
-
-    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
-    if (deposit.fillDeadline <= currentTime) {
       return false;
     }
 
