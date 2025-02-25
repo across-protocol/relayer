@@ -54,6 +54,8 @@ export async function getMultisender(chainId: number, baseSigner: Signer): Promi
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
+const DEFAULT_RETRIES = 2;
+
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
 export async function runTransaction(
@@ -64,7 +66,7 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2,
+  retriesRemaining = DEFAULT_RETRIES,
   bumpGas = false
 ): Promise<TransactionResponse> {
   const { provider } = contract;
@@ -90,11 +92,12 @@ export async function runTransaction(
       await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
 
-    // Bump the priority fee by 20% to try to successfully replace a pending transaction.
+    // Bump the priority fee incrementally on each retry to try to successfully replace a pending transaction.
     // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
     if (bumpGas && gas.maxPriorityFeePerGas) {
+      const priorityScaler = 1.1 + (1 + DEFAULT_RETRIES - Math.min(retriesRemaining, DEFAULT_RETRIES)) / 10;
       const oldPriorityFee = gas.maxPriorityFeePerGas;
-      const newPriorityFee = oldPriorityFee.mul(toBNWei("1.2").div(fixedPointAdjustment));
+      const newPriorityFee = oldPriorityFee.mul(toBNWei(priorityScaler.toString()).div(fixedPointAdjustment));
       gas.maxFeePerGas = gas.maxFeePerGas.add(newPriorityFee).sub(oldPriorityFee);
       gas.maxPriorityFeePerGas = newPriorityFee;
     }
