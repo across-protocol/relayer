@@ -11,7 +11,7 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants@^3.1.34", "@across-protocol/constants@^3.1.35":
+"@across-protocol/constants@^3.1.35":
   version "3.1.35"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.35.tgz#80ee8e569bc5c1fc94b5087d357d9612fd782151"
   integrity sha512-2Fj9mqBEVQu4Bsq6o7helUkhEjpce+uqni0pTV51y1QOEQdgAJU5U5BNQFXUMUDMQRaM3DqB4ys89GVJ4TuA/w==
@@ -59,13 +59,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@^4.1.17":
-  version "4.1.17"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.17.tgz#083738f338f1d88f8643a3ed46c0e437ed3ab644"
-  integrity sha512-uBTV53Zt8wZ3MxJE59F2JMgHMhnX7IfQ5e9MZFupoeGPm6OmqJlA9tcn9w/nA619nm736FpMO4sgDHelhKdsbw==
+"@across-protocol/sdk@^4.1.18":
+  version "4.1.18"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.18.tgz#ccaa05cf2e0fe67c18bef8373ce290dcd5ae5d6e"
+  integrity sha512-CLbcreT0kQqRv4ZFVidUJayV45tp+NsskyBSimJ8X7vAQKCsD/xPLqoJGyAVQFDyj1yhLN2Wc7iumTNF3WKrjA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.34"
+    "@across-protocol/constants" "^3.1.38"
     "@across-protocol/contracts" "4.0.2"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
