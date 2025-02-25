@@ -21,6 +21,12 @@ import {
   ZKStackBridge,
   ZKStackWethBridge,
 } from "../adapter/bridges";
+import {
+  BaseL2BridgeAdapter,
+  OpStackWethBridge as L2OpStackWethBridge,
+  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
+  OpStackBridge as L2OpStackBridge,
+} from "../adapter/l2Bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
@@ -383,6 +389,23 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
 
+export const CANONICAL_L2_BRIDGE: {
+  [chainId: number]: {
+    new (
+      l2chainId: number,
+      hubChainId: number,
+      l2Signer: Signer,
+      l1Provider: Provider | Signer,
+      l1Token: string
+    ): BaseL2BridgeAdapter;
+  };
+} = {
+  [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
+  [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
+  [CHAIN_IDs.ZORA]: L2OpStackBridge,
+};
+
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
 // In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
 export const CUSTOM_BRIDGE: {
@@ -486,6 +509,30 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+  },
+};
+
+export const CUSTOM_L2_BRIDGE: {
+  [chainId: number]: {
+    [tokenAddress: string]: {
+      new (
+        l2chainId: number,
+        hubChainId: number,
+        l2Signer: Signer,
+        l1Provider: Provider | Signer,
+        l1Token: string
+      ): BaseL2BridgeAdapter;
+    };
+  };
+} = {
+  [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
+  },
+  [CHAIN_IDs.REDSTONE]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
+  },
+  [CHAIN_IDs.ZORA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
 };
 
