@@ -121,7 +121,7 @@ export async function opStackFinalizer(
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
-    at: `Finalizer#${networkName}Finalizer`,
+    at: `${networkName}Finalizer`,
     message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
     latestBlockToProve,
   });
@@ -135,7 +135,7 @@ export async function opStackFinalizer(
     : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
     logger.warn({
-      at: "opStackFinalizer",
+      at: `${networkName}Finalizer`,
       message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
     });
   } else if (withdrawalToAddresses.length > 0) {
@@ -185,7 +185,7 @@ export async function opStackFinalizer(
         };
       } catch (err) {
         logger.debug({
-          at: "opStackFinalizer",
+          at: `${networkName}Finalizer`,
           message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
           event: event,
         });
@@ -238,8 +238,8 @@ export async function opStackFinalizer(
     // Next finalize withdrawals that have passed challenge period.
     // Skip events that are likely not past the seven day challenge period.
     logger.debug({
-      at: "Finalizer",
-      message: `Earliest TokensBridged block to attempt to finalize for ${networkName}`,
+      at: `${networkName}Finalizer`,
+      message: "Earliest TokensBridged block to attempt to finalize",
       earliestBlockToFinalize: latestBlockToProve,
     });
 
@@ -387,7 +387,7 @@ async function viem_multicallOptimismFinalizations(
         at: `${getNetworkName(chainId)}Finalizer`,
         message: `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
           l1TokenInfo.symbol
-        } is in challenge period for ${Math.floor(seconds / 3600)} hours`,
+        } is in challenge period for ${(seconds / 3600).toFixed(2)} hours`,
       });
     } else if (withdrawalStatus === "ready-to-finalize") {
       // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
@@ -428,7 +428,7 @@ async function viem_multicallOptimismFinalizations(
   });
   logger.debug({
     at: `${getNetworkName(chainId)}Finalizer`,
-    message: `${getNetworkName(chainId)} message statuses`,
+    message: "Message statuses",
     statusesGrouped: countBy(withdrawalStatuses),
   });
   return viemTxns;
@@ -519,7 +519,7 @@ async function getOptimismFinalizableMessages(
   const messageStatuses = await getMessageStatuses(chainId, crossChainMessages, crossChainMessenger);
   logger.debug({
     at: `${getNetworkName(chainId)}Finalizer`,
-    message: `${getNetworkName(chainId)} message statuses`,
+    message: "Ethers OpStack SDK Message statuses",
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
   return messageStatuses.filter(
@@ -744,7 +744,7 @@ async function multicallOptimismFinalizations(
   assert(withdrawalClaims.length === claimableMessages.length);
 
   logger.debug({
-    at: "Finalizer#multicallOptimismFinalizations",
+    at: "BlastFinalizer",
     message: "Blast USDB claimable message statuses",
     claims: claimableMessages.map((message, i) => {
       return {
@@ -763,7 +763,7 @@ async function multicallOptimismFinalizations(
       claimableMessages.map(async (message, i) => {
         if (withdrawalRequestIsClaimed[i]) {
           logger.debug({
-            at: "Finalizer#multicallOptimismFinalizations",
+            at: "BlastFinalizer",
             message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
           });
           return undefined;
@@ -771,7 +771,7 @@ async function multicallOptimismFinalizations(
         const hintId = hintIds[i];
         if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
           logger.debug({
-            at: "Finalizer#multicallOptimismFinalizations",
+            at: "BlastFinalizer",
             message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
             lastFinalizedRequestId,
           });
@@ -782,7 +782,7 @@ async function multicallOptimismFinalizations(
           // This should never happen since we filter our WithdrawalRequested query on the `recipient`
           // but in case it happens, this log should help us debug.
           logger.warn({
-            at: "Finalizer#multicallOptimismFinalizations",
+            at: "BlastFinalizer",
             message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
             hintId: hintIds[i],
             recipient,

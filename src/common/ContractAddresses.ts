@@ -112,7 +112,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_1868: {
-      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
+      address: "0xeb9bf100225c214Efc3E7C651ebbaDcF85177607",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_8453: {
