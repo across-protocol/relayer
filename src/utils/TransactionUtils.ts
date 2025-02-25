@@ -9,6 +9,7 @@ import {
   bnZero,
   Contract,
   isDefined,
+  fixedPointAdjustment,
   TransactionResponse,
   ethers,
   getContractInfoFromAddress,
@@ -63,7 +64,8 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2
+  retriesRemaining = 2,
+  bumpGas = false
 ): Promise<TransactionResponse> {
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
@@ -87,6 +89,15 @@ export async function runTransaction(
       maxFeePerGasScaler,
       await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
+
+    // Bump the priority fee by 20% to try to successfully replace a pending transaction.
+    // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
+    if (bumpGas && gas.maxPriorityFeePerGas) {
+      const oldPriorityFee = gas.maxPriorityFeePerGas;
+      const newPriorityFee = oldPriorityFee.mul(toBNWei("1.2").div(fixedPointAdjustment));
+      gas.maxFeePerGas = gas.maxFeePerGas.add(newPriorityFee).sub(oldPriorityFee);
+      gas.maxPriorityFeePerGas = newPriorityFee;
+    }
 
     logger.debug({
       at: "TxUtil",
@@ -118,7 +129,8 @@ export async function runTransaction(
         retriesRemaining,
       });
 
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+      const bumpGas = isEthersError(error) && error.message.toLowerCase().includes("underpriced");
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining, bumpGas);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:
