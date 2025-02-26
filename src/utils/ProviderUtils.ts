@@ -212,17 +212,7 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
     {
       async request({ method, params }) {
         const provider = getCachedProvider(providerChainId, true);
-        try {
-          return await provider.send(method, params);
-        } catch (error: any) {
-          // Ethers encodes RPC errors differently than Viem expects it so if the error is a JSON RPC error,
-          // decode it in a way that Viem can gracefully handle.
-          if (isJsonRpcError(error)) {
-            throw error.error;
-          } else {
-            throw error;
-          }
-        }
+        return await provider.send(method, params);
       },
     },
     {
