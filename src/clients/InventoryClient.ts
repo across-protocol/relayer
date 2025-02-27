@@ -1116,6 +1116,9 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      const l1TokenInfo = getL1TokenInfo(l1Token, this.hubPoolClient.chainId);
+      const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
       // We do not currently count any outstanding L2->L1 pending withdrawal balance in the cumulative balance
       // because it can take so long for these withdrawals to finalize (usually >1 day and up to 7 days). Unlike the
       // L1->L2 pending deposit balances which will finalize in <1 hour in most cases. For allocation % calculations,
@@ -1194,49 +1197,49 @@ export class InventoryClient {
                 : undefined,
             }
           );
-
-          if (shouldWithdrawExcess) {
-            // Check to make sure the total pending volume withdrawn over the last
-            // maxL2WithdrawalPeriodSeconds does not exceed the maxL2WithdrawalVolume.
-            const maxL2WithdrawalVolume = excessWithdrawThresholdPct
-              .sub(targetPct)
-              .mul(cumulativeBalance)
-              .div(this.scalar);
-            const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
-              withdrawExcessPeriod,
-              chainId,
-              this.relayer,
-              l2Token
-            );
-            // If this withdrawal would push the volume over the limit, allow it because the
-            // a subsequent withdrawal would be blocked. In other words, the maximum withdrawal volume
-            // would still behave as a rate-limit but with some overage allowed.
-            const withdrawalVolumeOverCap = pendingWithdrawalAmount.gte(maxL2WithdrawalVolume);
-            this.log(
-              `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
-                withdrawalVolumeOverCap ? "OVER" : "UNDER"
-              } the limit of ${formatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
-                chainId
-              )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${formatter(
-                desiredWithdrawalAmount
-              )}.`,
-              {
-                excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
-                targetPct: formatUnits(targetPct, 18),
-                maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
-                maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
-                pendingWithdrawalAmount: formatter(pendingWithdrawalAmount),
-              }
-            );
-            if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
-              return;
-            }
-            withdrawalsRequired[chainId] ??= [];
-            withdrawalsRequired[chainId].push({
-              l2Token,
-              amountToWithdraw: desiredWithdrawalAmount,
-            });
+          if (!shouldWithdrawExcess) {
+            return;
           }
+          // Check to make sure the total pending volume withdrawn over the last
+          // maxL2WithdrawalPeriodSeconds does not exceed the maxL2WithdrawalVolume.
+          const maxL2WithdrawalVolume = excessWithdrawThresholdPct
+            .sub(targetPct)
+            .mul(cumulativeBalance)
+            .div(this.scalar);
+          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
+            withdrawExcessPeriod,
+            chainId,
+            this.relayer,
+            l2Token
+          );
+          // If this withdrawal would push the volume over the limit, allow it because the
+          // a subsequent withdrawal would be blocked. In other words, the maximum withdrawal volume
+          // would still behave as a rate-limit but with some overage allowed.
+          const withdrawalVolumeOverCap = pendingWithdrawalAmount.gte(maxL2WithdrawalVolume);
+          this.log(
+            `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
+              withdrawalVolumeOverCap ? "OVER" : "UNDER"
+            } the limit of ${formatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
+              chainId
+            )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${formatter(
+              desiredWithdrawalAmount
+            )}.`,
+            {
+              excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
+              targetPct: formatUnits(targetPct, 18),
+              maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
+              maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
+              pendingWithdrawalAmount: formatter(pendingWithdrawalAmount),
+            }
+          );
+          if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
+            return;
+          }
+          withdrawalsRequired[chainId] ??= [];
+          withdrawalsRequired[chainId].push({
+            l2Token,
+            amountToWithdraw: desiredWithdrawalAmount,
+          });
         });
       });
     });
