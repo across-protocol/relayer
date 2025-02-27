@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
+import { chainIsOPStack, CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -18,6 +18,8 @@ import {
   ScrollERC20Bridge,
   OpStackUSDCBridge,
   UsdcCCTPBridge,
+  ZKStackBridge,
+  ZKStackWethBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -254,19 +256,15 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
 export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
-  [CHAIN_IDs.BASE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.BLAST]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.UNICHAIN]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.INK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.LISK]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
   [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
-  [CHAIN_IDs.MODE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.OPTIMISM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.REDSTONE]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.SONEIUM]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.WORLD_CHAIN]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
-  [CHAIN_IDs.ZORA]: { maxFeePerGasScaler: 2, maxPriorityFeePerGasScaler: 0.01 },
 };
+
+// Auto-populate OP stack defaults.
+Object.values(CHAIN_IDs)
+  .filter(chainIsOPStack)
+  .forEach((chainId) => {
+    DEFAULT_GAS_FEE_SCALERS[chainId] = { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
+  });
 
 // This is how many seconds stale the block number can be for us to use it for evaluating the reorg distance in the cache provider.
 export const BLOCK_NUMBER_TTL = 60;
@@ -315,15 +313,15 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
   // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "ACX"],
-  [CHAIN_IDs.BASE_SEPOLIA]: ["BAL", "DAI", "ETH", "WETH", "USDC"],
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "WETH"],
+  [CHAIN_IDs.BASE_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
-  [CHAIN_IDs.LENS_SEPOLIA]: ["WETH"],
-  [CHAIN_IDs.LISK_SEPOLIA]: ["WETH", "USDT"],
+  [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
+  [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
+  [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
-  [CHAIN_IDs.MODE_SEPOLIA]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["DAI", "SNX", "BAL", "ETH", "WETH", "USDC", "USDT", "WBTC", "UMA", "ACX"],
-  [CHAIN_IDs.SCROLL_SEPOLIA]: ["WETH", "USDC", "USDT", "WBTC"],
+  [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
+  [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["WETH", "USDC"],
 };
 
 /**
@@ -361,7 +359,6 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LENS_SEPOLIA]: ZKSyncBridge, // TODO
   [CHAIN_IDs.LINEA]: LineaBridge,
   [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
@@ -374,6 +371,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
   [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
   // Testnets:
+  [CHAIN_IDs.LENS_SEPOLIA]: ZKStackBridge,
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
@@ -382,6 +380,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
@@ -479,7 +478,14 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge, // Only support CCTP USDC.
+  },
+  [CHAIN_IDs.LENS_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
   },
 };
 
@@ -698,6 +704,21 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
 
   // Testnets
+  [CHAIN_IDs.BASE_SEPOLIA]: {
+    l1: {
+      AddressManager: "0x709c2B8ef4A9feFc629A8a2C1AF424Dc5BD6ad1B",
+      L1CrossDomainMessenger: "0xC34855F4De64F1840e5686e64278da901e261f20",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_84532.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x49f53e41452C74589E85cA1677426Ba426459e85",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: "0x49f53e41452C74589E85cA1677426Ba426459e85",
+      DisputeGameFactory: "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
   [CHAIN_IDs.LISK_SEPOLIA]: {
     l1: {
       AddressManager: "0x27Bb4A7cd8FB20cb816BF4Aac668BF841bb3D5d3",
@@ -726,7 +747,10 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
     },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+    l2: {
+      ...DEFAULT_L2_CONTRACT_ADDRESSES,
+      WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST_SEPOLIA],
+    },
   },
   [CHAIN_IDs.MODE_SEPOLIA]: {
     l1: {
@@ -740,6 +764,21 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       L2OutputOracle: "0x2634BD65ba27AB63811c74A63118ACb312701Bfa",
       OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: ZERO_ADDRESS,
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
+    l1: {
+      AddressManager: "0xEf1295ED471DFEC101691b946fb6B4654E88f98A",
+      L1CrossDomainMessenger: "0x448A37330A60494E666F6DD60aD48d930AEbA381",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_1301.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
+      DisputeGameFactory: "0xeff73e5aa3B9AEC32c659Aa3E00444d20a84394b",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },

@@ -229,7 +229,7 @@ describe("Relayer: Token balance shortfall", async function () {
     expect(txnHashes.length).to.equal(1);
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method, args } = spokePool_1.interface.parseTransaction(txn);
-    expect(method).to.equal("fillV3Relay");
+    expect(method).to.equal("fillRelay");
     expect(args[0].depositId).to.equal(0); // depositId 0
 
     expect(spyLogIncludes(spy, -5, `${await l1Token.symbol()} cumulative shortfall of 190.00`)).to.be.true;

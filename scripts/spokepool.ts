@@ -13,6 +13,7 @@ import {
   BigNumber,
   formatFeePct,
   getDeploymentBlockNumber,
+  getMessageHash,
   getNetworkName,
   getProvider,
   getSigner,
@@ -45,14 +46,19 @@ const DEPOSIT_EVENT = "FundsDeposited";
 const FILL_EVENT = "FilledRelay";
 
 function printDeposit(originChainId: number, log: LogDescription): void {
-  const { inputToken } = log.args;
+  const { destinationChainId, inputToken, message } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const relayData = Object.fromEntries(eventArgs.map((arg) => [arg, log.args[arg]])) as RelayData;
+  const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([inputToken], originChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+    messageHash: getMessageHash(message),
+    relayDataHash,
   };
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+
   console.log(
     `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
       Object.entries(fields)
@@ -66,17 +72,11 @@ function printFill(destinationChainId: number, log: LogDescription): void {
   const { originChainId, outputToken } = log.args;
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
 
-  const relayDataHash = sdkUtils.getRelayDataHash(
-    Object.fromEntries(eventArgs.map((arg) => [arg, log.args[arg]])) as RelayData,
-    destinationChainId
-  );
-
-  const padLeft = [...eventArgs, "relayDataHash"].reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
     ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
-    relayDataHash,
   };
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +

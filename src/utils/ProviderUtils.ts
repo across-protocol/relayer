@@ -6,6 +6,7 @@ import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common"
 import { delay, getOriginFromURL, Logger } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
+import * as viem from "viem";
 
 export const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
@@ -29,6 +30,23 @@ export function getCachedProvider(chainId: number, redisEnabled = true): RetryPr
     throw new Error(`No cached provider for chainId ${chainId} and redisEnabled ${redisEnabled}`);
   }
   return providerCache[getProviderCacheKey(chainId, redisEnabled)];
+}
+
+export function isJsonRpcError(response: unknown): { code: number; message: string; data?: unknown } | undefined {
+  if (!sdkProviders.RpcError.is(response)) {
+    return;
+  }
+
+  try {
+    const error = JSON.parse(response.body);
+    if (!sdkProviders.JsonRpcError.is(error)) {
+      return;
+    }
+
+    return error.error;
+  } catch {
+    return;
+  }
 }
 
 /**
@@ -183,6 +201,37 @@ export async function getProvider(
     providerCache[getProviderCacheKey(chainId, redisClient !== undefined)] = provider;
   }
   return provider;
+}
+
+/**
+ * @notice Returns a Viem custom transport that can be used to create a Viem client from our customized Ethers
+ * provider. This allows us to send requests through our RetryProvider that need to be handled by Viem SDK's.
+ */
+export function createViemCustomTransportFromEthersProvider(providerChainId: number): viem.CustomTransport {
+  return viem.custom(
+    {
+      async request({ method, params }) {
+        const provider = getCachedProvider(providerChainId, true);
+        try {
+          return await provider.send(method, params);
+        } catch (error: any) {
+          // Ethers encodes RPC errors differently than Viem expects it so if the error is a JSON RPC error,
+          // decode it in a way that Viem can gracefully handle.
+          if (isJsonRpcError(error)) {
+            throw error.error;
+          } else {
+            throw error;
+          }
+        }
+      },
+    },
+    {
+      // Viem has many native options that we can use to replicate our ethers' RetryProvider but the easiest
+      // way to  migrate for now is to force all requests through our RetryProvider and disable all retry, quorum,
+      // caching, and other logic in the Viem transport.
+      retryCount: 0,
+    }
+  );
 }
 
 export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {

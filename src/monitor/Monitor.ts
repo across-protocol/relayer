@@ -839,7 +839,7 @@ export class Monitor {
               .filter(isDefined)
               .reduce((totalAmounts, outputAmount) => totalAmounts.add(outputAmount), bnZero);
             pendingRelayerRefunds[chainId][l2Token] =
-              pendingRelayerRefunds[chainId][l2Token].sub(pendingSlowFillAmounts);
+              pendingRelayerRefunds[chainId][l2Token].add(pendingSlowFillAmounts);
           });
       });
 

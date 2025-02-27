@@ -1,6 +1,6 @@
 import { BundleDataClient, ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
 import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } from "./constants";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import { DataworkerConfig, setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
   FakeContract,
@@ -109,6 +109,7 @@ describe("Dataworker: Load bundle data", async function () {
       );
       dataworkerInstance = new Dataworker(
         dataworkerInstance.logger,
+        {} as DataworkerConfig,
         { ...dataworkerInstance.clients, bundleDataClient },
         dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
         dataworkerInstance.maxRefundCountOverride,

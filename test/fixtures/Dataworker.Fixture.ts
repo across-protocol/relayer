@@ -27,10 +27,13 @@ import {
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
+import { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
+
+export { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 
 async function _constructSpokePoolClientsWithLookback(
   spokePools: Contract[],
@@ -229,6 +232,7 @@ export async function setupDataworker(
   };
   const dataworkerInstance = new Dataworker(
     spyLogger,
+    {} as DataworkerConfig,
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,

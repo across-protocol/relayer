@@ -2,7 +2,6 @@ import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
-import LEGACY_ATOMIC_DEPOSITOR_ABI from "./abi/LegacyAtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
@@ -35,6 +34,8 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
+import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
+import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -80,10 +81,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x64668fbD18b967b46DD22dc8675134D91efeDd8d",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
-    legacyAtomicDepositor: {
-      address: "0xD59d70d887F34669BA695Fe9ABb8848b70de6171",
-      abi: LEGACY_ATOMIC_DEPOSITOR_ABI,
-    },
     opUSDCBridge_480: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
       abi: OP_USDC_BRIDGE_ABI,
@@ -115,7 +112,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_1868: {
-      address: "0xeb9bf100225c214efc3e7c651ebbadcf85177607",
+      address: "0xeb9bf100225c214Efc3E7C651ebbaDcF85177607",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_8453: {
@@ -127,7 +124,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_57073: {
-      address: "0x88ff1e5b602916615391f55854588efcbb7663f0",
+      address: "0x88FF1e5b602916615391F55854588EFcBB7663f0",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_81457: {
@@ -469,6 +466,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    ovmStandardBridge_1301: {
+      address: "0xea58fcA6849d79EAd1f26608855c2D6407d54Ce2",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
     cctpMessageTransmitter: {
       address: "0x7865fAfC2db2093669d92c0F33AeEF291086BEFD",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
@@ -478,7 +479,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
     atomicDepositor: {
-      address: "0xDf9ADb0aA08Fd3F7bC41440Dc37370Fc9BD80f91",
+      address: "0xdf87d6eFd856D6145Fcd387252cefD12868AC593",
       abi: ATOMIC_DEPOSITOR_ABI,
     },
     polygonRootChainManager: {
@@ -500,8 +501,22 @@ export const CONTRACT_ADDRESSES: {
     orbitErc20Gateway_421614: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
+    zkStackBridgeHub: {
+      address: "0x236D1c3Ff32Bd0Ca26b72Af287E895627c0478cE",
+      abi: ZKSTACK_BRIDGE_HUB_ABI,
+    },
+    // The shared bridge is the "spender" of the token we wish to bridge, so we only
+    // need its contract address so that we may approve it.
+    zkStackSharedBridge_37111: {
+      address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
+    },
+    nativeTokenVault_37111: {
+      address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
+      abi: HUB_POOL_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
@@ -538,10 +553,21 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
-    // TODO: Rename to zkstack once zkstack adapters are made.
-    zkSyncDefaultErc20Bridge: {
+    zkStackBridge: {
       address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+    gasToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    wrappedGasToken: {
+      address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
+      abi: WETH_ABI,
+    },
+    l2Weth: {
+      address: "0xaA91D645D7a6C1aeaa5988e0547267B77d33fe16",
+      abi: WETH_ABI,
     },
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {

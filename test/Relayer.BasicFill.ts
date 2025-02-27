@@ -863,7 +863,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Ignores deposit from preconfigured addresses", async function () {
-      relayerInstance.config.ignoredAddresses = [depositor.address];
+      relayerInstance.config.ignoredAddresses = new Set([depositor.address]);
 
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();

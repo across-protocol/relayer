@@ -24,15 +24,6 @@ export class DataworkerConfig extends CommonConfig {
   // represents the bundle ranges that will be proposed per the chain id indices.
   readonly forceProposalBundleRange?: [number, number][];
 
-  // These variables can be toggled to choose whether the bot will submit transactions created
-  // by each function. For example, setting `sendingDisputesEnabled=false` but `disputerEnabled=true`
-  // means that the disputer logic will be run but won't send disputes on-chain.
-  // If you set `disputerEnabled=false`, then `sendinDisputesEnabled` doesn't change the code path.
-  readonly sendingDisputesEnabled: boolean;
-  readonly sendingProposalsEnabled: boolean;
-  readonly sendingExecutionsEnabled: boolean;
-  readonly sendingFinalizationsEnabled: boolean;
-
   // This variable should be set if the user wants to persist bundle data to Arweave.
   readonly persistingBundleData: boolean;
 
@@ -53,10 +44,6 @@ export class DataworkerConfig extends CommonConfig {
       L2_EXECUTOR_ENABLED,
       L1_EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
-      SEND_DISPUTES,
-      SEND_PROPOSALS,
-      SEND_FINALIZATIONS,
-      SEND_EXECUTIONS,
       FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
@@ -95,10 +82,6 @@ export class DataworkerConfig extends CommonConfig {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
     }
-    this.sendingDisputesEnabled = SEND_DISPUTES === "true";
-    this.sendingProposalsEnabled = SEND_PROPOSALS === "true";
-    this.sendingExecutionsEnabled = SEND_EXECUTIONS === "true";
-    this.sendingFinalizationsEnabled = SEND_FINALIZATIONS === "true";
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";
@@ -133,7 +116,7 @@ export class DataworkerConfig extends CommonConfig {
     }
 
     // We NEVER want to force propose if the proposer is enabled.
-    if (this.sendingProposalsEnabled) {
+    if (this.sendingTransactionsEnabled) {
       assert(!this.forcePropose, "Cannot force propose if sending proposals is enabled");
     }
 
