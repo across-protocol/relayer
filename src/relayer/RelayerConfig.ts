@@ -205,7 +205,7 @@ export class RelayerConfig extends CommonConfig {
         // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
         // holding more tokens than the targetPct, but perhaps a better default is 100%
         tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
-        assert(tokenConfig.targetOverageBuffer.gte(toBNWei("1.5")), "targetOverageBuffer must be >= 1.5x");
+        assert(tokenConfig.targetOverageBuffer.gte(toBNWei("1.0")), "targetOverageBuffer must be >= 1.0x");
 
         // For WETH, also consider any unwrap target/threshold.
         if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {
