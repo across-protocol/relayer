@@ -197,9 +197,7 @@ export class RelayerConfig extends CommonConfig {
         tokenConfig.targetPct = toBNWei(targetPct).div(100);
         tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
 
-        if (isDefined(withdrawExcessPeriod)) {
-          tokenConfig.withdrawExcessPeriod = withdrawExcessPeriod;
-        }
+        tokenConfig.withdrawExcessPeriod = withdrawExcessPeriod;
 
         // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
         // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
