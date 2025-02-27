@@ -181,18 +181,7 @@ export class AdapterManager {
     l2Token: string
   ): Promise<BigNumber> {
     chainId = Number(chainId);
-    const mark = this.profiler.start(
-      `getL2PendingWithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`
-    );
-    const withdrawalAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
-      lookbackPeriodSeconds,
-      fromAddress,
-      l2Token
-    );
-    mark.stop({
-      message: `getL2PendingWithdrawalAmount for ${chainId} and token ${l2Token} with lookback of ${lookbackPeriodSeconds} seconds`,
-    });
-    return withdrawalAmount;
+    return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
