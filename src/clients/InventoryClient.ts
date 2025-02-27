@@ -1170,9 +1170,6 @@ export class InventoryClient {
           );
           const excessWithdrawThresholdPct = targetPct.mul(targetPctMultiplier).div(this.scalar);
 
-          const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
-          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
-
           const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
           const desiredWithdrawalAmount = cumulativeBalance.mul(withdrawPct).div(this.scalar);
