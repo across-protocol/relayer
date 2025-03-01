@@ -41,7 +41,7 @@
     "ts-node": "^10.9.1",
     "viem": "^2.21.18",
     "winston": "^3.10.0",
-    "zksync-ethers": "^5.7.2"
+    "zksync-ethers": "^6.16.0"
   },
   "files": [
     "/dist/**/*"
