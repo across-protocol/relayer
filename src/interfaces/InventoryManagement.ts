@@ -7,6 +7,8 @@ export type TokenBalanceConfig = {
   thresholdPct: BigNumber; // Threshold, below which, we will execute a rebalance.
   unwrapWethThreshold?: BigNumber; // Threshold for ETH to trigger WETH unwrapping to maintain ETH balance.
   unwrapWethTarget?: BigNumber; // Amount of WETH to unwrap to refill ETH. Unused if unwrapWethThreshold is undefined.
+  withdrawExcessPeriod?: number; // Period in seconds over which to withdraw any excess balance over the
+  // (thresholdPct * targetOverageBuffer) down to the targetPct. IM will only withdraw excess if this value is set.
 };
 
 export type ChainTokenConfig = {

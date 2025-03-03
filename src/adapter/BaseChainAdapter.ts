@@ -1,4 +1,4 @@
-import { SpokePoolClient } from "../clients";
+import { MultiCallerClient, SpokePoolClient } from "../clients";
 import {
   AnyObject,
   BigNumber,
@@ -23,12 +23,17 @@ import {
   filterAsync,
   mapAsync,
   TOKEN_SYMBOLS_MAP,
+  getL1TokenInfo,
+  getBlockForTimestamp,
+  getCurrentTime,
+  bnZero,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
 import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
+import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 
 export type SupportedL1Token = string;
 export type SupportedTokenSymbol = string;
@@ -46,6 +51,7 @@ export class BaseChainAdapter {
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
+    protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
@@ -98,6 +104,10 @@ export class BaseChainAdapter {
     const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
+  }
+
+  isSupportedL2Bridge(l1Token: string): boolean {
+    return isDefined(this.l2Bridges[l1Token]);
   }
 
   filterSupportedTokens(l1Tokens: string[]): string[] {
@@ -165,6 +175,52 @@ export class BaseChainAdapter {
     }
     const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
+  }
+
+  async withdrawTokenFromL2(address: string, l2Token: string, amount: BigNumber, simMode: boolean): Promise<string[]> {
+    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+      return [];
+    }
+    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
+      address,
+      l2Token,
+      l1TokenInfo.address,
+      amount
+    );
+    const multicallerClient = new MultiCallerClient(this.logger);
+    txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+    const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
+    return txnReceipts[this.chainId];
+  }
+
+  async getL2PendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber> {
+    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+      return bnZero;
+    }
+    const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
+      getBlockForTimestamp(this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
+      getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds),
+    ]);
+    const l1EventSearchConfig: EventSearchConfig = {
+      fromBlock: l1SearchFromBlock,
+      toBlock: this.baseL1SearchConfig.toBlock,
+    };
+    const l2EventSearchConfig: EventSearchConfig = {
+      fromBlock: l2SearchFromBlock,
+      toBlock: this.baseL2SearchConfig.toBlock,
+    };
+    return await this.l2Bridges[l1TokenInfo.address].getL2PendingWithdrawalAmount(
+      l2EventSearchConfig,
+      l1EventSearchConfig,
+      fromAddress,
+      l2Token
+    );
   }
 
   async sendTokenToTargetChain(
