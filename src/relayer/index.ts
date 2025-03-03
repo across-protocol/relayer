@@ -32,7 +32,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalIndexer, pollingDelay, sendingRelaysEnabled, sendingSlowRelaysEnabled } = config;
+  const { externalIndexer, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
 
   const loop = pollingDelay > 0;
   let stop = false;
@@ -56,7 +56,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   await relayer.init();
 
   const { spokePoolClients } = relayerClients;
-  const simulate = !sendingRelaysEnabled;
+  const simulate = !sendingTransactionsEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
@@ -90,6 +90,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       if (loop && runIdentifier && redis) {
         if (activeRelayer !== runIdentifier) {
           if (!activeRelayerUpdated) {
+            logger.debug({
+              at: "Relayer#run",
+              message: `Taking over from ${botIdentifier} instance ${activeRelayer}.`,
+            });
             await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
             activeRelayerUpdated = true;
           } else {
