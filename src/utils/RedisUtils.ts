@@ -77,17 +77,22 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
     let redisClient: _RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
       // Just implement the default reconnection strategy:
-      // https://github.com/redis/node-redis/blob/HEAD/docs/client-configuration.md#reconnect-strategy
-      const delay = Math.min(retries * 50, 500);
+      // https://github.com/redis/node-redis/blob/558ebb4d25f2cbeb707cb601d4bd11014a6a6992/docs/client-configuration.md
+
+      // Generate a random jitter between 0 – 200 ms:
+      const jitter = Math.floor(Math.random() * 200);
+      // Delay is an exponential back off, (times^2) * 50 ms, with a maximum value of 2000 ms:
+      const delay = Math.min(Math.pow(2, retries) * 50, 2000);
       logger?.debug({
         at: "RedisUtils",
         message: `Lost redis connection, retrying in ${delay} ms.`,
       });
-      return delay;
+      return delay + jitter;
     };
 
     try {
       redisClient = createClient({ url, socket: { reconnectStrategy } });
+      redisClient.on("error", (err) => logger?.debug({ at: "RedisUtils", message: "Redis error", error: String(err) }));
       await redisClient.connect();
       logger?.debug({
         at: "RedisUtils#getRedis",
@@ -134,7 +139,7 @@ export async function setRedisKey(
 }
 
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
-  return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId}`;
+  return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId.toString()}`;
 }
 
 export async function setDeposit(

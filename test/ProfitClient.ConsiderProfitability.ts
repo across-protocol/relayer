@@ -43,7 +43,7 @@ describe("ProfitClient: Consider relay profit", () => {
   const gasFeePct = toBNWei(1).div(1e4);
   const v3DepositTemplate: Deposit = {
     originChainId,
-    depositId: 1,
+    depositId: BigNumber.from(1),
     destinationChainId,
     depositor: randomAddress(),
     recipient: randomAddress(),

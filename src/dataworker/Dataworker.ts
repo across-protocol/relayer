@@ -31,6 +31,7 @@ import {
   SlowFillLeaf,
   FillStatus,
 } from "../interfaces";
+import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator, BundleDataClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
@@ -54,6 +55,7 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
+import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -61,6 +63,9 @@ import {
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
+
+const { getMessageHash, getRelayEventKey } = sdkUtils;
+const { getAddress } = ethersUtils;
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
@@ -95,6 +100,7 @@ export class Dataworker {
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
+    readonly config: DataworkerConfig,
     readonly clients: DataworkerClients,
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number | undefined,
@@ -1113,7 +1119,7 @@ export class Dataworker {
           const unexecutedLeaves = leavesForChain.filter((leaf) => {
             const executedLeaf = slowFillsForChain.find(
               (event) =>
-                event.originChainId === leaf.relayData.originChainId && event.depositId === leaf.relayData.depositId
+                event.originChainId === leaf.relayData.originChainId && event.depositId.eq(leaf.relayData.depositId)
             );
 
             // Only return true if no leaf was found in the list of executed leaves.
@@ -1164,13 +1170,8 @@ export class Dataworker {
         return false;
       }
 
-      const ignoredAddresses = JSON.parse(process.env.IGNORED_ADDRESSES ?? "[]").map((address) =>
-        ethersUtils.getAddress(address)
-      );
-      if (
-        ignoredAddresses?.includes(ethersUtils.getAddress(depositor)) ||
-        ignoredAddresses?.includes(ethersUtils.getAddress(recipient))
-      ) {
+      const { ignoredAddresses } = this.config;
+      if (ignoredAddresses?.has(getAddress(depositor)) || ignoredAddresses?.has(getAddress(recipient))) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",
@@ -1190,21 +1191,17 @@ export class Dataworker {
 
     const sortedFills = client.getFills();
     const latestFills = leaves.map((slowFill) => {
-      const { relayData, chainId: slowFillChainId } = slowFill;
+      const { relayData, chainId: destinationChainId } = slowFill;
+      const messageHash = getMessageHash(relayData.message);
 
       // Start with the most recent fills and search backwards.
-      const fill = _.findLast(sortedFills, (fill) => {
-        if (
-          !(
-            fill.depositId === relayData.depositId &&
-            fill.originChainId === relayData.originChainId &&
-            sdkUtils.getRelayDataHash(fill, chainId) === sdkUtils.getRelayDataHash(relayData, slowFillChainId)
-          )
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const fill = _.findLast(
+        sortedFills,
+        (fill) =>
+          fill.depositId.eq(relayData.depositId) &&
+          fill.originChainId === relayData.originChainId &&
+          getRelayEventKey(fill) === getRelayEventKey({ ...relayData, messageHash, destinationChainId })
+      );
 
       return fill;
     });
@@ -1290,7 +1287,7 @@ export class Dataworker {
         `slowRelayRoot: ${slowRelayTree.getHexRoot()}\n` +
         `Origin chain: ${relayData.originChainId}\n` +
         `Destination chain:${chainId}\n` +
-        `Deposit Id: ${relayData.depositId}\n` +
+        `Deposit Id: ${relayData.depositId.toString()}\n` +
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
@@ -1324,9 +1321,17 @@ export class Dataworker {
     rootBundleId: number,
     leaf: SlowFillLeaf
   ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
-    const method = "executeV3SlowRelayLeaf";
+    const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
-    const args = [leaf, rootBundleId, proof];
+    const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
+    const args = [
+      {
+        ...leaf,
+        relayData: relayDataWithBytes32Params,
+      },
+      rootBundleId,
+      proof,
+    ];
 
     return { method, args };
   }
@@ -2311,7 +2316,7 @@ export class Dataworker {
           mrkdwn,
           // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
           // SpokePool.multicall() is fine.
-          unpermissioned: Number(chainId) === CHAIN_IDs.MAINNET,
+          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
