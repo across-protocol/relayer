@@ -57,6 +57,8 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
         "0x", // extraData
       ],
       nonMulticall: true,
+      canFailInSimulation: true, // This will fail in simulation unless we simulate adding the WETH balance
+      // to the relayer.
       value: amount,
       message: "🎰 Withdrew OpStack WETH to L1",
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${l1TokenInfo.symbol} from ${getNetworkName(
