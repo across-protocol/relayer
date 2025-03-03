@@ -5,14 +5,26 @@ import {
   CUSTOM_BRIDGE,
   CANONICAL_BRIDGE,
   DEFAULT_GAS_MULTIPLIER,
+  CUSTOM_L2_BRIDGE,
+  CANONICAL_L2_BRIDGE,
 } from "../../common/Constants";
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
-import { BigNumber, isDefined, winston, Signer, getL2TokenAddresses, TransactionResponse, assert } from "../../utils";
+import {
+  BigNumber,
+  isDefined,
+  winston,
+  Signer,
+  getL2TokenAddresses,
+  TransactionResponse,
+  assert,
+  Profiler,
+} from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
+  private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -59,6 +71,26 @@ export class AdapterManager {
         }) ?? []
       );
     };
+    const constructL2Bridges = (chainId: number) => {
+      if (chainId === hubChainId) {
+        return {};
+      }
+      const l2Signer = spokePoolClients[chainId].spokePool.signer;
+      return Object.fromEntries(
+        SUPPORTED_TOKENS[chainId]
+          ?.map((symbol) => {
+            const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+            const canonicalBridge = CANONICAL_L2_BRIDGE[chainId];
+            if (!isDefined(canonicalBridge)) {
+              return undefined;
+            }
+            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
+            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, l1Token);
+            return [l1Token, bridge];
+          })
+          .filter(isDefined) ?? []
+      );
+    };
     Object.keys(this.spokePoolClients).map((_chainId) => {
       const chainId = Number(_chainId);
       assert(chainId.toString() === _chainId);
@@ -71,8 +103,13 @@ export class AdapterManager {
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
+        constructL2Bridges(chainId),
         DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
       );
+    });
+    this.profiler = new Profiler({
+      logger: this.logger,
+      at: "AdapterManager",
     });
     logger.debug({
       at: "AdapterManager#constructor",
@@ -116,6 +153,35 @@ export class AdapterManager {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
     return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+  }
+
+  withdrawTokenFromL2(
+    address: string,
+    chainId: number | string,
+    l2Token: string,
+    amount: BigNumber,
+    simMode = false
+  ): Promise<string[]> {
+    chainId = Number(chainId);
+    this.logger.debug({
+      at: "AdapterManager",
+      message: "Withdrawing token from L2",
+      chainId,
+      l2Token,
+      amount,
+    });
+    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode);
+    return txnReceipts;
+  }
+
+  async getL2PendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    chainId: number | string,
+    fromAddress: string,
+    l2Token: string
+  ): Promise<BigNumber> {
+    chainId = Number(chainId);
+    return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
   // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only

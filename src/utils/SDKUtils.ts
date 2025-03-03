@@ -19,6 +19,7 @@ export const {
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
+  chainIsOrbit,
   chainIsArbitrum,
   chainIsProd,
   chainIsMatic,

@@ -63,7 +63,7 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2
+  retriesRemaining = 1
 ): Promise<TransactionResponse> {
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();

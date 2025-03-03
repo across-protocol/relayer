@@ -34,6 +34,8 @@ import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
+import { utils as sdkUtils } from "@across-protocol/sdk";
+import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
@@ -135,24 +137,20 @@ export async function arbStackFinalizer(
     ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
     : [];
   if (getOrbitNetwork(chainId) !== undefined && withdrawalToAddresses.length > 0) {
-    // ERC20 withdrawals emit events in the erc20Gateway.
+    // ERC20 withdrawals emit events in the erc20GatewayRouter.
     // Native token withdrawals emit events in the ArbSys contract.
     const l2ArbSys = CONTRACT_ADDRESSES[chainId].arbSys;
     const arbSys = new Contract(l2ArbSys.address, l2ArbSys.abi, spokePoolClient.spokePool.provider);
-    const l2Erc20Gateway = CONTRACT_ADDRESSES[chainId].erc20Gateway;
-    const arbitrumGateway = new Contract(
-      l2Erc20Gateway.address,
-      l2Erc20Gateway.abi,
+    const l2Erc20GatewayRouter = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
+    const gatewayRouter = new Contract(
+      l2Erc20GatewayRouter.address,
+      l2Erc20GatewayRouter.abi,
       spokePoolClient.spokePool.provider
     );
-    // TODO: For this to work for ArbitrumOrbit, we need to first query ERC20GatewayRouter.getGateway(l2Token) to
-    // get the ERC20 Gateway. Then, on the ERC20 Gateway, query the WithdrawalInitiated event.
-    // See example txn: https://evm-explorer.alephzero.org/tx/0xb493174af0822c1a5a5983c2cbd4fe74055ee70409c777b9c665f417f89bde92
-    // which withdraws WETH to mainnet using dev wallet.
-    const withdrawalErc20Events = await paginatedEventQuery(
-      arbitrumGateway,
-      arbitrumGateway.filters.WithdrawalInitiated(
-        null, // l1Token, not-indexed so can't filter
+    const transferRoutedEvents = await paginatedEventQuery(
+      gatewayRouter,
+      gatewayRouter.filters.TransferRouted(
+        null, // l1Token
         null, // from
         withdrawalToAddresses // to
       ),
@@ -161,6 +159,28 @@ export async function arbStackFinalizer(
         toBlock: spokePoolClient.latestBlockSearched,
       }
     );
+    const uniqueGateways = new Set<string>(transferRoutedEvents.map((e) => e.args.gateway));
+    const withdrawalErc20Events = (
+      await sdkUtils.mapAsync([...uniqueGateways], async (erc20Gateway) => {
+        const gatewayContract = new Contract(
+          erc20Gateway,
+          ARBITRUM_ERC20_GATEWAY_L2_ABI,
+          spokePoolClient.spokePool.provider
+        );
+        return await paginatedEventQuery(
+          gatewayContract,
+          gatewayContract.filters.WithdrawalInitiated(
+            null, // l1Token non-indexed
+            null, // from
+            withdrawalToAddresses // to
+          ),
+          {
+            ...spokePoolClient.eventSearchConfig,
+            toBlock: spokePoolClient.latestBlockSearched,
+          }
+        );
+      })
+    ).flat();
     const withdrawalNativeEvents = await paginatedEventQuery(
       arbSys,
       arbSys.filters.L2ToL1Tx(
@@ -210,7 +230,7 @@ export async function arbStackFinalizer(
           logger.debug({
             at: `Finalizer#${networkName}Finalizer`,
             message: `Withdrawal event for ${amountFromWei} of ${l1TokenInfo.symbol} is too recent to finalize`,
-            timeUntilFinalization: `${Math.floor(
+            hoursUntilFinalization: `${Math.floor(
               ((event.blockNumber - latestBlockToFinalize) * l2BlockTime) / 60 / 60
             )}`,
           });
