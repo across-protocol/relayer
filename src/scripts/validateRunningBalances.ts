@@ -72,6 +72,8 @@ const rootCache = {};
 // so they'll appear as excesses.
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
   [CHAIN_IDs.MAINNET]: { ["USDC"]: 31.745443 },
+  // 0.8 ETH https://basescan.org/tx/0x30212bf3df90b0abe40bb986afcb6907a406f25469cac864060e58d2b3502d1f
+  // 1.01 ETH https://basescan.org/tx/0x0a1316b0e88cbfcd4a14730d36465cf91000300eb2049f1dddc137208c80a263
   [CHAIN_IDs.BASE]: { ["USDC"]: 25, ["WETH"]: 1.299 },
 };
 
