@@ -70,7 +70,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     }
   );
 
-  await config.update(); // Update address list.
+  await config.update(); // Update address filter.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
   try {
