@@ -27,6 +27,8 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
+  EvmAddress,
+  Address,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -35,7 +37,7 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 
-export type SupportedL1Token = string;
+export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
 
 export class BaseChainAdapter {
@@ -47,7 +49,7 @@ export class BaseChainAdapter {
     protected readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     protected readonly chainId: number,
     protected readonly hubChainId: number,
-    protected readonly monitoredAddresses: string[],
+    protected readonly monitoredAddresses: Address[],
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
     protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
@@ -100,37 +102,39 @@ export class BaseChainAdapter {
    * @param l1Token an address
    * @returns True if l1Token is supported
    */
-  isSupportedToken(l1Token: string): l1Token is SupportedL1Token {
-    const relevantSymbols = matchTokenSymbol(l1Token, this.hubChainId);
+  isSupportedToken(l1Token: EvmAddress): l1Token is SupportedL1Token {
+    const relevantSymbols = matchTokenSymbol(l1Token.toAddress(), this.hubChainId);
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
-  isSupportedL2Bridge(l1Token: string): boolean {
+  isSupportedL2Bridge(_l1Token: string | EvmAddress): boolean {
+    const l1Token: string = _l1Token.toString();
     return isDefined(this.l2Bridges[l1Token]);
   }
 
-  filterSupportedTokens(l1Tokens: string[]): string[] {
+  filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
 
-  async checkTokenApprovals(l1Tokens: string[]): Promise<void> {
-    const unavailableTokens: string[] = [];
+  async checkTokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
+    const unavailableTokens: EvmAddress[] = [];
     // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
     // each bridge supports (if applicable).
     const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
       mapAsync(
-        l1Tokens.map((token) => [token, this.bridges[token]?.l1Gateways] as [string, string[]]),
+        l1Tokens.map((token) => [token, this.bridges[token.toAddress()]?.l1Gateways] as [EvmAddress, EvmAddress[]]),
         async ([l1Token, bridges]) => {
-          const erc20 = ERC20.connect(l1Token, this.getSigner(this.hubChainId));
+          const l1TokenAddress = l1Token.toAddress();
+          const erc20 = ERC20.connect(l1TokenAddress, this.getSigner(this.hubChainId));
           if (!isDefined(bridges) || !this.isSupportedToken(l1Token)) {
             unavailableTokens.push(l1Token);
             return { token: erc20, bridges: [] };
           }
           const bridgesToApprove = await filterAsync(bridges, async (bridge) => {
-            const senderAddress = await erc20.signer.getAddress();
+            const senderAddress = EvmAddress.fromHex(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(l1Token, senderAddress, bridge);
-            const allowance = cachedResult ?? (await erc20.allowance(senderAddress, bridge));
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridge.toAddress()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setTokenAllowanceInCache(l1Token, senderAddress, bridge, allowance);
             }
@@ -143,11 +147,11 @@ export class BaseChainAdapter {
         Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
         async (bridge) => {
           const gasToken = bridge.gasToken;
-          const erc20 = ERC20.connect(gasToken, this.getSigner(this.hubChainId));
+          const erc20 = ERC20.connect(gasToken.toAddress(), this.getSigner(this.hubChainId));
           const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
-            const senderAddress = await erc20.signer.getAddress();
+            const senderAddress = EvmAddress.fromHex(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
-            const allowance = cachedResult ?? (await erc20.allowance(senderAddress, gateway));
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), gateway.toAddress()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setTokenAllowanceInCache(gasToken, senderAddress, gateway, allowance);
             }
@@ -177,17 +181,18 @@ export class BaseChainAdapter {
     this.log("Approved whitelisted tokens! 💰", { mrkdwn }, "info");
   }
 
-  async withdrawTokenFromL2(address: string, l2Token: string, amount: BigNumber, simMode: boolean): Promise<string[]> {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+  async withdrawTokenFromL2(
+    address: EvmAddress,
+    l2Token: Address,
+    amount: BigNumber,
+    simMode: boolean
+  ): Promise<string[]> {
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
+    const l1Token = EvmAddress.from(l1TokenInfo.address);
     if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return [];
     }
-    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
-      address,
-      l2Token,
-      l1TokenInfo.address,
-      amount
-    );
+    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(address, l2Token, l1Token, amount);
     const multicallerClient = new MultiCallerClient(this.logger);
     txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
     const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
@@ -196,10 +201,10 @@ export class BaseChainAdapter {
 
   async getL2PendingWithdrawalAmount(
     lookbackPeriodSeconds: number,
-    fromAddress: string,
-    l2Token: string
+    fromAddress: Address,
+    l2Token: Address
   ): Promise<BigNumber> {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.chainId);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
     if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return bnZero;
     }
@@ -224,16 +229,16 @@ export class BaseChainAdapter {
   }
 
   async sendTokenToTargetChain(
-    address: string,
-    l1Token: string,
-    l2Token: string,
+    address: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    const bridge = this.bridges[l1Token];
+    const bridge = this.bridges[l1Token.toAddress()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     const { contract, method, args, value } = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
-    const tokenSymbol = matchTokenSymbol(l1Token, this.hubChainId)[0];
+    const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
     const _txnRequest: AugmentedTransaction = {
@@ -320,7 +325,7 @@ export class BaseChainAdapter {
     }
   }
 
-  async getOutstandingCrossChainTransfers(l1Tokens: string[]): Promise<OutstandingTransfers> {
+  async getOutstandingCrossChainTransfers(l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
     const { l1SearchConfig, l2SearchConfig } = this.getUpdatedSearchConfigs();
     const availableL1Tokens = this.filterSupportedTokens(l1Tokens);
 
@@ -328,7 +333,7 @@ export class BaseChainAdapter {
 
     await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
-        const bridge = this.bridges[l1Token];
+        const bridge = this.bridges[l1Token.toAddress()];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
@@ -345,7 +350,7 @@ export class BaseChainAdapter {
             }
             return true;
           });
-          assign(outstandingTransfers, [monitoredAddress, l1Token, l2Token], {
+          assign(outstandingTransfers, [monitoredAddress.toAddress(), l1Token, l2Token], {
             totalAmount: outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), BigNumber.from(0)),
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
           });

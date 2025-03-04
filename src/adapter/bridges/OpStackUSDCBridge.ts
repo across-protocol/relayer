@@ -1,4 +1,4 @@
-import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider } from "../../utils";
+import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider, EvmAddress } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -6,27 +6,19 @@ import { processEvent } from "../utils";
 export class OpStackUSDCBridge extends BaseBridgeAdapter {
   private readonly l2Gas = 200000;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
-  ) {
-    // Lint Appeasement
-    _l1Token;
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    _l1Token: string,
-    _l2Token: string,
+    toAddress: EvmAddress,
+    _l1Token: EvmAddress,
+    _l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
@@ -37,9 +29,9 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    _fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    _fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l1Bridge = this.getL1Bridge();
@@ -50,9 +42,9 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    _fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    _fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l2Bridge = this.getL2Bridge();

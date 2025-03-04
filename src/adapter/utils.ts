@@ -10,6 +10,7 @@ import {
   blockExplorerLink,
   mapAsync,
   winston,
+  Address,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
@@ -27,7 +28,7 @@ export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
 }
 
 export async function approveTokens(
-  tokens: { token: ExpandedERC20; bridges: string[] }[],
+  tokens: { token: ExpandedERC20; bridges: Address[] }[],
   chainId: number,
   hubChainId: number,
   logger: winston.Logger
@@ -43,7 +44,7 @@ export async function approveTokens(
     const hubNetwork = getNetworkName(hubChainId);
     const spokeNetwork = getNetworkName(chainId);
     let internalMrkdwn =
-      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge, hubChainId)} ` +
+      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toAddress(), hubChainId)} ` +
       `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
       `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
     if (receipts.length > 1) {
@@ -57,8 +58,8 @@ export async function approveTokens(
 export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
   const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
     amount: BigNumber;
-    to: string;
-    from: string;
+    to: Address;
+    from: Address;
   };
   return {
     amount: eventSpread[amountField],
