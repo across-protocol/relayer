@@ -142,8 +142,7 @@ export class CommonConfig {
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(path)]);
+    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(path)], logger);
     this.addressFilter = await addressAggregator.update();
-    logger.debug({ at: "Config::update", message: `Read ${this.addressFilter.size} addresses.`, path });
   }
 }
