@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
+import { addressAdapters, AddressAggregator,  assert, CHAIN_IDs, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -137,24 +137,16 @@ export class CommonConfig {
   }
 
   async update(): Promise<void> {
-    // Comma-separated string array of address sources to skip; i.e. ADDRESS_FILTER_DISABLE="a,b,c".
-    const noFilter = process.env.ADDRESS_FILTER_DISABLE ?? "";
+    const {
+      DISABLE_ADDRESS_FILTER,
+      ADDRESS_FILTER_PATH = "./addresses.json",
+    } = process.env;
+    const noFilter = DISABLE_ADDRESS_FILTER === "true";
+    if (noFilter) {
+      return Promise.resolve();
+    }
 
-    const addressFeeds = [];
-    AddressAggregator.sources()
-      .filter((source) => !noFilter.includes(source))
-      .forEach((source) => {
-        switch (source) {
-          case "bybit":
-            addressFeeds.push(new addressAdapters.bybit.AddressList());
-            break;
-          case "processEnv":
-            addressFeeds.push(new addressAdapters.processEnv.AddressList(IGNORED_ADDRESSES));
-            break;
-        }
-      });
-
-    const addressAggregator = new AddressAggregator(addressFeeds);
+    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(ADDRESS_FILTER_PATH)]);
     this.addressFilter = await addressAggregator.update();
   }
 }

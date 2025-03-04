@@ -50,7 +50,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "yarn build-bigint-buffer",
+    "postinstall": "yarn build-bigint-buffer && yarn update-addresses",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
@@ -62,6 +62,7 @@
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
+    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
