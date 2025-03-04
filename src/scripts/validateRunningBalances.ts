@@ -568,7 +568,13 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         spokeClientFromBlocks,
         spokeClientToBlocks
       );
-      await updateSpokePoolClients(spokePoolClientsForBundle, ["FundsDeposited", "RequestedSlowFill", "FilledRelay"]);
+      await updateSpokePoolClients(spokePoolClientsForBundle, [
+        "RelayedRootBundle",
+        "ExecutedRelayerRefundRoot",
+        "FundsDeposited",
+        "RequestedSlowFill",
+        "FilledRelay",
+      ]);
 
       const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
       const reconstructedBundleData = await dataworker._proposeRootBundle(
