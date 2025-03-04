@@ -1,14 +1,12 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { addressAdapters, AddressAggregator,  assert, CHAIN_IDs, isDefined } from "../utils";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
   [key: string]: string | undefined;
 }
-
-const IGNORED_ADDRESSES = "IGNORED_ADDRESSES"; // Env var specifying JSON-encoded address list.
 
 export class CommonConfig {
   readonly hubPoolChainId: number;
@@ -137,10 +135,7 @@ export class CommonConfig {
   }
 
   async update(): Promise<void> {
-    const {
-      DISABLE_ADDRESS_FILTER,
-      ADDRESS_FILTER_PATH = "./addresses.json",
-    } = process.env;
+    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH = "./addresses.json" } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";
     if (noFilter) {
       return Promise.resolve();
