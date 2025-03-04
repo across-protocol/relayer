@@ -18,3 +18,4 @@ export * from "./OpStackUSDCBridge";
 export * from "./UsdcCCTPBridge";
 export * from "./ZKStackBridge";
 export * from "./ZKStackWethBridge";
+export * from "./OFTBridge";
