@@ -90,7 +90,7 @@ export class Relayer {
     const { inventoryClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(), // Update address filter.
-      tokenClient.update()
+      tokenClient.update(),
     ]);
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {

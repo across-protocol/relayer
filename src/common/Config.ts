@@ -137,10 +137,24 @@ export class CommonConfig {
   }
 
   async update(): Promise<void> {
-    const addressAggregator = new AddressAggregator([
-      new addressAdapters.bybit.AddressList(),
-      new addressAdapters.env.AddressList(IGNORED_ADDRESSES),
-    ]);
+    // Comma-separated string array of address sources to skip; i.e. ADDRESS_FILTER_DISABLE="a,b,c".
+    const noFilter = process.env.ADDRESS_FILTER_DISABLE ?? "";
+
+    const addressFeeds = [];
+    AddressAggregator.sources()
+      .filter((source) => !noFilter.includes(source))
+      .forEach((source) => {
+        switch (source) {
+          case "bybit":
+            addressFeeds.push(new addressAdapters.bybit.AddressList());
+            break;
+          case "processEnv":
+            addressFeeds.push(new addressAdapters.processEnv.AddressList(IGNORED_ADDRESSES));
+            break;
+        }
+      });
+
+    const addressAggregator = new AddressAggregator(addressFeeds);
     this.addressFilter = await addressAggregator.update();
   }
 }
