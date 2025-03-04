@@ -134,14 +134,16 @@ export class CommonConfig {
     }
   }
 
-  async update(): Promise<void> {
-    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH = "./addresses.json" } = process.env;
+  async update(logger: winston.Logger): Promise<void> {
+    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";
     if (noFilter) {
+      logger.debug({ at: "Config::update", message: "Skipping address list update." });
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(ADDRESS_FILTER_PATH)]);
+    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(path)]);
     this.addressFilter = await addressAggregator.update();
+    logger.debug({ at: "Config::update", message: `Read ${this.addressFilter.size} addresses.`, path });
   }
 }

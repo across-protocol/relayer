@@ -89,7 +89,7 @@ export class Relayer {
   async init(): Promise<void> {
     const { inventoryClient, tokenClient } = this.clients;
     await Promise.all([
-      this.config.update(), // Update address filter.
+      this.config.update(this.logger), // Update address filter.
       tokenClient.update(),
     ]);
 
