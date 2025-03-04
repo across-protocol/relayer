@@ -34,6 +34,7 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
+import IOFT_ABI from "./abi/IOFT.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -215,6 +216,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
+    oftMessengerUSDT: {
+      address: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee",
+      abi: IOFT_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -388,6 +393,10 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    oftMessengerUSDT: {
+      address: "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92",
+      abi: IOFT_ABI,
     },
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
