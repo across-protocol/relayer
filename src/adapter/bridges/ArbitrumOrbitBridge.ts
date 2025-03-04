@@ -12,6 +12,7 @@ import {
   ethers,
   bnZero,
   CHAIN_IDs,
+  EvmAddress,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -47,16 +48,16 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: string
+    l1Token: EvmAddress
   ) {
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
       CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
     const { l1: l1Address, l2: l2Address } =
-      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
+      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toAddress()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
@@ -71,9 +72,9 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const { l1GatewayRouter, l2GasLimit, l2GasPrice, l1SubmitValue } = this;
@@ -92,9 +93,9 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
@@ -110,9 +111,9 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(

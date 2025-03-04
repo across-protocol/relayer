@@ -9,32 +9,27 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   isDefined,
+  EvmAddress,
 } from "../../utils";
 import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 
-const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
+const ETH_TOKEN_ADDRESS = EvmAddress.fromHex("0x0000000000000000000000000000000000000001");
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
   private readonly l2Eth: Contract;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    l1Token: string
-  ) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
     // Overwrite the bridge gateway to the correct gateway. The correct gateway is the atomic depositor since this is the
     // address which is pulling weth out of the relayer via a `transferFrom`.
-    this.l1Gateways = [atomicDepositorAddress];
+    this.l1Gateways = [EvmAddress.fromHex(atomicDepositorAddress)];
 
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
     // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
@@ -47,9 +42,9 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   override async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
@@ -80,15 +75,15 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // If the fromAddress is the hub pool then ignore the query. This is because for calculating cross-chain
     // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
     // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
-    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
       return {};
     }
 
@@ -96,7 +91,11 @@ export class ZKStackWethBridge extends ZKStackBridge {
     let processedEvents;
     if (isL2Contract) {
       processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
-        .filter((e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token))
+        .filter(
+          (e) =>
+            compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
+            compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
+        )
         .map((e) => {
           return {
             ...processEvent(e, "amount", "to", "to"),
@@ -119,13 +118,13 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Ignore hub pool queries for the same reason as above.
-    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
       return {};
     }
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);

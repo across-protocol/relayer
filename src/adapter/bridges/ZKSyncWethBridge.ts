@@ -11,6 +11,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
   compareAddressesSimple,
+  EvmAddress,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -34,17 +35,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
-  ) {
-    // Lint Appeasement
-    _l1Token;
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(atomicDepositorAddress)]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
     const { address: mailboxAddress, abi: mailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
@@ -56,9 +49,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const l1Provider = this.atomicDepositor.provider;
@@ -76,10 +69,10 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       ? await zksync.utils.estimateDefaultBridgeDepositL2Gas(
           l1Provider,
           zkProvider,
-          l1Token,
+          l1Token.toAddress(),
           amount,
-          toAddress,
-          toAddress,
+          toAddress.toAddress(),
+          toAddress.toAddress(),
           this.gasPerPubdataLimit
         )
       : BigNumber.from(2_000_000);
@@ -109,13 +102,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (compareAddressesSimple(fromAddress, hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), hubPool.address)) {
       return Promise.resolve({});
     }
     const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
@@ -130,7 +123,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       events = await paginatedEventQuery(hubPool, hubPool.filters.TokensRelayed(), eventConfig);
       processedEvents = events
         .filter(
-          (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+          (e) =>
+            compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
+            compareAddressesSimple(e.args.l1Token, wethAddress)
         )
         .map((e) => {
           return {
@@ -153,13 +148,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (compareAddressesSimple(fromAddress, hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), hubPool.address)) {
       return Promise.resolve({});
     }
 
@@ -199,7 +194,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
   }
 
-  private isL2ChainContract(address: string): Promise<boolean> {
-    return isContractDeployedToAddress(address, this.l2Eth.provider);
+  private isL2ChainContract(address: EvmAddress): Promise<boolean> {
+    return isContractDeployedToAddress(address.toAddress(), this.l2Eth.provider);
   }
 }

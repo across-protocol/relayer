@@ -6,6 +6,10 @@ export type BlockFinderHints = sdk.utils.BlockFinderHints;
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
+export class Address extends sdk.utils.Address {}
+export class EvmAddress extends sdk.utils.EvmAddress {}
+export class SvmAddress extends sdk.utils.SvmAddress {}
+
 export const {
   assign,
   groupObjectCountsByProp,
