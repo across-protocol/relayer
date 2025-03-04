@@ -1,17 +1,18 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
   [key: string]: string | undefined;
 }
 
+const IGNORED_ADDRESSES = "IGNORED_ADDRESSES"; // Env var specifying JSON-encoded address list.
+
 export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
-  readonly ignoredAddresses: Set<string>;
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
@@ -26,12 +27,12 @@ export class CommonConfig {
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
+  public addressFilter: Set<string>;
 
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
-      IGNORED_ADDRESSES,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
@@ -70,8 +71,6 @@ export class CommonConfig {
     assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
     this.blockRangeEndBlockBuffer = mergeConfig(Constants.BUNDLE_END_BLOCK_BUFFERS, BLOCK_RANGE_END_BLOCK_BUFFER);
-
-    this.ignoredAddresses = new Set(JSON.parse(IGNORED_ADDRESSES ?? "[]").map(ethers.utils.getAddress));
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
@@ -135,5 +134,13 @@ export class CommonConfig {
         this.toBlockOverride[chainId] = toBlock;
       }
     }
+  }
+
+  async update(): Promise<void> {
+    const addressAggregator = new AddressAggregator([
+      new addressAdapters.bybit.AddressList(),
+      new addressAdapters.env.AddressList(IGNORED_ADDRESSES),
+    ]);
+    this.addressFilter = await addressAggregator.update();
   }
 }

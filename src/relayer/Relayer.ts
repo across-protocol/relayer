@@ -88,7 +88,10 @@ export class Relayer {
    */
   async init(): Promise<void> {
     const { inventoryClient, tokenClient } = this.clients;
-    await tokenClient.update();
+    await Promise.all([
+      this.config.update(), // Update address filter.
+      tokenClient.update()
+    ]);
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
       await tokenClient.setOriginTokenApprovals();
@@ -201,7 +204,7 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const { addressFilter, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
 
@@ -263,7 +266,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (ignoredAddresses?.has(getAddress(depositor)) || ignoredAddresses?.has(getAddress(recipient))) {
+    if (addressFilter?.has(getAddress(depositor)) || addressFilter?.has(getAddress(recipient))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
