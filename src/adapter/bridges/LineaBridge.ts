@@ -22,7 +22,7 @@ export class LineaBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "bridgeToken",
-      args: [l1Token, amount, toAddress],
+      args: [l1Token.toAddress(), amount, toAddress.toAddress()],
     });
   }
 

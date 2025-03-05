@@ -24,7 +24,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "sendMessage",
-      args: [toAddress, amount, this.l2Gas],
+      args: [toAddress.toAddress(), amount, this.l2Gas],
     });
   }
 
@@ -35,7 +35,11 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l1Bridge = this.getL1Bridge();
-    const events = await paginatedEventQuery(l1Bridge, l1Bridge.filters.MessageSent(undefined, toAddress.toAddress()), eventConfig);
+    const events = await paginatedEventQuery(
+      l1Bridge,
+      l1Bridge.filters.MessageSent(undefined, toAddress.toAddress()),
+      eventConfig
+    );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_user")),
     };

@@ -22,7 +22,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositTo",
-      args: [amount, toAddress],
+      args: [amount, toAddress.toAddress()],
     });
   }
 

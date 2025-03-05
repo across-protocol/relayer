@@ -53,7 +53,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.l1Gateway,
       method: "depositFor",
-      args: [toAddress, l1Token, bnToHex(amount)],
+      args: [toAddress.toAddress(), l1Token.toAddress(), bnToHex(amount)],
     });
   }
 

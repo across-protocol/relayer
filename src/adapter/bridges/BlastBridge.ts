@@ -24,7 +24,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "bridgeERC20",
-      args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
+      args: [l1Token.toAddress(), l2Token.toAddress(), amount, this.l2Gas, "0x"],
     });
   }
 

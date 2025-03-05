@@ -86,13 +86,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     );
 
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2Transaction", [
-      toAddress,
+      toAddress.toAddress(),
       amount,
       "0x",
       l2GasLimit,
       this.gasPerPubdataLimit,
       [],
-      toAddress,
+      toAddress.toAddress(),
     ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
@@ -170,10 +170,17 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(
           this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress.toAddress()),
+          this.l2Eth.filters.Transfer(
+            zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address),
+            toAddress.toAddress()
+          ),
           eventConfig
         ),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()), eventConfig),
+        paginatedEventQuery(
+          this.l2Weth,
+          this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+          eventConfig
+        ),
       ]);
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }

@@ -87,7 +87,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: l1GatewayRouter,
       method: "outboundTransfer",
-      args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
+      args: [l1Token.toAddress(), toAddress.toAddress(), amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
       value: isDefined(this.gasToken) ? bnZero : l1SubmitValue,
     });
   }
@@ -105,7 +105,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
-        .filter(({ args }) => args.l1Token === l1Token)
+        .filter(({ args }) => args.l1Token === l1Token.toAddress())
         .map((event) => processEvent(event, "_amount", "_to", "_from")),
     };
   }

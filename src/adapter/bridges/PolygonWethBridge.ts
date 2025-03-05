@@ -55,7 +55,9 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const bridgeCalldata = this.rootChainManager.interface.encodeFunctionData("depositEtherFor", [toAddress]);
+    const bridgeCalldata = this.rootChainManager.interface.encodeFunctionData("depositEtherFor", [
+      toAddress.toAddress(),
+    ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",

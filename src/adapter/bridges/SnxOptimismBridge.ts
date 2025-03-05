@@ -34,7 +34,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositTo",
-      args: [toAddress, amount],
+      args: [toAddress.toAddress(), amount],
     });
   }
 

@@ -66,7 +66,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getScrollGatewayRouter(),
       method: "depositERC20",
-      args: [l1Token, toAddress, amount, this.l2Gas],
+      args: [l1Token.toAddress(), toAddress.toAddress(), amount, this.l2Gas],
       value: bufferedFee,
     });
   }
@@ -95,9 +95,9 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     // Take all events which are sending an amount greater than 0.
     const processedEvents = events
       .map((event) => processEvent(event, "amount", "to", "from"))
-      .filter(({ amount }) => amount > bnZero);
+      .filter(({ amount }) => amount.gt(bnZero));
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to === toAddress), // Only return the events which match to the toAddress
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to.eq(toAddress)), // Only return the events which match to the toAddress
     };
   }
 
@@ -118,9 +118,9 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     );
     const processedEvents = events
       .map((event) => processEvent(event, "amount", "to", "from"))
-      .filter(({ amount }) => amount > bnZero);
+      .filter(({ amount }) => amount.gt(bnZero));
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to === toAddress),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to.eq(toAddress)),
     };
   }
 

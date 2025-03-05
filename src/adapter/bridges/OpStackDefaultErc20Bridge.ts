@@ -27,7 +27,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositERC20",
-      args: [l1Token, l2Token, amount, this.l2Gas, "0x"],
+      args: [l1Token.toAddress(), l2Token.toAddress(), amount, this.l2Gas, "0x"],
     });
   }
 

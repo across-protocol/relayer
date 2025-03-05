@@ -71,7 +71,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     // Reduce the events to a single Object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
       Object.entries(event).forEach(([l2Token, events]) => {
-        acc[l2Token] = (acc[l2Token] ?? []).concat(events);
+        acc[l2Token.toAddress()] = (acc[l2Token.toAddress()] ?? []).concat(events);
       });
       return acc;
     }, {});
@@ -91,7 +91,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     // Reduce the events to a single object. If there are any duplicate keys, merge the events.
     return events.reduce((acc, event) => {
       Object.entries(event).forEach(([l2Token, events]) => {
-        acc[l2Token] = (acc[l2Token] ?? []).concat(events);
+        acc[l2Token.toAddress()] = (acc[l2Token.toAddress()] ?? []).concat(events);
       });
       return acc;
     }, {});

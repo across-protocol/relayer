@@ -95,13 +95,15 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ETHDepositInitiated(isContract ? fromAddress.toAddress() : this.atomicDepositor.address),
+      this.getL1Bridge().filters.ETHDepositInitiated(
+        isContract ? fromAddress.toAddress() : this.atomicDepositor.address
+      ),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
     // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
     if (!isContract) {
-      return this.convertEventListToBridgeEvents(events.filter((event) => event.args._to === fromAddress));
+      return this.convertEventListToBridgeEvents(events.filter((event) => event.args._to === fromAddress.toAddress()));
     }
     return this.convertEventListToBridgeEvents(events);
   }

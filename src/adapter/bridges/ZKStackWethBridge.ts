@@ -57,8 +57,8 @@ export class ZKStackWethBridge extends ZKStackBridge {
         0,
         this.l2GasLimit,
         this.gasPerPubdataLimit,
-        toAddress,
-        this.sharedBridgeAddress,
+        toAddress.toAddress(),
+        this.sharedBridgeAddress.toAddress(),
         amount,
         secondBridgeCalldata,
       ],
@@ -146,7 +146,11 @@ export class ZKStackWethBridge extends ZKStackBridge {
       // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(this.l2Eth, this.l2Eth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()), eventConfig),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()), eventConfig),
+        paginatedEventQuery(
+          this.l2Weth,
+          this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+          eventConfig
+        ),
       ]);
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }

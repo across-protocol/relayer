@@ -81,7 +81,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "deposit",
-      args: [toAddress, l1Token, amount, l2GasLimit.toString(), this.gasPerPubdataLimit],
+      args: [toAddress.toAddress(), l1Token.toAddress(), amount, l2GasLimit.toString(), this.gasPerPubdataLimit],
       value: l2TransactionBaseCost,
     });
   }

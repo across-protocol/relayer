@@ -40,7 +40,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("sendMessage", [
-      toAddress,
+      toAddress.toAddress(),
       this.bridgeFee,
       "0x",
     ]);
@@ -68,7 +68,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
         .map((event) => processEvent(event, "_value", "_to", "_from"))
-        .filter(({ amount }) => amount > bnZero),
+        .filter(({ amount }) => amount.gt(bnZero)),
     };
   }
 
@@ -106,7 +106,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     }
 
     const internalMessageHashes = initiatedQueryResult
-      .filter(({ args }) => args._value.gt(0))
+      .filter(({ args }) => args._value.gt(bnZero))
       .map(({ args }) => args._messageHash);
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
