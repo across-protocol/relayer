@@ -57,12 +57,12 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
+      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
     }
     this.l1SubmitValue = bridgeSubmitValue[l2chainId];
     this.l2GasPrice = maxFeePerGas[l2chainId];
@@ -100,7 +100,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress.toAddress()),
       eventConfig
     );
     return {
@@ -118,7 +118,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token, undefined, toAddress),
+      this.getL2Bridge().filters.DepositFinalized(l1Token.toAddress(), undefined, toAddress.toAddress()),
       eventConfig
     );
     return {

@@ -44,7 +44,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
     const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } =
       CONTRACT_ADDRESSES[hubChainId].scrollGasPriceOracle;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1BridgeAddress, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2BridgeAddress, l2Abi, l2SignerOrProvider);
@@ -52,7 +52,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     this.scrollGatewayRouter = new Contract(l1Address, l1Abi, l1Signer);
     this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer);
 
-    this.hubPoolAddress = EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId].hubPool.address);
+    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId].hubPool.address;
   }
 
   async constructL1ToL2Txn(
@@ -84,12 +84,12 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const isL2Contract = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress;
+    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toAddress();
 
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.DepositERC20(l1Token, undefined, monitoredFromAddress),
+      l1Bridge.filters.DepositERC20(l1Token.toAddress(), undefined, monitoredFromAddress),
       eventConfig
     );
     // Take all events which are sending an amount greater than 0.
@@ -108,12 +108,12 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const isL2Contract = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress;
+    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toAddress();
 
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.FinalizeDepositERC20(l1Token, undefined, monitoredFromAddress),
+      l2Bridge.filters.FinalizeDepositERC20(l1Token.toAddress(), undefined, monitoredFromAddress),
       eventConfig
     );
     const processedEvents = events

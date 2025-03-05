@@ -64,6 +64,7 @@ export const {
   getRelayEventKey,
   toBytes32,
   validateFillForDeposit,
+  toAddressType,
 } = sdk.utils;
 
 export const {

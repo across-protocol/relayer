@@ -7,7 +7,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
@@ -34,7 +34,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.BridgingInitiatedV2(undefined, toAddress, l1Token),
+      this.getL1Bridge().filters.BridgingInitiatedV2(undefined, toAddress.toAddress(), l1Token.toAddress()),
       eventConfig
     );
     return {
@@ -52,7 +52,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.BridgingFinalizedV2(l1Token, undefined, undefined, toAddress),
+      this.getL2Bridge().filters.BridgingFinalizedV2(l1Token.toAddress(), undefined, undefined, toAddress.toAddress()),
       eventConfig
     );
     // There is no "from" field in this event, so we set it to the L2 token received.

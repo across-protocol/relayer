@@ -21,7 +21,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
     ]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger;
@@ -35,8 +35,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return getCctpDomainForChainId(this.l2chainId);
   }
 
-  private get l1UsdcTokenAddress(): EvmAddress {
-    return EvmAddress.fromHex(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
+  private get l1UsdcTokenAddress(): string {
+    return TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId];
   }
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {
@@ -70,7 +70,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       this.getL1Bridge(),
       this.getL2Bridge(),
       eventConfig,
-      this.l1UsdcTokenAddress.toAddress(),
+      this.l1UsdcTokenAddress,
       this.hubChainId,
       this.l2chainId,
       fromAddress.toAddress()

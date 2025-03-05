@@ -26,7 +26,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaMessageService;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].l2MessageService;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(atomicDepositorAddress)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -59,7 +59,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toAddress()),
       eventConfig
     );
 
@@ -95,7 +95,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     };
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toAddress()),
       l1SearchConfig
     );
 

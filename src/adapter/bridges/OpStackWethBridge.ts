@@ -32,7 +32,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       l1Signer,
       l2SignerOrProvider,
       // To keep existing logic, we should use atomic depositor as the l1 bridge
-      [EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
+      [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
     );
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
@@ -45,7 +45,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
-    this.l1Weth = EvmAddress.fromHex(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
+    this.l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
@@ -56,7 +56,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositETHTo", [
-      toAddress,
+      toAddress.toAddress(),
       this.l2Gas,
       "0x",
     ]);
@@ -89,13 +89,13 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isL2ChainContract || (isContract && fromAddress.toAddress() !== this.hubPoolAddress)) {
+    if (isL2ChainContract) {
       return this.convertEventListToBridgeEvents([]);
     }
 
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      this.getL1Bridge().filters.ETHDepositInitiated(isContract ? fromAddress.toAddress() : this.atomicDepositor.address),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
@@ -117,7 +117,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // See above for why we don't want to monitor the spoke pool contract.
     const isL2ChainContract = await this.isL2ChainContract(fromAddress);
-    if (isL2ChainContract || (isContract && fromAddress.toAddress() !== this.hubPoolAddress)) {
+    if (isL2ChainContract) {
       return this.convertEventListToBridgeEvents([]);
     }
 
@@ -136,7 +136,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       )
         // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
         // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
-        .filter((event) => event.args._to === toAddress);
+        .filter((event) => event.args._to === toAddress.toAddress());
 
       // We only care about WETH finalization events initiated by the relayer running this rebalancer logic, so only
       // filter on Deposit events sent from the provided signer. We can't simply filter on `fromAddress` because
@@ -156,7 +156,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       return this.convertEventListToBridgeEvents(
         await paginatedEventQuery(
           this.getL2Bridge(),
-          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress.toAddress()),
           eventConfig
         )
       );
@@ -175,6 +175,6 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig,
     l2Weth = this.l2Weth
   ): Promise<Log[]> {
-    return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress), eventConfig);
+    return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress.toAddress()), eventConfig);
   }
 }

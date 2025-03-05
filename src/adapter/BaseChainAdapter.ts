@@ -132,7 +132,7 @@ export class BaseChainAdapter {
             return { token: erc20, bridges: [] };
           }
           const bridgesToApprove = await filterAsync(bridges, async (bridge) => {
-            const senderAddress = EvmAddress.fromHex(await erc20.signer.getAddress());
+            const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(l1Token, senderAddress, bridge);
             const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridge.toAddress()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
@@ -149,7 +149,7 @@ export class BaseChainAdapter {
           const gasToken = bridge.gasToken;
           const erc20 = ERC20.connect(gasToken.toAddress(), this.getSigner(this.hubChainId));
           const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
-            const senderAddress = EvmAddress.fromHex(await erc20.signer.getAddress());
+            const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
             const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), gateway.toAddress()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
@@ -171,10 +171,12 @@ export class BaseChainAdapter {
       .concat(bridgeTokensToApprove)
       .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
-      this.log("Some tokens do not have a bridge contract", { unavailableTokens });
+      this.log("Some tokens do not have a bridge contract", {
+        unavailableTokens: unavailableTokens.map((token) => token.toAddress()),
+      });
     }
     if (tokensToApprove.length === 0) {
-      this.log("No token bridge approvals needed", { l1Tokens });
+      this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toAddress()) });
       return;
     }
     const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);

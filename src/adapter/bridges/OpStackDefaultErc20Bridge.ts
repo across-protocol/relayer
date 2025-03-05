@@ -8,7 +8,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address),
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address),
     ]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
@@ -39,7 +39,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ERC20DepositInitiated(l1Token, undefined, fromAddress),
+      this.getL1Bridge().filters.ERC20DepositInitiated(l1Token.toAddress(), undefined, fromAddress.toAddress()),
       eventConfig
     );
     return {
@@ -55,7 +55,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token, undefined, fromAddress),
+      this.getL2Bridge().filters.DepositFinalized(l1Token.toAddress(), undefined, fromAddress.toAddress()),
       eventConfig
     );
     return {

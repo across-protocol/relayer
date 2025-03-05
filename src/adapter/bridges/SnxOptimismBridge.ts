@@ -15,7 +15,7 @@ import { processEvent } from "../utils";
 export class SnxOptimismBridge extends BaseBridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address),
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address),
     ]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
@@ -44,7 +44,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const hubPoolAddress = EvmAddress.fromHex(this.getHubPool().address);
+    const hubPoolAddress = EvmAddress.from(this.getHubPool().address);
     // @dev Since the SnxOptimism bridge has no _from field when querying for finalizations, we cannot use
     // the hub pool to determine cross chain transfers (since we do not assume knowledge of the spoke pool address).
     if (fromAddress.eq(hubPoolAddress)) {
@@ -56,7 +56,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     fromAddress = isSpokePool ? hubPoolAddress : fromAddress;
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(fromAddress),
+      this.getL1Bridge().filters.DepositInitiated(fromAddress.toAddress()),
       eventConfig
     );
     return {
@@ -72,7 +72,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(toAddress),
+      this.getL2Bridge().filters.DepositFinalized(toAddress.toAddress()),
       eventConfig
     );
     return {

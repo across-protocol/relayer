@@ -36,7 +36,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   readonly tokenVault: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    const sharedBridgeAddress = EvmAddress.fromHex(
+    const sharedBridgeAddress = EvmAddress.from(
       CONTRACT_ADDRESSES[hubChainId][`zkStackSharedBridge_${l2chainId}`].address
     );
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [sharedBridgeAddress]);
@@ -44,7 +44,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
+      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
     }
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkStackBridgeHub;
@@ -161,7 +161,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       processedEvents = (
         await paginatedEventQuery(
           this.tokenVault,
-          this.tokenVault.filters.BridgeBurn(this.l2chainId, assetId, fromAddress),
+          this.tokenVault.filters.BridgeBurn(this.l2chainId, assetId, fromAddress.toAddress()),
           eventConfig
         )
       ).map((e) => processEvent(e, "amount", "receiver", "sender"));
@@ -186,22 +186,22 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     // Optionally alias the l1 sender.
     const isL1Contract = await this._isContract(fromAddress, this.getL1Bridge().provider!);
     const aliasedSender = isL1Contract
-      ? EvmAddress.fromHex(zksync.utils.applyL1ToL2Alias(fromAddress.toAddress()))
+      ? EvmAddress.from(zksync.utils.applyL1ToL2Alias(fromAddress.toAddress()))
       : fromAddress;
     let processedEvents;
     if (!bridgingGasToken) {
       processedEvents = await paginatedEventQuery(
         this.l2GasToken,
-        this.l2GasToken.filters.Transfer(aliasedSender, toAddress),
+        this.l2GasToken.filters.Transfer(aliasedSender.toAddress(), toAddress.toAddress()),
         eventConfig
       );
     } else {
       // We unfortunately can't assume that the wrapped native token will emit an event when minting new tokens (i.e. a Transfer from the zero address), so we instead query the transfer of the native token to the wrapped native token contract.
       const [events, wrapEvents] = await Promise.all([
-        paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender, toAddress), eventConfig),
+        paginatedEventQuery(this.l2GasToken, this.l2GasToken.filters.Transfer(aliasedSender.toAddress(), toAddress.toAddress()), eventConfig),
         paginatedEventQuery(
           this.l2GasToken,
-          this.l2GasToken.filters.Transfer(toAddress, this.l2WrappedGasToken.address),
+          this.l2GasToken.filters.Transfer(toAddress.toAddress(), this.l2WrappedGasToken.address),
           eventConfig
         ),
       ]);
@@ -213,7 +213,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   _secondBridgeCalldata(toAddress: EvmAddress, l1Token: EvmAddress, amount: BigNumber): string {
-    return ethers.utils.defaultAbiCoder.encode(["address", "uint256", "address"], [l1Token, amount, toAddress]);
+    return ethers.utils.defaultAbiCoder.encode(["address", "uint256", "address"], [l1Token.toAddress(), amount, toAddress.toAddress()]);
   }
 
   async _txBaseCost(): Promise<BigNumber> {

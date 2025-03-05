@@ -33,7 +33,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     // up-to-date.
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
     const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l1Gateway = new Contract(l1GatewayAddress, l1GatewayAbi, l1Signer);
@@ -65,7 +65,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.LockedERC20(undefined, toAddress, l1Token),
+      this.getL1Bridge().filters.LockedERC20(undefined, toAddress.toAddress(), l1Token.toAddress()),
       eventConfig
     );
     return {
@@ -83,7 +83,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
       eventConfig
     );
     return {

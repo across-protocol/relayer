@@ -19,7 +19,7 @@ import {
   assert,
   Profiler,
   EvmAddress,
-  Address,
+  toAddressType,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -68,7 +68,7 @@ export class AdapterManager {
           const l2Signer = spokePoolClients[chainId].spokePool.signer;
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.fromHex(l1Token));
+          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.from(l1Token));
           return [l1Token, bridge];
         }) ?? []
       );
@@ -87,7 +87,7 @@ export class AdapterManager {
               return undefined;
             }
             const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.fromHex(l1Token));
+            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
@@ -101,7 +101,7 @@ export class AdapterManager {
         spokePoolClients,
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId).map((address) => Address.from(address)),
+        filterMonitoredAddresses(chainId).map((address) => toAddressType(address, chainId)),
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
@@ -157,9 +157,9 @@ export class AdapterManager {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
     return this.adapters[chainId].sendTokenToTargetChain(
-      Address.from(address),
+      toAddressType(address, Number(chainId)),
       EvmAddress.from(l1Token),
-      Address.from(l2Token),
+      toAddressType(l2Token, Number(chainId)),
       amount,
       simMode
     );
@@ -182,7 +182,7 @@ export class AdapterManager {
     });
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(
       EvmAddress.from(address),
-      Address.from(l2Token),
+      toAddressType(l2Token, chainId),
       amount,
       simMode
     );
@@ -198,8 +198,8 @@ export class AdapterManager {
     chainId = Number(chainId);
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(
       lookbackPeriodSeconds,
-      Address.from(fromAddress),
-      Address.from(l2Token)
+      toAddressType(fromAddress, chainId),
+      toAddressType(l2Token, chainId)
     );
   }
 
@@ -263,7 +263,7 @@ export class AdapterManager {
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens
           .filter((token) => this.l2TokenExistForL1Token(token, chainId))
-          .map((l1Token) => EvmAddress.fromHex(l1Token));
+          .map((l1Token) => EvmAddress.from(l1Token));
         await adapter.checkTokenApprovals(hubTokens);
       }
     }

@@ -33,7 +33,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     );
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.fromHex(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 

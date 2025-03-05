@@ -37,7 +37,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(atomicDepositorAddress)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(atomicDepositorAddress)]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
     const { address: mailboxAddress, abi: mailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
@@ -136,7 +136,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     } else {
       events = await paginatedEventQuery(
         this.atomicDepositor,
-        this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
+        this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress.toAddress(), this.l2chainId),
         eventConfig
       );
       // If we are in this branch, then the depositor is an EOA, so we can assume that from == to.
@@ -163,17 +163,17 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     if (isL2Contract) {
       processedEvents = await paginatedEventQuery(
         this.l2Eth,
-        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress),
+        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress.toAddress()),
         eventConfig
       );
     } else {
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(
           this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress),
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress.toAddress()),
           eventConfig
         ),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()), eventConfig),
       ]);
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }

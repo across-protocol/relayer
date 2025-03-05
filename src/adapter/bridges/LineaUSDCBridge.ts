@@ -7,7 +7,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1UsdcBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2UsdcBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
@@ -34,7 +34,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.Deposited(undefined, undefined, toAddress),
+      this.getL1Bridge().filters.Deposited(undefined, undefined, toAddress.toAddress()),
       eventConfig
     );
     return {
@@ -50,7 +50,7 @@ export class LineaUSDCBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.ReceivedFromOtherLayer(toAddress),
+      this.getL2Bridge().filters.ReceivedFromOtherLayer(toAddress.toAddress()),
       eventConfig
     );
     // There is no "from" address in this event.

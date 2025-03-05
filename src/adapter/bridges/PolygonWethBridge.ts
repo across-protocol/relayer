@@ -38,7 +38,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
       CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.fromHex(atomicDepositorAddress)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
@@ -71,7 +71,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.LockedEther(undefined, toAddress),
+      this.getL1Bridge().filters.LockedEther(undefined, toAddress.toAddress()),
       eventConfig
     );
     return {
@@ -89,7 +89,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
       eventConfig
     );
     return {

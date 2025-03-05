@@ -16,6 +16,6 @@ export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
     // we will need to overwrite the l1Gateways parameter, since when calling the super()
     // constructor, l1Gateways will be incorrectly set to the OVM standard bridge address,
     // not the DaiOptimismBridgeAddress.
-    this.l1Gateways = [EvmAddress.fromHex(l1Address)];
+    this.l1Gateways = [EvmAddress.from(l1Address)];
   }
 }
