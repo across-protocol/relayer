@@ -69,7 +69,9 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
   private convertEventListToBridgeEvents(events: Log[]): BridgeEvents {
     return {
-      [this.resolveL2TokenAddress(this.l1Weth)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(this.l1Weth)]: events.map((event) =>
+        processEvent(event, "_amount", "_to", "_from", this.l2chainId)
+      ),
     };
   }
 

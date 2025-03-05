@@ -10,6 +10,7 @@ import {
   blockExplorerLink,
   mapAsync,
   winston,
+  toAddressType,
   Address,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
@@ -55,16 +56,22 @@ export async function approveTokens(
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
 
-export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
+export function processEvent(
+  event: Log,
+  amountField: string,
+  toField: string,
+  fromField: string,
+  chainId: number
+): BridgeEvent {
   const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
     amount: BigNumber;
     to: Address;
     from: Address;
   };
   return {
-    amount: eventSpread[amountField],
-    to: eventSpread[toField],
-    from: eventSpread[fromField],
     ...eventSpread,
+    amount: eventSpread[amountField],
+    to: toAddressType(eventSpread[toField], chainId),
+    from: toAddressType(eventSpread[fromField], chainId),
   };
 }

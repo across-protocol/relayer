@@ -78,7 +78,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "depositReceiver", "depositor")
+        processEvent(event, "amount", "depositReceiver", "depositor", this.l2chainId)
       ),
     };
   }
@@ -95,7 +95,9 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+        processEvent(event, "value", "to", "from", this.l2chainId)
+      ),
     };
   }
 }

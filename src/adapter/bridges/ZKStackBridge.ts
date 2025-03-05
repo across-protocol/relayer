@@ -147,7 +147,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         )
         .map((e) => {
           return {
-            ...processEvent(e, "amount", "to", "to"),
+            ...processEvent(e, "amount", "to", "to", this.l2chainId),
             from: this.hubPool.address,
           };
         });
@@ -164,7 +164,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           this.tokenVault.filters.BridgeBurn(this.l2chainId, assetId, fromAddress.toAddress()),
           eventConfig
         )
-      ).map((e) => processEvent(e, "amount", "receiver", "sender"));
+      ).map((e) => processEvent(e, "amount", "receiver", "sender", this.l2chainId));
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
@@ -212,7 +212,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) =>
+        processEvent(e, "_amount", "_to", "from", this.l2chainId)
+      ),
     };
   }
 

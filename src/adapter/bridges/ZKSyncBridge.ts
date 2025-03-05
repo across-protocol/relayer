@@ -111,7 +111,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
     const filteredEvents = events.filter(({ args }) => args.l1Token === l1Token.toAddress());
     return {
       [this.resolveL2TokenAddress(l1Token)]: filteredEvents.map((event) =>
-        processEvent(event, "_amount", "_to", "from")
+        processEvent(event, "_amount", "_to", "from", this.l2chainId)
       ),
     };
   }
@@ -139,7 +139,7 @@ export class ZKSyncBridge extends BaseBridgeAdapter {
         );
 
     return {
-      [l2Token]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
+      [l2Token]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender", this.l2chainId)),
     };
   }
 

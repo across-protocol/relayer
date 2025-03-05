@@ -262,7 +262,13 @@ export class BaseChainAdapter {
     }
     this.log(
       message,
-      { l1Token, l2Token, amount, contract: contract.address, txnRequestData },
+      {
+        l1Token: l1Token.toAddress(),
+        l2Token: l2Token.toAddress(),
+        amount,
+        contract: contract.address,
+        txnRequestData,
+      },
       "debug",
       "sendTokenToTargetChain"
     );

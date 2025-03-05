@@ -94,7 +94,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     );
     // Take all events which are sending an amount greater than 0.
     const processedEvents = events
-      .map((event) => processEvent(event, "amount", "to", "from"))
+      .map((event) => processEvent(event, "amount", "to", "from", this.l2chainId))
       .filter(({ amount }) => amount.gt(bnZero));
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to.eq(toAddress)), // Only return the events which match to the toAddress
@@ -117,7 +117,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
       eventConfig
     );
     const processedEvents = events
-      .map((event) => processEvent(event, "amount", "to", "from"))
+      .map((event) => processEvent(event, "amount", "to", "from", this.l2chainId))
       .filter(({ amount }) => amount.gt(bnZero));
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.filter(({ to }) => to.eq(toAddress)),

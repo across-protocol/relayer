@@ -41,7 +41,9 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_user")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+        processEvent(event, "_amount", "_to", "_user", this.l2chainId)
+      ),
     };
   }
 
@@ -58,7 +60,9 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_user", "_spender")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+        processEvent(event, "_amount", "_user", "_spender", this.l2chainId)
+      ),
     };
   }
 }
