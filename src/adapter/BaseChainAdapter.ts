@@ -358,7 +358,7 @@ export class BaseChainAdapter {
             }
             return true;
           });
-          assign(outstandingTransfers, [monitoredAddress.toAddress(), l1Token, l2Token], {
+          assign(outstandingTransfers, [monitoredAddress.toAddress(), l1Token.toAddress(), l2Token], {
             totalAmount: outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), BigNumber.from(0)),
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
           });
