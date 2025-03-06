@@ -20,6 +20,7 @@ import {
   UsdcCCTPBridge,
   ZKStackBridge,
   ZKStackWethBridge,
+  OFTBridge,
 } from "../adapter/bridges";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
@@ -400,6 +401,7 @@ export const CUSTOM_BRIDGE: {
 } = {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,

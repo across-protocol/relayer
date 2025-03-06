@@ -1,89 +1,242 @@
 import { Contract, ethers, Signer } from "ethers";
-import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
   EventSearchConfig,
   Provider,
   TOKEN_SYMBOLS_MAP,
-  compareAddressesSimple,
   assert,
-  toBN,
   isDefined,
   paginatedEventQuery,
+  // ERC20,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
+
+import { IOFT__factory } from "@across-protocol/contracts";
+
+import {
+  IOFT,
+  MessagingFeeStruct,
+  SendParamStruct,
+} from "@across-protocol/contracts/typechain/@layerzerolabs/oft-evm/contracts/interfaces/IOFT";
+
+export type OFTBridgeEdge = {
+  l2ChainId: number;
+  srcIOFTAddress: string;
+  dstIOFTAddress: string;
+};
 
 export class OFTBridge extends BaseBridgeAdapter {
-  // for now, the only supported token is USDT, so this works. If we are to support more tokens, this will need to change
-  private MAX_SEND_AMOUNT_USDT = toBN(1_000_000_000_000); // 1MM USDT.
+  // todo: should this one go to a "constants" repo? Actually, it feels nice to have it confined within the OFT files cause it's strictly OFT-related
+  // Define supported OFT transfer paths with contract addresses
+  // Structure: { tokenAddress: OFTBridgeEdge[] }
+  private static readonly SUPPORTED_OFT_PATHS: {
+    [tokenAddress: string]: OFTBridgeEdge[];
+  } = {
+    // USDT supports transfers from Ethereum to Arbitrum
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: [
+      {
+        // todo: should I enforce key uniqueness here? I feel like it's fine
+        l2ChainId: CHAIN_IDs.ARBITRUM,
+        srcIOFTAddress: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee",
+        dstIOFTAddress: "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92",
+      },
+    ],
+  };
+
+  // Map to store IOFT contract ethers entities per token per chain
+  private oftContracts: {
+    [l1TokenAddress: string]: {
+      [chainId: number]: {
+        address: string;
+        // todo: make this an IOFT contract type?
+        contract: Contract;
+      };
+    };
+  } = {};
+
+  /**
+   * Adds an OFT contract to the internal map
+   * @param tokenAddress The token address
+   * @param chainId The chain ID
+   * @param contractAddress The OFT contract address
+   * @param signerOrProvider The signer or provider to use for the contract
+   */
+  private addOftContract(
+    tokenAddress: string,
+    chainId: number,
+    contractAddress: string,
+    signerOrProvider: Signer | Provider
+  ): void {
+    if (!this.oftContracts[tokenAddress]) {
+      this.oftContracts[tokenAddress] = {};
+    }
+
+    this.oftContracts[tokenAddress][chainId] = {
+      address: contractAddress,
+      contract: new Contract(contractAddress, IOFT__factory.abi, signerOrProvider),
+    };
+  }
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      // there's a single contract on mainnet for USDT integraion
-      // if we're to add more assets in the future, we'd have to pass in an array here
-      CONTRACT_ADDRESSES[hubChainId].oftMessengerUSDT.address,
+      // todo: don't want to approve all OFT contracts for large amounts. I think we should instead do approvals before we're doing cross-chain transfers
     ]);
 
-    // `l1Address` and `l1Abi` are for the contract called `OAdapterUpgradeable` and interface `IOFT` respectively.
-    // These addresses for `USDT0` can be viewed here https://docs.usdt0.to/technical-documentation/developer#id-3.-deployments
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].oftMessengerUSDT;
-    this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
+    // Iterate over all supported tokens and paths
+    Object.entries(OFTBridge.SUPPORTED_OFT_PATHS).forEach(([l1TokenAddress, edges]) => {
+      // For each token, find the edge that matches our destination chain
+      const edge = edges.find((edge) => edge.l2ChainId === l2chainId);
 
-    // similar to above, but address is for `OUpgradeable`
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].oftMessengerUSDT;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+      if (edge) {
+        // Get the corresponding L2 token address
+        const l2TokenAddress = this.resolveL2TokenAddress(l1TokenAddress);
+
+        // Initialize L1 contract using the srcIOFTAddress from the edge
+        this.addOftContract(l1TokenAddress, hubChainId, edge.srcIOFTAddress, l1Signer);
+
+        // Initialize L2 contract using the dstIOFTAddress from the edge
+        this.addOftContract(l2TokenAddress, l2chainId, edge.dstIOFTAddress, l2SignerOrProvider);
+      }
+    });
   }
 
   private get l2DestinationEId(): number {
     return getOFTEIdForChainId(this.l2chainId);
   }
 
-  private get l1UsdtTokenAddress(): string {
-    return TOKEN_SYMBOLS_MAP.USDT.addresses[this.hubChainId];
+  /**
+   * This function is not supported. Inherited from BaseBridgeAdapter
+   */
+  protected getL1Bridge(): Contract {
+    throw new Error("Not supported for OFTBridge because we have multiple L1Bridge contracts");
   }
 
-  protected resolveL2TokenAddress(l1Token: string): string {
-    l1Token;
-    return TOKEN_SYMBOLS_MAP.USDT.addresses[this.l2chainId];
+  /**
+   * Gets the L1 bridge contract for the specified token
+   * @param l1Token The L1 token address
+   * @returns The L1 bridge contract
+   */
+  protected getL1BridgeForToken(l1Token: string): Contract {
+    const l1Contract = this.oftContracts[l1Token]?.[this.hubChainId]?.contract;
+
+    assert(isDefined(l1Contract), `Cannot access L1 Bridge for token ${l1Token} when it is undefined.`);
+    return l1Contract;
   }
 
+  /**
+   * This function is not supported. Inherited from BaseBridgeAdapter
+   */
+  protected getL2Bridge(): Contract {
+    throw new Error("Not supported for OFTBridge because we have multiple L2Bridge contracts");
+  }
+
+  /**
+   * Gets the L2 bridge contract for the specified token
+   * @param l1Token The L1 token address
+   * @returns The L2 bridge contract
+   */
+  protected getL2BridgeForL1Token(l1Token: string): Contract {
+    const l2TokenAddress = this.resolveL2TokenAddress(l1Token);
+    const l2Contract = this.oftContracts[l2TokenAddress]?.[this.l2chainId]?.contract;
+
+    assert(isDefined(l2Contract), `Cannot access L2 Bridge for token ${l2TokenAddress} when it is undefined.`);
+    return l2Contract;
+  }
+
+  // ! todo: check this ⚠️
   async constructL1ToL2Txn(
     toAddress: string,
-    _l1Token: string,
+    l1Token: string,
     _l2Token: string,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(compareAddressesSimple(_l1Token, TOKEN_SYMBOLS_MAP.USDT.addresses[this.hubChainId]));
+    // Verify the token is supported
+    assert(
+      OFTBridge.SUPPORTED_OFT_PATHS[l1Token]?.some((edge) => edge.l2ChainId === this.l2chainId),
+      `Token ${l1Token} is not supported for transfer from chain ${this.hubChainId} to ${this.l2chainId}`
+    );
+
     // With `amount` here, we have to be mindful of `_removeDust` logic in `OFTCore` code
     // TLDR: last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount have to be set to 0 to prevent rounding on the contract side
     // more details here https://github.com/LayerZero-Labs/devtools/blob/a843edfc160f3cfa35d952b616b1cfe462503bc0/packages/oft-evm/contracts/OFTCore.sol#L343
-    amount = amount.gt(this.MAX_SEND_AMOUNT_USDT) ? this.MAX_SEND_AMOUNT_USDT : amount;
 
+    const sendParamStruct: SendParamStruct = {
+      dstEid: this.l2DestinationEId,
+      to: oftAddressToBytes32(toAddress).toLowerCase(), // todo: .toLowerCase just in case, check this
+      amountLD: amount,
+      minAmountLD: amount,
+      extraOptions: "0x", // todo: 0x -- is this the way to do it?
+      composeMsg: "0x",
+      oftCmd: "0x",
+    };
+
+    // Get the L1 bridge contract for this token
+    const l1Bridge = this.getL1BridgeForToken(l1Token);
+
+    // todo: will this work?
+    const feeStruct: MessagingFeeStruct = await (l1Bridge as IOFT).quoteSend(sendParamStruct, false);
+
+    console.log("ethFee: ", feeStruct.nativeFee.toString());
+
+    // mult fee by 2 in order to get our tx included with high probability. Excess fee will get refunded
+    const ethFee = feeStruct[0].mul(2);
+
+    const newFeeStruct: MessagingFeeStruct = {
+      nativeFee: ethFee,
+      lzTokenFee: "0",
+    };
+
+    // ! note : if (msg.value != _nativeFee) revert NotEnoughNative(msg.value);
+    // ! nativeFee value has to be EXACTLY the msg.value
+
+    console.log("ethFee: ", ethFee.toString());
+
+    const cap = ethers.utils.parseEther("0.01");
+
+    if (ethFee.gt(cap)) {
+      throw "can't go over fee cap";
+    } else {
+      console.log("feeCap: ", cap.toString());
+      console.log("fee is okay.");
+    }
+
+    const refundAddress = await l1Bridge.signer.getAddress();
+
+    const amountCap = ethers.utils.parseUnits("1.0", 6);
+    if (amount.gt(amountCap)) {
+      throw "can't go over amount cap";
+    } else {
+      console.log("amountCap: ", amountCap.toString());
+      console.log("amount is okay.");
+    }
+
+    console.log("amount: ", amount.toString());
+
+    // tx details for `OAdapterUpgradeable.send(..)`
     return Promise.resolve({
-      contract: this.getL1Bridge(),
-      method: "send", // Name of the method called on a `OAdapterUpdgradeable` contract
-      /*
-      todo ihor:
-        these are the params I should be passing into the send method on the contract side as if I were sending a send to the contract directly.
-        Should experiment with a dev wallet with how to construct these args. Currently, totally wrong
-        I should be using something like this to construct my message (bring typechain from contracts repo): `export { ERC20__factory } from "@across-protocol/contracts/dist/typechain/factories/@openzeppelin/contracts/token/ERC20/ERC20__factory";`
-      */
-      args: [amount, this.l2DestinationEId, oftAddressToBytes32(toAddress), this.l1UsdtTokenAddress],
+      contract: l1Bridge,
+      method: "send",
+      args: [sendParamStruct, newFeeStruct, refundAddress],
+      value: ethFee,
     });
   }
 
-  // checked: OK!
+  // todo: right now, we're creating all the initiations creted by `fromAddress`, not filtering by `toAddress`, because OFT doesn't tell us that.
+  // todo: this could lead to duplicate events somewhere in the code -- check for how it's handled
+  //
+  // todo: `PacketSent` event is also emitted, which can potentially contain receiver info. It'd be cumbersome to also get that
   async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const l1Bridge = this.getL1Bridge();
-    // todo: just query `OFTSent` events like in the test project => call processEvent on each => return
-    const events = await paginatedEventQuery(
+    const l1Bridge = this.getL1BridgeForToken(l1Token);
+
+    // Get all OFTSent events for the fromAddress
+    const allEvents = await paginatedEventQuery(
       l1Bridge,
       l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
@@ -93,30 +246,41 @@ export class OFTBridge extends BaseBridgeAdapter {
       eventConfig
     );
 
+    // Filter events by destination EID since it's not an indexed parameter
+    // and can't be filtered directly in the query
+    const destinationEId = this.l2DestinationEId;
+    const events = allEvents.filter((event) => {
+      // The dstEid is the first parameter in the OFTSent event
+      return event.args.dstEid === destinationEId;
+    });
+
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        /*
-        todo ihor:
-        `processEvent` args are: `event: Log, amountField: string, toField: string, fromField: string`
-          there's no `to` field in my log
-        todo ihor:
-          see how the result of this is used. We can fitler by `dstEId` here
-          theoretically, we could create a global map called ADDRESS_TO_DST_EID, and filter by dstEId in this way, but that's awful
-        */
+        /**
+         * todo:
+         * Returning an empty `to` in my event. Is that bad? Check how output is used
+         *
+         * export type BridgeEvent = SortableEvent & {
+         *    to: string;
+         *    from: string;
+         *    amount: BigNumber;
+         *  };
+         */
         processEvent(event, "amountReceivedLD", "", "fromAddress")
       ),
     };
   }
 
-  // checked: OK!
   async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const l2Bridge = this.l2Bridge;
-    const events = await paginatedEventQuery(
+    const l2Bridge = this.getL2BridgeForL1Token(l1Token);
+
+    // Get all OFTReceived events for the toAddress
+    const allEvents = await paginatedEventQuery(
       l2Bridge,
       l2Bridge.filters.OFTReceived(
         null, // guid - not filtering by guid (Topic[1])
@@ -125,10 +289,26 @@ export class OFTBridge extends BaseBridgeAdapter {
       ),
       eventConfig
     );
+
+    // Filter events by source EID since it's not an indexed parameter
+    // and can't be filtered directly in the query
+    const sourceEId = getOFTEIdForChainId(this.hubChainId);
+    const events = allEvents.filter((event) => {
+      // The srcEid is the first parameter in the OFTReceived event
+      return event.args.srcEid === sourceEId;
+    });
+
     return {
-      /*
-      ihor todo: same in `queryL1BridgeInitiationEvents`: there's no `fromAddress` here
-      */
+      /**
+       * todo:
+       * Returning an empty `from` in my event. Is that bad? Check how output is used
+       *
+       * export type BridgeEvent = SortableEvent & {
+       *    to: string;
+       *    from: string;
+       *    amount: BigNumber;
+       *  };
+       */
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
         processEvent(event, "amountReceivedLD", "toAddress", "")
       ),
@@ -142,14 +322,14 @@ export class OFTBridge extends BaseBridgeAdapter {
  * @returns The OFT EID for the given chainId.
  */
 export function getOFTEIdForChainId(chainId: number): number {
-  const eId = PUBLIC_NETWORKS[chainId]?.oftEId;
+  const eId = PUBLIC_NETWORKS[chainId].oftEId;
   if (!isDefined(eId)) {
     throw new Error(`No OFT domain found for chainId: ${chainId}`);
   }
   return eId;
 }
 
-// checked: OK!
+// checked ✅
 /**
  * Converts an Ethereum address to bytes32 format for OFT bridge. Zero-pads from the left
  * @param address The Ethereum address to convert.
