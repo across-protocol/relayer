@@ -35,6 +35,7 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI from "./abi/IOFT.json";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -216,10 +217,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
-    oftMessengerUSDT: {
-      address: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee",
-      abi: IOFT_ABI,
-    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -393,10 +390,6 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
       abi: CCTP_TOKEN_MESSENGER_ABI,
-    },
-    oftMessengerUSDT: {
-      address: "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92",
-      abi: IOFT_ABI,
     },
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
@@ -648,6 +641,28 @@ export const CONTRACT_ADDRESSES: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
+};
+
+const USDT_MAINNET_ADDR = TOKEN_SYMBOLS_MAP["USDT"].addresses[CHAIN_IDs.MAINNET];
+
+// todo ihor: can I do this better?
+// OFT file needs a different structure compared to CONTRACT_ADDRESSES
+export const OFT_CONTRACT_ADDRESSES: {
+  [chainId: number]: {
+    // todo ihor: tokenAddress here becasue when I create OFTBridge object, I only have token address, not symbol. I wish I could `getTokenSymbol(address, chainID)` instead
+    // todo ihor: and have this map be by symbol instead
+    [tokenAddress: string]: {
+      address?: string;
+      abi?: unknown[];
+    };
+  };
+} = {
+  [CHAIN_IDs.MAINNET]: {
+    USDT_MAINNET_ADDR: {
+      address: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee",
+      abi: IOFT_ABI,
     },
   },
 };
