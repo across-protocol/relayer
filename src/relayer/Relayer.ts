@@ -1037,12 +1037,14 @@ export class Relayer {
     });
 
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
-    assert(
-      !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
-      `Lite chain deposits must be filled on its origin chain (${
-        deposit.originChainId
-      }). Deposit Id: ${deposit.depositId.toString()}.`
-    );
+    if (deposit.fromLiteChain && repaymentChainId !== deposit.originChainId) {
+      this.logger.warn({
+        at: "Relayer::fillRelay",
+        message: "Suppressed fill for lite chain deposit where repaymentChainId != originChainId",
+        deposit,
+      });
+      return;
+    }
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)]]
