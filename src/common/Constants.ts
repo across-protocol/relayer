@@ -107,7 +107,7 @@ Object.values(CHAIN_IDs)
   .forEach((chainId) => {
     if (chainIsOPStack(chainId)) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
-    } else if (chainIsOrbit(chainId)) {
+    } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
     }
   });
