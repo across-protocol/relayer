@@ -103,7 +103,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
 // Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
 MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
 Object.values(CHAIN_IDs)
-  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId))
+  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM)
   .forEach((chainId) => {
     if (chainIsOPStack(chainId)) {
       MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
