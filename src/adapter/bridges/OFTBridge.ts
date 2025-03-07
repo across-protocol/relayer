@@ -69,9 +69,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     contractAddress: string,
     signerOrProvider: Signer | Provider
   ): void {
-    if (!this.oftContracts[tokenAddress]) {
-      this.oftContracts[tokenAddress] = {};
-    }
+    this.oftContracts[tokenAddress] ??= {};
 
     this.oftContracts[tokenAddress][chainId] = {
       address: contractAddress,
@@ -196,7 +194,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const cap = ethers.utils.parseEther("0.01");
 
     if (ethFee.gt(cap)) {
-      throw "can't go over fee cap";
+      throw `can't go over fee cap (${ethFee} > ${cap})`;
     } else {
       console.log("feeCap: ", cap.toString());
       console.log("fee is okay.");
@@ -249,10 +247,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Filter events by destination EID since it's not an indexed parameter
     // and can't be filtered directly in the query
     const destinationEId = this.l2DestinationEId;
-    const events = allEvents.filter((event) => {
-      // The dstEid is the first parameter in the OFTSent event
-      return event.args.dstEid === destinationEId;
-    });
+    // The dstEid is the first parameter in the OFTSent event
+    const events = allEvents.filter(({ args }) => args.dstEid === destinationEId);
 
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
