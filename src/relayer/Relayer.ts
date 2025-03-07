@@ -1028,13 +1028,6 @@ export class Relayer {
     gasLimit?: BigNumber
   ): void {
     const { spokePoolClients } = this.clients;
-    this.logger.debug({
-      at: "Relayer::fillRelay",
-      message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
-      deposit,
-      repaymentChainId,
-      realizedLpFeePct,
-    });
 
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
     if (deposit.fromLiteChain && repaymentChainId !== deposit.originChainId) {
@@ -1042,9 +1035,18 @@ export class Relayer {
         at: "Relayer::fillRelay",
         message: "Suppressed fill for lite chain deposit where repaymentChainId != originChainId",
         deposit,
+        repaymentChainId,
       });
       return;
     }
+
+    this.logger.debug({
+      at: "Relayer::fillRelay",
+      message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
+      deposit,
+      repaymentChainId,
+      realizedLpFeePct,
+    });
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)]]
