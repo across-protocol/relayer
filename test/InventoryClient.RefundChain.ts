@@ -150,6 +150,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputToken: l2TokensForWeth[OPTIMISM],
         outputAmount: inputAmount,
         message: "0x",
+        messageHash: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
         exclusivityDeadline: 0,
@@ -330,6 +331,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputToken: l2TokensForWeth[OPTIMISM],
         outputAmount: inputAmount,
         message: "0x",
+        messageHash: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
         exclusivityDeadline: 0,
@@ -458,6 +460,41 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   });
 
+  describe("origin chain is a lite chain", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: true, // Pretend Polygon is a lite chain.
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[POLYGON],
+        inputAmount,
+        outputToken: l2TokensForWeth[ARBITRUM],
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+    });
+    it("returns only origin chain as repayment chain if it is underallocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON]);
+    });
+    it("returns no repayment chains if origin chain is over allocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains.length).to.equal(0);
+    });
+  });
+
   describe("evaluates slow withdrawal chains with excess running balances", function () {
     let excessRunningBalances: { [chainId: number]: BigNumber };
     beforeEach(async function () {
@@ -502,6 +539,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputToken: l2TokensForWeth[MAINNET],
         outputAmount: inputAmount,
         message: "0x",
+        messageHash: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
         exclusivityDeadline: 0,
@@ -585,6 +623,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         outputToken: bridgedUSDC[OPTIMISM],
         outputAmount: inputAmount,
         message: "0x",
+        messageHash: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
         exclusivityDeadline: 0,
