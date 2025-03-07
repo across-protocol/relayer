@@ -7,7 +7,7 @@ import { createSpyLogger, expect, randomAddress } from "./utils";
 
 describe("EventManager: Event Handling ", async function () {
   const chainId = CHAIN_IDs.MAINNET;
-  const providers = ["infura", "alchemy", "llamanodes"];
+  const providers = ["infura", "alchemy", "llamanodes", "quicknode"];
 
   const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
   const makeHash = () => ethersUtils.id(randomNumber().toString());
@@ -116,9 +116,81 @@ describe("EventManager: Event Handling ", async function () {
     expect(events.length).to.equal(0);
   });
 
-  it("Hashes events correctly", async function () {
-    const log = eventTemplate;
-    const hash = eventMgr.hashEvent(log);
-    expect(hash).to.exist;
+  it("Hashes events correctly: uniqueness", async function () {
+    const log1 = eventTemplate;
+    const hash1 = eventMgr.hashEvent(log1);
+    expect(hash1).to.exist;
+
+    const log2 = { ...log1, logIndex: log1.logIndex + 1 };
+    const hash2 = eventMgr.hashEvent(log2);
+    expect(hash2).to.not.equal(hash1);
+
+    const log3 = { ...log2, logIndex: log2.logIndex - 1 };
+    const hash3 = eventMgr.hashEvent(log3);
+    expect(hash3).to.equal(hash1);
+  });
+
+  it("Hashes events correctly: sorting", async function () {
+    const log = {
+      ...eventTemplate,
+      args: {
+        c: 3,
+        b: 2,
+        f: {
+          h: 7,
+          i: 8,
+          g: 6,
+        },
+        a: 1,
+        d: 4,
+        e: 5,
+      },
+    };
+    const sortedLog = {
+      ...log,
+      args: {
+        a: 1,
+        b: 2,
+        c: 3,
+        d: 4,
+        e: 5,
+        f: {
+          g: 6,
+          h: 7,
+          i: 8,
+        },
+      },
+    };
+
+    const hash1 = eventMgr.hashEvent(log);
+    expect(hash1).to.exist;
+
+    const hash2 = eventMgr.hashEvent(sortedLog);
+    expect(hash2).to.equal(hash1);
+  });
+
+  it("Does not submit duplicate events", async function () {
+    expect(quorum).to.equal(2);
+
+    const [provider1, provider2, provider3, provider4] = providers;
+    let { blockNumber } = eventTemplate;
+
+    // Add the event once (not finalised).
+    eventMgr.add(eventTemplate, provider1);
+    let events = eventMgr.tick(++blockNumber);
+    expect(events.length).to.equal(0);
+
+    // Add the same event from a different provider.
+    eventMgr.add(eventTemplate, provider2);
+    events = eventMgr.tick(++blockNumber);
+    expect(events.length).to.equal(1);
+
+    // Re-add the same event again, from two new providers.
+    eventMgr.add(eventTemplate, provider3);
+    eventMgr.add(eventTemplate, provider4);
+
+    // Verify that the same event was not replayed.
+    events = eventMgr.tick(++blockNumber);
+    expect(events.length).to.equal(0);
   });
 });

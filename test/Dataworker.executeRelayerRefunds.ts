@@ -8,7 +8,7 @@ import {
   repaymentChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
-import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3 } from "./utils";
+import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay } from "./utils";
 
 // Tested
 import { BalanceAllocator } from "../src/clients/BalanceAllocator";
@@ -64,7 +64,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
@@ -155,7 +155,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // Submit a valid fill.
-      await fillV3(spokePool_2, relayer, deposit1, destinationChainId);
+      await fillV3Relay(spokePool_2, deposit1, relayer, destinationChainId);
 
       await updateAllClients();
     });
@@ -241,7 +241,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // Submit a valid fill.
-      await fillV3(spokePool_2, relayer, deposit2, destinationChainId);
+      await fillV3Relay(spokePool_2, deposit2, relayer, destinationChainId);
       await updateAllClients();
 
       // Validate another bundle:

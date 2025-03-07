@@ -1,9 +1,10 @@
 import { utils } from "@across-protocol/sdk";
+import { PUBLIC_NETWORKS, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { TransactionReceipt } from "@ethersproject/abstract-provider";
 import axios from "axios";
 import { ethers } from "ethers";
 import { Log } from "../interfaces";
-import { CONTRACT_ADDRESSES, chainIdsToCctpDomains } from "../common";
+import { CONTRACT_ADDRESSES } from "../common";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
@@ -61,6 +62,14 @@ export function hashCCTPSourceAndNonce(source: number, nonce: number): string {
   return ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [source, nonce]));
 }
 
+export function getCctpDomainForChainId(chainId: number): number {
+  const cctpDomain = PUBLIC_NETWORKS[chainId]?.cctpDomain;
+  if (!isDefined(cctpDomain)) {
+    throw new Error(`No CCTP domain found for chainId: ${chainId}`);
+  }
+  return cctpDomain;
+}
+
 /**
  * Retrieves all outstanding CCTP bridge transfers for a given target -> destination chain, a source token address, and a from address.
  * @param sourceTokenMessenger The CCTP TokenMessenger contract on the source chain. The "Bridge Contract" of CCTP
@@ -82,8 +91,8 @@ export async function retrieveOutstandingCCTPBridgeUSDCTransfers(
   destinationChainId: number,
   fromAddress: string
 ): Promise<Log[]> {
-  const sourceDomain = chainIdsToCctpDomains[sourceChainId];
-  const targetDestinationDomain = chainIdsToCctpDomains[destinationChainId];
+  const sourceDomain = getCctpDomainForChainId(sourceChainId);
+  const targetDestinationDomain = getCctpDomainForChainId(destinationChainId);
 
   const sourceFilter = sourceTokenMessenger.filters.DepositForBurn(undefined, sourceToken, undefined, fromAddress);
   const initializationTransactions = await paginatedEventQuery(sourceTokenMessenger, sourceFilter, sourceSearchConfig);
@@ -128,12 +137,16 @@ export async function hasCCTPMessageBeenProcessed(
 }
 
 /**
- * Used to map a CCTP domain to a chain id. This is the inverse of chainIdsToCctpDomains.
+ * Used to map a CCTP domain to a chain id. This is the inverse of getCctpDomainForChainId.
  * Note: due to the nature of testnet/mainnet chain ids mapping to the same CCTP domain, we
  *       actually have a mapping of CCTP Domain -> [chainId].
  */
 export function getCctpDomainsToChainIds(): Record<number, number[]> {
-  return Object.entries(chainIdsToCctpDomains).reduce((acc, [chainId, cctpDomain]) => {
+  return Object.entries(PUBLIC_NETWORKS).reduce((acc, [chainId, networkInfo]) => {
+    const cctpDomain = networkInfo.cctpDomain;
+    if (cctpDomain === CCTP_NO_DOMAIN) {
+      return acc;
+    }
     if (!acc[cctpDomain]) {
       acc[cctpDomain] = [];
     }

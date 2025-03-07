@@ -23,7 +23,7 @@ import {
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {
-  [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
+  [chainId: number]: { [token: string]: { deposits: BigNumber[]; totalRequirement: BigNumber } };
 };
 
 export class TokenClient {
@@ -63,7 +63,7 @@ export class TokenClient {
     return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
   }
 
-  getShortfallDeposits(chainId: number, token: string): number[] {
+  getShortfallDeposits(chainId: number, token: string): BigNumber[] {
     return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
   }
 
@@ -73,7 +73,7 @@ export class TokenClient {
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it will capture the
   // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
-  captureTokenShortfall(chainId: number, token: string, depositId: number, unfilledAmount: BigNumber): void {
+  captureTokenShortfall(chainId: number, token: string, depositId: BigNumber, unfilledAmount: BigNumber): void {
     // Shortfall is the previous shortfall + the current unfilledAmount from this deposit.
     const totalRequirement = this.getShortfallTotalRequirement(chainId, token).add(unfilledAmount);
 
@@ -92,12 +92,12 @@ export class TokenClient {
   // requirement to send all seen relays and the total remaining balance of the relayer.
   getTokenShortfall(): {
     [chainId: number]: {
-      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
+      [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber[] };
     };
   } {
     const tokenShortfall: {
       [chainId: number]: {
-        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: number[] };
+        [token: string]: { balance: BigNumber; needed: BigNumber; shortfall: BigNumber; deposits: BigNumber[] };
       };
     } = {};
     Object.entries(this.tokenShortfall).forEach(([_chainId, tokenMap]) => {

@@ -22,7 +22,7 @@ import {
   depositV3,
   ethers,
   expect,
-  fillV3,
+  fillV3Relay,
   smock,
   sinon,
   lastSpyLogIncludes,
@@ -120,7 +120,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       amountToDeposit
     );
     await updateAllClients();
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     // Executing leaves before there is a bundle should do nothing:
@@ -189,7 +189,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     );
     await updateAllClients();
     // Fill and take repayment on a non-mainnet spoke pool.
-    await fillV3(spokePool_2, depositor, deposit, destinationChainId);
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
     const balanceAllocator = getNewBalanceAllocator();
@@ -453,7 +453,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
             originChainId: 10,
             depositor: randomAddress(),
             recipient: randomAddress(),
-            depositId: 0,
+            depositId: bnZero,
             inputToken: randomAddress(),
             inputAmount: slowFillAmount,
             outputToken: l1Token_1.address,
@@ -483,7 +483,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
       // Execute mainnet refund leaf after mainnet pool leaf. Then update exchange rates to execute non-mainnet pool leaf.
       const enqueuedTxns = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
-      expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal(["executeRootBundle", "executeV3SlowRelayLeaf"]);
+      expect(enqueuedTxns.map((txn) => txn.method)).to.deep.equal(["executeRootBundle", "executeSlowRelayLeaf"]);
     });
     it("No non-mainnet leaves", async function () {
       // In this test, check that if there are no mainnet leaves, then the dataworker should just execute non
