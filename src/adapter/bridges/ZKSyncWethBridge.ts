@@ -11,6 +11,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   assert,
   compareAddressesSimple,
+  EvmAddress,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { isDefined } from "../../utils/TypeGuards";
@@ -34,17 +35,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
 
   private readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
-  ) {
-    // Lint Appeasement
-    _l1Token;
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(atomicDepositorAddress)]);
 
     const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
     const { address: mailboxAddress, abi: mailboxAbi } = CONTRACT_ADDRESSES[hubChainId].zkSyncMailbox;
@@ -56,9 +49,9 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const l1Provider = this.atomicDepositor.provider;
@@ -76,10 +69,10 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       ? await zksync.utils.estimateDefaultBridgeDepositL2Gas(
           l1Provider,
           zkProvider,
-          l1Token,
+          l1Token.toAddress(),
           amount,
-          toAddress,
-          toAddress,
+          toAddress.toAddress(),
+          toAddress.toAddress(),
           this.gasPerPubdataLimit
         )
       : BigNumber.from(2_000_000);
@@ -93,13 +86,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     );
 
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2Transaction", [
-      toAddress,
+      toAddress.toAddress(),
       amount,
       "0x",
       l2GasLimit,
       this.gasPerPubdataLimit,
       [],
-      toAddress,
+      toAddress.toAddress(),
     ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
@@ -109,13 +102,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (compareAddressesSimple(fromAddress, hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), hubPool.address)) {
       return Promise.resolve({});
     }
     const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId];
@@ -130,22 +123,24 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
       events = await paginatedEventQuery(hubPool, hubPool.filters.TokensRelayed(), eventConfig);
       processedEvents = events
         .filter(
-          (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, wethAddress)
+          (e) =>
+            compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
+            compareAddressesSimple(e.args.l1Token, wethAddress)
         )
         .map((e) => {
           return {
-            ...processEvent(e, "amount", "to", "to"),
+            ...processEvent(e, "amount", "to", "to", this.l2chainId),
             from: hubPool.address,
           };
         });
     } else {
       events = await paginatedEventQuery(
         this.atomicDepositor,
-        this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
+        this.atomicDepositor.filters.AtomicWethDepositInitiated(fromAddress.toAddress(), this.l2chainId),
         eventConfig
       );
       // If we are in this branch, then the depositor is an EOA, so we can assume that from == to.
-      processedEvents = events.map((e) => processEvent(e, "amount", "from", "from"));
+      processedEvents = events.map((e) => processEvent(e, "amount", "from", "from", this.l2chainId));
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
@@ -153,13 +148,13 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const hubPool = this.getHubPool();
-    if (compareAddressesSimple(fromAddress, hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), hubPool.address)) {
       return Promise.resolve({});
     }
 
@@ -168,22 +163,31 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     if (isL2Contract) {
       processedEvents = await paginatedEventQuery(
         this.l2Eth,
-        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress),
+        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(hubPool.address), toAddress.toAddress()),
         eventConfig
       );
     } else {
       const [events, wrapEvents] = await Promise.all([
         paginatedEventQuery(
           this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address), toAddress),
+          this.l2Eth.filters.Transfer(
+            zksync.utils.applyL1ToL2Alias(this.atomicDepositor.address),
+            toAddress.toAddress()
+          ),
           eventConfig
         ),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+        paginatedEventQuery(
+          this.l2Weth,
+          this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+          eventConfig
+        ),
       ]);
       processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) =>
+        processEvent(e, "_amount", "_to", "from", this.l2chainId)
+      ),
     };
   }
 
@@ -199,7 +203,7 @@ export class ZKSyncWethBridge extends BaseBridgeAdapter {
     return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
   }
 
-  private isL2ChainContract(address: string): Promise<boolean> {
-    return isContractDeployedToAddress(address, this.l2Eth.provider);
+  private isL2ChainContract(address: EvmAddress): Promise<boolean> {
+    return isContractDeployedToAddress(address.toAddress(), this.l2Eth.provider);
   }
 }
