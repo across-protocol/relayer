@@ -360,12 +360,7 @@ async function viem_multicallOptimismFinalizations(
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
-      if (l2Output.outputRoot === PENDING_PROOF_OUTPUT_ROOT) {
-        logger.debug({
-          at: `${getNetworkName(chainId)}Finalizer`,
-          message: `Withdrawal for transaction ${event.transactionHash} is not ready to be proven.`,
-        });
-      } else {
+      if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
         const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
           publicClientL2 as viem.Client,
           {
