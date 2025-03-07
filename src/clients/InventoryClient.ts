@@ -386,7 +386,7 @@ export class InventoryClient {
       return true;
     }
 
-    // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
+    // Return true if input token is Native USDC and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
     // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
@@ -415,7 +415,7 @@ export class InventoryClient {
    * @dev If inventory management is disabled, then destinationChain is used as a default unless the
    * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
-   * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
+   * @param l1Token L1Token linked with deposited inputToken and repayment chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
@@ -547,7 +547,7 @@ export class InventoryClient {
         if (chainId === destinationChainId) {
           this.logger.debug({
             at: "InventoryClient#determineRefundChainId",
-            message: `Will consider to repayment on ${repaymentChain} as destination chain.`,
+            message: `Will consider to take repayment on ${repaymentChain} as destination chain.`,
           });
           eligibleRefundChains.push(chainId);
         }
@@ -594,14 +594,14 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
-    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainid].
+    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
     if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
       return [];
     }
 
-    // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
-    // were selected, then this function will return just the hub chain as a fallback option.
-    if (!eligibleRefundChains.includes(hubChainId)) {
+    // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
+    // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
+    if (!deposit.fromLiteChain && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
