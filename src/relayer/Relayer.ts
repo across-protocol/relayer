@@ -1219,8 +1219,8 @@ export class Relayer {
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more
     // accurately.
     //
-    // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
-    // destination chain repayments on lite chains.
+    // Additionally we don't want to take this code path if the origin chain is a lite chain because we can't
+    // reason about destination chain repayments on lite chains.
     if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
