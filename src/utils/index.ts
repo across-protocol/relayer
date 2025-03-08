@@ -35,6 +35,13 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
+export {
+  createKeyPairSignerFromPrivateKeyBytes,
+  KeyPairSigner,
+  createSignerFromKeyPair,
+  createKeyPairFromBytes,
+} from "@solana/web3.js";
+
 // TypeChain exports used in the bot.
 export {
   getContractInfoFromAddress,
