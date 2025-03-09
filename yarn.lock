@@ -21,6 +21,11 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.35.tgz#80ee8e569bc5c1fc94b5087d357d9612fd782151"
   integrity sha512-2Fj9mqBEVQu4Bsq6o7helUkhEjpce+uqni0pTV51y1QOEQdgAJU5U5BNQFXUMUDMQRaM3DqB4ys89GVJ4TuA/w==
 
+"@across-protocol/constants@^3.1.37":
+  version "3.1.38"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.38.tgz#63f4d9b86576b0003655152c51293dd1c7ab6a1f"
+  integrity sha512-/85ACwpu4oxAADOah8VP3esxU3FVb+RieMCINgn4oUf4Rq9cC1LSJm157hy5cc4CBUaySV312MP1iM1d8ysljA==
+
 "@across-protocol/contracts@4.0.0":
   version "4.0.0"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.0.tgz#d263f23ae37e0e71b66d9f3c760ffe6d2af9dccd"
@@ -59,12 +64,12 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^4.0.1":
-  version "4.0.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.1.tgz#f6936af8ec8a2cfa9a8a19c31bd4f70e2e93c9cc"
-  integrity sha512-0y5KKSnuInYF+vza2dvjaBkp6WgA8sT3TnFAOSxcukFJbHQ5dXDLDwl0fi7JCSKZJAV+4ae5X9XPLTtaeXNuJg==
+"@across-protocol/contracts@^4.0.2":
+  version "4.0.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.3.tgz#f4c67d7782f36093381ceca4aa3aa0decd79f60f"
+  integrity sha512-p8rwRqhmjUPnX8Vae6V4+cbOSNqwHQAOOK4GntSkTpSKXFjEPUistoD/8bi+lawMTDZHTlW8dB6PICcMZn5ONQ==
   dependencies:
-    "@across-protocol/constants" "^3.1.35"
+    "@across-protocol/constants" "^3.1.37"
     "@coral-xyz/anchor" "^0.30.1"
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
