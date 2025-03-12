@@ -18,6 +18,7 @@ import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json"
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL1.json";
 import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
 import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
+import ZK_STACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -62,6 +63,10 @@ export const CONTRACT_ADDRESSES: {
     zkSyncMailbox: {
       address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
       abi: ZK_SYNC_MAILBOX_ABI,
+    },
+    zkSyncSharedBridge: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      abi: ZK_STACK_SHARED_BRIDGE_ABI,
     },
     zkSyncDefaultErc20Bridge: {
       address: "0x57891966931Eb4Bb6FB81430E6cE0A03AAbDe063",
