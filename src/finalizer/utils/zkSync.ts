@@ -171,7 +171,7 @@ async function getWithdrawalParams(
 async function prepareFinalization(
   withdrawal: zkSyncWithdrawalData,
   l2ChainId: number,
-  l1SharedBridge: Contract,
+  l1SharedBridge: Contract
 ): Promise<Multicall2Call> {
   const args = [
     l2ChainId,
