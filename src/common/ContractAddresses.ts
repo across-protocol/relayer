@@ -35,7 +35,7 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
-import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
+import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -217,6 +217,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
     },
+    zkStackBridgeHub: {
+      address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
+      abi: ZKSTACK_BRIDGE_HUB_ABI,
+    },
+    zkStackSharedBridge: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
@@ -263,12 +271,16 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
-    zkSyncDefaultErc20Bridge: {
+    zkStackBridge: {
       address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
     },
     eth: {
       address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    weth: {
+      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
       abi: WETH_ABI,
     },
   },
@@ -504,12 +516,9 @@ export const CONTRACT_ADDRESSES: {
     },
     // The shared bridge is the "spender" of the token we wish to bridge, so we only
     // need its contract address so that we may approve it.
-    zkStackSharedBridge_37111: {
+    zkStackSharedBridge: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
-    },
-    nativeTokenVault_37111: {
-      address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
-      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
@@ -559,7 +568,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
       abi: WETH_ABI,
     },
-    l2Weth: {
+    weth: {
       address: "0xaA91D645D7a6C1aeaa5988e0547267B77d33fe16",
       abi: WETH_ABI,
     },

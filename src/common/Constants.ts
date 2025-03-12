@@ -18,8 +18,6 @@ import {
   OpStackWethBridge,
   PolygonWethBridge,
   PolygonERC20Bridge,
-  ZKSyncBridge,
-  ZKSyncWethBridge,
   ArbitrumOrbitBridge,
   LineaBridge,
   LineaUSDCBridge,
@@ -384,7 +382,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
   [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.ZK_SYNC]: ZKSyncBridge,
+  [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
   [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
   // Testnets:
   [CHAIN_IDs.LENS_SEPOLIA]: ZKStackBridge,
@@ -481,7 +479,7 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKSyncWethBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
   },
   [CHAIN_IDs.ZORA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,

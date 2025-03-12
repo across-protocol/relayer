@@ -38,10 +38,10 @@ export class ZKStackWethBridge extends ZKStackBridge {
 
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
     // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
-    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].l2Weth;
+    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
     if (!isDefined(this.gasToken)) {
-      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].l2Eth;
+      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
       this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     }
   }
@@ -63,7 +63,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         this.l2GasLimit,
         this.gasPerPubdataLimit,
         toAddress,
-        this.sharedBridgeAddress,
+        this.sharedBridge.address,
         amount,
         secondBridgeCalldata,
       ],
@@ -79,7 +79,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     };
   }
 
-  async queryL1BridgeInitiationEvents(
+  override async queryL1BridgeInitiationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
@@ -118,7 +118,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     };
   }
 
-  async queryL2BridgeFinalizationEvents(
+  override async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
