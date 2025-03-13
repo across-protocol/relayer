@@ -28,6 +28,8 @@
 // Validate single chain and/or token:
 // $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
 // $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
+// Look at bundles #50-100 and query events up to 150 bundles ago:
+// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,
@@ -65,9 +67,14 @@ let silentLogger: winston.Logger;
 
 const rootCache = {};
 
+// Add accidental transfers from users into the SpokePool's here. These fat finger transfers can confound this
+// script and report "excesses" that are not actually excesses. These balances are not pulled into the runningBalances
+// so they'll appear as excesses.
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
   [CHAIN_IDs.MAINNET]: { ["USDC"]: 31.745443 },
-  [CHAIN_IDs.BASE]: { ["USDC"]: 25 },
+  // 0.8 ETH https://basescan.org/tx/0x30212bf3df90b0abe40bb986afcb6907a406f25469cac864060e58d2b3502d1f
+  // 1.01 ETH https://basescan.org/tx/0x0a1316b0e88cbfcd4a14730d36465cf91000300eb2049f1dddc137208c80a263
+  [CHAIN_IDs.BASE]: { ["USDC"]: 25, ["WETH"]: 1.299 },
 };
 
 export async function runScript(baseSigner: Signer): Promise<void> {
@@ -91,6 +98,10 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
   const BUNDLE_LOOKBACK = 8; // The number of prior bundles to look back for when attempting to reconstruct
+  const PAGE_SIZE = Number(process.env.PAGE_SIZE ?? bundlesToValidate);
+  assert(PAGE_SIZE <= bundlesToValidate, "PAGE_SIZE must be less than BUNDLES_COUNT");
+  const PAGE = Number(process.env.PAGE ?? 0);
+  assert(PAGE * PAGE_SIZE < bundlesToValidate, "PAGE * PAGE_SIZE must be less than BUNDLES_COUNT");
   // bundle data for arbitrary bundle. For example, setting this to 8 ensures that we'll be validating a bundle X
   // using SpokePool clients that have events from as old the bundle X-8 to X.
   const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + BUNDLE_LOOKBACK];
@@ -121,7 +132,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   });
 
   // @dev: Ignore the most recent bundle as its leaves might not have executed, so start x at 1.
-  for (let x = 1; x < bundlesToValidate; x++) {
+  for (let x = 1 + PAGE * PAGE_SIZE; x < Math.min(bundlesToValidate, (PAGE + 1) * PAGE_SIZE); x++) {
     const logs: string[] = [];
     const mostRecentValidatedBundle = validatedBundles[x];
     const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
@@ -560,9 +571,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       await updateSpokePoolClients(spokePoolClientsForBundle, [
         "RelayedRootBundle",
         "ExecutedRelayerRefundRoot",
-        "V3FundsDeposited",
-        "RequestedV3SlowFill",
-        "FilledV3Relay",
+        "FundsDeposited",
+        "RequestedSlowFill",
+        "FilledRelay",
       ]);
 
       const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);

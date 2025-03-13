@@ -171,8 +171,20 @@ export class RelayerConfig extends CommonConfig {
         chainId: string,
         rawTokenConfig: TokenBalanceConfig
       ): TokenBalanceConfig => {
-        const { targetPct, thresholdPct, unwrapWethThreshold, unwrapWethTarget, targetOverageBuffer } = rawTokenConfig;
-        const tokenConfig: TokenBalanceConfig = { targetPct, thresholdPct, targetOverageBuffer };
+        const {
+          targetPct,
+          thresholdPct,
+          unwrapWethThreshold,
+          unwrapWethTarget,
+          targetOverageBuffer,
+          withdrawExcessPeriod,
+        } = rawTokenConfig;
+        const tokenConfig: TokenBalanceConfig = {
+          targetPct,
+          thresholdPct,
+          targetOverageBuffer,
+          withdrawExcessPeriod,
+        };
 
         assert(
           targetPct !== undefined && thresholdPct !== undefined,
@@ -185,10 +197,13 @@ export class RelayerConfig extends CommonConfig {
         tokenConfig.targetPct = toBNWei(targetPct).div(100);
         tokenConfig.thresholdPct = toBNWei(thresholdPct).div(100);
 
+        tokenConfig.withdrawExcessPeriod = withdrawExcessPeriod;
+
         // Default to 150% the targetPct. targetOverageBuffer does not have to be defined so that no existing configs
         // are broken. This is a reasonable default because it allows the relayer to be a bit more flexible in
         // holding more tokens than the targetPct, but perhaps a better default is 100%
         tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
+        assert(tokenConfig.targetOverageBuffer.gte(toBNWei("1.0")), "targetOverageBuffer must be >= 1.0x");
 
         // For WETH, also consider any unwrap target/threshold.
         if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {

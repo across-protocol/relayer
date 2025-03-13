@@ -1,4 +1,14 @@
-import { chainIsOPStack, CHAIN_IDs, TOKEN_SYMBOLS_MAP, Signer, Provider, ZERO_ADDRESS, bnUint32Max } from "../utils";
+import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import {
+  chainIsOPStack,
+  chainIsOrbit,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  Signer,
+  Provider,
+  ZERO_ADDRESS,
+  bnUint32Max,
+} from "../utils";
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
@@ -21,7 +31,12 @@ import {
   ZKStackBridge,
   ZKStackWethBridge,
 } from "../adapter/bridges";
-import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import {
+  BaseL2BridgeAdapter,
+  OpStackWethBridge as L2OpStackWethBridge,
+  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
+  OpStackBridge as L2OpStackBridge,
+} from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
 /**
@@ -60,32 +75,21 @@ export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 // - Polygon: https://polygonscan.com/blocks_forked
 // Optimistic Rollups are currently centrally serialized and are not expected to reorg. Technically a block on an
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
-// anything under 7 days.
+// anything under 7 days. OP stack chains are auto-populated based on chain family.
 const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const MDC_DEFAULT_THRESHOLD = 1000;
+
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
     [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
     [CHAIN_IDs.SCROLL]: 18,
   },
-  1000: {
-    [CHAIN_IDs.ALEPH_ZERO]: ORBIT_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.ARBITRUM]: ORBIT_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.BASE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.BLAST]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.UNICHAIN]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.INK]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.LISK]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
+  [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
-    [CHAIN_IDs.MODE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.OPTIMISM]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
-    [CHAIN_IDs.REDSTONE]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
     [CHAIN_IDs.SCROLL]: 8,
-    [CHAIN_IDs.SONEIUM]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.WORLD_CHAIN]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
-    [CHAIN_IDs.ZORA]: OP_STACK_MIN_DEPOSIT_CONFIRMATIONS,
   },
   100: {
     [CHAIN_IDs.LINEA]: 1,
@@ -95,6 +99,18 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
 };
+
+// Auto-populate all known OP stack chains. These are only applied as defaults; explicit config above is respected.
+MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD] ??= {};
+Object.values(CHAIN_IDs)
+  .filter((chainId) => chainIsOPStack(chainId) || chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM)
+  .forEach((chainId) => {
+    if (chainIsOPStack(chainId)) {
+      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= OP_STACK_MIN_DEPOSIT_CONFIRMATIONS;
+    } else if (chainIsOrbit(chainId) || chainId === CHAIN_IDs.ARBITRUM) {
+      MIN_DEPOSIT_CONFIRMATIONS[MDC_DEFAULT_THRESHOLD][chainId] ??= ORBIT_MIN_DEPOSIT_CONFIRMATIONS;
+    }
+  });
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
@@ -383,6 +399,23 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
 
+export const CANONICAL_L2_BRIDGE: {
+  [chainId: number]: {
+    new (
+      l2chainId: number,
+      hubChainId: number,
+      l2Signer: Signer,
+      l1Provider: Provider | Signer,
+      l1Token: string
+    ): BaseL2BridgeAdapter;
+  };
+} = {
+  [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
+  [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
+  [CHAIN_IDs.ZORA]: L2OpStackBridge,
+};
+
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
 // In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
 export const CUSTOM_BRIDGE: {
@@ -486,6 +519,30 @@ export const CUSTOM_BRIDGE: {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+  },
+};
+
+export const CUSTOM_L2_BRIDGE: {
+  [chainId: number]: {
+    [tokenAddress: string]: {
+      new (
+        l2chainId: number,
+        hubChainId: number,
+        l2Signer: Signer,
+        l1Provider: Provider | Signer,
+        l1Token: string
+      ): BaseL2BridgeAdapter;
+    };
+  };
+} = {
+  [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
+  },
+  [CHAIN_IDs.REDSTONE]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
+  },
+  [CHAIN_IDs.ZORA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
 };
 

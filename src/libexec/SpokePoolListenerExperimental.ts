@@ -99,7 +99,15 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   );
 
   // On each new block, submit any "finalised" events.
-  const newBlock = (block: Block) => {
+  const newBlock = (block: Block, provider: string) => {
+    // Transient error that sometimes occurs in production. Catch it here and try to flush out the provider.
+    if (!block) {
+      logger.debug({
+        at: "RelayerSpokePoolListener::run",
+        message: `Received empty ${chain} block from ${provider}.`,
+      });
+      return;
+    }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
     const events = eventMgr.tick(blockNumber);
     postEvents(blockNumber, currentTime, events);
@@ -126,7 +134,7 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     if (idx === 0) {
       provider.watchBlocks({
         emitOnBegin: true,
-        onBlock: (block: Block) => newBlock(block),
+        onBlock: (block: Block) => newBlock(block, provider.name),
         onError: (error: Error) => blockError(error, provider.name),
       });
     }

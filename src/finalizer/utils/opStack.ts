@@ -59,6 +59,11 @@ const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPSt
  * https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-1.html#keyof-and-lookup-types
  */
 
+// @dev The call to `getWithdrawalStatus` may incorrectly label a withdrawal which is not ready to prove as ready to prove.
+// If we attempt to call `getL2Output` on this withdrawal, this root will be outputted. We can compare the output root with
+// this constant and skip the proof submission if they match.
+const PENDING_PROOF_OUTPUT_ROOT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
 // We might want to export this mapping of chain ID to viem chain object out of a constant
 // file once we start using Viem elsewhere in the repo:
 const VIEM_OP_STACK_CHAINS: Record<number, viem.Chain> = {
@@ -355,28 +360,30 @@ async function viem_multicallOptimismFinalizations(
         l2BlockNumber: BigInt(event.blockNumber),
         targetChain: viemOpStackTargetChainParam,
       });
-      const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
-        publicClientL2 as viem.Client,
-        {
-          chain: VIEM_OP_STACK_CHAINS[chainId],
-          withdrawal,
-          output: l2Output,
-        }
-      );
-      const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
-      const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
-      viemTxns.callData.push({
-        callData: callData.data,
-        target: crossChainMessenger.address,
-      });
-      viemTxns.withdrawals.push({
-        originationChainId: chainId,
-        l1TokenSymbol: l1TokenInfo.symbol,
-        amount: amountFromWei,
-        type: "misc",
-        miscReason: "proof",
-        destinationChainId: hubPoolClient.chainId,
-      });
+      if (l2Output.outputRoot !== PENDING_PROOF_OUTPUT_ROOT) {
+        const { l2OutputIndex, outputRootProof, withdrawalProof } = await buildProveWithdrawal(
+          publicClientL2 as viem.Client,
+          {
+            chain: VIEM_OP_STACK_CHAINS[chainId],
+            withdrawal,
+            output: l2Output,
+          }
+        );
+        const proofArgs = [withdrawal, l2OutputIndex, outputRootProof, withdrawalProof];
+        const callData = await crossChainMessenger.populateTransaction.proveWithdrawalTransaction(...proofArgs);
+        viemTxns.callData.push({
+          callData: callData.data,
+          target: crossChainMessenger.address,
+        });
+        viemTxns.withdrawals.push({
+          originationChainId: chainId,
+          l1TokenSymbol: l1TokenInfo.symbol,
+          amount: amountFromWei,
+          type: "misc",
+          miscReason: "proof",
+          destinationChainId: hubPoolClient.chainId,
+        });
+      }
     } else if (withdrawalStatus === "waiting-to-finalize") {
       const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
         chain: VIEM_OP_STACK_CHAINS[hubChainId],

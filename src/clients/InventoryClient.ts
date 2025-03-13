@@ -27,6 +27,7 @@ import {
   getUsdcSymbol,
   Profiler,
   getNativeTokenSymbol,
+  getL1TokenInfo,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -385,7 +386,7 @@ export class InventoryClient {
       return true;
     }
 
-    // Return true if input token is Native USDC token and output token is Bridged USDC or if input token
+    // Return true if input token is Native USDC and output token is Bridged USDC or if input token
     // is Bridged USDC and the output token is Native USDC.
     // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
     // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
@@ -414,7 +415,7 @@ export class InventoryClient {
    * @dev If inventory management is disabled, then destinationChain is used as a default unless the
    * originChain is a lite chain, then originChain is the default used.
    * @param deposit Deposit to determine repayment chains for.
-   * @param l1Token L1Token linked with deposited inputToken and repayement chain refund token.
+   * @param l1Token L1Token linked with deposited inputToken and repayment chain refund token.
    * @returns list of chain IDs that are possible repayment chains for the deposit, sorted from highest
    * to lowest priority.
    */
@@ -546,7 +547,7 @@ export class InventoryClient {
         if (chainId === destinationChainId) {
           this.logger.debug({
             at: "InventoryClient#determineRefundChainId",
-            message: `Will consider to repayment on ${repaymentChain} as destination chain.`,
+            message: `Will consider to take repayment on ${repaymentChain} as destination chain.`,
           });
           eligibleRefundChains.push(chainId);
         }
@@ -593,14 +594,14 @@ export class InventoryClient {
     // chain, and the origin chain is not an eligible repayment chain, then we shouldn't fill this deposit otherwise
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
-    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainid].
+    // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
     if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
       return [];
     }
 
-    // Always add hubChain as a fallback option if inventory management is enabled. If none of the chainsToEvaluate
-    // were selected, then this function will return just the hub chain as a fallback option.
-    if (!eligibleRefundChains.includes(hubChainId)) {
+    // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
+    // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
+    if (!deposit.fromLiteChain && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
@@ -1103,6 +1104,183 @@ export class InventoryClient {
         "error"
       );
     }
+  }
+
+  async withdrawExcessBalances(): Promise<void> {
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
+
+    const chainIds = this.getEnabledL2Chains();
+    type L2Withdrawal = { l2Token: string; amountToWithdraw: BigNumber };
+    const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
+
+    await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      const l1TokenInfo = getL1TokenInfo(l1Token, this.hubPoolClient.chainId);
+      const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
+      // We do not currently count any outstanding L2->L1 pending withdrawal balance in the cumulative balance
+      // because it can take so long for these withdrawals to finalize (usually >1 day and up to 7 days). Unlike the
+      // L1->L2 pending deposit balances which will finalize in <1 hour in most cases. For allocation % calculations,
+      // these pending withdrawals are therefore ignored.
+      const cumulativeBalance = this.getCumulativeBalance(l1Token);
+      if (cumulativeBalance.eq(bnZero)) {
+        return;
+      }
+      await sdkUtils.forEachAsync(chainIds, async (chainId) => {
+        if (chainId === this.hubPoolClient.chainId || !this._l1TokenEnabledForChain(l1Token, chainId)) {
+          return;
+        }
+
+        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
+        await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
+          const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+          if (!isDefined(tokenConfig)) {
+            return;
+          }
+          // When l2 token balance exceeds threshold, withdraw (balance - target) to hub pool.
+          const { targetOverageBuffer, targetPct, withdrawExcessPeriod } = tokenConfig;
+
+          // Excess withdrawals are activated only for chains where the withdrawExcessPeriod variable is set.
+          if (!isDefined(withdrawExcessPeriod)) {
+            return;
+          }
+
+          const adapter = this.adapterManager.adapters[chainId];
+          if (!adapter.isSupportedL2Bridge(l1Token)) {
+            this.logger.warn({
+              at: "InventoryClient#withdrawExcessBalances",
+              message: `No L2 bridge configured for ${getNetworkName(chainId)} for token ${l1Token}`,
+            });
+            return;
+          }
+
+          const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+
+          // We apply a discount on the effective target % because the repayment chain choice
+          // algorithm should never allow the inventory to get above the target pct * target overage buffer.
+          // Withdraw excess when current allocation % is within a small % of the target percentage multiplied
+          // by the target overage buffer.
+          const discountToTargetOverageBuffer = toBNWei("0.95");
+          const targetPctMultiplier = targetOverageBuffer.mul(discountToTargetOverageBuffer).div(this.scalar);
+          assert(
+            targetPctMultiplier.gte(toBNWei("1")),
+            `Target overage buffer multiplied by discount must be >= 1, got ${targetPctMultiplier.toString()}`
+          );
+          const excessWithdrawThresholdPct = targetPct.mul(targetPctMultiplier).div(this.scalar);
+
+          const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
+          const withdrawPct = currentAllocPct.sub(targetPct);
+          const desiredWithdrawalAmount = cumulativeBalance.mul(withdrawPct).div(this.scalar);
+
+          this.log(
+            `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
+              shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
+            }`,
+            {
+              l1Token,
+              l2Token,
+              currentBalance: formatter(currentBalance),
+              cumulativeBalance: formatter(cumulativeBalance),
+              currentAllocPct: formatUnits(currentAllocPct, 18),
+              excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
+              targetPct: formatUnits(targetPct, 18),
+              withdrawalParams: shouldWithdrawExcess
+                ? {
+                    withdrawPct: formatUnits(withdrawPct, 18),
+                    desiredWithdrawalAmount: formatter(desiredWithdrawalAmount),
+                  }
+                : undefined,
+            }
+          );
+          if (!shouldWithdrawExcess) {
+            return;
+          }
+          // Check to make sure the total pending volume withdrawn over the last
+          // maxL2WithdrawalPeriodSeconds does not exceed the maxL2WithdrawalVolume.
+          const maxL2WithdrawalVolume = excessWithdrawThresholdPct
+            .sub(targetPct)
+            .mul(cumulativeBalance)
+            .div(this.scalar);
+          const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
+            withdrawExcessPeriod,
+            chainId,
+            this.relayer,
+            l2Token
+          );
+          // If this withdrawal would push the volume over the limit, allow it because the
+          // a subsequent withdrawal would be blocked. In other words, the maximum withdrawal volume
+          // would still behave as a rate-limit but with some overage allowed.
+          const withdrawalVolumeOverCap = pendingWithdrawalAmount.gte(maxL2WithdrawalVolume);
+          this.log(
+            `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
+              withdrawalVolumeOverCap ? "OVER" : "UNDER"
+            } the limit of ${formatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
+              chainId
+            )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${formatter(
+              desiredWithdrawalAmount
+            )}.`,
+            {
+              excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
+              targetPct: formatUnits(targetPct, 18),
+              maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
+              maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
+              pendingWithdrawalAmount: formatter(pendingWithdrawalAmount),
+            }
+          );
+          if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
+            return;
+          }
+          withdrawalsRequired[chainId] ??= [];
+          withdrawalsRequired[chainId].push({
+            l2Token,
+            amountToWithdraw: desiredWithdrawalAmount,
+          });
+        });
+      });
+    });
+
+    if (Object.keys(withdrawalsRequired).length === 0) {
+      this.log("No excess balances to withdraw");
+      return;
+    } else {
+      this.log("Excess balances to withdraw", { withdrawalsRequired });
+    }
+
+    // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
+    // pull tokens from the msg.sender.
+    const txnReceipts: { [chainId: number]: string[] } = {};
+    await sdkUtils.forEachAsync(Object.keys(withdrawalsRequired), async (_chainId) => {
+      const chainId = Number(_chainId);
+      txnReceipts[chainId] = [];
+      await sdkUtils.forEachAsync(withdrawalsRequired[chainId], async (withdrawal) => {
+        const txnHash = await this.adapterManager.withdrawTokenFromL2(
+          this.relayer,
+          chainId,
+          withdrawal.l2Token,
+          withdrawal.amountToWithdraw,
+          this.simMode
+        );
+        txnReceipts[chainId].push(...txnHash);
+      });
+    });
+    Object.keys(txnReceipts).forEach((chainId) => {
+      this.logger.debug({
+        at: "InventoryClient",
+        message: `L2->L1 withdrawals on ${getNetworkName(chainId)} submitted`,
+        chainId,
+        withdrawalsRequired: withdrawalsRequired[chainId].map((withdrawal: L2Withdrawal) => {
+          const l1TokenInfo = getL1TokenInfo(withdrawal.l2Token, Number(chainId));
+          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+          return {
+            l2Token: l1TokenInfo.symbol,
+            amountToWithdraw: formatter(withdrawal.amountToWithdraw.toString()),
+          };
+        }),
+        txnReceipt: txnReceipts[chainId],
+      });
+    });
   }
 
   constructConsideringRebalanceDebugLog(distribution: TokenDistributionPerL1Token): void {
