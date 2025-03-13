@@ -1,4 +1,3 @@
-import * as zksync from "zksync-ethers";
 import { SpokePoolClient } from "../../src/clients";
 import { AdapterManager } from "../../src/clients/bridges";
 import { CONTRACT_ADDRESSES } from "../../src/common";
@@ -47,8 +46,7 @@ let l1PolygonRootChainManager: FakeContract;
 let l1ArbitrumBridge: FakeContract;
 
 // ZkSync contracts
-let l1MailboxContract: FakeContract;
-let l1ZkSyncBridge: FakeContract;
+let l1BridgeHub: FakeContract;
 
 // Base contracts
 let l1BaseBridge: FakeContract;
@@ -294,7 +292,16 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
   it("Correctly sends tokens to chain: zkSync", async function () {
     const chainId = CHAIN_IDs.ZK_SYNC;
-    l1MailboxContract.l2TransactionBaseCost.returns(toBNWei("0.2"));
+    const bridgeParams = {
+      chainId: toBN(324),
+      mintValue: bnZero,
+      l2Value: bnZero,
+      l2GasLimit: toBN(2000000),
+      l2GasPerPubdataByteLimit: toBN(800),
+      refundRecipient: relayer.address,
+      secondBridgeAddress: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB", // Shared bridge address
+      secondBridgeValue: bnZero,
+    };
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       relayer.address,
@@ -304,40 +311,33 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       false,
       TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId]
     );
-    expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
-      relayer.address, // user
-      mainnetTokens.usdc, // root token
-      amountToSend, // deposit data. bytes encoding of the amount to send.
-      2_000_000, // l2 gas limit, default is 2mil if on hardhat network
-      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT // gasPerPubdataLimit
-    );
-    expect(l1ZkSyncBridge.deposit).to.have.been.calledWithValue(toBNWei("0.2"));
+    expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWith({
+      ...bridgeParams,
+      secondBridgeCalldata: ethers.utils.defaultAbiCoder.encode(
+        ["address", "uint256", "address"],
+        [mainnetTokens.usdc, amountToSend, relayer.address]
+      ),
+    });
 
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.wbtc, amountToSend);
-    expect(l1ZkSyncBridge.deposit).to.have.been.calledWith(
-      relayer.address, // user
-      mainnetTokens.wbtc, // root token
-      amountToSend, // deposit data. bytes encoding of the amount to send.
-      2_000_000, // l2 gas limit, default is 2mil if on hardhat network
-      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT // gasPerPubdataLimit
-    );
-    expect(l1ZkSyncBridge.deposit).to.have.been.calledWithValue(toBNWei("0.2"));
+    expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWith({
+      ...bridgeParams,
+      secondBridgeCalldata: ethers.utils.defaultAbiCoder.encode(
+        ["address", "uint256", "address"],
+        [mainnetTokens.wbtc, amountToSend, relayer.address]
+      ),
+    });
+
+    // Check that value is sent when the bridge hub returns a base cost.
+    l1BridgeHub.l2TransactionBaseCost.returns(toBNWei("0.2"));
+    await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.wbtc, amountToSend);
+    expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWithValue(toBNWei("0.2"));
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
-    const fee = await l1MailboxContract.l2TransactionBaseCost(
-      await l1MailboxContract.provider.getGasPrice(),
-      2_000_000,
-      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT
-    );
-    const bridgeCalldata = l1MailboxContract.interface.encodeFunctionData("requestL2Transaction", [
-      relayer.address,
-      amountToSend,
-      "0x",
-      2_000_000,
-      zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT,
-      [],
-      relayer.address,
+    const fee = toBNWei("0.2");
+    const bridgeCalldata = l1BridgeHub.interface.encodeFunctionData("requestL2TransactionDirect", [
+      [chainId, amountToSend.add(fee), relayer.address, amountToSend, "0x", 2_000_000, 800, [], relayer.address],
     ]);
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
       chainId,
@@ -465,8 +465,7 @@ async function constructChainSpecificFakes() {
   );
 
   // zkSync contracts
-  l1ZkSyncBridge = await makeFake("zkSyncDefaultErc20Bridge", CONTRACT_ADDRESSES[1].zkSyncDefaultErc20Bridge.address);
-  l1MailboxContract = await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[1].zkSyncMailbox.address);
+  l1BridgeHub = await makeFake("zkStackBridgeHub", CONTRACT_ADDRESSES[1].zkStackBridgeHub.address);
 
   // Base contracts
   l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address);

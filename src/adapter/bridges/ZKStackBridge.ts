@@ -13,9 +13,9 @@ import {
 import { processEvent } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import * as zksync from "zksync-ethers";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
+import * as zksync from "zksync-ethers";
 
 /* For both the canonical bridge (this bridge) and the ZkStackWethBridge
  * bridge, we need to assume that the l1 and l2 signers contain
@@ -113,7 +113,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       this.sharedBridge.filters.BridgehubDepositInitiated(this.l2chainId, undefined, annotatedFromAddress),
       eventConfig
     );
-    const bridgeEvents = rawEvents.filter((event) => compareAddressesSimple(event.args.l1Token, l1Token));
+    const bridgeEvents = rawEvents.filter(
+      (event) => compareAddressesSimple(event.args.l1Token, l1Token) && compareAddressesSimple(event.args.to, toAddress)
+    );
     return {
       [this.resolveL2TokenAddress(l1Token)]: bridgeEvents.map((event) => processEvent(event, "amount", "from", "to")),
     };

@@ -4,10 +4,11 @@
 pragma solidity ^0.8.0;
 
 contract zkSync_L1Bridge {
-    event DepositInitiated(
-        bytes32 indexed l2DepositTxHash,
+    event BridgehubDepositInitiated(
+        uint256 indexed chainId,
+        bytes32 indexed txn,
         address indexed from,
-        address indexed to,
+        address to,
         address l1Token,
         uint256 amount
     );
@@ -40,7 +41,7 @@ contract zkSync_L1Bridge {
         uint256 amount
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        emit BridgehubDepositInitiated(324, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
     }
 }
