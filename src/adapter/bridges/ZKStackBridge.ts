@@ -25,7 +25,7 @@ import * as zksync from "zksync-ethers";
  */
 export class ZKStackBridge extends BaseBridgeAdapter {
   readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  readonly l2GasLimit = BigNumber.from(2_000_000);
+  readonly l2GasLimit = BigNumber.from(2_500_000);
   readonly sharedBridge: Contract;
   readonly hubPool: Contract;
 
