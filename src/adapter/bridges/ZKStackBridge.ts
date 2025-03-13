@@ -98,13 +98,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // If the fromAddress is the hub pool then ignore the query. This is because for calculating cross-chain
-    // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
-    // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
-    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
-      return {};
-    }
-
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;

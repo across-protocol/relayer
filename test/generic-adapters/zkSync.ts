@@ -595,6 +595,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
       });
 
       // Make a single l1 -> l2 deposit.
@@ -637,6 +645,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -667,6 +683,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             [l2Token]: {
               depositTxHashes: [],
               totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
             },
           },
         },
@@ -773,6 +797,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
       });
 
       // Make a single l1 -> l2 deposit.
@@ -822,6 +854,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
       });
 
       // Finalise the ongoing deposit on the destination chain.
@@ -855,6 +895,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             },
           },
         },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
       });
     });
 
@@ -876,6 +924,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             [l2Token]: {
               depositTxHashes: [],
               totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
             },
           },
         },
@@ -909,6 +965,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
             [l2Token]: {
               depositTxHashes: [],
               totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
             },
           },
         },

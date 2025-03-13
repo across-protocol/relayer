@@ -13,6 +13,18 @@ contract zkSync_L1Bridge {
         uint256 amount
     );
 
+    struct L2TransactionRequestTwoBridgesOuter {
+        uint256 chainId;
+        uint256 mintValue;
+        uint256 l2Value;
+        uint256 l2GasLimit;
+        uint256 l2GasPerPubdataByteLimit;
+        address refundRecipient;
+        address secondBridgeAddress;
+        uint256 secondBridgeValue;
+        bytes secondBridgeCalldata;
+    }
+
     function deposit(
         address _l2Receiver,
         address _l1Token,
@@ -43,6 +55,17 @@ contract zkSync_L1Bridge {
         l2TxHash = "";
         emit BridgehubDepositInitiated(324, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
+    }
+
+    function requestL2TransactionTwoBridges(
+        L2TransactionRequestTwoBridgesOuter calldata _request
+    ) external payable returns (bytes32 canonicalTxHash) {
+        (address l1Token, uint256 amount, address to) = abi.decode(
+            _request.secondBridgeCalldata,
+            (address, uint256, address)
+        );
+        _depositFor(msg.sender, to, l1Token, amount);
+        return "";
     }
 }
 
