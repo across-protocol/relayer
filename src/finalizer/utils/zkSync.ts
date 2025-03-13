@@ -43,15 +43,10 @@ export async function zkSyncFinalizer(
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
   const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
-  // Zksync takes 1 day to finalize so ignore any events
-  // earlier than 1 day.
+  // Zksync takes ~6 hours to finalize so ignore any events
+  // earlier than that.
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
-    l2ChainId,
-    getCurrentTime() - 1 * 60 * 60 * 24,
-    undefined,
-    redis
-  );
+  const latestBlockToFinalize = await getBlockForTimestamp(l2ChainId, getCurrentTime() - 60 * 60 * 6, undefined, redis);
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
