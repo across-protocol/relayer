@@ -32,7 +32,7 @@ contract zkSync_L1Bridge {
         uint256,
         uint256
     ) public payable returns (bytes32 l2TxHash) {
-        return _depositFor(msg.sender, _l2Receiver, _l1Token, _amount);
+        return _depositFor(msg.sender, _l2Receiver, _l1Token, _amount, 324);
     }
 
     function depositFor(
@@ -43,17 +43,18 @@ contract zkSync_L1Bridge {
         uint256,
         uint256
     ) public payable returns (bytes32 l2TxHash) {
-        return _depositFor(_l1Sender, _l2Receiver, _l1Token, _amount);
+        return _depositFor(_l1Sender, _l2Receiver, _l1Token, _amount, 324);
     }
 
     function _depositFor(
         address l1Sender,
         address l2Receiver,
         address l1Token,
-        uint256 amount
+        uint256 amount,
+        uint256 chainId
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit BridgehubDepositInitiated(324, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        emit BridgehubDepositInitiated(chainId, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
     }
 
@@ -64,7 +65,7 @@ contract zkSync_L1Bridge {
             _request.secondBridgeCalldata,
             (address, uint256, address)
         );
-        _depositFor(msg.sender, to, l1Token, amount);
+        _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
         return "";
     }
 }
