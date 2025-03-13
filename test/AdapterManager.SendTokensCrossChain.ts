@@ -297,7 +297,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       chainId: toBN(324),
       mintValue: bnZero,
       l2Value: bnZero,
-      l2GasLimit: toBN(2000000),
+      l2GasLimit: toBN(2500000),
       l2GasPerPubdataByteLimit: toBN(800),
       refundRecipient: relayer.address,
       secondBridgeAddress: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB", // Shared bridge address
@@ -338,7 +338,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     await adapterManager.sendTokenCrossChain(relayer.address, chainId, mainnetTokens.weth, amountToSend);
     const fee = toBNWei("0.2");
     const bridgeCalldata = l1BridgeHub.interface.encodeFunctionData("requestL2TransactionDirect", [
-      [chainId, amountToSend.add(fee), relayer.address, amountToSend, "0x", 2_000_000, 800, [], relayer.address],
+      [chainId, amountToSend.add(fee), relayer.address, amountToSend, "0x", 2_500_000, 800, [], relayer.address],
     ]);
     expect(l1AtomicDepositor.bridgeWeth).to.have.been.calledWith(
       chainId,
