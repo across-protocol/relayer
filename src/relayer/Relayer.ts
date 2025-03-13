@@ -252,7 +252,7 @@ export class Relayer {
       deposit.outputToken,
     ].some((address) => {
       try {
-        ethersUtils.getAddress(address);
+        getAddress(address);
       } catch {
         return true;
       }
