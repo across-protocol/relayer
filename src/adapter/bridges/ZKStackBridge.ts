@@ -59,7 +59,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
     // This bridge treats hub pool transfers differently from EOA rebalances, so we must know the hub pool address.
     const { address: hubPoolAddress, abi: hubPoolAbi } = CONTRACT_ADDRESSES[hubChainId].hubPool;
-    this.hubPool = new Contract(hubPoolAddress, hubPoolAbi);
+    this.hubPool = new Contract(hubPoolAddress, hubPoolAbi, l1Signer);
   }
 
   async constructL1ToL2Txn(
