@@ -1028,6 +1028,18 @@ export class Relayer {
     gasLimit?: BigNumber
   ): void {
     const { spokePoolClients } = this.clients;
+
+    // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
+    if (deposit.fromLiteChain && repaymentChainId !== deposit.originChainId) {
+      this.logger.warn({
+        at: "Relayer::fillRelay",
+        message: "Suppressed fill for lite chain deposit where repaymentChainId != originChainId",
+        deposit,
+        repaymentChainId,
+      });
+      return;
+    }
+
     this.logger.debug({
       at: "Relayer::fillRelay",
       message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
@@ -1035,14 +1047,6 @@ export class Relayer {
       repaymentChainId,
       realizedLpFeePct,
     });
-
-    // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
-    assert(
-      !deposit.fromLiteChain || repaymentChainId === deposit.originChainId,
-      `Lite chain deposits must be filled on its origin chain (${
-        deposit.originChainId
-      }). Deposit Id: ${deposit.depositId.toString()}.`
-    );
 
     const [method, messageModifier, args] = !isDepositSpedUp(deposit)
       ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)]]
@@ -1215,8 +1219,8 @@ export class Relayer {
     // we come up with a smarter fee quoting algorithm that takes into account relayer inventory management more
     // accurately.
     //
-    // Additionally we don't want to take this code path if the chain is a lite chain because we can't reason about
-    // destination chain repayments on lite chains.
+    // Additionally we don't want to take this code path if the origin chain is a lite chain because we can't
+    // reason about destination chain repayments on lite chains.
     if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",

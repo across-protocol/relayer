@@ -8,7 +8,6 @@ import {
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
-  getNativeTokenAddressForChain,
   getL1TokenInfo,
   getRedisCache,
   getUniqueLogIndex,
@@ -44,15 +43,10 @@ export async function zkSyncFinalizer(
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
   const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
 
-  // Zksync takes 1 day to finalize so ignore any events
-  // earlier than 1 day.
+  // Zksync takes ~6 hours to finalize so ignore any events
+  // earlier than that.
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
-    l2ChainId,
-    getCurrentTime() - 1 * 60 * 60 * 24,
-    undefined,
-    redis
-  );
+  const latestBlockToFinalize = await getBlockForTimestamp(l2ChainId, getCurrentTime() - 60 * 60 * 6, undefined, redis);
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
@@ -171,11 +165,11 @@ async function getWithdrawalParams(
  */
 async function prepareFinalization(
   withdrawal: zkSyncWithdrawalData,
-  ethAddr: string,
-  l1Mailbox: Contract,
-  l1ERC20Bridge: Contract
+  l2ChainId: number,
+  l1SharedBridge: Contract
 ): Promise<Multicall2Call> {
   const args = [
+    l2ChainId,
     withdrawal.l1BatchNumber,
     withdrawal.l2MessageIndex,
     withdrawal.l2TxNumberInBlock,
@@ -184,10 +178,7 @@ async function prepareFinalization(
   ];
 
   // @todo Support withdrawing directly as WETH here.
-  const [target, txn] =
-    withdrawal.sender.toLowerCase() === ethAddr.toLowerCase()
-      ? [l1Mailbox.address, await l1Mailbox.populateTransaction.finalizeEthWithdrawal(...args)]
-      : [l1ERC20Bridge.address, await l1ERC20Bridge.populateTransaction.finalizeWithdrawal(...args)];
+  const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args)];
 
   return { target, callData: txn.data };
 }
@@ -203,35 +194,17 @@ async function prepareFinalizations(
   l2ChainId: number,
   withdrawalParams: zkSyncWithdrawalData[]
 ): Promise<Multicall2Call[]> {
-  const l1Mailbox = getMailbox(l1ChainId);
-  const l1ERC20Bridge = getL1ERC20Bridge(l1ChainId);
-  const ethAddr = getNativeTokenAddressForChain(l2ChainId);
+  const sharedBridge = getSharedBridge(l1ChainId);
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal) =>
-    prepareFinalization(withdrawal, ethAddr, l1Mailbox, l1ERC20Bridge)
+    prepareFinalization(withdrawal, l2ChainId, sharedBridge)
   );
 }
 
-/**
- * @param l1ChainId Chain ID where the L1 ERC20 bridge is deployed.
- * @returns Contract instance for the zkSync ERC20 bridge.
- */
-function getL1ERC20Bridge(l1ChainId: number): Contract {
-  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncDefaultErc20Bridge;
+function getSharedBridge(l1ChainId: number): Contract {
+  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncSharedBridge;
   if (!contract) {
-    throw new Error(`zkSync ERC20 bridge contract data not found for chain ${l1ChainId}`);
-  }
-  return new Contract(contract.address, contract.abi);
-}
-
-/**
- * @param l1ChainId Chain ID where the L1 messaging bridge is deployed.
- * @returns Contract instance for the zkSync messaging bridge.
- */
-function getMailbox(l1ChainId: number): Contract {
-  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncMailbox;
-  if (!contract) {
-    throw new Error(`zkSync L1 mailbox contract data not found for chain ${l1ChainId}`);
+    throw new Error(`zkStack shared bridge contract data not found for chain ${l1ChainId}`);
   }
   return new Contract(contract.address, contract.abi);
 }

@@ -4,13 +4,26 @@
 pragma solidity ^0.8.0;
 
 contract zkSync_L1Bridge {
-    event DepositInitiated(
-        bytes32 indexed l2DepositTxHash,
+    event BridgehubDepositInitiated(
+        uint256 indexed chainId,
+        bytes32 indexed txn,
         address indexed from,
-        address indexed to,
+        address to,
         address l1Token,
         uint256 amount
     );
+
+    struct L2TransactionRequestTwoBridgesOuter {
+        uint256 chainId;
+        uint256 mintValue;
+        uint256 l2Value;
+        uint256 l2GasLimit;
+        uint256 l2GasPerPubdataByteLimit;
+        address refundRecipient;
+        address secondBridgeAddress;
+        uint256 secondBridgeValue;
+        bytes secondBridgeCalldata;
+    }
 
     function deposit(
         address _l2Receiver,
@@ -19,7 +32,7 @@ contract zkSync_L1Bridge {
         uint256,
         uint256
     ) public payable returns (bytes32 l2TxHash) {
-        return _depositFor(msg.sender, _l2Receiver, _l1Token, _amount);
+        return _depositFor(msg.sender, _l2Receiver, _l1Token, _amount, 324);
     }
 
     function depositFor(
@@ -30,18 +43,30 @@ contract zkSync_L1Bridge {
         uint256,
         uint256
     ) public payable returns (bytes32 l2TxHash) {
-        return _depositFor(_l1Sender, _l2Receiver, _l1Token, _amount);
+        return _depositFor(_l1Sender, _l2Receiver, _l1Token, _amount, 324);
     }
 
     function _depositFor(
         address l1Sender,
         address l2Receiver,
         address l1Token,
-        uint256 amount
+        uint256 amount,
+        uint256 chainId
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit DepositInitiated(l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        emit BridgehubDepositInitiated(chainId, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
         return l2TxHash;
+    }
+
+    function requestL2TransactionTwoBridges(
+        L2TransactionRequestTwoBridgesOuter calldata _request
+    ) external payable returns (bytes32 canonicalTxHash) {
+        (address l1Token, uint256 amount, address to) = abi.decode(
+            _request.secondBridgeCalldata,
+            (address, uint256, address)
+        );
+        _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
+        return "";
     }
 }
 

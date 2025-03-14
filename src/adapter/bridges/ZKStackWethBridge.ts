@@ -15,15 +15,21 @@ import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
+import * as zksync from "zksync-ethers";
 
-const ETH_TOKEN_ADDRESS = EvmAddress.from("0x0000000000000000000000000000000000000001");
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
   private readonly l2Eth: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    l1Token: EvmAddress
+  ) {
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
@@ -33,10 +39,10 @@ export class ZKStackWethBridge extends ZKStackBridge {
 
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
     // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
-    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].l2Weth;
+    const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
     if (!isDefined(this.gasToken)) {
-      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].l2Eth;
+      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
       this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     }
   }
@@ -48,19 +54,18 @@ export class ZKStackWethBridge extends ZKStackBridge {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
-    const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero);
 
-    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
+    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
       [
         this.l2chainId,
-        txBaseCost,
-        0,
+        txBaseCost.add(amount),
+        toAddress.toAddress(),
+        amount,
+        "0x",
         this.l2GasLimit,
         this.gasPerPubdataLimit,
-        toAddress.toAddress(),
-        this.sharedBridgeAddress.toAddress(),
-        amount,
-        secondBridgeCalldata,
+        [],
+        toAddress.toAddress(), // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
       ],
     ]);
     const usingCustomGasToken = isDefined(this.gasToken);
@@ -74,7 +79,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     };
   }
 
-  async queryL1BridgeInitiationEvents(
+  override async queryL1BridgeInitiationEvents(
     l1Token: EvmAddress,
     fromAddress: EvmAddress,
     toAddress: EvmAddress,
@@ -87,7 +92,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
       return {};
     }
 
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
     let processedEvents;
     if (isL2Contract) {
       processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
@@ -117,7 +122,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     };
   }
 
-  async queryL2BridgeFinalizationEvents(
+  override async queryL2BridgeFinalizationEvents(
     l1Token: EvmAddress,
     fromAddress: EvmAddress,
     toAddress: EvmAddress,
@@ -127,25 +132,28 @@ export class ZKStackWethBridge extends ZKStackBridge {
     if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
       return {};
     }
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
-
-    // Events change slightly if the L2 has a custom gas token.
-    const usingCustomGasToken = isDefined(this.gasToken);
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
 
     let processedEvents;
-    if (isL2Contract || usingCustomGasToken) {
+    if (isL2Contract) {
       // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
       // query ETH.
-      const ethContract = usingCustomGasToken ? this.l2Weth : this.l2Eth;
       processedEvents = await paginatedEventQuery(
-        ethContract,
-        ethContract.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+        this.l2Eth,
+        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toAddress()),
         eventConfig
       );
     } else {
       // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
       const [events, wrapEvents] = await Promise.all([
-        paginatedEventQuery(this.l2Eth, this.l2Eth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()), eventConfig),
+        paginatedEventQuery(
+          this.l2Eth,
+          this.l2Eth.filters.Transfer(
+            zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address),
+            toAddress.toAddress()
+          ),
+          eventConfig
+        ),
         paginatedEventQuery(
           this.l2Weth,
           this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
