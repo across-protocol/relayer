@@ -5,13 +5,11 @@ import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
 import {
-  bnZero,
   EventSearchConfig,
   getNetworkName,
   isDefined,
   MakeOptional,
   winston,
-  BigNumber,
   getRelayEventKey,
   getMessageHash,
   spreadEventWithBlockNumber,
@@ -290,20 +288,9 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       return pendingEvents;
     });
 
-    // Find the latest deposit Ids, and if there are no new events, fall back to already stored values.
-    const fundsDeposited = eventsToQuery.indexOf("FundsDeposited");
-    const _firstDepositId = events[fundsDeposited]?.at(0)?.args?.depositId;
-    const _latestDepositId = events[fundsDeposited]?.at(-1)?.args?.depositId;
-    const [firstDepositId, latestDepositId] = [
-      isDefined(_firstDepositId) ? BigNumber.from(_firstDepositId) : this.getDeposits().at(0)?.depositId ?? bnZero,
-      isDefined(_latestDepositId) ? BigNumber.from(_latestDepositId) : this.getDeposits().at(-1)?.depositId ?? bnZero,
-    ];
-
     return {
       success: true,
       currentTime: this.pendingCurrentTime,
-      firstDepositId,
-      latestDepositId,
       searchEndBlock: this.pendingBlockNumber,
       events,
     };
