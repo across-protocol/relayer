@@ -2,19 +2,17 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { SpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
-import { ZKSyncWethBridge, ZKSyncBridge } from "../../src/adapter/bridges";
+import { ZKStackWethBridge, ZKStackBridge } from "../../src/adapter/bridges";
 import { bnZero } from "../../src/utils";
-import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   ethers,
   expect,
   BigNumber,
-  Contract,
   createSpyLogger,
   getContractFactory,
   randomAddress,
   toBN,
-  smock,
+  Contract,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
 import * as zksync from "zksync-ethers";
@@ -48,12 +46,16 @@ class TestBaseChainAdapter extends BaseChainAdapter {
     this.bridges[address].atomicDepositor = depositor;
   }
 
-  public setHubPool(address: string, hubPool: string) {
-    this.bridges[address].hubPoolAddress = hubPool;
+  public setHubPool(address: string, hubPool: Contract) {
+    this.bridges[address].hubPool = hubPool;
+  }
+
+  public setSharedBridge(address: string, bridge: Contract) {
+    this.bridges[address].sharedBridge = bridge;
   }
 }
 
-class TestZkSyncWethBridge extends ZKSyncWethBridge {
+class TestZkSyncWethBridge extends ZKStackWethBridge {
   private hubPool;
 
   override getHubPool() {
@@ -67,10 +69,18 @@ class TestZkSyncWethBridge extends ZKSyncWethBridge {
   public setHubPool(hubPool: Contract) {
     this.hubPool = hubPool;
   }
+
+  protected override _txBaseCost(provider: Provider, l2GasLimit: BigNumber, gasPerPubdataLimit: number) {
+    // None of these are used; just satisfy the linter.
+    provider;
+    l2GasLimit;
+    gasPerPubdataLimit;
+    return BigNumber.from(2000000);
+  }
 }
 
-class TestZkSyncBridge extends ZKSyncBridge {
-  protected override getL2GasCost(provider: Provider, l2GasLimit: BigNumber, gasPerPubdataLimit: number) {
+class TestZkSyncBridge extends ZKStackBridge {
+  protected override _txBaseCost(provider: Provider, l2GasLimit: BigNumber, gasPerPubdataLimit: number) {
     // None of these are used; just satisfy the linter.
     provider;
     l2GasLimit;
@@ -135,18 +145,18 @@ describe("Cross Chain Adapter: zkSync", async function () {
     );
 
     // Point the adapter to the proper bridges.
-    await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[MAINNET].zkSyncMailbox.address); // So a contract is deployed to the 0x32400...000324 contract address
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
     l2Eth = await (await getContractFactory("MockWETH9", depositor)).deploy();
     l2Weth = await (await getContractFactory("MockWETH9", depositor)).deploy();
     atomicDepositor = await (await getContractFactory("MockAtomicWethDepositor", depositor)).deploy();
     adapter.setL1Bridge(l1Token, l1Bridge);
+    adapter.setSharedBridge(l1Token, l1Bridge);
     adapter.setL2Bridge(l1Token, l2Bridge);
     adapter.setL2Eth(l1Weth, l2Eth);
     adapter.setL2Weth(l1Weth, l2Weth);
     adapter.setAtomicDepositor(l1Weth, atomicDepositor);
-    adapter.setHubPool(l1Token, hubPool.address);
+    adapter.setHubPool(l1Token, hubPool);
 
     depositAmount = toBN(Math.round(Math.random() * 1e18));
     l2Token = adapter.bridges[l1Token].resolveL2TokenAddress(l1Token);
@@ -504,9 +514,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l1Bridge.deposit(monitoredEoa, l1Token, depositAmount, l2TxGasLimit, l2TxGasPerPubdataByte);
       await l1Bridge.deposit(randomEoa, l1Token, depositAmount, l2TxGasLimit, l2TxGasPerPubdataByte);
 
-      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        searchConfig
+      );
       expect(result).to.exist;
-      expect(result[l2Token].length).to.equal(2);
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const recipient of [monitoredEoa, randomEoa]) {
@@ -581,7 +596,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -589,7 +604,12 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       // Make a single l1 -> l2 deposit.
       await l1Bridge.deposit(monitoredEoa, l1Token, depositAmount, l2TxGasLimit, l2TxGasPerPubdataByte);
-      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Token].length).to.equal(1);
 
@@ -626,7 +646,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -667,7 +687,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -685,9 +705,14 @@ describe("Cross Chain Adapter: zkSync", async function () {
       );
       await l1Bridge.depositFor(randomEoa, monitoredEoa, l1Token, depositAmount, l2TxGasLimit, l2TxGasPerPubdataByte);
 
-      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        spokePool.address,
+        spokePool.address,
+        searchConfig
+      );
       expect(result).to.exist;
-      expect(result[l2Token].length).to.equal(2);
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const [sender, recipient] of [
@@ -717,8 +742,13 @@ describe("Cross Chain Adapter: zkSync", async function () {
       await l2Bridge.finalizeDeposit(hubPool.address, spokePool.address, l1Token, depositAmount);
       await l2Bridge.finalizeDeposit(randomEoa, monitoredEoa, l1Token, depositAmount);
 
-      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(l1Token, null, null, searchConfig);
-      expect(result[l2Token].length).to.equal(2);
+      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        l1Token,
+        spokePool.address,
+        spokePool.address,
+        searchConfig
+      );
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const [sender, recipient] of [
@@ -768,7 +798,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -783,7 +813,12 @@ describe("Cross Chain Adapter: zkSync", async function () {
         l2TxGasLimit,
         l2TxGasPerPubdataByte
       );
-      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        spokePool.address,
+        spokePool.address,
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Token].length).to.equal(1);
 
@@ -820,7 +855,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -861,7 +896,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -893,7 +928,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -901,7 +936,12 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       // Make a single l1 -> l2 deposit via the chain adapter.
       await adapter.sendTokenToTargetChain(monitoredEoa, l1Token, l2Token, depositAmount, false);
-      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        l1Token,
+        monitoredEoa,
+        monitoredEoa,
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Token].length).to.equal(1);
 
@@ -929,7 +969,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
           [l1Token]: {
             [l2Token]: {
               depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
+              totalAmount: bnZero,
             },
           },
         },
@@ -937,11 +977,3 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
   });
 });
-
-async function makeFake(contractName: string, address: string) {
-  const _interface = CONTRACT_ADDRESSES[1][contractName]?.abi;
-  if (_interface === undefined) {
-    throw new Error(`${contractName} is not a valid contract name`);
-  }
-  return await smock.fake(_interface, { address });
-}
