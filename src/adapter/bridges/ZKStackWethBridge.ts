@@ -64,7 +64,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         this.l2GasLimit,
         this.gasPerPubdataLimit,
         [],
-        toAddress, // It is safe to use toAddress here since it is an EOA.
+        toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
       ],
     ]);
     const usingCustomGasToken = isDefined(this.gasToken);

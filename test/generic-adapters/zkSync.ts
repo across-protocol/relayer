@@ -4,17 +4,15 @@ import { SpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { ZKStackWethBridge, ZKStackBridge } from "../../src/adapter/bridges";
 import { bnZero } from "../../src/utils";
-import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   ethers,
   expect,
   BigNumber,
-  Contract,
   createSpyLogger,
   getContractFactory,
   randomAddress,
   toBN,
-  smock,
+  Contract,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
 import * as zksync from "zksync-ethers";
@@ -147,7 +145,6 @@ describe("Cross Chain Adapter: zkSync", async function () {
     );
 
     // Point the adapter to the proper bridges.
-    await makeFake("zkSyncMailbox", CONTRACT_ADDRESSES[MAINNET].zkSyncMailbox.address); // So a contract is deployed to the 0x32400...000324 contract address
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
     l2Eth = await (await getContractFactory("MockWETH9", depositor)).deploy();
@@ -980,11 +977,3 @@ describe("Cross Chain Adapter: zkSync", async function () {
     });
   });
 });
-
-async function makeFake(contractName: string, address: string) {
-  const _interface = CONTRACT_ADDRESSES[1][contractName]?.abi;
-  if (_interface === undefined) {
-    throw new Error(`${contractName} is not a valid contract name`);
-  }
-  return await smock.fake(_interface, { address });
-}

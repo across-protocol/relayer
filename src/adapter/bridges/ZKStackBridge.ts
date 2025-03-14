@@ -17,6 +17,10 @@ import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import * as zksync from "zksync-ethers";
 
+// Scale gas price estimates by 20%.
+const FEE_SCALER_NUMERATOR = 12;
+const FEE_SCALER_DENOMINATOR = 10;
+
 /* For both the canonical bridge (this bridge) and the ZkStackWethBridge
  * bridge, we need to assume that the l1 and l2 signers contain
  * associated providers, since we need to get information about
@@ -25,7 +29,7 @@ import * as zksync from "zksync-ethers";
  */
 export class ZKStackBridge extends BaseBridgeAdapter {
   readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
-  readonly l2GasLimit = BigNumber.from(2_500_000);
+  readonly l2GasLimit = BigNumber.from(2_000_000);
   readonly sharedBridge: Contract;
   readonly hubPool: Contract;
 
@@ -150,7 +154,12 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
     // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying a system contract. In this case,
     // the system contract to query is the bridge hub contract.
-    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas.add(l1GasPriceData.maxFeePerGas);
+    // @dev We pad the estimated L1 gas price by a small amount so that if there is a gas price increase between the time of estimating the gas price
+    // and the time of submitting the transaction, the bridge won't revert due to setting the fee too low. The excess ETH will be refunded to the relayer on L2.
+    const estimatedL1GasPrice = l1GasPriceData.maxPriorityFeePerGas
+      .add(l1GasPriceData.maxFeePerGas)
+      .mul(FEE_SCALER_NUMERATOR)
+      .div(FEE_SCALER_DENOMINATOR);
     const l2Gas = await this.getL1Bridge().l2TransactionBaseCost(
       this.l2chainId,
       estimatedL1GasPrice,
