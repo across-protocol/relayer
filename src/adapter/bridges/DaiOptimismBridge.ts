@@ -1,17 +1,11 @@
-import { Contract, Signer, Provider } from "../../utils";
+import { Contract, Signer, Provider, EvmAddress } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OpStackDefaultERC20Bridge } from "./OpStackDefaultErc20Bridge";
 
 export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
-  ) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, _l1Token);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
@@ -22,6 +16,6 @@ export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
     // we will need to overwrite the l1Gateways parameter, since when calling the super()
     // constructor, l1Gateways will be incorrectly set to the OVM standard bridge address,
     // not the DaiOptimismBridgeAddress.
-    this.l1Gateways = [l1Address];
+    this.l1Gateways = [EvmAddress.from(l1Address)];
   }
 }

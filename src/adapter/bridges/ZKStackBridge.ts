@@ -9,6 +9,7 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   isContractDeployedToAddress,
+  EvmAddress,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -39,10 +40,10 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _l1Token: string
+    _l1Token: EvmAddress
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [sharedBridgeAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
@@ -63,9 +64,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     // The zkStack bridges need to know the l2 gas price bid beforehand. If this bid is too small, the transaction will revert.
@@ -81,7 +82,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         0,
         this.l2GasLimit,
         this.gasPerPubdataLimit,
-        toAddress,
+        toAddress.toAddress(),
         this.sharedBridge.address,
         0,
         secondBridgeCalldata,
@@ -97,56 +98,63 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
-    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
+    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toAddress();
     const rawEvents = await paginatedEventQuery(
       this.sharedBridge,
       this.sharedBridge.filters.BridgehubDepositInitiated(this.l2chainId, undefined, annotatedFromAddress),
       eventConfig
     );
     const bridgeEvents = rawEvents.filter(
-      (event) => compareAddressesSimple(event.args.l1Token, l1Token) && compareAddressesSimple(event.args.to, toAddress)
+      (event) =>
+        compareAddressesSimple(event.args.l1Token, l1Token.toAddress()) &&
+        compareAddressesSimple(event.args.to, toAddress.toAddress())
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: bridgeEvents.map((event) => processEvent(event, "amount", "from", "to")),
+      [this.resolveL2TokenAddress(l1Token)]: bridgeEvents.map((event) =>
+        processEvent(event, "amount", "from", "to", this.l2chainId)
+      ),
     };
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
     // so we add a special case for this reason.
-    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
     const events = isSpokePool
       ? await paginatedEventQuery(
           this.getL2Bridge(),
-          this.getL2Bridge().filters.FinalizeDeposit(this.hubPool.address, toAddress, l2Token),
+          this.getL2Bridge().filters.FinalizeDeposit(this.hubPool.address, toAddress.toAddress(), l2Token),
           eventConfig
         )
       : await paginatedEventQuery(
           this.getL2Bridge(),
-          this.getL2Bridge().filters.FinalizeDeposit(fromAddress, toAddress, l2Token),
+          this.getL2Bridge().filters.FinalizeDeposit(fromAddress.toAddress(), toAddress.toAddress(), l2Token),
           eventConfig
         );
 
     return {
-      [l2Token]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender")),
+      [l2Token]: events.map((event) => processEvent(event, "_amount", "_to", "l1Sender", this.l2chainId)),
     };
   }
 
-  _secondBridgeCalldata(toAddress: string, l1Token: string, amount: BigNumber): string {
-    return ethers.utils.defaultAbiCoder.encode(["address", "uint256", "address"], [l1Token, amount, toAddress]);
+  _secondBridgeCalldata(toAddress: EvmAddress, l1Token: EvmAddress, amount: BigNumber): string {
+    return ethers.utils.defaultAbiCoder.encode(
+      ["address", "uint256", "address"],
+      [l1Token.toAddress(), amount, toAddress.toAddress()]
+    );
   }
 
   async _txBaseCost(): Promise<BigNumber> {

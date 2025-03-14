@@ -12,12 +12,20 @@ import {
   Provider,
   Signer,
   toBN,
+  Address,
+  EvmAddress,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class OpStackBridge extends BaseL2BridgeAdapter {
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Provider: Provider | Signer, l1Token: string) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
     const { address, abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
@@ -27,12 +35,12 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: string,
-    l2Token: string,
-    l1Token: string,
+    toAddress: Address,
+    l2Token: Address,
+    l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,
@@ -59,8 +67,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: string,
-    l2Token: string
+    fromAddress: Address,
+    l2Token: Address
   ): Promise<BigNumber> {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
