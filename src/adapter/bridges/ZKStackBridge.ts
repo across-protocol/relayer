@@ -118,7 +118,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: bridgeEvents.map((event) =>
-        processEvent(event, "amount", "from", "to", this.l2chainId)
+        processEvent(event, "amount", "to", "from", this.l2chainId)
       ),
     };
   }

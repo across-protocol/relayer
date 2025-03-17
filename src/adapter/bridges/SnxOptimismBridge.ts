@@ -79,7 +79,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "_amount", "_to", "_from", this.l2chainId)
+        processEvent(event, "_amount", "_to", "_to", this.l2chainId)
       ),
     };
   }
