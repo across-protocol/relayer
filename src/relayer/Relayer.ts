@@ -924,7 +924,8 @@ export class Relayer {
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
-        });
+        })
+        .slice(0, 25); // Only consider a subset of the unfilled deposits on each loop.
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
