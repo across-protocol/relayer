@@ -54,20 +54,34 @@ export class ZKStackWethBridge extends ZKStackBridge {
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
 
-    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
-      [
-        this.l2chainId,
-        txBaseCost.add(amount),
-        toAddress,
-        amount,
-        "0x",
-        this.l2GasLimit,
-        this.gasPerPubdataLimit,
-        [],
-        toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
-      ],
-    ]);
     const usingCustomGasToken = isDefined(this.gasToken);
+    const bridgeCalldata = usingCustomGasToken
+      ? this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
+          [
+            this.l2chainId,
+            txBaseCost,
+            0,
+            this.l2GasLimit,
+            this.gasPerPubdataLimit,
+            toAddress,
+            this.sharedBridge.address,
+            amount,
+            this._secondBridgeCalldata(toAddress, l2Token, amount),
+          ],
+        ])
+      : this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
+          [
+            this.l2chainId,
+            txBaseCost.add(amount),
+            toAddress,
+            amount,
+            "0x",
+            this.l2GasLimit,
+            this.gasPerPubdataLimit,
+            [],
+            toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
+          ],
+        ]);
     const netValue = usingCustomGasToken ? amount : amount.add(txBaseCost);
     const feeAmount = usingCustomGasToken ? txBaseCost : bnZero;
 

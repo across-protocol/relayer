@@ -57,17 +57,21 @@ export const CONTRACT_ADDRESSES: {
       address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
       abi: LINEA_USDC_BRIDGE_ABI,
     },
-    zkSyncSharedBridge: {
+    zkStackSharedBridge_324: {
       address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
-    zkStackBridgeHub: {
+    zkStackBridgeHub_324: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
     },
-    zkStackSharedBridge: {
-      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+    zkStackSharedBridge_232: {
+      address: "0x34899F8B01cF52160C88ddb9e29eC3c269019165",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
+    zkStackBridgeHub_232: {
+      address: "0x9dA9f5dad070649811D77c40CcDcab479cE3Fa07",
+      abi: ZKSTACK_BRIDGE_HUB_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -405,6 +409,20 @@ export const CONTRACT_ADDRESSES: {
     arbSys: {
       address: "0x0000000000000000000000000000000000000064",
       abi: ARBSYS_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.LENS]: {
+    zkStackBridge: {
+      address: "0xfBEC23c5BB0E076F2ef4d0AaD7fe331aE5A01143",
+      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+    eth: {
+      address: "",
+      abi: WETH_ABI,
+    },
+    weth: {
+      address: "",
+      abi: WETH_ABI,
     },
   },
   [CHAIN_IDs.LINEA]: {
