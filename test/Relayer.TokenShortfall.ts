@@ -41,6 +41,7 @@ import {
   toBN,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("Relayer: Token balance shortfall", async function () {
@@ -94,6 +95,10 @@ describe("Relayer: Token balance shortfall", async function () {
       { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
     ]);
+
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(
