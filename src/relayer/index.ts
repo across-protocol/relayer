@@ -47,8 +47,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const redis = await getRedisCache(logger);
   let activeRelayerUpdated = false;
 
-  // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
-  const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
+  // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+  const { addressFilter: _addressFilter, ...loggedConfig } = config;
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);

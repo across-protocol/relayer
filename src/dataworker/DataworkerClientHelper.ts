@@ -114,7 +114,7 @@ export async function constructSpokePoolClientsForFastDataworker(
 }
 
 export function getSpokePoolClientEventSearchConfigsForFastDataworker(
-  config: Omit<DataworkerConfig, "validate">,
+  config: Omit<DataworkerConfig, "validate" | "update">,
   clients: DataworkerClients,
   dataworker: Dataworker
 ): {
