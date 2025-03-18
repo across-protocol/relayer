@@ -1170,8 +1170,8 @@ export class Dataworker {
         return false;
       }
 
-      const { ignoredAddresses } = this.config;
-      if (ignoredAddresses?.has(getAddress(depositor)) || ignoredAddresses?.has(getAddress(recipient))) {
+      const { addressFilter } = this.config;
+      if (addressFilter?.has(getAddress(depositor)) || addressFilter?.has(getAddress(recipient))) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",

@@ -3,6 +3,9 @@ import * as sdk from "@across-protocol/sdk";
 export class BlockFinder extends sdk.utils.BlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 
+export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
+export const addressAdapters = sdk.addressAggregator.adapters;
+
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
