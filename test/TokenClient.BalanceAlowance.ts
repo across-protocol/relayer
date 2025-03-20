@@ -13,6 +13,7 @@ import {
   toBN,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("TokenClient: Balance and Allowance", async function () {
@@ -99,6 +100,9 @@ describe("TokenClient: Balance and Allowance", async function () {
     );
 
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

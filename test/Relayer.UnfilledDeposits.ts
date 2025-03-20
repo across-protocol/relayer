@@ -36,6 +36,7 @@ import {
   lastSpyLogIncludes,
   randomAddress,
   setupTokensForWallet,
+  deployMulticall3,
 } from "./utils";
 
 // Tested
@@ -92,6 +93,10 @@ describe("Relayer: Unfilled Deposits", async function () {
       { l2ChainId: repaymentChainId, spokePool: spokePool_2 },
       { l2ChainId: 1, spokePool: spokePool_2 },
     ]));
+
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 

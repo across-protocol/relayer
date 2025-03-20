@@ -128,6 +128,10 @@ export async function deploySpokePoolWithToken(
   return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
+export async function deployMulticall3(signer: SignerWithAddress) {
+  return sdkUtils.deploy(signer);
+}
+
 export async function deployConfigStore(
   signer: SignerWithAddress,
   tokensToAdd: Contract[],

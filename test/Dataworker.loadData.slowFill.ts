@@ -22,6 +22,7 @@ import {
   sinon,
   smock,
   spyLogIncludes,
+  deployMulticall3,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -119,6 +120,12 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+
+    // Deploy Multicall3 to the hardhat test networks.
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
       hubPoolClient.hubPool,

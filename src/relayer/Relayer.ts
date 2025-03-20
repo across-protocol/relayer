@@ -730,6 +730,8 @@ export class Relayer {
       } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
@@ -922,7 +924,8 @@ export class Relayer {
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
-        });
+        })
+        .slice(0, 25); // Only consider a subset of the unfilled deposits on each loop.
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
