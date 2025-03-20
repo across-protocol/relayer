@@ -48,6 +48,7 @@ import {
   toBNWei,
   updateDeposit,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
@@ -96,6 +97,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       { l2ChainId: repaymentChainId, spokePool: spokePool_1 },
       { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
+
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     await enableRoutesOnHubPool(hubPool, [
       { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
