@@ -416,12 +416,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0xfBEC23c5BB0E076F2ef4d0AaD7fe331aE5A01143",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
     },
-    eth: {
-      address: "",
+    nativeToken: {
+      address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
     weth: {
-      address: "",
+      address: "", // @todo
       abi: WETH_ABI,
     },
   },
