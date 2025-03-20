@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.38",
     "@across-protocol/contracts": "^4.0.2",
-    "@across-protocol/sdk": "^4.1.25",
+    "@across-protocol/sdk": "^4.1.27",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
@@ -50,7 +50,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "yarn build-bigint-buffer",
+    "postinstall": "yarn build-bigint-buffer; yarn update-addresses || true",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
@@ -61,14 +61,15 @@
     "build:test": "tsc --project tsconfig.test.json",
     "clean": "dir=\"./node_modules\"; mv \"${dir}\" \"${dir}_\" 2>/dev/null && rm -r \"${dir}_\" &",
     "reinstall": "yarn clean && yarn install && yarn build",
-    "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
     "run-finalizer": "FINALIZER_ENABLED=true node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
-    "dispute": "yarn ts-node ./scripts/hubpool.ts dispute"
+    "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",
+    "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
+    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.2.3",

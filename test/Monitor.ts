@@ -29,6 +29,7 @@ import {
   expect,
   lastSpyLogIncludes,
   toBNWei,
+  deployMulticall3,
 } from "./utils";
 
 type TokenMap = { [l2TokenAddress: string]: L1Token };
@@ -46,7 +47,7 @@ class TestMonitor extends Monitor {
 }
 
 describe("Monitor", async function () {
-  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
+  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", "HardhatNetwork", ALL_CHAINS_NAME];
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
   let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -112,6 +113,11 @@ describe("Monitor", async function () {
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       0
     ));
+
+    // Deploy Multicall3 to the hardhat test networks.
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     // Use a mock hub pool client for these tests so we can hardcode the L1TokenInfo for arbitrary tokens.
     hubPoolClient = new SimpleMockHubPoolClient(
