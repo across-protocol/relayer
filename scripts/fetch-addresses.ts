@@ -8,7 +8,7 @@ let logger: typeof Logger;
 
 async function run(): Promise<number> {
   const addressList = new AddressAggregator(
-    [new addressAdapters.bybit.AddressList(), new addressAdapters.processEnv.AddressList("IGNORED_ADDRESSES")],
+    [new addressAdapters.risklabs.AddressList()],
     logger
   );
   const addresses = await addressList.update();
