@@ -9,6 +9,8 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   isContractDeployedToAddress,
+  isDefined,
+  bnZero,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -41,7 +43,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: string
   ) {
-    const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
+    const { address: sharedBridgeAddress, abi: sharedBridgeAbi } =
+      CONTRACT_ADDRESSES[hubChainId][`zkStackSharedBridge_${l2chainId}`];
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [sharedBridgeAddress]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
@@ -51,7 +54,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
     }
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkStackBridgeHub;
+    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`zkStackBridgeHub_${l2chainId}`];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkStackBridge;
@@ -73,26 +76,38 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, l1Token, amount);
 
     // The method/arguments change depending on whether or not we are bridging the gas token or another ERC20.
-    const method = "requestL2TransactionTwoBridges";
-    const args = [
-      [
-        this.l2chainId,
-        txBaseCost,
-        0,
-        this.l2GasLimit,
-        this.gasPerPubdataLimit,
-        toAddress,
-        this.sharedBridge.address,
-        0,
-        secondBridgeCalldata,
-      ],
-    ];
+    const method = isDefined(this.gasToken) ? "requestL2TransactionDirect" : "requestL2TransactionTwoBridges";
+    const args = isDefined(this.gasToken)
+      ? [
+          this.l2chainId,
+          amount.add(txBaseCost),
+          toAddress,
+          amount,
+          "0x",
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          [],
+          toAddress, // Using toAddress as the refund address is safe since this is an EOA transaction.
+        ]
+      : [
+          [
+            this.l2chainId,
+            txBaseCost,
+            0,
+            this.l2GasLimit,
+            this.gasPerPubdataLimit,
+            toAddress,
+            this.sharedBridge.address,
+            0,
+            secondBridgeCalldata,
+          ],
+        ];
 
     return {
       contract: this.getL1Bridge(),
       method,
       args,
-      value: txBaseCost,
+      value: isDefined(this.gasToken) ? bnZero : txBaseCost,
     };
   }
 
