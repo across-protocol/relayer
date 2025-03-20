@@ -13,6 +13,7 @@ import {
   expect,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("TokenClient: Token shortfall", async function () {
@@ -71,6 +72,9 @@ describe("TokenClient: Token shortfall", async function () {
       address: l1Token_1.address,
     });
     hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
+
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });
