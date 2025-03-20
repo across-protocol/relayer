@@ -8,6 +8,7 @@ import {
   Provider,
   ZERO_ADDRESS,
   bnUint32Max,
+  EvmAddress,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -363,7 +364,7 @@ export const CANONICAL_BRIDGE: {
       hubChainId: number,
       l1Signer: Signer,
       l2SignerOrProvider: Signer | Provider,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseBridgeAdapter;
   };
 } = {
@@ -404,7 +405,7 @@ export const CANONICAL_L2_BRIDGE: {
       hubChainId: number,
       l2Signer: Signer,
       l1Provider: Provider | Signer,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseL2BridgeAdapter;
   };
 } = {
@@ -424,7 +425,7 @@ export const CUSTOM_BRIDGE: {
         hubChainId: number,
         l1Signer: Signer,
         l2SignerOrProvider: Signer | Provider,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseBridgeAdapter;
     };
   };
@@ -528,7 +529,7 @@ export const CUSTOM_L2_BRIDGE: {
         hubChainId: number,
         l2Signer: Signer,
         l1Provider: Provider | Signer,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseL2BridgeAdapter;
     };
   };
