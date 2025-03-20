@@ -270,6 +270,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
+    eth: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
       abi: WETH_ABI,
