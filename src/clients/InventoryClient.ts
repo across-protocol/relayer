@@ -1374,7 +1374,7 @@ export class InventoryClient {
       return;
     }
     this.log("Checking ETH->WETH Wrap status");
-    await this.adapterManager.wrapEthIfAboveThreshold(this.inventoryConfig, this.simMode);
+    await this.adapterManager.wrapNativeTokenIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
   update(chainIds?: number[]): Promise<void> {

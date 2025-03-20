@@ -27,6 +27,8 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
+  getNativeTokenSymbol,
+  CHAIN_IDs,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -266,45 +268,53 @@ export class BaseChainAdapter {
     return (await this.transactionClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
 
-  async wrapEthIfAboveThreshold(
+  async wrapNativeTokenIfAboveThreshold(
     threshold: BigNumber,
     target: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse | null> {
-    const wethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[this.chainId];
-    const ethBalance = await this.getSigner(this.chainId).getBalance();
-    if (ethBalance.lte(threshold)) {
-      this.log("ETH balance below threshold", { threshold, ethBalance });
+    const nativeTokenSymbol = getNativeTokenSymbol(this.chainId);
+    const nativeTokenAddress = TOKEN_SYMBOLS_MAP[`W${nativeTokenSymbol}`].addresses[this.chainId];
+    const nativeTokenBalance = await this.getSigner(this.chainId).getBalance();
+    if (nativeTokenBalance.lte(threshold)) {
+      this.log("Native token balance below threshold", { threshold, nativeTokenBalance });
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
-    const contract = new Contract(wethAddress, WETH_ABI, l2Signer);
+    const contract = new Contract(nativeTokenAddress, WETH_ABI, l2Signer);
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      assert(
-        symbol === "WETH",
-        `Critical (may delete ETH): Unable to verify ${this.adapterName} WETH address (${contract.address})`
-      );
+      if (CHAIN_IDs.LENS === this.chainId) {
+        assert(
+          symbol === "WGHO",
+          `Critical (may delete $$$): Unable to verify ${this.adapterName} native token address (${contract.address})`
+        );
+      } else {
+        assert(
+          symbol === "WETH",
+          `Critical (may delete ETH): Unable to verify ${this.adapterName} WETH address (${contract.address})`
+        );
+      }
     }
 
-    const value = ethBalance.sub(target);
+    const value = nativeTokenBalance.sub(target);
     this.log(
-      `Wrapping ETH on chain ${getNetworkName(this.chainId)}`,
-      { threshold, target, value, ethBalance },
+      `Wrapping native token on chain ${getNetworkName(this.chainId)}`,
+      { threshold, target, value, nativeTokenBalance },
       "debug",
-      "wrapEthIfAboveThreshold"
+      "wrapNativeTokenIfAboveThreshold"
     );
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
-      `${formatFunc(toBN(value).toString())} Ether on chain ${
+      `${formatFunc(toBN(value).toString())} native tokens on chain ${
         this.chainId
-      } was wrapped due to being over the threshold of ` + `${formatFunc(toBN(threshold).toString())} ETH.`;
-    const message = `${formatFunc(toBN(value).toString())} Eth wrapped on target chain ${this.chainId}🎁`;
+      } was wrapped due to being over the threshold of ` + `${formatFunc(toBN(threshold).toString())}.`;
+    const message = `${formatFunc(toBN(value).toString())} native tokens wrapped on target chain ${this.chainId}🎁`;
     const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
@@ -312,7 +322,7 @@ export class BaseChainAdapter {
         "Simulation result",
         { succeed, reason, contract: contract.address, value },
         "debug",
-        "wrapEthIfAboveThreshold"
+        "wrapNativeTokenIfAboveThreshold"
       );
       return { hash: ZERO_ADDRESS } as TransactionResponse;
     } else {
