@@ -359,7 +359,7 @@ function getNativeTokens(chainId: number): string[] {
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
   const nativeTokens = [
-    TOKEN_SYMBOLS_MAP[`W${nativeTokenSymbol}`].addresses[chainId],
+    TOKEN_SYMBOLS_MAP[`W${nativeTokenSymbol}`]?.addresses[chainId],
     CONTRACT_ADDRESSES[chainId].nativeToken.address,
   ];
   if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {

@@ -303,7 +303,7 @@ export class BaseChainAdapter {
 
     const value = nativeTokenBalance.sub(target);
     this.log(
-      `Wrapping native token on chain ${getNetworkName(this.chainId)}`,
+      `Wrapping ${nativeTokenSymbol} on chain ${getNetworkName(this.chainId)}`,
       { threshold, target, value, nativeTokenBalance },
       "debug",
       "wrapNativeTokenIfAboveThreshold"
@@ -311,10 +311,10 @@ export class BaseChainAdapter {
     const method = "deposit";
     const formatFunc = createFormatFunction(2, 4, false, 18);
     const mrkdwn =
-      `${formatFunc(toBN(value).toString())} native tokens on chain ${
+      `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} on chain ${
         this.chainId
       } was wrapped due to being over the threshold of ` + `${formatFunc(toBN(threshold).toString())}.`;
-    const message = `${formatFunc(toBN(value).toString())} native tokens wrapped on target chain ${this.chainId}🎁`;
+    const message = `${formatFunc(toBN(value).toString())} ${nativetokenSymbol} wrapped on target chain ${this.chainId}🎁`;
     const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
