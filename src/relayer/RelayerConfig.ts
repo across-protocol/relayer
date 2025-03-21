@@ -27,7 +27,7 @@ type DepositConfirmationConfig = {
 };
 
 export class RelayerConfig extends CommonConfig {
-  readonly externalIndexer: boolean;
+  readonly externalListener: boolean;
   readonly listenerPath: { [chainId: number]: string } = {};
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
@@ -87,15 +87,15 @@ export class RelayerConfig extends CommonConfig {
       ACCEPT_INVALID_FILLS,
       MIN_DEPOSIT_CONFIRMATIONS,
       RELAYER_IGNORE_LIMITS,
-      RELAYER_EXTERNAL_INDEXER,
+      RELAYER_EXTERNAL_LISTENER,
       RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
     } = env;
     super(env);
 
-    // External indexing is dependent on looping mode being configured.
-    this.externalIndexer = this.pollingDelay > 0 && RELAYER_EXTERNAL_INDEXER === "true";
+    // External listeners are dependent on looping mode being configured.
+    this.externalListener = this.pollingDelay > 0 && RELAYER_EXTERNAL_LISTENER === "true";
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
@@ -349,12 +349,12 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
-    const { RELAYER_SPOKEPOOL_INDEXER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER } = process.env;
+    const { RELAYER_SPOKEPOOL_LISTENER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_LISTENER } = process.env;
 
     chainIds.forEach((chainId) => {
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =
-        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_INDEXER_PATH;
+        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
     });
 
     // Only validate config for chains that the relayer cares about.

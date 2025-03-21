@@ -88,7 +88,7 @@ export async function constructRelayerClients(
       : undefined;
 
   let spokePoolClients: SpokePoolClientsByChain;
-  if (config.externalIndexer) {
+  if (config.externalListener) {
     spokePoolClients = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChains ?? configStoreClient.getEnabledChains(), async (chainId) => {
         const opts = {
