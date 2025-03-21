@@ -349,12 +349,12 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
-    const { RELAYER_SPOKEPOOL_INDEXER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_INDEXER } = process.env;
+    const { RELAYER_SPOKEPOOL_LISTENER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_LISTENER } = process.env;
 
     chainIds.forEach((chainId) => {
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =
-        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_INDEXER_PATH;
+        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
     });
 
     // Only validate config for chains that the relayer cares about.
