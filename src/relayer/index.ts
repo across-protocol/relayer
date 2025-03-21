@@ -32,7 +32,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalIndexer, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
+  const { externalListener, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
 
   const loop = pollingDelay > 0;
   let stop = false;
@@ -144,7 +144,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   } finally {
     await disconnectRedisClients(logger);
 
-    if (externalIndexer) {
+    if (externalListener) {
       Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }
