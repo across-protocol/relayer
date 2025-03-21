@@ -287,9 +287,9 @@ export const BLOCK_NUMBER_TTL = 60;
 export const PROVIDER_CACHE_TTL = 3600;
 export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
-// These are the spokes that can hold both ETH and WETH, so they should be added together when calculating whether
+// These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldEthAndWeth = [
+export const spokesThatHoldNativeTokens = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.BLAST,
   CHAIN_IDs.UNICHAIN,

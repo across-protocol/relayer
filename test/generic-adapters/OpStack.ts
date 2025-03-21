@@ -403,7 +403,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     });
 
     it("return simulated success tx if above threshold", async () => {
-      const tx = await adapter.wrapEthIfAboveThreshold(toBN(0), toBN(1), true);
+      const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
       expect(tx?.hash).to.equal(ZERO_ADDRESS);
     });

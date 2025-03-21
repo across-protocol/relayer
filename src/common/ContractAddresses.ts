@@ -233,7 +233,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     cctpMessageTransmitter: {
@@ -257,10 +257,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
-    // The "eth" entries in this dictionary should be renamed to gasToken/nativeToken to make it more clear
-    // how they are used in the code. For now, set this address to the MATIC address on Polygon. This address
-    // is used in TokenUtils/getEthAddress() and should be set if the native token address is not 0x0.
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
     },
   },
@@ -268,6 +265,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackBridge: {
       address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+    nativeToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
     },
     eth: {
       address: "0x000000000000000000000000000000000000800A",
@@ -291,7 +292,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -304,7 +305,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -317,7 +318,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -326,7 +327,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -335,7 +336,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -344,7 +345,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     cctpMessageTransmitter: {
@@ -361,7 +362,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -370,7 +371,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -379,7 +380,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     blastBridge: {
@@ -420,7 +421,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
@@ -434,7 +435,7 @@ export const CONTRACT_ADDRESSES: {
     // the spoke pool. However, the relayer may need to wrap eth on
     // the L2; therefore, we need to define an address here so the
     // dataworker won't error.
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
@@ -443,7 +444,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },

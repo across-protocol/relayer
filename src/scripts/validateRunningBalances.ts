@@ -261,7 +261,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       ovmL2Bridge,
                       ovmL2Bridge.filters.DepositFinalized(
                         ZERO_ADDRESS, // L1 token
-                        CONTRACT_ADDRESSES[leaf.chainId].eth.address, // L2 token
+                        CONTRACT_ADDRESSES[leaf.chainId].nativeToken.address, // L2 token
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
