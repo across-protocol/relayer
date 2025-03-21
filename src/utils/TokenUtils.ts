@@ -12,6 +12,15 @@ export function getNativeTokenAddressForChain(chainId: number): string {
   return CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS;
 }
 
+export function getWrappedNativeTokenAddress(chainId: number): string | undefined {
+  const tokenSymbol = utils.getNativeTokenSymbol(chainId);
+  return (
+    TOKEN_SYMBOLS_MAP[`W${tokenSymbol}`].addresses[chainId] ||
+    TOKEN_SYMBOLS_MAP[`w${tokenSymbol}`].addresses[chainId] ||
+    undefined
+  );
+}
+
 /**
  * Format the given amount of tokens to the correct number of decimals for the given token symbol.
  * @param symbol The token symbol to format the amount for.

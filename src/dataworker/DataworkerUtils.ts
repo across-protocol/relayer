@@ -26,9 +26,9 @@ import {
   isDefined,
   MerkleTree,
   Profiler,
-  TOKEN_SYMBOLS_MAP,
   winston,
   getNativeTokenSymbol,
+  getWrappedNativeTokenAddress,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {
@@ -358,12 +358,9 @@ export function _getRefundLeaves(
 function getNativeTokens(chainId: number): string[] {
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
-  const nativeTokens = [
-    TOKEN_SYMBOLS_MAP[`W${nativeTokenSymbol}`]?.addresses[chainId],
-    CONTRACT_ADDRESSES[chainId].nativeToken.address,
-  ];
+  const nativeTokens = [getWrappedNativeTokenAddress(chainId), CONTRACT_ADDRESSES[chainId].nativeToken.address];
   if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {
-    throw new Error(`Native or wrapped native token address not defined for chain ${chainId}`);
+    throw new Error(`${nativeTokenSymbol} address not defined for chain ${chainId}`);
   }
   return nativeTokens;
 }

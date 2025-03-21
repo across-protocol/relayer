@@ -22,13 +22,13 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  TOKEN_SYMBOLS_MAP,
   getL1TokenInfo,
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
   getNativeTokenSymbol,
   CHAIN_IDs,
+  getWrappedNativeTokenAddress,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -274,7 +274,7 @@ export class BaseChainAdapter {
     simMode: boolean
   ): Promise<TransactionResponse | null> {
     const nativeTokenSymbol = getNativeTokenSymbol(this.chainId);
-    const nativeTokenAddress = TOKEN_SYMBOLS_MAP[`W${nativeTokenSymbol}`].addresses[this.chainId];
+    const nativeTokenAddress = getWrappedNativeTokenAddress(this.chainId);
     const nativeTokenBalance = await this.getSigner(this.chainId).getBalance();
     if (nativeTokenBalance.lte(threshold)) {
       this.log("Native token balance below threshold", { threshold, nativeTokenBalance });
@@ -314,7 +314,9 @@ export class BaseChainAdapter {
       `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} on chain ${
         this.chainId
       } was wrapped due to being over the threshold of ` + `${formatFunc(toBN(threshold).toString())}.`;
-    const message = `${formatFunc(toBN(value).toString())} ${nativetokenSymbol} wrapped on target chain ${this.chainId}🎁`;
+    const message = `${formatFunc(toBN(value).toString())} ${nativeTokenSymbol} wrapped on target chain ${
+      this.chainId
+    }🎁`;
     const augmentedTxn = { contract, chainId: this.chainId, method, args: [], value, mrkdwn, message };
     if (simMode) {
       const { succeed, reason } = (await this.transactionClient.simulate([augmentedTxn]))[0];
