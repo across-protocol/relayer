@@ -116,7 +116,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const cap = ethers.utils.parseEther("0.01");
 
     if (BigNumber.from(feeStruct.nativeFee).gt(cap)) {
-      throw "queried OFT nativeFee is to high. Can't pay that much for a bridge";
+      throw `can't go over fee cap (${feeStruct.nativeFee} > ${cap})`;
     } else {
       this.logMessage("feeCap check", { feeCap: cap.toString(), message: "fee is okay" });
     }
@@ -171,12 +171,8 @@ export class OFTBridge extends BaseBridgeAdapter {
       eventConfig
     );
 
-    // Filter events by destination eid. Notice that we can't filter in the query directly
-    // because eid is not an indexed parameter
-    const destinationEid = this.dstChainEid;
-    const events = allEvents.filter((event) => {
-      return event.args.dstEid === destinationEid;
-    });
+    // Filter events by destination eid
+    const events = allEvents.filter(({ args }) => args.dstEid === this.dstChainEid);
 
     return {
       [this.dstTokenAddress]: events.map((event) =>
