@@ -1,68 +1,54 @@
+/* eslint-disable */
+
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts";
 import { OFTBridge } from "../src/adapter/bridges";
-import { ethers, Signer, Contract, BigNumber } from "ethers";
-import * as dotenv from "dotenv";
-import { getMnemonicSigner } from "@uma/common";
-import { EventSearchConfig } from "../src/utils";
-import { Provider } from "zksync-ethers";
+import { ethers, Signer } from "ethers";
+import { EventSearchConfig, Provider, getProvider, getSigner } from "../src/utils";
 
 import { IOFT__factory } from "@across-protocol/contracts";
-
-import {
-  IOFT,
-  SendParamStruct,
-  MessagingFeeStruct,
-} from "@across-protocol/contracts/typechain/@layerzerolabs/oft-evm/contracts/interfaces/IOFT";
-
-dotenv.config();
+import { SendParamStruct, MessagingFeeStruct } from "@across-protocol/contracts/typechain/contracts/interfaces/IOFT";
 
 const MAINNET_IOFT = "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee";
 const ARBITRUM_IOFT = "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92";
 
 const USDT = TOKEN_SYMBOLS_MAP.USDT;
 
-// ERC20 ABI for approval function
 const ERC20_ABI = [
   "function approve(address spender, uint256 amount) external returns (bool)",
   "function allowance(address owner, address spender) external view returns (uint256)",
 ];
 
-/**
- * Creates and returns a signer connected to the mainnet provider
- */
-function createMainnetSigner(): Signer {
-  const mnemonic = process.env.MNEMONIC;
-  if (!mnemonic) {
-    throw new Error("Please set your mnemonic in .env");
-  }
+let mainnetSigner: Signer;
+let arbitrumProvider: Provider;
 
-  // Get RPC URL from environment variable
-  const mainnetRpc = process.env.IHOR_DEV_MAINNET_RPC;
-  if (!mainnetRpc) {
-    throw new Error("Please set IHOR_DEV_MAINNET_RPC in .env");
+async function getMainnetSigner(): Promise<Signer> {
+  if (mainnetSigner === undefined) {
+    const signer = await getSigner({ keyType: "mnemonic", cleanEnv: true });
+    const provider = await getProvider(CHAIN_IDs.MAINNET);
+    mainnetSigner = signer.connect(provider);
   }
-
-  const mainnetProvider = new ethers.providers.JsonRpcProvider(mainnetRpc);
-  return getMnemonicSigner().connect(mainnetProvider);
+  return Promise.resolve(mainnetSigner);
 }
 
-/**
- * Creates an OFTBridge adapter with the provided signer
- */
-function createOFTBridgeAdapter(mainnetSigner?: Signer): OFTBridge {
-  if (!mainnetSigner) {
-    mainnetSigner = createMainnetSigner();
+async function getArbitrumProvider(): Promise<Provider> {
+  if (arbitrumProvider === undefined) {
+    arbitrumProvider = await getProvider(CHAIN_IDs.ARBITRUM);
   }
+  return Promise.resolve(arbitrumProvider);
+}
 
-  // Get RPC URL from environment variable
-  const arbitrumRpc = process.env.IHOR_DEV_ARBITRUM_RPC;
-  if (!arbitrumRpc) {
-    throw new Error("Please set IHOR_DEV_ARBITRUM_RPC in .env");
-  }
-
-  const arbitrumProvider = new ethers.providers.JsonRpcProvider(arbitrumRpc);
-
-  return new OFTBridge(CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET, mainnetSigner, arbitrumProvider);
+async function createOFTBridgeAdapter(): Promise<OFTBridge> {
+  const signer = await getMainnetSigner();
+  const provider = await getArbitrumProvider();
+  return Promise.resolve(
+    new OFTBridge(
+      CHAIN_IDs.ARBITRUM,
+      CHAIN_IDs.MAINNET,
+      signer,
+      provider,
+      TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]
+    )
+  );
 }
 
 /**
@@ -111,7 +97,7 @@ async function testQueryOFTReceived() {
   const txFromAddress = "";
   const txToAddress = "0xBf7375a21f0B9cC837f51759b68903B79BeE5B10"; // todo: checksummed ok?
 
-  const bridgeObj = createOFTBridgeAdapter();
+  const bridgeObj = await createOFTBridgeAdapter();
 
   const l1Token = USDT.addresses[CHAIN_IDs.MAINNET];
   const eventConfig: EventSearchConfig = {
@@ -137,7 +123,7 @@ async function testQueryOFTSent() {
   const txFromAddress = "0x2Ce910fBba65B454bBAf6A18c952A70f3bcd8299";
   const txToAddress = "0x2ce910fbba65b454bbaf6a18c952a70f3bcd8299";
 
-  const bridgeObj = createOFTBridgeAdapter();
+  const bridgeObj = await createOFTBridgeAdapter();
 
   const l1Token = USDT.addresses[CHAIN_IDs.MAINNET];
   const eventConfig: EventSearchConfig = {
@@ -163,8 +149,8 @@ async function testQueryOFTSent() {
 async function sendUSDTToArbitrum() {
   try {
     console.log("Creating signer and OFTBridge adapter...");
-    const signer = createMainnetSigner();
-    const bridgeObj = createOFTBridgeAdapter(signer);
+    const signer = await getMainnetSigner();
+    const bridgeObj = await createOFTBridgeAdapter();
 
     // Get the signer's address
     const fromAddress = await signer.getAddress();
