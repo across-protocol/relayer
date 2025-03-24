@@ -142,27 +142,38 @@ export class ZKStackWethBridge extends ZKStackBridge {
       return {};
     }
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    const usingCustomGasToken = isDefined(this.gasToken);
 
     let processedEvents;
-    if (isL2Contract) {
-      // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
-      // query ETH.
+    // ZkSync uses different logic for ETH L2 finalization. Most notably, the transfer events on L2 mark the aliased L1 sender as the sender, while
+    // for custom gas token L2s, the L1 sender is the zero address.
+    if (!usingCustomGasToken) {
+      if (isL2Contract) {
+        // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
+        // query ETH.
+        processedEvents = await paginatedEventQuery(
+          this.l2Eth,
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+          eventConfig
+        );
+      } else {
+        // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
+        const [events, wrapEvents] = await Promise.all([
+          paginatedEventQuery(
+            this.l2Eth,
+            this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address), toAddress),
+            eventConfig
+          ),
+          paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+        ]);
+        processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
+      }
+    } else {
       processedEvents = await paginatedEventQuery(
-        this.l2Eth,
-        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+        this.l2Weth,
+        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress),
         eventConfig
       );
-    } else {
-      // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
-      const [events, wrapEvents] = await Promise.all([
-        paginatedEventQuery(
-          this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address), toAddress),
-          eventConfig
-        ),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
-      ]);
-      processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),

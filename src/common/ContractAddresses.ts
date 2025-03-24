@@ -57,20 +57,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
       abi: LINEA_USDC_BRIDGE_ABI,
     },
-    zkStackSharedBridge_324: {
+    zkStackSharedBridge: {
       address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
-    zkStackBridgeHub_324: {
+    zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
-      abi: ZKSTACK_BRIDGE_HUB_ABI,
-    },
-    zkStackSharedBridge_232: {
-      address: "0x34899F8B01cF52160C88ddb9e29eC3c269019165",
-      abi: ZKSTACK_SHARED_BRIDGE_ABI,
-    },
-    zkStackBridgeHub_232: {
-      address: "0x9dA9f5dad070649811D77c40CcDcab479cE3Fa07",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
     },
     daiOptimismBridge: {
@@ -418,6 +410,10 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    wrappedNativeToken: {
+      address: "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F",
       abi: WETH_ABI,
     },
     weth: {
