@@ -465,7 +465,7 @@ async function constructChainSpecificFakes() {
   );
 
   // zkSync contracts
-  l1BridgeHub = await makeFake("zkStackBridgeHub", CONTRACT_ADDRESSES[1].zkStackBridgeHub.address);
+  l1BridgeHub = await makeFake("zkStackBridgeHub_324", CONTRACT_ADDRESSES[1].zkStackBridgeHub_324.address);
 
   // Base contracts
   l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address);

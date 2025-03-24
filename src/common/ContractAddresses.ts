@@ -421,7 +421,7 @@ export const CONTRACT_ADDRESSES: {
       abi: WETH_ABI,
     },
     weth: {
-      address: "", // @todo
+      address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
       abi: WETH_ABI,
     },
   },
