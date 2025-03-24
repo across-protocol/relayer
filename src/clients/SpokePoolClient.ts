@@ -3,7 +3,7 @@ import { ChildProcess, spawn } from "child_process";
 import { Contract } from "ethers";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_INDEXER } from "../common/Constants";
+import { CHAIN_MAX_BLOCK_LOOKBACK, RELAYER_DEFAULT_SPOKEPOOL_LISTENER } from "../common/Constants";
 import {
   EventSearchConfig,
   getNetworkName,
@@ -69,7 +69,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     super(logger, spokePool, hubPoolClient, chainId, deploymentBlock, eventSearchConfig);
 
     this.chain = getNetworkName(chainId);
-    this.indexerPath = opts.path ?? RELAYER_DEFAULT_SPOKEPOOL_INDEXER;
+    this.indexerPath = opts.path ?? RELAYER_DEFAULT_SPOKEPOOL_LISTENER;
 
     this.pendingBlockNumber = deploymentBlock;
     this.pendingCurrentTime = 0;
