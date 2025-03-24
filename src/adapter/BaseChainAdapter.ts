@@ -277,7 +277,7 @@ export class BaseChainAdapter {
     const nativeTokenAddress = getWrappedNativeTokenAddress(this.chainId);
     const nativeTokenBalance = await this.getSigner(this.chainId).getBalance();
     if (nativeTokenBalance.lte(threshold)) {
-      this.log("Native token balance below threshold", { threshold, nativeTokenBalance });
+      this.log(`${nativeTokenSymbol} balance below threshold`, { threshold, nativeTokenBalance });
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
@@ -288,17 +288,10 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      if (CHAIN_IDs.LENS === this.chainId) {
-        assert(
-          symbol === "WGHO",
-          `Critical (may delete $$$): Unable to verify ${this.adapterName} native token address (${contract.address})`
-        );
-      } else {
-        assert(
-          symbol === "WETH",
-          `Critical (may delete ETH): Unable to verify ${this.adapterName} WETH address (${contract.address})`
-        );
-      }
+      assert(
+        symbol === nativeTokenSymbol,
+        `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
+      );
     }
 
     const value = nativeTokenBalance.sub(target);
