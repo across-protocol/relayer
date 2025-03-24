@@ -27,7 +27,6 @@ import {
   getCurrentTime,
   bnZero,
   getNativeTokenSymbol,
-  CHAIN_IDs,
   getWrappedNativeTokenAddress,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
@@ -289,7 +288,7 @@ export class BaseChainAdapter {
     if (simMode === false) {
       const symbol = await contract.symbol();
       assert(
-        symbol === nativeTokenSymbol,
+        symbol === `W${nativeTokenSymbol}`,
         `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
       );
     }
