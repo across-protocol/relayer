@@ -345,25 +345,15 @@ export class BaseChainAdapter {
             }
             return true;
           });
-          // Sum the excess finalized amounts. This is necessary for when the initiation event amount does not match the finalization event amount, so
-          // the splicing above will not remove initiation events from the running list of outstanding transfers. Change its sign since we wish to calculate
-          // totalAmount = L1 tranfers - L2 finalizations.
-          const excessFinalizedAmounts = finalizedAmounts
-            .reduce((acc, amount) => acc.add(BigNumber.from(amount)), bnZero)
-            .mul(-1);
+          const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
+          const totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
           assign(outstandingTransfers, [monitoredAddress, l1Token, l2Token], {
-            totalAmount: outstandingInitiatedEvents.reduce(
-              (acc, event) => acc.add(event.amount),
-              excessFinalizedAmounts
-            ),
+            totalAmount,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
           });
         });
       });
     });
-
-    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return outstandingTransfers;
   }
