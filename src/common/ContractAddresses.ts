@@ -408,14 +408,18 @@ export const CONTRACT_ADDRESSES: {
       address: "0xfBEC23c5BB0E076F2ef4d0AaD7fe331aE5A01143",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
     },
+    // The native token for Lens is GHO, not ETH.
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
+    // This is Lens wrapped GHO, NOT WETH.
     wrappedNativeToken: {
       address: "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F",
       abi: WETH_ABI,
     },
+    // The weth address on Lens is treated like an ERC20, meaning that mint events
+    // are initiated by the L2 bridge and come from the zero address.
     weth: {
       address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
       abi: WETH_ABI,

@@ -85,9 +85,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const secondBridgeCalldata = this._secondBridgeCalldata(toAddress, l1Token, amount);
 
     // The method/arguments change depending on whether or not we are bridging the gas token or another ERC20.
-    const method = isDefined(this.gasToken) ? "requestL2TransactionDirect" : "requestL2TransactionTwoBridges";
-    const args = isDefined(this.gasToken)
-      ? [
+    let method, args, value;
+    if (isDefined(this.gasToken)) {
+      method = "requestL2TransactionDirect";
+      args = [
+        [
           this.l2chainId,
           amount.add(txBaseCost),
           toAddress,
@@ -97,26 +99,32 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           this.gasPerPubdataLimit,
           [],
           toAddress, // Using toAddress as the refund address is safe since this is an EOA transaction.
-        ]
-      : [
-          [
-            this.l2chainId,
-            txBaseCost,
-            0,
-            this.l2GasLimit,
-            this.gasPerPubdataLimit,
-            toAddress,
-            this.sharedBridge.address,
-            0,
-            secondBridgeCalldata,
-          ],
-        ];
+        ],
+      ];
+      value = bnZero;
+    } else {
+      method = "requestL2TransactionTwoBridges";
+      args = [
+        [
+          this.l2chainId,
+          txBaseCost,
+          0,
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          toAddress,
+          this.sharedBridge.address,
+          0,
+          secondBridgeCalldata,
+        ],
+      ];
+      value = txBaseCost;
+    }
 
     return {
       contract: this.getL1Bridge(),
       method,
       args,
-      value: isDefined(this.gasToken) ? bnZero : txBaseCost,
+      value,
     };
   }
 
@@ -130,22 +138,50 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
-    let bridgeEvents;
+    let processedEvents;
     if (!bridgingCustomGasToken) {
       const rawEvents = await paginatedEventQuery(
         this.sharedBridge,
         this.sharedBridge.filters.BridgehubDepositInitiated(this.l2chainId, undefined, annotatedFromAddress),
         eventConfig
       );
-      bridgeEvents = rawEvents.filter(
-        (event) =>
-          compareAddressesSimple(event.args.l1Token, l1Token) && compareAddressesSimple(event.args.to, toAddress)
-      );
+      processedEvents = rawEvents
+        .filter(
+          (event) =>
+            compareAddressesSimple(event.args.l1Token, l1Token) && compareAddressesSimple(event.args.to, toAddress)
+        )
+        .map((e) => processEvent(e, "amount", "to", "from"));
     } else {
-      // @todo. Need to figure out how to get just the amount we intend to receive on L2.
+      if (isL2Contract) {
+        const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);
+        processedEvents = rawEvents
+          .filter(
+            (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token)
+          )
+          .map((e) => {
+            return {
+              ...processEvent(e, "amount", "to", "to"),
+              from: this.hubPool.address,
+            };
+          });
+      } else {
+        const rawEvents = await paginatedEventQuery(
+          this.sharedBridge,
+          this.sharedBridge.filters.BridgehubDepositBaseTokenInitiated(this.l2chainId, annotatedFromAddress),
+          eventConfig
+        );
+        processedEvents = rawEvents
+          .filter((event) => compareAddressesSimple(event.args.l1Token, l1Token))
+          .map((e) => {
+            return {
+              ...processEvent(e, "amount", "from", "from"),
+              to: toAddress, // Overwrite the from field with toAddress since if we hit this branch we know an EOA initiated the bridge.
+            };
+          });
+      }
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: bridgeEvents.map((event) => processEvent(event, "amount", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents,
     };
   }
 

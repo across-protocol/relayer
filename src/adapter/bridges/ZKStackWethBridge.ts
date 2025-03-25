@@ -55,35 +55,40 @@ export class ZKStackWethBridge extends ZKStackBridge {
     const txBaseCost = await this._txBaseCost();
 
     const usingCustomGasToken = isDefined(this.gasToken);
-    const bridgeCalldata = usingCustomGasToken
-      ? this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
-          [
-            this.l2chainId,
-            txBaseCost,
-            0,
-            this.l2GasLimit,
-            this.gasPerPubdataLimit,
-            toAddress,
-            this.sharedBridge.address,
-            amount,
-            this._secondBridgeCalldata(toAddress, l2Token, amount),
-          ],
-        ])
-      : this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
-          [
-            this.l2chainId,
-            txBaseCost.add(amount),
-            toAddress,
-            amount,
-            "0x",
-            this.l2GasLimit,
-            this.gasPerPubdataLimit,
-            [],
-            toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
-          ],
-        ]);
-    const netValue = usingCustomGasToken ? amount : amount.add(txBaseCost);
-    const feeAmount = usingCustomGasToken ? txBaseCost : bnZero;
+    let netValue, feeAmount, bridgeCalldata;
+    if (usingCustomGasToken) {
+      bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
+        [
+          this.l2chainId,
+          txBaseCost,
+          0,
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          toAddress,
+          this.sharedBridge.address,
+          amount,
+          this._secondBridgeCalldata(toAddress, l2Token, amount),
+        ],
+      ]);
+      netValue = amount;
+      feeAmount = txBaseCost;
+    } else {
+      bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
+        [
+          this.l2chainId,
+          txBaseCost.add(amount),
+          toAddress,
+          amount,
+          "0x",
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          [],
+          toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
+        ],
+      ]);
+      netValue = amount.add(txBaseCost);
+      feeAmount = bnZero;
+    }
 
     return {
       contract: this.getAtomicDepositor(),
@@ -149,8 +154,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // for custom gas token L2s, the L1 sender is the zero address.
     if (!usingCustomGasToken) {
       if (isL2Contract) {
-        // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
-        // query ETH.
+        // Assume the transfer came from the hub pool if the L2 toAddress is a contract.
         processedEvents = await paginatedEventQuery(
           this.l2Eth,
           this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
