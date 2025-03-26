@@ -173,7 +173,7 @@ export async function getProvider(
   // RPC_PROVIDER_<chainId>_HEADER_AUTH=xxx-auth-header
   let headers: { [k: string]: string };
   const _headers = process.env[`RPC_PROVIDER_${chainId}_HEADERS`];
-  _headers.split(",").forEach((header) => {
+  _headers?.split(",").forEach((header) => {
     headers ??= {};
     headers[header] = process.env[`RPC_PROVIDER_${chainId}_HEADER_${header.toUpperCase()}`];
   });
