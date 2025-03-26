@@ -28,7 +28,6 @@ import {
   bnZero,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
-  CHAIN_IDs,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
