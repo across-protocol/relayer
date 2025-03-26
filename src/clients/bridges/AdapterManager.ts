@@ -184,7 +184,7 @@ export class AdapterManager {
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
-  // Check how much native tokens are on the target chain and if it is above the threshold the wrap, execute a wrap. Note that this only
+  // Check how many native tokens are on the target chain and if the number of tokens is above the wrap threshold, execute a wrap. Note that this only
   // needs to be done on chains where rebalancing the native token from L1 to L2 results in the relayer receiving the unwrapped native token
   // (not the ERC20), or if the relayer expects to be sent the native token perhaps as a gas refund from an original L1 to L2
   // deposit. This currently happens on Arbitrum, where the relayer address is set as the Arbitrum_Adapter's
