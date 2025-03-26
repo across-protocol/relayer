@@ -71,12 +71,7 @@ contract zkSync_L1Bridge {
 }
 
 contract zkSync_L2Bridge {
-    event FinalizeDeposit(
-        address indexed l1Sender,
-        address indexed l2Receiver,
-        address indexed l2Token,
-        uint256 amount
-    );
+    event FinalizeDeposit(address indexed l1Sender, address indexed _to, address indexed l2Token, uint256 _amount);
 
     mapping(address => address) tokenMap;
 

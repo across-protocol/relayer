@@ -14,7 +14,7 @@ import {
   toBN,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { hashCCTPSourceAndNonce, getCctpDomainForChainId, EvmAddress } from "../../src/utils";
 
 const { MAINNET, POLYGON } = CHAIN_IDs;
 const { USDC, WETH, WBTC } = TOKEN_SYMBOLS_MAP;
@@ -64,6 +64,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
   let searchConfig: utils.EventSearchConfig;
   let depositAmount: BigNumber;
 
+  const toAddress = (address: string): EvmAddress => {
+    return EvmAddress.from(address);
+  };
   beforeEach(async function () {
     const [depositor] = await ethers.getSigners();
     monitoredEoa = await depositor.getAddress();
@@ -87,9 +90,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
     const l2Signer = l2SpokePoolClient.spokePool.signer;
 
     const bridges = {
-      [WETH.addresses[MAINNET]]: new PolygonWethBridge(POLYGON, MAINNET, l1Signer, l2Signer, l1Weth),
-      [USDC.addresses[MAINNET]]: new UsdcTokenSplitterBridge(POLYGON, MAINNET, l1Signer, l2Signer, l1Usdc),
-      [WBTC.addresses[MAINNET]]: new PolygonERC20Bridge(POLYGON, MAINNET, l1Signer, l2Signer, l1Token),
+      [WETH.addresses[MAINNET]]: new PolygonWethBridge(POLYGON, MAINNET, l1Signer, l2Signer, toAddress(l1Weth)),
+      [USDC.addresses[MAINNET]]: new UsdcTokenSplitterBridge(POLYGON, MAINNET, l1Signer, l2Signer, toAddress(l1Usdc)),
+      [WBTC.addresses[MAINNET]]: new PolygonERC20Bridge(POLYGON, MAINNET, l1Signer, l2Signer, toAddress(l1Token)),
     };
 
     adapter = new TestBaseChainAdapter(
@@ -99,7 +102,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
       },
       POLYGON,
       MAINNET,
-      [monitoredEoa, hubPool.address, spokePool.address],
+      [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
       logger,
       ["WETH", "USDC", "WBTC"],
       bridges,
@@ -124,9 +127,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
     adapter.setL2UsdcBridge(l1Usdc, l2MessageTransmitter);
 
     depositAmount = toBN(Math.round(Math.random() * 1e18));
-    l2UsdcE = adapter.bridges[l1Usdc].resolveL2TokenAddress(l1Usdc);
-    l2Token = adapter.bridges[l1Token].resolveL2TokenAddress(l1Token);
-    l2Weth = adapter.bridges[l1Weth].resolveL2TokenAddress(l1Weth);
+    l2UsdcE = adapter.bridges[l1Usdc].resolveL2TokenAddress(toAddress(l1Usdc));
+    l2Token = adapter.bridges[l1Token].resolveL2TokenAddress(toAddress(l1Token));
+    l2Weth = adapter.bridges[l1Weth].resolveL2TokenAddress(toAddress(l1Weth));
   });
 
   describe("WETH bridge", function () {
@@ -135,9 +138,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l1Bridge.depositEtherFor(randomEoa, randomEoa, depositAmount);
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
-        l1Weth,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(result).to.exist;
@@ -146,8 +149,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
       const deposit = result[l2Weth];
       expect(deposit).to.exist;
       const { from, to, amount } = deposit[0];
-      expect(from).to.equal(monitoredEoa);
-      expect(to).to.equal(monitoredEoa);
+      expect(from.toAddress()).to.equal(monitoredEoa);
+      expect(to.toAddress()).to.equal(monitoredEoa);
       expect(amount).to.equal(amount);
     });
 
@@ -156,9 +159,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l2Bridge.transfer(ZERO_ADDRESS, randomEoa, depositAmount);
 
       const result = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(Object.keys(result).length).to.equal(1);
@@ -166,15 +169,15 @@ describe("Cross Chain Adapter: Polygon", async function () {
       const receipt = result[l2Weth];
       expect(receipt).to.exist;
       const { from, to, amount } = receipt[0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(monitoredEoa);
+      expect(from.toAddress()).to.equal(ZERO_ADDRESS);
+      expect(to.toAddress()).to.equal(monitoredEoa);
       expect(amount).to.equal(amount);
     });
 
     it("Matches L1 and L2 events: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -205,18 +208,18 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Make a single l1 -> l2 deposit.
       await l1Bridge.depositEtherFor(monitoredEoa, monitoredEoa, depositAmount);
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
-        l1Weth,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(deposits).to.exist;
       expect(deposits[l2Weth].length).to.equal(1);
 
       let receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -224,7 +227,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be 1 outstanding transfer.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -255,9 +258,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Finalise the ongoing deposit on the destination chain.
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount); // Simulate WETH transfer to recipient EOA.
       receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -265,7 +268,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -298,9 +301,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l1Bridge.depositEtherFor(hubPool.address, spokePool.address, depositAmount);
 
       const result = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
-        l1Weth,
-        spokePool.address,
-        spokePool.address,
+        toAddress(l1Weth),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(result).to.exist;
@@ -309,8 +312,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
       const deposit = result[l2Weth];
       expect(deposit[0]).to.exist;
       const { to, amount, from } = deposit[0];
-      expect(from).to.equal(hubPool.address);
-      expect(to).to.equal(spokePool.address);
+      expect(from.toAddress()).to.equal(hubPool.address);
+      expect(to.toAddress()).to.equal(spokePool.address);
       expect(amount).to.equal(depositAmount);
     });
 
@@ -318,9 +321,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l2Bridge.transfer(ZERO_ADDRESS, spokePool.address, depositAmount);
 
       const result = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        spokePool.address,
-        spokePool.address,
+        toAddress(l1Weth),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(result[l2Weth].length).to.equal(1);
@@ -328,15 +331,15 @@ describe("Cross Chain Adapter: Polygon", async function () {
       const receipt = result[l2Weth];
       expect(receipt).to.exist;
       const { from, to, amount } = receipt[0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(spokePool.address);
+      expect(from.toAddress()).to.equal(ZERO_ADDRESS);
+      expect(to.toAddress()).to.equal(spokePool.address);
       expect(amount).to.equal(depositAmount);
     });
 
     it("Matches L1 and L2 events: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -367,18 +370,18 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Make a single l1 -> l2 deposit.
       await l1Bridge.depositEtherFor(hubPool.address, spokePool.address, depositAmount);
       const deposits = await adapter.bridges[l1Weth].queryL1BridgeInitiationEvents(
-        l1Weth,
-        spokePool.address,
-        spokePool.address,
+        toAddress(l1Weth),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(deposits).to.exist;
       expect(deposits[l2Weth].length).to.equal(1);
 
       let receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        spokePool.address,
-        spokePool.address,
+        toAddress(l1Weth),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -386,7 +389,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be 1 outstanding transfer.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -417,9 +420,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Finalise the ongoing deposit on the destination chain.
       await l2Bridge.transfer(ZERO_ADDRESS, spokePool.address, depositAmount);
       receipts = await adapter.bridges[l1Weth].queryL2BridgeFinalizationEvents(
-        l1Weth,
-        spokePool.address,
-        spokePool.address,
+        toAddress(l1Weth),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -427,7 +430,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Weth]: {
@@ -462,16 +465,21 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Token, depositAmount);
       await l1Bridge.depositFor(monitoredEoa, randomEoa, l1Token, depositAmount);
 
-      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
       expect(result).to.exist;
-      expect(result[l2Token].length).to.equal(2);
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const recipient of [monitoredEoa, randomEoa]) {
         const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
-          l1Token,
-          monitoredEoa,
-          recipient,
+          toAddress(l1Token),
+          toAddress(monitoredEoa),
+          toAddress(recipient),
           searchConfig
         );
         expect(result).to.exist;
@@ -480,8 +488,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
         const { from, to, rootToken } = deposit[0];
-        expect(from).to.equal(monitoredEoa);
-        expect(to).to.equal(recipient);
+        expect(from.toAddress()).to.equal(monitoredEoa);
+        expect(to.toAddress()).to.equal(recipient);
         expect(rootToken).to.equal(l1Token);
       }
     });
@@ -491,15 +499,20 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
       await l2Bridge.transfer(ZERO_ADDRESS, randomEoa, depositAmount);
 
-      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(l1Token, null, null, searchConfig);
-      expect(result[l2Token].length).to.equal(2);
+      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const recipient of [monitoredEoa, randomEoa]) {
         const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-          l1Token,
-          monitoredEoa,
-          recipient,
+          toAddress(l1Token),
+          toAddress(monitoredEoa),
+          toAddress(recipient),
           searchConfig
         );
         expect(result).to.exist;
@@ -508,15 +521,15 @@ describe("Cross Chain Adapter: Polygon", async function () {
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
         const { from, to } = deposit[0];
-        expect(from).to.equal(ZERO_ADDRESS);
-        expect(to).to.equal(recipient);
+        expect(from.toAddress()).to.equal(ZERO_ADDRESS);
+        expect(to.toAddress()).to.equal(recipient);
       }
     });
 
     it("Matches l1 deposits and l2 receipts: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -546,14 +559,19 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // Make a single l1 -> l2 deposit.
       await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Token, depositAmount);
-      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Token].length).to.equal(1);
 
       let receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Token,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -561,7 +579,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be 1 outstanding transfer.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -592,9 +610,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Finalise the ongoing deposit on the destination chain.
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
       receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Token,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -602,7 +620,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -635,9 +653,14 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l1Bridge.depositFor(hubPool.address, spokePool.address, l1Token, depositAmount);
       await l1Bridge.depositFor(randomEoa, monitoredEoa, l1Token, depositAmount);
 
-      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
+        searchConfig
+      );
       expect(result).to.exist;
-      expect(result[l2Token].length).to.equal(2);
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       for (const [sender, recipient] of [
@@ -645,9 +668,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
         [randomEoa, monitoredEoa],
       ]) {
         const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
-          l1Token,
-          sender,
-          recipient,
+          toAddress(l1Token),
+          toAddress(sender),
+          toAddress(recipient),
           searchConfig
         );
         expect(result).to.exist;
@@ -656,8 +679,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
         const { from, to, rootToken } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
+        expect(from.toAddress()).to.equal(sender);
+        expect(to.toAddress()).to.equal(recipient);
         expect(rootToken).to.equal(l1Token);
       }
     });
@@ -667,8 +690,13 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l2Bridge.transfer(ZERO_ADDRESS, spokePool.address, depositAmount);
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
 
-      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(l1Token, null, null, searchConfig);
-      expect(result[l2Token].length).to.equal(2);
+      const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        toAddress(l1Token),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
+        searchConfig
+      );
+      expect(result[l2Token].length).to.equal(1);
 
       // Ensure that the recipient address filters work.
       // Note: for Polygon, bridge finalization events are always mints from the ERC20 token.
@@ -677,9 +705,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
         [ZERO_ADDRESS, monitoredEoa],
       ]) {
         const result = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-          l1Token,
-          sender,
-          recipient,
+          toAddress(l1Token),
+          toAddress(sender),
+          toAddress(recipient),
           searchConfig
         );
         expect(result).to.exist;
@@ -688,15 +716,15 @@ describe("Cross Chain Adapter: Polygon", async function () {
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
         const { from, to } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
+        expect(from.toAddress()).to.equal(sender);
+        expect(to.toAddress()).to.equal(recipient);
       }
     });
 
     it("Matches l1 deposits and l2 receipts: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -726,14 +754,19 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // Make a single l1 -> l2 deposit.
       await l1Bridge.depositFor(hubPool.address, spokePool.address, l1Token, depositAmount);
-      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(l1Token, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Token].length).to.equal(1);
 
       let receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Token,
+        toAddress(l1Token),
         null,
-        spokePool.address,
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -741,7 +774,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be 1 outstanding transfer.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -772,9 +805,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       // Finalise the ongoing deposit on the destination chain.
       await l2Bridge.transfer(ZERO_ADDRESS, spokePool.address, depositAmount);
       receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Token,
+        toAddress(l1Token),
         null,
-        spokePool.address,
+        toAddress(spokePool.address),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -782,7 +815,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Token]: {
@@ -843,9 +876,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       );
 
       const events = await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(events[l2Usdc].length).to.equal(1);
@@ -857,16 +890,16 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Usdc, depositAmount);
 
       const events = await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(events[l2Usdc].length).to.equal(0);
       expect(events[l2UsdcE].length).to.equal(1);
       const { from, to, amount } = events[l2UsdcE][0];
-      expect(from).to.equal(monitoredEoa);
-      expect(to).to.equal(monitoredEoa);
+      expect(from.toAddress()).to.equal(monitoredEoa);
+      expect(to.toAddress()).to.equal(monitoredEoa);
       expect(amount).to.equal(depositAmount);
     });
 
@@ -876,23 +909,23 @@ describe("Cross Chain Adapter: Polygon", async function () {
       await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
 
       const events = await usdcTokenSplitterBridge.queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(events[l2Usdc]).to.be.undefined;
       expect(events[l2UsdcE].length).to.equal(1);
       const { from, to, amount } = events[l2UsdcE][0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(monitoredEoa);
+      expect(from.toAddress()).to.equal(ZERO_ADDRESS);
+      expect(to.toAddress()).to.equal(monitoredEoa);
       expect(amount).to.equal(depositAmount);
     });
 
     it("Determines outstanding transfers", async () => {
       // There should be no pre-existing outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Usdc]: {
@@ -945,15 +978,20 @@ describe("Cross Chain Adapter: Polygon", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Usdc, depositAmount);
-      const deposits = await adapter.bridges[l1Usdc].queryL1BridgeInitiationEvents(l1Usdc, null, null, searchConfig);
+      const deposits = await adapter.bridges[l1Usdc].queryL1BridgeInitiationEvents(
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
       expect(deposits).to.exist;
       expect(deposits[l2Usdc].length).to.equal(1);
       expect(deposits[l2UsdcE].length).to.equal(1);
 
       let receipts = await adapter.bridges[l1Usdc].queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -962,7 +1000,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be 1 outstanding transfer.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Usdc]: {
@@ -1009,9 +1047,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
         unprocessedNonce
       );
       receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(receipts).to.exist;
@@ -1020,7 +1058,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       // There should be no outstanding transfers.
       await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
           [l1Usdc]: {
