@@ -16,6 +16,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 
+const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
@@ -67,7 +68,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
           toAddress,
           this.sharedBridge.address,
           amount,
-          this._secondBridgeCalldata(toAddress, l2Token, amount),
+          this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero),
         ],
       ]);
       netValue = amount;

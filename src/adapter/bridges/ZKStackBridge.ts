@@ -21,7 +21,7 @@ import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import * as zksync from "zksync-ethers";
 
 // Scale gas price estimates by 20%.
-const FEE_SCALER_NUMERATOR = 12;
+const FEE_SCALER_NUMERATOR = 15;
 const FEE_SCALER_DENOMINATOR = 10;
 
 /* For both the canonical bridge (this bridge) and the ZkStackWethBridge
@@ -86,7 +86,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
     // The method/arguments change depending on whether or not we are bridging the gas token or another ERC20.
     let method, args, value;
-    if (isDefined(this.gasToken)) {
+    const bridgingGasToken = isDefined(this.gasToken) && compareAddressesSimple(this.gasToken, l1Token);
+    if (bridgingGasToken) {
       method = "requestL2TransactionDirect";
       args = [
         [
@@ -117,7 +118,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           secondBridgeCalldata,
         ],
       ];
-      value = txBaseCost;
+      value = isDefined(this.gasToken) ? bnZero : txBaseCost;
     }
 
     return {
