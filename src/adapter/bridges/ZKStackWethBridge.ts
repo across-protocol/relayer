@@ -41,7 +41,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
     this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
     if (!isDefined(this.gasToken)) {
-      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].eth;
+      const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
       this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
     }
   }
