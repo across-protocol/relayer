@@ -167,18 +167,34 @@ export async function getProvider(
 
   // See ethers ConnectionInfo for field descriptions.
   // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
+
+  // Permit env-based HTTP headers to be specified.
+  // RPC_PROVIDER_<chainId>_HEADERS=auth
+  // RPC_PROVIDER_<chainId>_HEADER_AUTH=xxx-auth-header
+  let headers: { [k: string]: string };
+  const _headers = process.env[`RPC_PROVIDER_${chainId}_HEADERS`];
+  _headers.split(",").forEach((header) => {
+    headers ??= {};
+    headers[header] = process.env[`RPC_PROVIDER_${chainId}_HEADER_${header.toUpperCase()}`];
+  });
+
   const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold).map(
-    (nodeUrl): [ethers.utils.ConnectionInfo, number] => [
-      {
+    (nodeUrl): [ethers.utils.ConnectionInfo, number] => {
+      const config = {
         url: nodeUrl,
         timeout,
         allowGzip: true,
         throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
         throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
         errorPassThrough: true,
-      },
-      chainId,
-    ]
+      };
+
+      if (headers) {
+        config["headers"] = headers;
+      }
+
+      return [config, chainId];
+    }
   );
 
   const provider = new RetryProvider(
