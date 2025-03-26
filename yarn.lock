@@ -12,9 +12,9 @@
     hardhat "^2.9.3"
 
 "@across-protocol/constants@^3.1.40":
-  version "3.1.42"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.42.tgz#348eaed084878f0abd71e9983027932916d1f934"
-  integrity sha512-2/KD8ulhBBS4LXPQbV/rPZ+98npKA/2mpDtKYJZnCCncqItBisXzh8C//V9WSrmKYoY687+frWYfizV/6R8g2Q==
+  version "3.1.40"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.40.tgz#c24cf81ba530adf64a11de6ee4f271e1104f26c9"
+  integrity sha512-zUljWDsV3iX1zNKPfQzwvtX8SmOxHKwfRkUgYULsUQjSW4QC+vpNMaMJ5gMjr0VInfSu/tOzkKdeC6pRIjZt0w==
 
 "@across-protocol/constants@^3.1.43", "@across-protocol/constants@^3.1.44":
   version "3.1.44"

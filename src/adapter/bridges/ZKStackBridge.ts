@@ -21,7 +21,7 @@ import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import * as zksync from "zksync-ethers";
 
 // Scale gas price estimates by 20%.
-const FEE_SCALER_NUMERATOR = 15;
+const FEE_SCALER_NUMERATOR = 12;
 const FEE_SCALER_DENOMINATOR = 10;
 
 /* For both the canonical bridge (this bridge) and the ZkStackWethBridge
