@@ -30,8 +30,8 @@ export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as eth
 
 export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
   return new LineaSDK({
-    l1RpcUrl: getNodeUrlList(l1ChainId)[0],
-    l2RpcUrl: getNodeUrlList(l2ChainId)[0],
+    l1RpcUrl: Object.values(getNodeUrlList(l1ChainId))[0],
+    l2RpcUrl: Object.values(getNodeUrlList(l2ChainId))[0],
     network: l1ChainId === CHAIN_IDs.MAINNET ? "linea-mainnet" : "linea-goerli",
     mode: "read-only",
   });

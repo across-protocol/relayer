@@ -9,7 +9,16 @@ const { ZERO_ADDRESS } = constants;
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
 export function getNativeTokenAddressForChain(chainId: number): string {
-  return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
+  return CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS;
+}
+
+export function getWrappedNativeTokenAddress(chainId: number): string | undefined {
+  const tokenSymbol = utils.getNativeTokenSymbol(chainId);
+  return (
+    TOKEN_SYMBOLS_MAP[`W${tokenSymbol}`].addresses[chainId] ||
+    TOKEN_SYMBOLS_MAP[`w${tokenSymbol}`].addresses[chainId] ||
+    undefined
+  );
 }
 
 /**
