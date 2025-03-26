@@ -170,7 +170,6 @@ export async function getProvider(
 
   const constructorArgumentLists = Object.entries(getNodeUrlList(chainId, nodeQuorumThreshold)).map(
     ([provider, url]): [ethers.utils.ConnectionInfo, number] => {
-
       // Permit env-based HTTP headers to be specified.
       // RPC_PROVIDER_<provider>_<chainId>_HEADERS=auth
       // RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
