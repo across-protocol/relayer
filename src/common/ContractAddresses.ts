@@ -57,17 +57,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
       abi: LINEA_USDC_BRIDGE_ABI,
     },
-    zkSyncSharedBridge: {
+    zkStackSharedBridge: {
       address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
-    },
-    zkStackSharedBridge: {
-      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
-      abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -402,6 +398,28 @@ export const CONTRACT_ADDRESSES: {
     arbSys: {
       address: "0x0000000000000000000000000000000000000064",
       abi: ARBSYS_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.LENS]: {
+    zkStackBridge: {
+      address: "0xfBEC23c5BB0E076F2ef4d0AaD7fe331aE5A01143",
+      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    },
+    // The native token for Lens is GHO, not ETH.
+    nativeToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    // This is Lens wrapped GHO, NOT WETH.
+    wrappedNativeToken: {
+      address: "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F",
+      abi: WETH_ABI,
+    },
+    // The weth address on Lens is treated like an ERC20, meaning that mint events
+    // are initiated by the L2 bridge and come from the zero address.
+    weth: {
+      address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
+      abi: WETH_ABI,
     },
   },
   [CHAIN_IDs.LINEA]: {

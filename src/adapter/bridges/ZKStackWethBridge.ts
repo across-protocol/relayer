@@ -16,6 +16,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 
+const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
@@ -54,22 +55,41 @@ export class ZKStackWethBridge extends ZKStackBridge {
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
 
-    const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
-      [
-        this.l2chainId,
-        txBaseCost.add(amount),
-        toAddress,
-        amount,
-        "0x",
-        this.l2GasLimit,
-        this.gasPerPubdataLimit,
-        [],
-        toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
-      ],
-    ]);
     const usingCustomGasToken = isDefined(this.gasToken);
-    const netValue = usingCustomGasToken ? amount : amount.add(txBaseCost);
-    const feeAmount = usingCustomGasToken ? txBaseCost : bnZero;
+    let netValue, feeAmount, bridgeCalldata;
+    if (usingCustomGasToken) {
+      bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionTwoBridges", [
+        [
+          this.l2chainId,
+          txBaseCost,
+          0,
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          toAddress,
+          this.sharedBridge.address,
+          amount,
+          this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero),
+        ],
+      ]);
+      netValue = amount;
+      feeAmount = txBaseCost;
+    } else {
+      bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("requestL2TransactionDirect", [
+        [
+          this.l2chainId,
+          txBaseCost.add(amount),
+          toAddress,
+          amount,
+          "0x",
+          this.l2GasLimit,
+          this.gasPerPubdataLimit,
+          [],
+          toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
+        ],
+      ]);
+      netValue = amount.add(txBaseCost);
+      feeAmount = bnZero;
+    }
 
     return {
       contract: this.getAtomicDepositor(),
@@ -128,27 +148,37 @@ export class ZKStackWethBridge extends ZKStackBridge {
       return {};
     }
     const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    const usingCustomGasToken = isDefined(this.gasToken);
 
     let processedEvents;
-    if (isL2Contract) {
-      // Assume the transfer came from the hub pool. If the chain has a custom gas token, then query weth. Otherwise,
-      // query ETH.
+    // ZkSync uses different logic for ETH L2 finalization. Most notably, the transfer events on L2 mark the aliased L1 sender as the sender, while
+    // for custom gas token L2s, the L1 sender is the zero address.
+    if (!usingCustomGasToken) {
+      if (isL2Contract) {
+        // Assume the transfer came from the hub pool if the L2 toAddress is a contract.
+        processedEvents = await paginatedEventQuery(
+          this.l2Eth,
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+          eventConfig
+        );
+      } else {
+        // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
+        const [events, wrapEvents] = await Promise.all([
+          paginatedEventQuery(
+            this.l2Eth,
+            this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address), toAddress),
+            eventConfig
+          ),
+          paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+        ]);
+        processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
+      }
+    } else {
       processedEvents = await paginatedEventQuery(
-        this.l2Eth,
-        this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+        this.l2Weth,
+        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress),
         eventConfig
       );
-    } else {
-      // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
-      const [events, wrapEvents] = await Promise.all([
-        paginatedEventQuery(
-          this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address), toAddress),
-          eventConfig
-        ),
-        paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
-      ]);
-      processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),

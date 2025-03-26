@@ -350,16 +350,15 @@ export class BaseChainAdapter {
             }
             return true;
           });
+          const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
+          const totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
           assign(outstandingTransfers, [monitoredAddress, l1Token, l2Token], {
-            totalAmount: outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), BigNumber.from(0)),
+            totalAmount,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
           });
         });
       });
     });
-
-    this.baseL1SearchConfig.fromBlock = l1SearchConfig.toBlock + 1;
-    this.baseL2SearchConfig.fromBlock = l2SearchConfig.toBlock + 1;
 
     return outstandingTransfers;
   }
