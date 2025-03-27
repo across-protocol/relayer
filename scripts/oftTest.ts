@@ -259,5 +259,5 @@ async function sendUSDTToArbitrum() {
 }
 
 // testQueryOFTReceived();
-// testQueryOFTSent();
-sendUSDTToArbitrum();
+testQueryOFTSent();
+// sendUSDTToArbitrum();
