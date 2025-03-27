@@ -59,6 +59,22 @@ export function getChainQuorum(chainId: number): number {
 }
 
 /**
+ * Permit env-based HTTP headers to be specified.
+ * RPC_PROVIDER_<provider>_<chainId>_HEADERS=auth
+ * RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
+ */
+export function getProviderHeaders(provider: string, chainId: number): { [header: string]: string } | undefined {
+  let headers: { [k: string]: string };
+  const _headers = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADERS`];
+  _headers?.split(",").forEach((header) => {
+    headers ??= {};
+    headers[header] = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
+  });
+
+  return headers;
+}
+
+/**
  * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
  * "provider cache" if this function was called once before with the same chain ID.
@@ -170,28 +186,15 @@ export async function getProvider(
 
   const constructorArgumentLists = Object.entries(getNodeUrlList(chainId, nodeQuorumThreshold)).map(
     ([provider, url]): [ethers.utils.ConnectionInfo, number] => {
-      // Permit env-based HTTP headers to be specified.
-      // RPC_PROVIDER_<provider>_<chainId>_HEADERS=auth
-      // RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
-      let headers: { [k: string]: string };
-      const _headers = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADERS`];
-      _headers?.split(",").forEach((header) => {
-        headers ??= {};
-        headers[header] = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
-      });
-
       const config = {
         url,
+        headers: getProviderHeaders(provider, chainId),
         timeout,
         allowGzip: true,
         throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
         throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
         errorPassThrough: true,
       };
-
-      if (headers) {
-        config["headers"] = headers;
-      }
 
       return [config, chainId];
     }
@@ -253,7 +256,11 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
 export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {
   quorum ??= getChainQuorum(chainId);
   const urls = getNodeUrlList(chainId, quorum, "wss");
-  return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
+  return Object.entries(urls).map(([_provider, url]) => {
+    const ws = new ethers.providers.WebSocketProvider(url);
+    // ws.connection.headers = getProviderHeaders(provider, chainId);
+    return ws;
+  });
 }
 
 export function getNodeUrlList(
