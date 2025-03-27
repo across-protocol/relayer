@@ -271,7 +271,7 @@ export function getNodeUrlList(
     }
 
     const nodeUrls = Object.fromEntries(
-      providers.split(",").map((provider) => {
+      providers?.split(",").map((provider) => {
         // If no specific RPC endpoint is identified for this provider, try to
         // to infer the endpoint name based on predefined chain definitions.
         const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
@@ -285,7 +285,7 @@ export function getNodeUrlList(
           throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
         }
         return [provider, url];
-      })
+      }) ?? []
     );
 
     if (Object.keys(nodeUrls).length === 0) {
