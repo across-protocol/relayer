@@ -569,11 +569,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
       abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
     },
-    gasToken: {
+    nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
-    wrappedGasToken: {
+    wrappedNativeToken: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
       abi: WETH_ABI,
     },
