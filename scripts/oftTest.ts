@@ -95,7 +95,7 @@ async function testQueryOFTReceived() {
   const tx = "0xb0954cdb55474e112edef3321b39552e7c4a9acffc03e7f65e608f67f266f4f2";
   const txBlock = 312609233;
   const txFromAddress = "";
-  const txToAddress = "0xBf7375a21f0B9cC837f51759b68903B79BeE5B10"; // todo: checksummed ok?
+  const txToAddress = "0xBf7375a21f0B9cC837f51759b68903B79BeE5B10";
 
   const bridgeObj = await createOFTBridgeAdapter();
 
@@ -118,10 +118,10 @@ async function testQueryOFTReceived() {
 
 // checked ✅
 async function testQueryOFTSent() {
-  const tx = "0xe7b0b71ec383434d2aef192798837a88acde40a4f17a8c07a7cb307c411f7245";
-  const txBlock = 21984599;
+  const tx = "0x518e98cfc9b47d722617b461aa61b945c2da224e108387d9b8fa10f099c8f5a8";
+  const txBlock = 22136421;
   const txFromAddress = "0x2Ce910fBba65B454bBAf6A18c952A70f3bcd8299";
-  const txToAddress = "0x2ce910fbba65b454bbaf6a18c952a70f3bcd8299";
+  const txToAddress = "0x2Ce910fBba65B454bBAf6A18c952A70f3bcd8299";
 
   const bridgeObj = await createOFTBridgeAdapter();
 

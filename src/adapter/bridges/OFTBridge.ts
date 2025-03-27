@@ -5,7 +5,6 @@ import {
   EventSearchConfig,
   Provider,
   TOKEN_SYMBOLS_MAP,
-  assert,
   isDefined,
   paginatedEventQuery,
   isContractDeployedToAddress,
@@ -14,7 +13,7 @@ import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import { CONTRACT_ADDRESSES } from "../../common";
 
-import { IOFT__factory } from "@across-protocol/contracts";
+import { IOFT_ABI_FULL } from "../../common";
 
 import {
   IOFT,
@@ -57,7 +56,6 @@ export class OFTBridge extends BaseBridgeAdapter {
   private readonly dstTokenAddress: string;
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
-  private readonly spokePoolAddress: string;
 
   /**
    * Creates an OFT bridge adapter for transfers between hub and destination chains.
@@ -95,23 +93,17 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Get chain-specific EID for OFT messaging
     this.dstChainEid = getOFTEidForChainId(dstChainId);
 
-    // Store pool addresses used for counterparty deduction
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    this.spokePoolAddress = CONTRACT_ADDRESSES[dstChainId]?.spokePool?.address;
 
     if (!this.hubPoolAddress) {
       throw new Error(`Hub pool address not found for chain ${hubChainId}`);
     }
 
-    if (!this.spokePoolAddress) {
-      throw new Error(`Spoke pool address not found for chain ${dstChainId}`);
-    }
-
     // Initialize L1 contract using the hubChainIOFTAddress from the route
-    this.l1Bridge = new Contract(route.hubChainIOFTAddress, IOFT__factory.abi, hubSigner);
+    this.l1Bridge = new Contract(route.hubChainIOFTAddress, IOFT_ABI_FULL, hubSigner);
 
     // Initialize L2 contract using the dstIOFTAddress from the route
-    this.l2Bridge = new Contract(route.dstIOFTAddress, IOFT__factory.abi, dstSignerOrProvider);
+    this.l2Bridge = new Contract(route.dstIOFTAddress, IOFT_ABI_FULL, dstSignerOrProvider);
   }
 
   /**
@@ -140,7 +132,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Construct the send parameters for the OFT bridge
-    // Note: In OFTCore, last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount
+    // @dev last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount
     // must be zero to prevent rounding on the contract side
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
@@ -173,27 +165,6 @@ export class OFTBridge extends BaseBridgeAdapter {
   }
 
   /**
-   * Determines the counterparty address on the opposite chain.
-   * @param address - Original address
-   * @param isOnHubChain - Whether the address is on the hub chain
-   * @returns Counterparty address on the other chain
-   */
-  private deduceCounterpartyAddress(address: string, isOnHubChain: boolean): string {
-    // If the address is the HubPool on hub chain, return the SpokePool address
-    if (address === this.hubPoolAddress && isOnHubChain) {
-      return this.spokePoolAddress;
-    }
-
-    // If the address is the SpokePool on spoke chain, return the HubPool address
-    if (address === this.spokePoolAddress && !isOnHubChain) {
-      return this.hubPoolAddress;
-    }
-
-    // If it's an EOA or other address, assume the same address on both sides
-    return address;
-  }
-
-  /**
    * Queries events for token transfers initiated on the L1 chain.
    * @param l1Token - Token address on L1
    * @param fromAddress - Source address
@@ -212,6 +183,13 @@ export class OFTBridge extends BaseBridgeAdapter {
       throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
     }
 
+    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
+    if (isSpokePool && fromAddress != this.hubPoolAddress) {
+      return Promise.resolve({});
+    } else if (fromAddress != toAddress) {
+      return Promise.resolve({});
+    }
+
     // Get all OFTSent events for the fromAddress
     const allEvents = await paginatedEventQuery(
       this.l1Bridge,
@@ -228,25 +206,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     return {
       [this.dstTokenAddress]: events.map((event) => {
-        // Deduce the recipient address based on the sender
-        // const deducedToAddress = this.deduceCounterpartyAddress(fromAddress, true);
-
-        // const deducedToAddress = fromAddress == this.hubPoolAddress ? toAddress : fromAddress;
-        let deducedToAddress;
-        if (fromAddress == toAddress) {
-          // EOA
-          deducedToAddress = fromAddress;
-        } else {
-          // if sender and receiver are different, we can ONLY handle hub -> spoke transfers.
-          // AND we assume that only valid spoke on the CORRECT chain will be passed in as a
-          // toAddress to this function
-          if (fromAddress == this.hubPoolAddress) {
-          } else {
-            throw new Error("");
-          }
-        }
-
-        return processEvent(event, "amountReceivedLD", deducedToAddress, "fromAddress");
+        event.args.toAddress = toAddress;
+        return processEvent(event, "amountReceivedLD", "toAddress", "fromAddress");
       }),
     };
   }
@@ -271,6 +232,11 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
+    if (isSpokePool && fromAddress != this.hubPoolAddress) {
+      return Promise.resolve({});
+    } else if (fromAddress != toAddress) {
+      return Promise.resolve({});
+    }
 
     // Get all OFTReceived events for the toAddress
     const allEvents = await paginatedEventQuery(
@@ -289,9 +255,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     return {
       [this.dstTokenAddress]: events.map((event) => {
-        // A hacky way to deduce the sender address based on the recipient
-        const deducedFromAddress = isSpokePool ? this.hubPoolAddress : event.args.toAddress;
-        return processEvent(event, "amountReceivedLD", "toAddress", deducedFromAddress);
+        event.args.fromAddress = fromAddress;
+        return processEvent(event, "amountReceivedLD", "toAddress", "fromAddress");
       }),
     };
   }
