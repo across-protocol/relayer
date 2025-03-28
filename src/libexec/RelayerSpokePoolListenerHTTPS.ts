@@ -1,7 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import { BaseError, Block, createPublicClient, Log as viemLog, webSocket } from "viem";
+import { createPublicClient, Log as viemLog, http } from "viem";
 import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
@@ -13,11 +13,13 @@ import {
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
+  getCurrentTime,
   getDeploymentBlockNumber,
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
   getProvider,
+  getProviderHeaders,
   getSpokePool,
   getRedisCache,
   Logger,
@@ -86,66 +88,27 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
  * @returns void
  */
 async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: string[], quorum = 1): Promise<void> {
-  const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  let nProviders = urls.length;
+  const urls = getNodeUrlList(chainId, quorum);
+  const nProviders = Object.values(urls).length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
-  const providers = urls.map((url) =>
-    createPublicClient({
+  const providers = Object.entries(urls).map(([provider, url]) => {
+    const headers = getProviderHeaders(provider, chainId);
+    return createPublicClient({
       chain: _chains[chainId],
-      transport: webSocket(url),
+      transport: http(url, { fetchOptions: { headers } }),
       name: getOriginFromURL(url),
-    })
-  );
+    });
+  });
 
-  // On each new block, submit any "finalised" events.
-  const newBlock = (block: Block, provider: string) => {
-    // Transient error that sometimes occurs in production. Catch it here and try to flush out the provider.
-    if (!block) {
-      logger.debug({
-        at: "RelayerSpokePoolListener::run",
-        message: `Received empty ${chain} block from ${provider}.`,
-      });
-      return;
-    }
-    const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    const events = eventMgr.tick();
-    postEvents(blockNumber, currentTime, events);
-  };
-
-  const blockError = (error: Error, provider: string) => {
-    const at = "RelayerSpokePoolListener::run";
-    const message = `Caught ${chain} provider error.`;
-    const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-    logger.debug({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
-
-    if (!stop && --nProviders < quorum) {
-      stop = true;
-      logger.warn({
-        at: "RelayerSpokePoolListener::run",
-        message: `Insufficient ${chain} providers to continue.`,
-        quorum,
-        nProviders,
-      });
-    }
-  };
-
-  providers.forEach((provider, idx) => {
-    if (idx === 0) {
-      provider.watchBlocks({
-        emitOnBegin: true,
-        onBlock: (block: Block) => newBlock(block, provider.name),
-        onError: (error: Error) => blockError(error, provider.name),
-      });
-    }
-
+  providers.forEach((provider) => {
     const abi = JSON.parse(spokePool.interface.format(ethersUtils.FormatTypes.json) as string);
     eventNames.forEach((eventName) => {
       provider.watchContractEvent({
         address: spokePool.address as `0x${string}`,
         abi,
         eventName,
-        onLogs: (logs: viemLog[]) =>
+        onLogs: (logs: viemLog[]) => {
           logs.forEach((log) => {
             const event = {
               ...log,
@@ -160,7 +123,12 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
             } else {
               eventMgr.add(event, provider.name);
             }
-          }),
+          });
+
+          const events = eventMgr.tick();
+          const { blockNumber } = events.at(-1);
+          postEvents(blockNumber, getCurrentTime(), events);
+        },
       });
     });
   });
