@@ -1,6 +1,7 @@
 import assert from "assert";
 import winston from "winston";
 import {
+  CHAIN_IDs,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -230,7 +231,13 @@ export async function constructSpokePoolClientsWithStartBlocks(
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
         } else {
-          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          // Lens block production is sporadic and leads to issues resolving timestamps to blocks accurately.
+          // This results in slow-moving bundle ranges (end block is often very old). Temporarily work around
+          // this by always resolving the latest block on Lens. This is OK as a temporary band-ai, but a more
+          // robust strategy is required.
+          const toBlock = chainId !== CHAIN_IDs.LENS
+            ? await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis)
+            : (await spokePools[chainId].contract.provider.getBlock("latest")).number;
           return [chainId, toBlock];
         }
       })
