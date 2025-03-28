@@ -18,6 +18,7 @@ import {
   TransactionResponse,
   assert,
   Profiler,
+  TOKEN_EQUIVALENCE_REMAPPING,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -129,9 +130,13 @@ export class AdapterManager {
   getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
-    const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
-      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(this.hubPoolClient.chainId, token).symbol)
-    );
+    const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
+      const tokenSymbol = this.hubPoolClient.getTokenInfo(this.hubPoolClient.chainId, token).symbol;
+      return (
+        adapter.supportedTokens.includes(tokenSymbol) ||
+        adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
+      );
+    });
     this.logger.debug({
       at: "AdapterManager",
       message: `Getting outstandingCrossChainTransfers for ${chainId}`,

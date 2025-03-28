@@ -547,10 +547,8 @@ export class ProfitClient {
       this.hubPoolClient
         .getL1Tokens()
         .map(({ symbol: _symbol }) => {
-          console.log(_symbol);
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
           const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
-          console.log(symbol);
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
           let address = addresses[CHAIN_IDs.MAINNET];
           // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,

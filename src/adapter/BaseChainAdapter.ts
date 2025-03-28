@@ -112,9 +112,6 @@ export class BaseChainAdapter {
   }
 
   filterSupportedTokens(l1Tokens: string[]): string[] {
-    console.log(this.supportedTokens);
-    console.log(l1Tokens);
-    console.log("MARKER");
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }
 

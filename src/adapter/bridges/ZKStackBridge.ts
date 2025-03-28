@@ -140,8 +140,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
     let processedEvents;
-    console.log(l1Token);
-    console.log(this.gasToken);
     if (!bridgingCustomGasToken) {
       const rawEvents = await paginatedEventQuery(
         this.sharedBridge,
@@ -168,13 +166,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
             };
           });
       } else {
-        console.log("HERE");
         const rawEvents = await paginatedEventQuery(
           this.sharedBridge,
           this.sharedBridge.filters.BridgehubDepositBaseTokenInitiated(this.l2chainId, annotatedFromAddress),
           eventConfig
         );
-        console.log(rawEvents);
         processedEvents = rawEvents
           .filter((event) => compareAddressesSimple(event.args.l1Token, l1Token))
           .map((e) => {
@@ -269,5 +265,16 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
   async _isContract(address: string, provider: Provider): Promise<boolean> {
     return isContractDeployedToAddress(address, provider);
+  }
+
+  protected override resolveL2TokenAddress(l1Token: string): string {
+    // ZkStack chains may or may not have native USDC, but all will have only one USDC "type" supported by Across. If there is an entry in the TOKEN_SYMBOLS_MAP for USDC, then use this, otherwise, bubble up the resolution.
+    if (
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token) &&
+      isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
+    ) {
+      return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
+    }
+    return super.resolveL2TokenAddress(l1Token);
   }
 }
