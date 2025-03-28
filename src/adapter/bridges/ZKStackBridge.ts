@@ -140,6 +140,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
     let processedEvents;
+    console.log(l1Token);
+    console.log(this.gasToken);
     if (!bridgingCustomGasToken) {
       const rawEvents = await paginatedEventQuery(
         this.sharedBridge,
@@ -166,11 +168,13 @@ export class ZKStackBridge extends BaseBridgeAdapter {
             };
           });
       } else {
+        console.log("HERE");
         const rawEvents = await paginatedEventQuery(
           this.sharedBridge,
           this.sharedBridge.filters.BridgehubDepositBaseTokenInitiated(this.l2chainId, annotatedFromAddress),
           eventConfig
         );
+        console.log(rawEvents);
         processedEvents = rawEvents
           .filter((event) => compareAddressesSimple(event.args.l1Token, l1Token))
           .map((e) => {

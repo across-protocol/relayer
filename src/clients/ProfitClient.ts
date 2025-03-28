@@ -546,8 +546,11 @@ export class ProfitClient {
     const tokens: { [_symbol: string]: string } = Object.fromEntries(
       this.hubPoolClient
         .getL1Tokens()
-        .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
-        .map(({ symbol }) => {
+        .map(({ symbol: _symbol }) => {
+          console.log(_symbol);
+          // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
+          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
+          console.log(symbol);
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
           let address = addresses[CHAIN_IDs.MAINNET];
           // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
@@ -557,6 +560,7 @@ export class ProfitClient {
           }
           return [symbol, address];
         })
+        .filter(([symbol, address]) => isDefined(address) && isDefined(symbol))
     );
 
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.

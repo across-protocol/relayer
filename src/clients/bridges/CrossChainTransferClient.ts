@@ -80,6 +80,8 @@ export class CrossChainTransferClient {
   }
 
   async update(l1Tokens: string[], chainIds = this.getEnabledL2Chains()): Promise<void> {
+    console.log("CROSS CHAIN TRANSFER");
+    console.log(l1Tokens);
     const enabledChainIds = this.getEnabledL2Chains();
     chainIds = chainIds.filter((chainId) => enabledChainIds.includes(chainId));
     if (chainIds.length === 0) {
