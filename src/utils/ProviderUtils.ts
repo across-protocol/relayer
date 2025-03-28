@@ -256,11 +256,7 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
 export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {
   quorum ??= getChainQuorum(chainId);
   const urls = getNodeUrlList(chainId, quorum, "wss");
-  return Object.entries(urls).map(([_provider, url]) => {
-    const ws = new ethers.providers.WebSocketProvider(url);
-    // ws.connection.headers = getProviderHeaders(provider, chainId);
-    return ws;
-  });
+  return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
 }
 
 export function getNodeUrlList(
