@@ -1,8 +1,8 @@
 import { clients } from "@across-protocol/sdk";
 
-export type SpokePoolClient = clients.SpokePoolClient;
+export type SpokePoolClient = clients.EVMSpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;
-export const { SpokePoolClient } = clients;
+export const { EVMSpokePoolClient: SpokePoolClient } = clients;
 
 export { IndexedSpokePoolClient, SpokePoolClientMessage } from "./SpokePoolClient";
 export class BundleDataClient extends clients.BundleDataClient.BundleDataClient {}
