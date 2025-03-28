@@ -62,7 +62,6 @@ export class EventManager {
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
-    this.blockNumber = 0;
   }
 
   /**
@@ -185,8 +184,7 @@ export class EventManager {
    * @param blockNumber Number of the latest block.
    * @returns void
    */
-  tick(blockNumber: number): Log[] {
-    this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
+  tick(): Log[] {
     const blockNumbers = Object.keys(this.events)
       .map(Number)
       .sort((x, y) => x - y);
