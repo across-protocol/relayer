@@ -45,9 +45,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     },
   };
 
-  // todo: adjust these for production
   // Maximum amount of tokens that can be sent in a single transaction (hardcoded safety limit)
-  private static readonly MAX_AMOUNT = ethers.utils.parseUnits("100.0", 6); // 100 USDT
+  private static readonly MAX_AMOUNT = ethers.utils.parseUnits("100000.0", 6); // 100K USDT
   // Cap the messaging fee to prevent excessive costs
   private static readonly FEE_CAP = ethers.utils.parseEther("0.1"); // 0.1 ether
 
