@@ -13,6 +13,7 @@ import {
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
+  getCurrentTime,
   getDeploymentBlockNumber,
   getNetworkName,
   getNodeUrlList,
@@ -100,55 +101,14 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     });
   });
 
-  // On each new block, submit any "finalised" events.
-  const newBlock = (block: Block, provider: string) => {
-    // Transient error that sometimes occurs in production. Catch it here and try to flush out the provider.
-    if (!block) {
-      logger.debug({
-        at: "RelayerSpokePoolListener::run",
-        message: `Received empty ${chain} block from ${provider}.`,
-      });
-      return;
-    }
-    const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    const events = eventMgr.tick(blockNumber);
-    postEvents(blockNumber, currentTime, events);
-  };
-
-  const blockError = (error: Error, provider: string) => {
-    const at = "RelayerSpokePoolListener::run";
-    const message = `Caught ${chain} provider error.`;
-    const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
-    logger.debug({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
-
-    if (!stop && --nProviders < quorum) {
-      stop = true;
-      logger.warn({
-        at: "RelayerSpokePoolListener::run",
-        message: `Insufficient ${chain} providers to continue.`,
-        quorum,
-        nProviders,
-      });
-    }
-  };
-
-  providers.forEach((provider, idx) => {
-    if (idx === 0) {
-      provider.watchBlocks({
-        emitOnBegin: true,
-        pollingInterval: 1_000,
-        onBlock: (block: Block) => newBlock(block, provider.name),
-        onError: (error: Error) => blockError(error, provider.name),
-      });
-    }
-
+  providers.forEach((provider) => {
     const abi = JSON.parse(spokePool.interface.format(ethersUtils.FormatTypes.json) as string);
     eventNames.forEach((eventName) => {
       provider.watchContractEvent({
         address: spokePool.address as `0x${string}`,
         abi,
         eventName,
-        onLogs: (logs: viemLog[]) =>
+        onLogs: (logs: viemLog[]) => {
           logs.forEach((log) => {
             const event = {
               ...log,
@@ -163,7 +123,12 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
             } else {
               eventMgr.add(event, provider.name);
             }
-          }),
+          });
+
+          const events = eventMgr.tick();
+          const { blockNumber } = events.at(-1);
+          postEvents(blockNumber, getCurrentTime(), events);
+        },
       });
     });
   });

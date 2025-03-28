@@ -109,7 +109,7 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
       return;
     }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    const events = eventMgr.tick(blockNumber);
+    const events = eventMgr.tick();
     postEvents(blockNumber, currentTime, events);
   };
 
