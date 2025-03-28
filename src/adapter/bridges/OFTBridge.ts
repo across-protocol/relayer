@@ -11,9 +11,7 @@ import {
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { CONTRACT_ADDRESSES } from "../../common";
-
-import { IOFT_ABI_FULL } from "../../common";
+import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
 
 import {
   IOFT,
