@@ -20,6 +20,7 @@ import {
   MessagingFeeStruct,
   SendParamStruct,
 } from "@across-protocol/contracts/typechain/contracts/interfaces/IOFT";
+import { resolveToken } from "../../../scripts/utils";
 
 export type OFTRouteInfo = {
   hubChainIOFTAddress: string;
@@ -55,6 +56,8 @@ export class OFTBridge extends BaseBridgeAdapter {
   private readonly dstTokenAddress: string;
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
+  private readonly tokenDecimals: number;
+  private sharedDecimals?: number;
 
   /**
    * Creates an OFT bridge adapter for transfers between hub and destination chains.
@@ -103,6 +106,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     // Initialize L2 contract using the dstIOFTAddress from the route
     this.l2Bridge = new Contract(route.dstIOFTAddress, IOFT_ABI_FULL, dstSignerOrProvider);
+
+    this.tokenDecimals = resolveToken(hubChainToken, hubChainId).decimals;
   }
 
   /**
@@ -129,6 +134,9 @@ export class OFTBridge extends BaseBridgeAdapter {
     if (amount.gt(OFTBridge.MAX_AMOUNT)) {
       throw new Error(`Amount exceeds maximum allowed (${amount} > ${OFTBridge.MAX_AMOUNT})`);
     }
+
+    // we need to be careful what amounts we pass into OFT transfers to prevent rounding
+    await this.validateAmountPrecision(amount);
 
     // Construct the send parameters for the OFT bridge
     // @dev last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount
@@ -161,6 +169,33 @@ export class OFTBridge extends BaseBridgeAdapter {
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
     });
+  }
+
+  /**
+   * Validates that the token amount has the correct precision for OFT transfer.
+   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent rounding.
+   * @param amount - Amount to validate
+   * @throws Error if the amount has invalid precision
+   */
+  private async validateAmountPrecision(amount: BigNumber): Promise<void> {
+    // Lazy-load shared decimals if not loaded yet
+    if (this.sharedDecimals === undefined) {
+      this.sharedDecimals = await this.l1Bridge.sharedDecimals();
+    }
+
+    // Verify the amount has the correct precision
+    // The last (tokenDecimals - sharedDecimals) digits must be zero
+    const decimalDifference = this.tokenDecimals - this.sharedDecimals;
+    if (decimalDifference > 0) {
+      const divisor = BigNumber.from(10).pow(decimalDifference);
+      const remainder = amount.mod(divisor);
+      if (!remainder.isZero()) {
+        throw new Error(
+          `Amount precision is invalid. Last ${decimalDifference} digits must be zero. ` +
+            `Amount: ${amount}, Remainder: ${remainder}`
+        );
+      }
+    }
   }
 
   /**
