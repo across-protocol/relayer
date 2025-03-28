@@ -1,7 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import { BaseError, Block, createPublicClient, Log as viemLog, http } from "viem";
+import { createPublicClient, Log as viemLog, http } from "viem";
 import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
@@ -89,7 +89,7 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
  */
 async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: string[], quorum = 1): Promise<void> {
   const urls = getNodeUrlList(chainId, quorum);
-  let nProviders = Object.values(urls).length;
+  const nProviders = Object.values(urls).length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
   const providers = Object.entries(urls).map(([provider, url]) => {
