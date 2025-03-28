@@ -43,7 +43,7 @@ export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolE
   return EventRemovedMessage.is(message);
 }
 
-export class IndexedSpokePoolClient extends clients.SpokePoolClient {
+export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
   public readonly chain: string;
   public readonly indexerPath: string;
 
@@ -73,7 +73,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
 
     this.pendingBlockNumber = deploymentBlock;
     this.pendingCurrentTime = 0;
-    this.pendingEvents = this.queryableEventNames.map(() => []);
+    this.pendingEvents = this._queryableEventNames().map(() => []);
     this.pendingEventsRemoved = [];
 
     this.startWorker();
@@ -181,7 +181,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
       });
 
       pendingEvents.forEach((event) => {
-        const eventIdx = this.queryableEventNames.indexOf(event.event);
+        const eventIdx = this._queryableEventNames().indexOf(event.event);
         assert(
           eventIdx !== -1 && event.removed === false,
           event.removed ? "Incorrectly received removed event" : `Unsupported event name (${event.event})`
@@ -202,7 +202,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
    */
   protected removeEvent(event: Log): boolean {
     let removed = false;
-    const eventIdx = this.queryableEventNames.indexOf(event.event);
+    const eventIdx = this._queryableEventNames().indexOf(event.event);
     const pendingEvents = this.pendingEvents[eventIdx];
 
     const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
@@ -278,7 +278,7 @@ export class IndexedSpokePoolClient extends clients.SpokePoolClient {
     this.pendingEventsRemoved = this.pendingEventsRemoved.filter((event) => !this.removeEvent(event));
 
     const events = eventsToQuery.map((eventName) => {
-      const eventIdx = this.queryableEventNames.indexOf(eventName);
+      const eventIdx = this._queryableEventNames().indexOf(eventName);
       assert(eventIdx !== -1);
 
       const pendingEvents = this.pendingEvents[eventIdx];
