@@ -622,6 +622,7 @@ export class ProfitClient {
       [CHAIN_IDs.ALEPH_ZERO]: "USDT", // USDC is not yet supported on AlephZero, so revert to USDT. @todo: Update.
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
+      [CHAIN_IDs.LENS]: "WETH", // USDC not yet supported.
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
