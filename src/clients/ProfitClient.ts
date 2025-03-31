@@ -550,7 +550,7 @@ export class ProfitClient {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
           const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
           if (!isDefined(symbol)) {
-            // If the symbol is undefined, then there is missing configuration in the constants repository. 
+            // If the symbol is undefined, then there is missing configuration in the constants repository.
             // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
             // If we are on testnet, return undefined. This is necessary since there are multiple "mock" tokens enabled on L1 intentionally without
             // entries in `TOKEN_SYMBOLS_MAP`.
