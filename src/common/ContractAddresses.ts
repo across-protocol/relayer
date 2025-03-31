@@ -58,7 +58,7 @@ export const CONTRACT_ADDRESSES: {
       abi: LINEA_USDC_BRIDGE_ABI,
     },
     zkStackSharedBridge: {
-      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
     zkStackBridgeHub: {

@@ -299,7 +299,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       l2GasLimit: toBN(2000000),
       l2GasPerPubdataByteLimit: toBN(800),
       refundRecipient: relayer.address,
-      secondBridgeAddress: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB", // Shared bridge address
+      secondBridgeAddress: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].zkStackSharedBridge.address, // Shared bridge address
       secondBridgeValue: bnZero,
     };
     //  ERC20 tokens:
