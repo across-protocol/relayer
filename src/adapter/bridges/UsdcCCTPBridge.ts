@@ -19,6 +19,7 @@ import {
   isCctpV2L2ChainId,
 } from "../../utils/CCTPUtils";
 import { ethers } from "hardhat";
+import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
@@ -27,6 +28,10 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private l2TokenMessenger: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+    assert(
+      getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
+      "Unknown CCTP domain ID"
+    );
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [getCctpTokenMessenger(l2chainId, hubChainId).address]);
     this.IS_CCTP_V2 = isCctpV2L2ChainId(l2chainId);
 
