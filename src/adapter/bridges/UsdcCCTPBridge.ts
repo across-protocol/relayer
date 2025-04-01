@@ -1,5 +1,4 @@
 import { Contract, Signer } from "ethers";
-import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -10,22 +9,34 @@ import {
   assert,
   toBN,
   getCctpDomainForChainId,
+  paginatedEventQuery,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { cctpAddressToBytes32, retrieveOutstandingCCTPBridgeUSDCTransfers } from "../../utils/CCTPUtils";
+import {
+  cctpAddressToBytes32,
+  getCctpMessageTransmitter,
+  getCctpTokenMessenger,
+  isCctpV2L2ChainId,
+} from "../../utils/CCTPUtils";
+import { ethers } from "hardhat";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
+  private IS_CCTP_V2 = false;
+
+  private l2TokenMessenger: Contract;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,
-    ]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [getCctpTokenMessenger(l2chainId, hubChainId).address]);
+    this.IS_CCTP_V2 = isCctpV2L2ChainId(l2chainId);
 
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger;
+    const { address: l1Address, abi: l1Abi } = getCctpTokenMessenger(l2chainId, hubChainId);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].cctpMessageTransmitter;
+    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpTokenMessenger(l2chainId, l2chainId);
+    this.l2TokenMessenger = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
+
+    const { address: l2Address, abi: l2Abi } = getCctpMessageTransmitter(l2chainId, l2chainId);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
   }
 
@@ -53,7 +64,17 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
-      args: [amount, this.l2DestinationDomain, cctpAddressToBytes32(toAddress), this.l1UsdcTokenAddress],
+      args: this.IS_CCTP_V2
+        ? [
+            amount,
+            this.l2DestinationDomain,
+            cctpAddressToBytes32(toAddress),
+            this.l1UsdcTokenAddress,
+            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+            0, // maxFee set to 0 so this will be a "standard" speed transfer
+            2000, // Hardcoded minFinalityThreshold value for standard transfer
+          ]
+        : [amount, this.l2DestinationDomain, cctpAddressToBytes32(toAddress), this.l1UsdcTokenAddress],
     });
   }
 
@@ -64,15 +85,11 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    const events = await retrieveOutstandingCCTPBridgeUSDCTransfers(
-      this.getL1Bridge(),
-      this.getL2Bridge(),
-      eventConfig,
-      this.l1UsdcTokenAddress,
-      this.hubChainId,
-      this.l2chainId,
-      fromAddress
-    );
+    const eventFilterArgs = this.IS_CCTP_V2
+      ? [this.l1UsdcTokenAddress, undefined, fromAddress]
+      : [undefined, this.l1UsdcTokenAddress, undefined, fromAddress];
+    const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
+    const events = await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig);
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
         processEvent(event, "amount", "mintRecipient", "depositor")
@@ -80,20 +97,21 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     };
   }
 
-  queryL2BridgeFinalizationEvents(
+  async queryL2BridgeFinalizationEvents(
     l1Token: string,
     fromAddress: string,
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Lint Appeasement
-    l1Token;
-    fromAddress;
-    eventConfig;
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-
-    // The function queryL1BridgeInitiationEvents already comuptes outstanding CCTP Bridge transfers,
-    // so we can return nothing here.
-    return Promise.resolve({});
+    const eventFilterArgs = [toAddress, undefined, this.resolveL2TokenAddress(this.l1UsdcTokenAddress)];
+    const eventFilter = this.l2TokenMessenger.filters.MintAndWithdraw(...eventFilterArgs);
+    const events = await paginatedEventQuery(this.l2TokenMessenger, eventFilter, eventConfig);
+    // There is no "from" field in this event, so we set it to the L2 token received.
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+        processEvent(event, "amount", "mintRecipient", "mintToken")
+      ),
+    };
   }
 }

@@ -1,7 +1,6 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   Signer,
@@ -14,7 +13,14 @@ import {
   winston,
   convertFromWei,
 } from "../../../utils";
-import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import {
+  CCTPMessageStatus,
+  DecodedCCTPMessage,
+  getCctpMessageTransmitter,
+  isCctpV2L2ChainId,
+  resolveCCTPRelatedTxns,
+  resolveCCTPV2RelatedTxns,
+} from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL2toL1Finalizer(
@@ -23,12 +29,6 @@ export async function cctpL2toL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(
-    cctpMessageReceiverDetails.address,
-    cctpMessageReceiverDetails.abi,
-    hubPoolClient.hubPool.provider
-  );
   const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId);
   const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
@@ -41,13 +41,16 @@ export async function cctpL2toL1Finalizer(
     statusesGrouped,
   });
 
+  const { address, abi } = getCctpMessageTransmitter(spokePoolClient.chainId, hubPoolClient.chainId);
+  const l1MessengerContract = new ethers.Contract(address, abi, hubPoolClient.hubPool.provider);
+
   return {
     crossChainMessages: await generateWithdrawalData(
       unprocessedMessages,
       spokePoolClient.chainId,
       hubPoolClient.chainId
     ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    callData: await generateMultiCallData(l1MessengerContract, unprocessedMessages),
   };
 }
 
@@ -71,7 +74,11 @@ async function resolveRelatedTxnReceipts(
     Array.from(uniqueTxnHashes).map((hash) => client.spokePool.provider.getTransactionReceipt(hash))
   );
 
-  return resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
+  const cctpV2 = isCctpV2L2ChainId(client.chainId);
+
+  return cctpV2
+    ? resolveCCTPV2RelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId)
+    : resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
 }
 
 /**
