@@ -230,20 +230,18 @@ export async function finalize(
 
     const network = getNetworkName(chainId);
 
-    // Not all finalizer adapters query TokensBridged events on the L2 spoke pools to discover withdrawals that 
+    // Not all finalizer adapters query TokensBridged events on the L2 spoke pools to discover withdrawals that
     // need to be finalized, so add extra addresses we know we'll want to always finalize for. Not all adapters
-    // will use this list. Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
+    // will use this list, but eventually they should be upgraded to read from here instead of just querying Tokens
+    // Bridged events. Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
     // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
-    // In the L2->L1 direction, only the CCTP Finalizer uses this list.
     const addressesToEnsure = [hubPoolClient.hubPool.address, CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address];
     // Add the spoke pool address to the list of addresses to ensure.
     addressesToEnsure.push(spokePoolClients[chainId].spokePool.address);
-    // Add user specified addresses to the list of addresses to finalize. Some of the L2 to L1 finalizers like
-    // opStackFinalizer and arbStackFinalizer already use this list to ensure that certain addresses are finalized.
-    // We should eventually change those finalizers to read only from this `l1ToL2AddressesToFinalize` list.
+    // Add user specified addresses to the list of addresses to finalize.
     const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-    : [];
+      ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+      : [];
     addressesToEnsure.push(...withdrawalToAddresses);
     l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
 

@@ -23,7 +23,13 @@ type CCTPDeposit = {
 };
 type CCTPDepositEvent = CCTPDeposit & { log: Log };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
-type CCTPV2APIGetAttestationResponse = { status: string; attestation: string; message: string; eventNonce: string; cctpVersion: number; };
+type CCTPV2APIGetAttestationResponse = {
+  status: string;
+  attestation: string;
+  message: string;
+  eventNonce: string;
+  cctpVersion: number;
+};
 type CCTPV2APIGetAttestationResponses = { messages: CCTPV2APIGetAttestationResponse[] };
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
@@ -207,13 +213,13 @@ async function getCCTPDepositEventsWithStatus(
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   return await Promise.all(
     deposits.map(async (deposit) => {
-      // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation, 
+      // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
       // so skip this step for V2.
       if (isCctpV2) {
         return {
           ...deposit,
           status: "pending",
-        }
+        };
       }
       const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, destinationMessageTransmitter);
       if (!processed) {
@@ -274,13 +280,18 @@ export async function getAttestationsForCCTPDepositEvents(
       const _txReceiptHashCount = txnReceiptHashCount[deposit.log.transactionHash] ?? 0;
       txnReceiptHashCount[deposit.log.transactionHash] = _txReceiptHashCount + 1;
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, deposit.log.transactionHash, isMainnet, _txReceiptHashCount)
+        ? await _generateCCTPV2AttestationProof(
+            deposit.sourceDomain,
+            deposit.log.transactionHash,
+            isMainnet,
+            _txReceiptHashCount
+          )
         : await _generateCCTPAttestationProof(deposit.messageHash, isMainnet);
 
       // Temporarily, for V2 we now have the nonceHash and we can query whether the message has been processed.
       // We can skip this once we can derive nonceHashes locally.
       if (isCctpV2) {
-        const attestationV2 = attestation as CCTPV2APIGetAttestationResponse
+        const attestationV2 = attestation as CCTPV2APIGetAttestationResponse;
         const processed = await _hasCCTPMessageBeenProcessed(attestationV2.eventNonce, destinationMessageTransmitter);
         if (processed) {
           return {
@@ -342,7 +353,7 @@ function _decodeCCTPV2Message(message: { data: string; transactionHash: string; 
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it 
+  // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
   // the API service.
   const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
@@ -400,5 +411,5 @@ async function _generateCCTPV2AttestationProof(
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
   const attestationResponse = httpResponse.data;
-  return attestationResponse.messages[txnReceiptHashCount]; 
+  return attestationResponse.messages[txnReceiptHashCount];
 }

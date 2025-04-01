@@ -83,7 +83,6 @@ contract CctpV2TokenMessenger {
     }
 }
 
-
 contract CctpMessageTransmitter {
     mapping(bytes32 => uint256) public usedNonces;
 
