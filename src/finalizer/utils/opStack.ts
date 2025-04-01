@@ -1,5 +1,5 @@
 import assert from "assert";
-import { groupBy, countBy } from "lodash";
+import { countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -16,7 +16,6 @@ import { TokensBridged } from "../../interfaces";
 import {
   CHAIN_IDs,
   chainIsOPStack,
-  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCachedProvider,
@@ -35,7 +34,6 @@ import {
   Multicall2Call,
   mapAsync,
   paginatedEventQuery,
-  getCctpDomainForChainId,
   createViemCustomTransportFromEthersProvider,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
@@ -94,7 +92,9 @@ export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  withdrawalToAddresses: string[]
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
@@ -108,21 +108,9 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
-  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
-    spokePoolClient.getTokensBridged().filter(
-      (e) =>
-        // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
-        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
-    ),
-    (e) => {
-      if (e.blockNumber >= latestBlockToProve) {
-        return "recentTokensBridgedEvents";
-      } else {
-        return "olderTokensBridgedEvents";
-      }
-    }
-  );
+  const recentTokensBridgedEvents: TokensBridged[] = [];
+  const olderTokensBridgedEvents: TokensBridged[] = [];
+
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
@@ -135,9 +123,6 @@ export async function opStackFinalizer(
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-    : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
     logger.warn({
       at: `${networkName}Finalizer`,
