@@ -14,7 +14,7 @@ import {
 import { processEvent } from "../utils";
 import {
   cctpAddressToBytes32,
-  getCctpMessageTransmitter,
+  cctpBytes32ToAddress,
   getCctpTokenMessenger,
   isCctpV2L2ChainId,
 } from "../../utils/CCTPUtils";
@@ -39,10 +39,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpTokenMessenger(l2chainId, l2chainId);
-    this.l2TokenMessenger = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
-
-    const { address: l2Address, abi: l2Abi } = getCctpMessageTransmitter(l2chainId, l2chainId);
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
   }
 
   private get l2DestinationDomain(): number {
@@ -94,11 +91,17 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       ? [this.l1UsdcTokenAddress, undefined, fromAddress]
       : [undefined, this.l1UsdcTokenAddress, undefined, fromAddress];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
-    const events = await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig);
+    const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
+      compareAddressesSimple(cctpBytes32ToAddress(event.args.mintRecipient), toAddress)
+    );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "mintRecipient", "depositor")
-      ),
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
+        const processedEvent = processEvent(event, "amount", "mintRecipient", "depositor");
+        return {
+          ...processedEvent,
+          to: cctpBytes32ToAddress(processedEvent.to),
+        };
+      }),
     };
   }
 
@@ -110,11 +113,11 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const eventFilterArgs = [toAddress, undefined, this.resolveL2TokenAddress(this.l1UsdcTokenAddress)];
-    const eventFilter = this.l2TokenMessenger.filters.MintAndWithdraw(...eventFilterArgs);
-    const events = await paginatedEventQuery(this.l2TokenMessenger, eventFilter, eventConfig);
+    const eventFilter = this.getL2Bridge().filters.MintAndWithdraw(...eventFilterArgs);
+    const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) =>
         processEvent(event, "amount", "mintRecipient", "mintToken")
       ),
     };

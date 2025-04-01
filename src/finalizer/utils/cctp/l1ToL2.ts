@@ -1,4 +1,4 @@
-import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
+import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
@@ -7,25 +7,19 @@ import {
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getCachedProvider,
   groupObjectCountsByProp,
   isDefined,
   Multicall2Call,
-  paginatedEventQuery,
   winston,
   convertFromWei,
 } from "../../../utils";
 import {
+  AttestedCCTPDepositEvent,
   CCTPMessageStatus,
-  DecodedCCTPMessage,
+  getAttestationsForCCTPDepositEvents,
   getCctpMessageTransmitter,
-  getCctpTokenMessenger,
-  isCctpV2L2ChainId,
-  resolveCCTPRelatedTxns,
-  resolveCCTPV2RelatedTxns,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -35,15 +29,21 @@ export async function cctpL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const decodedMessages = await resolveRelatedTxnReceipts(
+  const searchConfig: EventSearchConfig = {
+    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: l1SpokePoolClient.latestBlockSearched,
+    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+  };
+  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
     l1ToL2AddressesToFinalize,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
-    l1SpokePoolClient
+    l2SpokePoolClient.chainId,
+    searchConfig
   );
-  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const unprocessedMessages = outstandingDeposits.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
-    decodedMessages,
+    outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
   logger.debug({
@@ -65,48 +65,6 @@ export async function cctpL1toL2Finalizer(
   };
 }
 
-async function findRelevantTxnReceiptsForCCTPDeposits(
-  currentChainId: number,
-  targetDestinationChainId: number,
-  addressesToSearch: string[],
-  l1SpokePoolClient: SpokePoolClient
-): Promise<TransactionReceipt[]> {
-  const provider = getCachedProvider(currentChainId);
-  const { address, abi } = getCctpTokenMessenger(targetDestinationChainId, currentChainId);
-  const tokenMessengerContract = new Contract(address, abi, provider);
-  const eventFilterParams = isCctpV2L2ChainId(targetDestinationChainId)
-    ? [TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], undefined, addressesToSearch]
-    : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], undefined, addressesToSearch];
-  const eventFilter = tokenMessengerContract.filters.DepositForBurn(...eventFilterParams);
-  const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
-  };
-  const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
-  const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
-  // Return the receipts, without duplicated transaction hashes
-  return uniqWith(receipts, (a, b) => a.transactionHash.toLowerCase() === b.transactionHash.toLowerCase());
-}
-
-async function resolveRelatedTxnReceipts(
-  addressesToSearch: string[],
-  currentChainId: number,
-  targetDestinationChainId: number,
-  l1SpokePoolClient: SpokePoolClient
-): Promise<DecodedCCTPMessage[]> {
-  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(
-    currentChainId,
-    targetDestinationChainId,
-    addressesToSearch,
-    l1SpokePoolClient
-  );
-  const cctpV2 = isCctpV2L2ChainId(targetDestinationChainId);
-  return cctpV2
-    ? resolveCCTPV2RelatedTxns(allReceipts, currentChainId, targetDestinationChainId)
-    : resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
-}
-
 /**
  * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
  * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
@@ -115,7 +73,7 @@ async function resolveRelatedTxnReceipts(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
+  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -140,7 +98,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateDepositData(
-  messages: DecodedCCTPMessage[],
+  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {

@@ -6,20 +6,18 @@ import {
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  compareAddressesSimple,
   groupObjectCountsByProp,
   Multicall2Call,
   isDefined,
   winston,
   convertFromWei,
+  EventSearchConfig,
 } from "../../../utils";
 import {
+  AttestedCCTPDepositEvent,
   CCTPMessageStatus,
-  DecodedCCTPMessage,
+  getAttestationsForCCTPDepositEvents,
   getCctpMessageTransmitter,
-  isCctpV2L2ChainId,
-  resolveCCTPRelatedTxns,
-  resolveCCTPV2RelatedTxns,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -27,12 +25,25 @@ export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
   _signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  l1ToL2AddressesToFinalize: string[]
 ): Promise<FinalizerPromise> {
-  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId);
-  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const searchConfig: EventSearchConfig = {
+    fromBlock: spokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: spokePoolClient.latestBlockSearched,
+    maxBlockLookBack: spokePoolClient.eventSearchConfig.maxBlockLookBack,
+  };
+  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
+    l1ToL2AddressesToFinalize,
+    spokePoolClient.chainId,
+    hubPoolClient.chainId,
+    spokePoolClient.chainId,
+    searchConfig
+  );
+  const unprocessedMessages = outstandingDeposits.filter((message) => message.status === "ready");
   const statusesGrouped = groupObjectCountsByProp(
-    decodedMessages,
+    outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
   logger.debug({
@@ -54,33 +65,6 @@ export async function cctpL2toL1Finalizer(
   };
 }
 
-async function resolveRelatedTxnReceipts(
-  client: SpokePoolClient,
-  targetDestinationChainId: number
-): Promise<DecodedCCTPMessage[]> {
-  const sourceChainId = client.chainId;
-  // Dedup the txnReceipt list because there might be multiple tokens bridged events in the same txn hash.
-
-  const uniqueTxnHashes = new Set<string>();
-  client
-    .getTokensBridged()
-    .filter((bridgeEvent) =>
-      compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
-    )
-    .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
-
-  // Resolve the receipts to all collected txns
-  const txnReceipts = await Promise.all(
-    Array.from(uniqueTxnHashes).map((hash) => client.spokePool.provider.getTransactionReceipt(hash))
-  );
-
-  const cctpV2 = isCctpV2L2ChainId(client.chainId);
-
-  return cctpV2
-    ? resolveCCTPV2RelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId)
-    : resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
-}
-
 /**
  * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
  * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
@@ -89,7 +73,7 @@ async function resolveRelatedTxnReceipts(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
+  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -114,7 +98,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateWithdrawalData(
-  messages: DecodedCCTPMessage[],
+  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
