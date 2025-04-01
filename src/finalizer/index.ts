@@ -89,8 +89,8 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.LINEA]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer],
+    finalizeOnL1: [lineaL2ToL1Finalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer, cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],

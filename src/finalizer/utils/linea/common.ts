@@ -216,8 +216,8 @@ export function determineMessageType(
       amount: _value,
     };
   }
-  // Next check if the calldata is a valid Linea bridge. This can either be in the form of a
-  // UsdcTokenBridge or a TokenBridge. Both have a different calldata format.
+  // Next check if the calldata is a valid Linea bridge. This should be in the form of a
+  // TokenBridge.
 
   // Start with the TokenBridge calldata format.
   try {
@@ -232,22 +232,6 @@ export function determineMessageType(
       l1TokenSymbol: token.symbol,
       l1TokenAddress: decoded._nativeToken,
       amount: decoded._amount,
-    };
-  } catch (_e) {
-    // We don't care about this because we have more to check
-  }
-  // Next check the UsdcTokenBridge calldata format.
-  try {
-    const contractInterface = new ethers.utils.Interface(
-      CONTRACT_ADDRESSES[hubPoolClient.chainId].lineaL1UsdcBridge.abi
-    );
-    const decoded = contractInterface.decodeFunctionData("receiveFromOtherLayer", _calldata);
-    // If we've made it this far, then the calldata is a valid UsdcTokenBridge calldata.
-    return {
-      type: "bridge",
-      l1TokenSymbol: "USDC",
-      l1TokenAddress: TOKEN_SYMBOLS_MAP.USDC.addresses[hubPoolClient.chainId],
-      amount: decoded.amount,
     };
   } catch (_e) {
     // We don't care about this because we have more to check
@@ -299,42 +283,6 @@ export async function findMessageFromTokenBridge(
             return (
               compareAddressesSimple(decoded._recipient, event.args.recipient) && decoded._amount.eq(event.args.amount)
             );
-          } catch (_e) {
-            // We don't care about this because we have more to check
-            return false;
-          }
-        });
-    })
-  );
-  return associatedMessages.flat() as unknown as MessageSentEvent[];
-}
-
-export async function findMessageFromUsdcBridge(
-  bridgeContract: Contract,
-  messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
-  l1ToL2AddressesToFinalize: string[],
-  searchConfig: EventSearchConfig
-): Promise<MessageSentEvent[]> {
-  const bridgeEvents = await paginatedEventQuery(
-    bridgeContract,
-    bridgeContract.filters.Deposited(l1ToL2AddressesToFinalize),
-    searchConfig
-  );
-  const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
-  const associatedMessages = await Promise.all(
-    bridgeEvents.map(async (event) => {
-      const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
-      return logs
-        .filter((log) => log.topics[0] === messageSent)
-        .map((log) => ({
-          ...log,
-          args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
-        }))
-        .filter((log) => {
-          // Next check the UsdcTokenBridge calldata format.
-          try {
-            const decoded = bridgeContract.interface.decodeFunctionData("receiveFromOtherLayer", log.args._calldata);
-            return compareAddressesSimple(decoded.recipient, event.args.to) && decoded.amount.eq(event.args.amount);
           } catch (_e) {
             // We don't care about this because we have more to check
             return false;

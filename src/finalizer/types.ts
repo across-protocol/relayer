@@ -36,7 +36,6 @@ export interface ChainFinalizer {
     signer: Signer,
     hubPoolClient: HubPoolClient,
     l2SpokePoolClient: SpokePoolClient,
-    // The following types are only used in L1->L2 finalizers currently and can be omitted in L2->L1 finalizers.
     l1SpokePoolClient: SpokePoolClient,
     l1ToL2AddressesToFinalize: string[]
   ): Promise<FinalizerPromise>;
