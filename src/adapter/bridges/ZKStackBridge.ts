@@ -67,7 +67,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkStackBridgeHub;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].zkStackBridge;
+    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].nativeTokenVault;
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
 
     const { address: nativeTokenVaultAddress, abi: nativeTokenVaultAbi } =
@@ -203,18 +203,29 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
     let processedEvents;
     if (!bridgingCustomGasToken) {
+      const assetId = await this.getL2Bridge().assetId(l2Token);
+      if (assetId === ZERO_BYTES) {
+        throw new Error(`Undefined assetId for L2 token ${l2Token}`);
+      }
       const events = isSpokePool
         ? await paginatedEventQuery(
             this.getL2Bridge(),
-            this.getL2Bridge().filters.FinalizeDeposit(this.hubPool.address, toAddress, l2Token),
+            this.getL2Bridge().filters.BridgeMint(this.hubChainId, assetId),
             eventConfig
           )
         : await paginatedEventQuery(
             this.getL2Bridge(),
-            this.getL2Bridge().filters.FinalizeDeposit(fromAddress, toAddress, l2Token),
+            this.getL2Bridge().filters.BridgeMint(this.hubChainId, assetId),
             eventConfig
           );
-      processedEvents = events.map((event) => processEvent(event, "_amount", "_to", "l1Sender"));
+      processedEvents = events
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
+        .map((event) => {
+          return {
+            ...processEvent(event, "amount", "receiver", "receiver"),
+            from: isSpokePool ? this.hubPool.address : fromAddress,
+          };
+        });
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
       let events;

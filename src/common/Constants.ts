@@ -323,7 +323,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
-  [CHAIN_IDs.LENS]: ["WETH", "USDC", "WGHO"],
+  [CHAIN_IDs.LENS]: ["WETH", "WGHO"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
