@@ -15,7 +15,7 @@ import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
-import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
+import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
@@ -64,6 +64,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
+    },
+    zkStackNativeTokenVault: {
+      address: "0xbeD1EB542f9a5aA6419Ff3deb921A372681111f6",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -258,9 +262,9 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
-    zkStackBridge: {
-      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
@@ -401,9 +405,9 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS]: {
-    zkStackBridge: {
-      address: "0xfBEC23c5BB0E076F2ef4d0AaD7fe331aE5A01143",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
     // The native token for Lens is GHO, not ETH.
     nativeToken: {
@@ -529,6 +533,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
+    zkStackNativeTokenVault: {
+      address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
       abi: HUB_POOL_ABI,
@@ -565,9 +573,9 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
-    zkStackBridge: {
-      address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
