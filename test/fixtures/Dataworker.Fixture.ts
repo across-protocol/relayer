@@ -219,7 +219,8 @@ export async function setupDataworker(
       hubPoolClient,
     },
     spokePoolClients,
-    testChainIdList
+    testChainIdList,
+    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   const dataworkerClients: DataworkerClients = {
@@ -237,7 +238,6 @@ export async function setupDataworker(
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   // Give owner tokens to LP on HubPool with.
