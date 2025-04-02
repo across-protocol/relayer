@@ -53,7 +53,7 @@ contract zkSync_L1Bridge {
         uint256 chainId
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit BridgeBurn(chainId, keccak256(abi.encodePacked(l1Token)), l1Sender, l2Receiver, amount);
+        emit BridgeBurn(chainId, assetId(l1Token), l1Sender, l2Receiver, amount);
         return l2TxHash;
     }
 
@@ -68,18 +68,13 @@ contract zkSync_L1Bridge {
         return "";
     }
 
-    function assetId(address token) external view returns (bytes32) {
+    function assetId(address token) public view returns (bytes32) {
         return keccak256(abi.encodePacked(token));
     }
 }
 
 contract zkSync_L2Bridge {
-    event FinalizeDeposit(
-        address indexed l1Sender,
-        address indexed l2Receiver,
-        address indexed l2Token,
-        uint256 amount
-    );
+    event BridgeMint(uint256 indexed chainId, bytes32 indexed assetId, address receiver, uint256 amount);
 
     mapping(address => address) tokenMap;
 
@@ -87,8 +82,12 @@ contract zkSync_L2Bridge {
         tokenMap[_l1Token] = _l2Token;
     }
 
-    function finalizeDeposit(address _l1Sender, address _l2Receiver, address _l1Token, uint256 _amount) external {
+    function finalizeDeposit(uint256 _chainId, address _l2Receiver, address _l1Token, uint256 _amount) external {
         address l2Token = tokenMap[_l1Token];
-        emit FinalizeDeposit(_l1Sender, _l2Receiver, l2Token, _amount);
+        emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
+    }
+
+    function assetId(address token) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(token));
     }
 }
