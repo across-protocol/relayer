@@ -4,12 +4,11 @@
 pragma solidity ^0.8.0;
 
 contract zkSync_L1Bridge {
-    event BridgehubDepositInitiated(
+    event BridgeBurn(
         uint256 indexed chainId,
-        bytes32 indexed txn,
-        address indexed from,
-        address to,
-        address l1Token,
+        bytes32 indexed assetId,
+        address indexed sender,
+        address receiver,
         uint256 amount
     );
 
@@ -54,7 +53,7 @@ contract zkSync_L1Bridge {
         uint256 chainId
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit BridgehubDepositInitiated(chainId, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        emit BridgeBurn(chainId, keccak256(abi.encodePacked(l1Token)), l1Sender, l2Receiver, amount);
         return l2TxHash;
     }
 
@@ -67,6 +66,10 @@ contract zkSync_L1Bridge {
         );
         _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
         return "";
+    }
+
+    function assetId(address token) external view returns (bytes32) {
+        return keccak256(abi.encodePacked(token));
     }
 }
 

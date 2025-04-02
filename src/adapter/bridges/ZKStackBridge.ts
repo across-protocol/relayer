@@ -11,6 +11,7 @@ import {
   isContractDeployedToAddress,
   isDefined,
   bnZero,
+  ZERO_BYTES,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -145,17 +146,18 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
     let processedEvents;
     if (!bridgingCustomGasToken) {
-      const [rawEvents, assetId] = await Promise.all([
-        paginatedEventQuery(
-          this.sharedBridge,
-          this.sharedBridge.filters.BridgehubDepositInitiated(this.l2chainId, undefined, annotatedFromAddress),
-          eventConfig
-        ),
-        this.nativeTokenVault.assetId(l1Token),
-      ]);
+      const assetId = await this.nativeTokenVault.assetId(l1Token);
+      if (assetId === ZERO_BYTES) {
+        throw new Error(`Undefined assetId for L1 token ${l1Token}`);
+      }
+      const rawEvents = await paginatedEventQuery(
+        this.nativeTokenVault,
+        this.nativeTokenVault.filters.BridgeBurn(this.l2chainId, assetId, annotatedFromAddress),
+        eventConfig
+      );
       processedEvents = rawEvents
-        .filter((event) => assetId === event.args.assetId && compareAddressesSimple(event.args.to, toAddress))
-        .map((e) => processEvent(e, "amount", "to", "from"));
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
+        .map((e) => processEvent(e, "amount", "receiver", "sender"));
     } else {
       if (isL2Contract) {
         const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);

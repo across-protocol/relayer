@@ -53,6 +53,10 @@ class TestBaseChainAdapter extends BaseChainAdapter {
   public setSharedBridge(address: string, bridge: Contract) {
     this.bridges[address].sharedBridge = bridge;
   }
+
+  public setNativeTokenVault(address: string, bridge: Contract) {
+    this.bridges[address].nativeTokenVault = bridge;
+  }
 }
 
 class TestZkSyncWethBridge extends ZKStackWethBridge {
@@ -152,6 +156,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
     atomicDepositor = await (await getContractFactory("MockAtomicWethDepositor", depositor)).deploy();
     adapter.setL1Bridge(l1Token, l1Bridge);
     adapter.setSharedBridge(l1Token, l1Bridge);
+    adapter.setNativeTokenVault(l1Token, l1Bridge);
     adapter.setL2Bridge(l1Token, l2Bridge);
     adapter.setL2Eth(l1Weth, l2Eth);
     adapter.setL2Weth(l1Weth, l2Weth);
@@ -536,10 +541,13 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, l1Token: _l1Token } = deposit[0];
+        const { from, to, assetId: _assetId } = deposit[0];
         expect(from).to.equal(monitoredEoa);
         expect(to).to.equal(recipient);
-        expect(_l1Token).to.equal(l1Token);
+
+        // The event no longer has l1Token as a field.
+        const assetId = await l1Bridge.assetId(l1Token);
+        expect(_assetId).to.equal(assetId);
       }
     });
 
@@ -730,10 +738,12 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, l1Token: _l1Token } = deposit[0];
+        const { from, to, assetId: _assetId } = deposit[0];
         expect(from).to.equal(sender);
         expect(to).to.equal(recipient);
-        expect(_l1Token).to.equal(l1Token);
+
+        const assetId = await l1Bridge.assetId(l1Token);
+        expect(_assetId).to.equal(assetId);
       }
     });
 
