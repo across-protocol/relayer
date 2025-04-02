@@ -41,7 +41,6 @@ export async function createDataworker(
     clients.configStoreClient.getChainIdIndicesForBlock(),
     config.maxRelayerRepaymentLeafSizeOverride,
     config.maxPoolRebalanceLeafSizeOverride,
-    config.blockRangeEndBlockBuffer,
     config.spokeRootsLookbackCount,
     config.bufferToPropose,
     config.forcePropose,
