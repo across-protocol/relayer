@@ -237,7 +237,7 @@ export async function setupDataworker(
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
-    maxL1TokensPerPoolRebalanceLeaf,
+    maxL1TokensPerPoolRebalanceLeaf
   );
 
   // Give owner tokens to LP on HubPool with.
