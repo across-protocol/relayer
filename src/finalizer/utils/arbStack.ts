@@ -80,7 +80,7 @@ export async function arbStackFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  addressesToFinalize: string[]
+  recipientAddresses: string[]
 ): Promise<FinalizerPromise> {
   LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
@@ -133,7 +133,7 @@ export async function arbStackFinalizer(
     gatewayRouter.filters.TransferRouted(
       null, // l1Token
       null, // from
-      addressesToFinalize // to
+      recipientAddresses // to
     ),
     {
       ...spokePoolClient.eventSearchConfig,
@@ -154,7 +154,7 @@ export async function arbStackFinalizer(
         gatewayContract.filters.WithdrawalInitiated(
           null, // l1Token non-indexed
           null, // from
-          addressesToFinalize // to
+          recipientAddresses // to
         ),
         {
           ...spokePoolClient.eventSearchConfig,
@@ -167,7 +167,7 @@ export async function arbStackFinalizer(
     arbSys,
     arbSys.filters.L2ToL1Tx(
       null, // caller, not-indexed so can't filter
-      addressesToFinalize // destination
+      recipientAddresses // destination
     ),
     {
       ...spokePoolClient.eventSearchConfig,
