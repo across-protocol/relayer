@@ -352,9 +352,9 @@ export class BaseChainAdapter {
           });
           const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
           // The total amount outstanding is the outstanding initiated amount subtracted by the leftover finalized amount.
-          const totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
+          const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
           assign(outstandingTransfers, [monitoredAddress, l1Token, l2Token], {
-            totalAmount,
+            totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
           });
         });
