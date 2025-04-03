@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.46.tgz#9f567eecd47eaa5035460193c49307f413623167"
   integrity sha512-EHwFVLlSfwIOOQsqnL53UUPtjw9GUN1Y7PDEXUDttPxuqcc/IRDSp7xBnYgn7OWhrEg3404SzBKmc2A1l3Sqhw==
 
-"@across-protocol/constants@^3.1.49":
-  version "3.1.49"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.49.tgz#589c388084946b425a43ebdd1428c6a6b89b452a"
-  integrity sha512-PIN2+jiiWvBl9Ycrs/p1my8Ap2GfYWppgAIFokgyf1AqIaSKLW8RIXOk2vQ9ZrUZguV3gQEBIrkhraCRCfPdTA==
+"@across-protocol/constants@^3.1.51":
+  version "3.1.51"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.51.tgz#992beaba4c7540f62bfcde180403494ea5ac989a"
+  integrity sha512-XuXZXqbTxt/r+WQKwyMKnlg7z63SdN7AehdD1uWzF+FCM6u9XAECB8RlK1+wBj1RAJuuZGbrNMyfS9szq+X11Q==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -60,13 +60,13 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.40":
-  version "4.1.40"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.40.tgz#4097a3c528bc730dd4d62542266423042ec508b1"
-  integrity sha512-tx7kbJqxMCTAK80eluBGmtIsAQ7dSjKz7LNfoCLYOGEoxC8f8DcvW+AzZ1rueciTZIJCzWIW9mNDkjqgwd97hw==
+"@across-protocol/sdk@4.1.42":
+  version "4.1.42"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.42.tgz#d015ddb99a001b0f6c86364e3f5db64519b29d72"
+  integrity sha512-EgEQBK4qLfHYuNY8AmORVXULtgj/W6SKoeel9ZZ2JrqyTxA07VPfxKuNwD6oTteKgXFx5BLK+i9YkXD9o8Ws5w==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.49"
+    "@across-protocol/constants" "^3.1.51"
     "@across-protocol/contracts" "^4.0.5"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
