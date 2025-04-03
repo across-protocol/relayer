@@ -4,12 +4,11 @@
 pragma solidity ^0.8.0;
 
 contract zkSync_L1Bridge {
-    event BridgehubDepositInitiated(
+    event BridgeBurn(
         uint256 indexed chainId,
-        bytes32 indexed txn,
-        address indexed from,
-        address to,
-        address l1Token,
+        bytes32 indexed assetId,
+        address indexed sender,
+        address receiver,
         uint256 amount
     );
 
@@ -54,7 +53,7 @@ contract zkSync_L1Bridge {
         uint256 chainId
     ) internal returns (bytes32 l2TxHash) {
         l2TxHash = "";
-        emit BridgehubDepositInitiated(chainId, l2TxHash, l1Sender, l2Receiver, l1Token, amount);
+        emit BridgeBurn(chainId, assetId(l1Token), l1Sender, l2Receiver, amount);
         return l2TxHash;
     }
 
@@ -68,15 +67,14 @@ contract zkSync_L1Bridge {
         _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
         return "";
     }
+
+    function assetId(address token) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(token));
+    }
 }
 
 contract zkSync_L2Bridge {
-    event FinalizeDeposit(
-        address indexed l1Sender,
-        address indexed l2Receiver,
-        address indexed l2Token,
-        uint256 amount
-    );
+    event BridgeMint(uint256 indexed chainId, bytes32 indexed assetId, address receiver, uint256 amount);
 
     mapping(address => address) tokenMap;
 
@@ -84,8 +82,12 @@ contract zkSync_L2Bridge {
         tokenMap[_l1Token] = _l2Token;
     }
 
-    function finalizeDeposit(address _l1Sender, address _l2Receiver, address _l1Token, uint256 _amount) external {
+    function finalizeDeposit(uint256 _chainId, address _l2Receiver, address _l1Token, uint256 _amount) external {
         address l2Token = tokenMap[_l1Token];
-        emit FinalizeDeposit(_l1Sender, _l2Receiver, l2Token, _amount);
+        emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
+    }
+
+    function assetId(address token) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(token));
     }
 }
