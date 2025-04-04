@@ -11,7 +11,6 @@ import {
   RelayerUnfilledDeposit,
   blockExplorerLink,
   createFormatFunction,
-  fillStatusArray,
   formatFeePct,
   getCurrentTime,
   getNetworkName,

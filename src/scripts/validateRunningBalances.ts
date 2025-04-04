@@ -319,7 +319,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
                 const fillStatus = await spokePoolClients[leaf.chainId].relayFillStatus(
                   slowFillForChain.relayData,
-                  bundleEndBlockForChain.toNumber(),
+                  bundleEndBlockForChain.toNumber()
                 );
 
                 // For v3 slow fills if there is a matching fast fill, then the fill is completed.
