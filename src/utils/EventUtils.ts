@@ -94,7 +94,7 @@ export class EventManager {
   }
 
   /**
-   * For a given Log, mark it has having been been processed.
+   * For a given Log, mark it as having been processed.
    * @param event A Log instance to mark processed.
    * @returns void
    */

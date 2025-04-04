@@ -581,7 +581,7 @@ export class Relayer {
   }
 
   /**
-   * For all origin chains chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
+   * For all origin chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
    * filled by this relayer.
    * @returns A mapping of chain ID to an array of origin chain fill limits in USD, ordered by origin chain block range.
    */

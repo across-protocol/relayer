@@ -605,7 +605,7 @@ async function finalizeOptimismMessage(
     if (requestId === undefined || requestId === 0) {
       throw new Error(`Found invalid requestId ${requestId} for Blast withdrawal ${message.event.transactionHash}`);
     }
-    // @dev The hintId parameter plays a role in our insurance mechanism that kicks in in the rare event that
+    // @dev The hintId parameter plays a role in our insurance mechanism that kicks in the rare event that
     // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
     // correct hint so we naively set the starting point to 1, the first index, and set the latest to the last
     // queried value. The request ID for an already proven withdrawal should always be found by the following function.
