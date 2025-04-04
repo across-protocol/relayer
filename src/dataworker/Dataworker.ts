@@ -446,7 +446,7 @@ export class Dataworker {
     // 4. Propose roots to HubPool contract.
     this.logger.debug({
       at: "Dataworker#propose",
-      message: "Enqueing new root bundle proposal txn",
+      message: "Enqueuing new root bundle proposal txn",
       blockRangesForProposal,
       poolRebalanceLeavesCount: rootBundleData.poolRebalanceLeaves.length,
       poolRebalanceRoot: rootBundleData.poolRebalanceTree.getHexRoot(),
