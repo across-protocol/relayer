@@ -18,6 +18,7 @@ import {
   getProvider,
   getSigner,
   isDefined,
+  populateV3Relay,
   resolveTokenSymbols,
   toBN,
   toBytes32,
@@ -310,7 +311,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
-    : await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
+    : await populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
   console.log(`to: ${fill.to}`);

@@ -9,6 +9,8 @@ export const addressAdapters = sdk.addressAggregator.adapters;
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
+export const { fillStatusArray, populateV3Relay, relayFillStatus } = sdk.arch.evm;
+
 export const {
   assign,
   groupObjectCountsByProp,
@@ -28,7 +30,6 @@ export const {
   chainIsMatic,
   chainIsLinea,
   dedupArray,
-  fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
   formatEther,
