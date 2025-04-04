@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { CHAIN_IDs, PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -27,6 +27,9 @@ export async function constructDataworkerClients(
   baseSigner: Signer
 ): Promise<DataworkerClients> {
   const signerAddr = await baseSigner.getAddress();
+
+  // Force chunk size 1 on Polygon to avoid stuck executions.
+  config.multiCallChunkSize[CHAIN_IDs.POLYGON] = 1;
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
