@@ -11,7 +11,6 @@ import {
   MerkleTree,
   sortEventsAscending,
   isDefined,
-  relayFillStatus,
   toBNWei,
   ZERO_ADDRESS,
   chainIsMatic,
