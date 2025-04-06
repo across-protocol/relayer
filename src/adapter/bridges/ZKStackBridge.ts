@@ -157,7 +157,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       );
       processedEvents = rawEvents
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
-        .map((e) => processEvent(e, "amount", "receiver", "sender"));
+        .map((e) => processEvent(e, "amount"));
     } else {
       if (isL2Contract) {
         const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);
@@ -167,7 +167,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           )
           .map((e) => {
             return {
-              ...processEvent(e, "amount", "to", "to"),
+              ...processEvent(e, "amount"),
               from: this.hubPool.address,
             };
           });
@@ -179,7 +179,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         );
         processedEvents = rawEvents.map((e) => {
           return {
-            ...processEvent(e, "amount", "from", "from"),
+            ...processEvent(e, "amount"),
             to: toAddress, // Overwrite the from field with toAddress since if we hit this branch we know an EOA initiated the bridge.
           };
         });
@@ -222,7 +222,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
         .map((event) => {
           return {
-            ...processEvent(event, "amount", "receiver", "receiver"),
+            ...processEvent(event, "amount"),
             from: isSpokePool ? this.hubPool.address : fromAddress,
           };
         });
@@ -243,7 +243,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         ]);
         events = matchL2EthDepositAndWrapEvents(_events, wrapEvents);
       }
-      processedEvents = events.map((e) => processEvent(e, "_amount", "_to", "from"));
+      processedEvents = events.map((e) => processEvent(e, "_amount"));
     }
     return {
       [l2Token]: processedEvents,

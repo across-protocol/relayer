@@ -74,7 +74,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     // those with 0 value.
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
-        .map((event) => processEvent(event, "_value", "_to", "_from"))
+        .map((event) => processEvent(event, "_value"))
         .filter(({ amount }) => amount > bnZero),
     };
   }

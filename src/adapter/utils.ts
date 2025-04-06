@@ -54,16 +54,10 @@ export async function approveTokens(
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
 
-export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
-  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-    amount: BigNumber;
-    to: string;
-    from: string;
-  };
+export function processEvent(event: Log, amountField: string): BridgeEvent {
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent;
   return {
     amount: eventSpread[amountField],
-    to: eventSpread[toField],
-    from: eventSpread[fromField],
     ...eventSpread,
   };
 }
