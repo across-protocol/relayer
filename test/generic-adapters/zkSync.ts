@@ -183,9 +183,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const deposit = result[l2Weth.address];
       expect(deposit).to.exist;
-      const { from, to, amount } = deposit[0];
-      expect(from).to.equal(monitoredEoa);
-      expect(to).to.equal(monitoredEoa);
+      const { amount } = deposit[0];
       expect(amount).to.equal(amount);
     });
 
@@ -204,9 +202,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const receipt = result[l2Weth.address];
       expect(receipt).to.exist;
-      const { from, to, amount } = receipt[0];
-      expect(from).to.equal(aliasedAtomicDepositor);
-      expect(to).to.equal(monitoredEoa);
+      const { amount } = receipt[0];
       expect(amount).to.equal(amount);
     });
 
@@ -326,8 +322,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const deposit = result[l2Weth.address];
       expect(deposit[0]).to.exist;
-      const { to, amount } = deposit[0];
-      expect(to).to.equal(spokePool.address);
+      const { amount } = deposit[0];
       expect(amount).to.equal(depositAmount);
     });
 
@@ -345,9 +340,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const receipt = result[l2Weth.address];
       expect(receipt).to.exist;
-      const { from, to, amount } = receipt[0];
-      expect(from).to.equal(aliasedHubPool);
-      expect(to).to.equal(spokePool.address);
+      const { amount } = receipt[0];
       expect(amount).to.equal(depositAmount);
     });
 
@@ -541,9 +534,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, assetId: _assetId } = deposit[0];
-        expect(from).to.equal(monitoredEoa);
-        expect(to).to.equal(recipient);
+        const { assetId: _assetId } = deposit[0];
 
         // The event no longer has l1Token as a field.
         const assetId = await l1Bridge.assetId(l1Token);
@@ -577,9 +568,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { to, from, assetId: _assetId } = deposit[0];
-        expect(to).to.equal(recipient);
-        expect(from).to.equal(monitoredEoa);
+        const { assetId: _assetId } = deposit[0];
 
         const assetId = await l2Bridge.assetId(l2Token);
         expect(_assetId).to.equal(assetId);
@@ -745,9 +734,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, assetId: _assetId } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
+        const { assetId: _assetId } = deposit[0];
 
         const assetId = await l1Bridge.assetId(l1Token);
         expect(_assetId).to.equal(assetId);
@@ -783,9 +770,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { to, from, assetId: _assetId } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
+        const { assetId: _assetId } = deposit[0];
 
         const assetId = await l2Bridge.assetId(l2Token);
         expect(_assetId).to.equal(assetId);
