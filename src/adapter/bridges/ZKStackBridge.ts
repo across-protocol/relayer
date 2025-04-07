@@ -180,7 +180,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         processedEvents = rawEvents.map((e) => {
           return {
             ...processEvent(e, "amount"),
-            to: toAddress, // Overwrite the from field with toAddress since if we hit this branch we know an EOA initiated the bridge.
           };
         });
       }
