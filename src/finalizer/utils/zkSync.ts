@@ -202,7 +202,7 @@ async function prepareFinalizations(
 }
 
 function getSharedBridge(l1ChainId: number): Contract {
-  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkSyncSharedBridge;
+  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkStackSharedBridge;
   if (!contract) {
     throw new Error(`zkStack shared bridge contract data not found for chain ${l1ChainId}`);
   }

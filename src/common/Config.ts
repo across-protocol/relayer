@@ -134,6 +134,10 @@ export class CommonConfig {
     }
   }
 
+  /**
+   * Perform runtime dynamic configuration update. Blocking tasks can be performed here.
+   * @param logger Logger instance.
+   */
   async update(logger: winston.Logger): Promise<void> {
     const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";

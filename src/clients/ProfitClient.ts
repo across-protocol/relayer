@@ -546,8 +546,20 @@ export class ProfitClient {
     const tokens: { [_symbol: string]: string } = Object.fromEntries(
       this.hubPoolClient
         .getL1Tokens()
-        .filter(({ symbol }) => isDefined(TOKEN_SYMBOLS_MAP[symbol]))
-        .map(({ symbol }) => {
+        .map(({ symbol: _symbol }) => {
+          // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
+          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
+          if (!isDefined(symbol)) {
+            // If the symbol is undefined, then there is missing configuration in the constants repository.
+            // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
+            // If we are on testnet, return undefined. This is necessary since there are multiple "mock" tokens enabled on L1 intentionally without
+            // entries in `TOKEN_SYMBOLS_MAP`.
+            if (this.isTestnet) {
+              return [undefined, undefined];
+            }
+            throw new Error(`${_symbol} has no definition in TOKEN_SYMBOLS_MAP or TOKEN_EQUIVALENCE_REMAPPING`);
+          }
+
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
           let address = addresses[CHAIN_IDs.MAINNET];
           // For testnet only, if we cannot resolve the token address, revert to ETH. On mainnet, if `address` is undefined,
@@ -557,6 +569,7 @@ export class ProfitClient {
           }
           return [symbol, address];
         })
+        .filter(([symbol, address]) => isDefined(address) && isDefined(symbol))
     );
 
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
@@ -622,11 +635,13 @@ export class ProfitClient {
       [CHAIN_IDs.ALEPH_ZERO]: "USDT", // USDC is not yet supported on AlephZero, so revert to USDT. @todo: Update.
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
+      [CHAIN_IDs.LENS]: "WETH", // USDC not yet supported.
       [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
       [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
+      [CHAIN_IDs.TATARA]: "WETH",
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, relayer] =

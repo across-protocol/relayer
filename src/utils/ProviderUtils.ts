@@ -59,6 +59,22 @@ export function getChainQuorum(chainId: number): number {
 }
 
 /**
+ * Permit env-based HTTP headers to be specified.
+ * RPC_PROVIDER_<provider>_<chainId>_HEADERS=auth
+ * RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
+ */
+export function getProviderHeaders(provider: string, chainId: number): { [header: string]: string } | undefined {
+  let headers: { [k: string]: string };
+  const _headers = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADERS`];
+  _headers?.split(",").forEach((header) => {
+    headers ??= {};
+    headers[header] = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
+  });
+
+  return headers;
+}
+
+/**
  * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
  * "provider cache" if this function was called once before with the same chain ID.
@@ -167,18 +183,21 @@ export async function getProvider(
 
   // See ethers ConnectionInfo for field descriptions.
   // https://docs.ethers.org/v5/api/utils/web/#ConnectionInfo
-  const constructorArgumentLists = getNodeUrlList(chainId, nodeQuorumThreshold).map(
-    (nodeUrl): [ethers.utils.ConnectionInfo, number] => [
-      {
-        url: nodeUrl,
+
+  const constructorArgumentLists = Object.entries(getNodeUrlList(chainId, nodeQuorumThreshold)).map(
+    ([provider, url]): [ethers.utils.ConnectionInfo, number] => {
+      const config = {
+        url,
+        headers: getProviderHeaders(provider, chainId),
         timeout,
         allowGzip: true,
         throttleSlotInterval: 1, // Effectively disables ethers' internal backoff algorithm.
         throttleCallback: rpcRateLimited({ nodeMaxConcurrency, logger }),
         errorPassThrough: true,
-      },
-      chainId,
-    ]
+      };
+
+      return [config, chainId];
+    }
   );
 
   const provider = new RetryProvider(
@@ -237,11 +256,15 @@ export function createViemCustomTransportFromEthersProvider(providerChainId: num
 export function getWSProviders(chainId: number, quorum?: number): ethers.providers.WebSocketProvider[] {
   quorum ??= getChainQuorum(chainId);
   const urls = getNodeUrlList(chainId, quorum, "wss");
-  return urls.map((url) => new ethers.providers.WebSocketProvider(url));
+  return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
 }
 
-export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProviders.RPCTransport = "https"): string[] {
-  const resolveUrls = (): string[] => {
+export function getNodeUrlList(
+  chainId: number,
+  quorum = 1,
+  transport: sdkProviders.RPCTransport = "https"
+): { [provider: string]: string } {
+  const resolveUrls = (): { [provider: string]: string } => {
     const [envPrefix, providerPrefix] =
       transport === "https" ? ["RPC_PROVIDERS", "RPC_PROVIDER"] : ["RPC_WS_PROVIDERS", "RPC_WS_PROVIDER"];
 
@@ -250,23 +273,25 @@ export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProvid
       throw new Error(`No RPC providers defined for chainId ${chainId}`);
     }
 
-    const nodeUrls = providers.split(",").map((provider) => {
-      // If no specific RPC endpoint is identified for this provider, try to
-      // to infer the endpoint name based on predefined chain definitions.
-      const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
-      const envVar = `${providerPrefix}_${provider}_${chainId}`;
-      let url = process.env[envVar];
-      if (!isDefined(url) && isDefined(apiKey) && sdkProviders.isSupportedProvider(provider)) {
-        url = sdkProviders.getURL(provider, chainId, apiKey, transport);
-      }
+    const nodeUrls = Object.fromEntries(
+      providers.split(",").map((provider) => {
+        // If no specific RPC endpoint is identified for this provider, try to
+        // to infer the endpoint name based on predefined chain definitions.
+        const apiKey = process.env[`RPC_PROVIDER_KEY_${provider}`];
+        const envVar = `${providerPrefix}_${provider}_${chainId}`;
+        let url = process.env[envVar];
+        if (!isDefined(url) && isDefined(apiKey) && sdkProviders.isSupportedProvider(provider)) {
+          url = sdkProviders.getURL(provider, chainId, apiKey, transport);
+        }
 
-      if (url === undefined) {
-        throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
-      }
-      return url;
-    });
+        if (url === undefined) {
+          throw new Error(`Missing RPC provider URL for chain ${chainId} (${envVar})`);
+        }
+        return [provider, url];
+      })
+    );
 
-    if (nodeUrls.length === 0) {
+    if (Object.keys(nodeUrls).length === 0) {
       throw new Error(`Missing configuration for chainId ${chainId} providers (${providers})`);
     }
 
@@ -274,7 +299,7 @@ export function getNodeUrlList(chainId: number, quorum = 1, transport: sdkProvid
   };
 
   const nodeUrls = resolveUrls();
-  if (nodeUrls.length < quorum) {
+  if (Object.keys(nodeUrls).length < quorum) {
     throw new Error(`Insufficient RPC providers for chainId ${chainId} to meet quorum (minimum ${quorum} required)`);
   }
 

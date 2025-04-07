@@ -4,7 +4,7 @@ import { SpokePoolClient } from "../clients";
 import {
   ARWEAVE_TAG_BYTE_LIMIT,
   CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS,
-  spokesThatHoldEthAndWeth,
+  spokesThatHoldNativeTokens,
 } from "../common/Constants";
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
@@ -26,8 +26,9 @@ import {
   isDefined,
   MerkleTree,
   Profiler,
-  TOKEN_SYMBOLS_MAP,
   winston,
+  getNativeTokenSymbol,
+  getWrappedNativeTokenAddress,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {
@@ -354,13 +355,14 @@ export function _getRefundLeaves(
  * @param chainId chain to check for WETH and ETH addresses
  * @returns WETH and ETH addresses.
  */
-function getWethAndEth(chainId: number): string[] {
+function getNativeTokens(chainId: number): string[] {
+  const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
-  const wethAndEth = [TOKEN_SYMBOLS_MAP.WETH.addresses[chainId], CONTRACT_ADDRESSES[chainId].eth.address];
-  if (wethAndEth.some((tokenAddress) => !isDefined(tokenAddress))) {
-    throw new Error(`WETH or ETH address not defined for chain ${chainId}`);
+  const nativeTokens = [getWrappedNativeTokenAddress(chainId), CONTRACT_ADDRESSES[chainId].nativeToken.address];
+  if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {
+    throw new Error(`${nativeTokenSymbol} address not defined for chain ${chainId}`);
   }
-  return wethAndEth;
+  return nativeTokens;
 }
 /**
  * @notice Some SpokePools will contain balances of ETH and WETH, while others will only contain balances of WETH,
@@ -375,12 +377,12 @@ export function l2TokensToCountTowardsSpokePoolLeafExecutionCapital(
   l2TokenAddress: string,
   l2ChainId: number
 ): string[] {
-  if (!spokesThatHoldEthAndWeth.includes(l2ChainId)) {
+  if (!spokesThatHoldNativeTokens.includes(l2ChainId)) {
     return [l2TokenAddress];
   }
   // If we get to here, ETH and WETH addresses should be defined, or we'll throw an error.
-  const ethAndWeth = getWethAndEth(l2ChainId);
-  return ethAndWeth.includes(l2TokenAddress) ? ethAndWeth : [l2TokenAddress];
+  const nativeTokens = getNativeTokens(l2ChainId);
+  return nativeTokens.includes(l2TokenAddress) ? nativeTokens : [l2TokenAddress];
 }
 
 /**

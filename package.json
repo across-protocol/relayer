@@ -10,9 +10,9 @@
     "node": ">=20.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.38",
-    "@across-protocol/contracts": "^4.0.2",
-    "@across-protocol/sdk": "^4.1.27",
+    "@across-protocol/constants": "^3.1.51",
+    "@across-protocol/contracts": "^4.0.5",
+    "@across-protocol/sdk": "4.1.43",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
@@ -39,7 +39,7 @@
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
-    "viem": "^2.23.7",
+    "viem": "^2.25.0",
     "winston": "^3.10.0",
     "zksync-ethers": "^5.7.2"
   },

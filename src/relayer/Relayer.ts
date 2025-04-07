@@ -31,6 +31,7 @@ import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+const RELAYER_DEPOSIT_RATE_LIMIT = 25;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
@@ -915,8 +916,12 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       const deposits = _deposits.map(({ deposit }) => deposit);
-      const fillStatus = await sdkUtils.fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+      const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
 
+      // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
+      // an activity surge on any single chain from significantly degrading overall performance. When running in
+      // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
+      const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus, ...deposit }) => {
@@ -925,7 +930,7 @@ export class Relayer {
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
         })
-        .slice(0, 25); // Only consider a subset of the unfilled deposits on each loop.
+        .slice(0, depositLimit);
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(

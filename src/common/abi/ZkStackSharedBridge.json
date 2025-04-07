@@ -16,9 +16,9 @@
       },
       {
         "indexed": false,
-        "internalType": "address",
-        "name": "l1Token",
-        "type": "address"
+        "internalType": "bytes32",
+        "name": "assetId",
+        "type": "bytes32"
       },
       {
         "indexed": false,
@@ -78,28 +78,21 @@
       },
       {
         "indexed": false,
-        "internalType": "address",
-        "name": "to",
-        "type": "address"
+        "internalType": "bytes32",
+        "name": "assetId",
+        "type": "bytes32"
       },
       {
         "indexed": false,
-        "internalType": "address",
-        "name": "l1Token",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
+        "internalType": "bytes",
+        "name": "bridgeMintCalldata",
+        "type": "bytes"
       }
     ],
     "name": "BridgehubDepositInitiated",
     "type": "event"
   },
   {
-    "anonymous": false,
     "inputs": [
       {
         "internalType": "uint256",

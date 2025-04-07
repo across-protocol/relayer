@@ -13,6 +13,8 @@ export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}
 export class SvmAddress extends sdk.utils.SvmAddress {}
 
+export const { fillStatusArray, populateV3Relay, relayFillStatus } = sdk.arch.evm;
+
 export const {
   assign,
   groupObjectCountsByProp,
@@ -32,7 +34,6 @@ export const {
   chainIsMatic,
   chainIsLinea,
   dedupArray,
-  fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
   formatEther,

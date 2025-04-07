@@ -88,6 +88,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
+  [CHAIN_IDs.LENS]: {
+    finalizeOnL1: [zkSyncFinalizer],
+    finalizeOnL2: [],
+  },
   [CHAIN_IDs.LINEA]: {
     finalizeOnL1: [lineaL2ToL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer],

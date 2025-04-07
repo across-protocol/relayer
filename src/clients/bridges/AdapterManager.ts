@@ -1,6 +1,6 @@
 import { utils } from "@across-protocol/sdk";
 import {
-  spokesThatHoldEthAndWeth,
+  spokesThatHoldNativeTokens,
   SUPPORTED_TOKENS,
   CUSTOM_BRIDGE,
   CANONICAL_BRIDGE,
@@ -20,6 +20,7 @@ import {
   Profiler,
   EvmAddress,
   toAddressType,
+  TOKEN_EQUIVALENCE_REMAPPING,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -33,7 +34,7 @@ export class AdapterManager {
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
-  private chainsToWrapEtherOn = [...spokesThatHoldEthAndWeth, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
+  private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
 
   constructor(
     readonly logger: winston.Logger,
@@ -131,9 +132,13 @@ export class AdapterManager {
   getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
-    const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
-      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(this.hubPoolClient.chainId, token).symbol)
-    );
+    const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
+      const tokenSymbol = this.hubPoolClient.getTokenInfo(this.hubPoolClient.chainId, token).symbol;
+      return (
+        adapter.supportedTokens.includes(tokenSymbol) ||
+        adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
+      );
+    });
     this.logger.debug({
       at: "AdapterManager",
       message: `Getting outstandingCrossChainTransfers for ${chainId}`,
@@ -203,13 +208,13 @@ export class AdapterManager {
     );
   }
 
-  // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
-  // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
-  // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2
+  // Check how many native tokens are on the target chain and if the number of tokens is above the wrap threshold, execute a wrap. Note that this only
+  // needs to be done on chains where rebalancing the native token from L1 to L2 results in the relayer receiving the unwrapped native token
+  // (not the ERC20), or if the relayer expects to be sent the native token perhaps as a gas refund from an original L1 to L2
   // deposit. This currently happens on Arbitrum, where the relayer address is set as the Arbitrum_Adapter's
   // L2 refund recipient, and on ZkSync, because the relayer is set as the refund recipient when rebalancing
   // inventory from L1 to ZkSync via the AtomicDepositor.
-  async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
+  async wrapNativeTokenIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
@@ -220,7 +225,7 @@ export class AdapterManager {
           wrapThreshold.gte(wrapTarget),
           `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
         );
-        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
+        await this.adapters[chainId].wrapNativeTokenIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
       }
     );
   }

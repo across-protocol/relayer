@@ -97,6 +97,8 @@ type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 export class Dataworker {
   rootCache: PoolRebalanceRootCache = {};
 
+  blockRangeEndBlockBuffer: { [chainId: number]: number };
+
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
@@ -105,16 +107,16 @@ export class Dataworker {
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number | undefined,
     readonly maxL1TokenCountOverride: number | undefined,
-    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
     readonly forceProposal = false,
     readonly forceBundleRange?: [number, number][]
   ) {
+    this.blockRangeEndBlockBuffer = clients.bundleDataClient.blockRangeEndBlockBuffer;
     if (
       maxRefundCountOverride !== undefined ||
       maxL1TokenCountOverride !== undefined ||
-      Object.keys(blockRangeEndBlockBuffer).length > 0
+      Object.keys(this.blockRangeEndBlockBuffer).length > 0
     ) {
       this.logger.debug({
         at: "Dataworker#Constructor",
@@ -1218,12 +1220,7 @@ export class Dataworker {
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
-          const fillStatus = await sdkUtils.relayFillStatus(
-            client.spokePool,
-            slowFill.relayData,
-            "latest",
-            destinationChainId
-          );
+          const fillStatus = await client.relayFillStatus(slowFill.relayData, "latest");
           if (fillStatus === FillStatus.Filled) {
             this.logger.debug({
               at: "Dataworker#executeSlowRelayLeaves",
