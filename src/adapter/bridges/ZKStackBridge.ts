@@ -223,7 +223,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         .map((event) => {
           return {
             ...processEvent(event, "amount"),
-            from: isSpokePool ? this.hubPool.address : fromAddress,
           };
         });
     } else {
