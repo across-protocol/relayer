@@ -119,7 +119,6 @@ export class ZKStackWethBridge extends ZKStackBridge {
         .map((e) => {
           return {
             ...processEvent(e, "amount"),
-            from: this.hubPool.address,
           };
         });
     } else {
