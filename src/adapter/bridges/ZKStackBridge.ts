@@ -168,7 +168,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           .map((e) => {
             return {
               ...processEvent(e, "amount"),
-              from: this.hubPool.address,
             };
           });
       } else {
