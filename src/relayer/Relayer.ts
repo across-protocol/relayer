@@ -916,7 +916,7 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       const deposits = _deposits.map(({ deposit }) => deposit);
-      const fillStatus = await sdkUtils.fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+      const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
 
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
       // an activity surge on any single chain from significantly degrading overall performance. When running in
