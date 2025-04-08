@@ -59,9 +59,9 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     this.enableAllL2Tokens = enableAllL2Tokens;
   }
 
-  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number): boolean {
+  l2TokenHasPoolRebalanceRoute(l1Token: string, destinationChainId: number): boolean {
     if (this.enableAllL2Tokens === undefined) {
-      return super.l2TokenEnabledForL1Token(l1Token, destinationChainId);
+      return super.l2TokenHasPoolRebalanceRoute(l1Token, destinationChainId);
     }
     return this.enableAllL2Tokens;
   }
