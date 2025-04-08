@@ -240,33 +240,31 @@ export function _buildRelayerRefundRoot(
       // If the token cannot be mapped to any PoolRebalanceRoute, then the amount to return must be 0 since there
       // is no way to send the token back to the HubPool.
       if (!clients.hubPoolClient.l2TokenHasPoolRebalanceRoute(l2TokenAddress, repaymentChainId)) {
-        relayerRefundLeaves.push(..._getRefundLeaves(
-          refunds,
-          bnZero,
-          repaymentChainId,
-          l2TokenAddress,
-          maxRefundCount
-        ));
+        relayerRefundLeaves.push(
+          ..._getRefundLeaves(refunds, bnZero, repaymentChainId, l2TokenAddress, maxRefundCount)
+        );
       } else {
         const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
           l2TokenAddress,
           repaymentChainId,
           endBlockForMainnet
         );
-  
+
         const spokePoolTargetBalance = clients.configStoreClient.getSpokeTargetBalancesForBlock(
           l1TokenCounterpart,
           repaymentChainId,
           endBlockForMainnet
         );
-  
+
         // The `amountToReturn` for a { repaymentChainId, L2TokenAddress} should be set to max(-netSendAmount, 0).
         const amountToReturn = getAmountToReturnForRelayerRefundLeaf(
           spokePoolTargetBalance,
           runningBalances[repaymentChainId][l1TokenCounterpart]
         );
 
-        relayerRefundLeaves.push(..._getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount));
+        relayerRefundLeaves.push(
+          ..._getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount)
+        );
       }
     });
   });
