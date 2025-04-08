@@ -60,10 +60,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.42":
-  version "4.1.42"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.42.tgz#d015ddb99a001b0f6c86364e3f5db64519b29d72"
-  integrity sha512-EgEQBK4qLfHYuNY8AmORVXULtgj/W6SKoeel9ZZ2JrqyTxA07VPfxKuNwD6oTteKgXFx5BLK+i9YkXD9o8Ws5w==
+"@across-protocol/sdk@4.1.43":
+  version "4.1.43"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.43.tgz#5bc4ac88e21f334ef5888dbb35ea1eab7614a4a6"
+  integrity sha512-atNt76esThxrh0VetjQQfQvesbp/9W/qtrmuPgciFDGCLON8A0KMHus60UUnMJTDEuraWWjhXBO1BrUc6ajwfA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.51"
@@ -12658,10 +12658,10 @@ ox@0.1.2:
     abitype "^1.0.6"
     eventemitter3 "5.0.1"
 
-ox@0.6.7:
-  version "0.6.7"
-  resolved "https://registry.yarnpkg.com/ox/-/ox-0.6.7.tgz#afd53f2ecef68b8526660e9d29dee6e6b599a832"
-  integrity sha512-17Gk/eFsFRAZ80p5eKqv89a57uXjd3NgIf1CaXojATPBuujVc/fQSVhBeAU9JCRB+k7J50WQAyWTxK19T9GgbA==
+ox@0.6.9:
+  version "0.6.9"
+  resolved "https://registry.yarnpkg.com/ox/-/ox-0.6.9.tgz#da1ee04fa10de30c8d04c15bfb80fe58b1f554bd"
+  integrity sha512-wi5ShvzE4eOcTwQVsIPdFr+8ycyX+5le/96iAJutaZAvCes1J0+RvpEPg5QDPDiaR0XQQAvZVl7AwqQcINuUug==
   dependencies:
     "@adraffy/ens-normalize" "^1.10.1"
     "@noble/curves" "^1.6.0"
@@ -16070,10 +16070,10 @@ viem@^2.21.15:
     webauthn-p256 "0.0.10"
     ws "8.18.0"
 
-viem@^2.23.7:
-  version "2.23.7"
-  resolved "https://registry.yarnpkg.com/viem/-/viem-2.23.7.tgz#6955206c36e9f4ba7fc65790167699178de697a7"
-  integrity sha512-Gbyz0uE3biWDPxECrEyzILWPsnIgDREgfRMuLSWHSSnM6ktefSC/lqQNImnxESdDEixa8/6EWXjmf2H6L9VV0A==
+viem@^2.26.1:
+  version "2.26.1"
+  resolved "https://registry.yarnpkg.com/viem/-/viem-2.26.1.tgz#1e012187916fc32ef55e6d9c70dc8e9bd3200dcb"
+  integrity sha512-bGRLLTHlmk9OEF9lvtAIv6eqQe9vIVDOWowBI05GM3npIwDD7WeTryBE8QeJZXb0ZTpDU/4Gf4iAWKZApKC4KQ==
   dependencies:
     "@noble/curves" "1.8.1"
     "@noble/hashes" "1.7.1"
@@ -16081,8 +16081,8 @@ viem@^2.23.7:
     "@scure/bip39" "1.5.4"
     abitype "1.0.8"
     isows "1.0.6"
-    ox "0.6.7"
-    ws "8.18.0"
+    ox "0.6.9"
+    ws "8.18.1"
 
 walk-up-path@^1.0.0:
   version "1.0.0"
@@ -16826,6 +16826,11 @@ ws@8.18.0, ws@^8.5.0:
   version "8.18.0"
   resolved "https://registry.yarnpkg.com/ws/-/ws-8.18.0.tgz#0d7505a6eafe2b0e712d232b42279f53bc289bbc"
   integrity sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw==
+
+ws@8.18.1:
+  version "8.18.1"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-8.18.1.tgz#ea131d3784e1dfdff91adb0a4a116b127515e3cb"
+  integrity sha512-RKW2aJZMXeMxVpnZ6bck+RswznaxmzdULiBr6KY7XkTnW8uvt0iT9H5DkHUChXrc+uurzwa0rVI16n/Xzjdz1w==
 
 ws@^3.0.0:
   version "3.3.3"

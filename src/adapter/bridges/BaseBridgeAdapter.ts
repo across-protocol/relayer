@@ -18,8 +18,6 @@ export interface BridgeTransactionDetails {
 }
 
 export type BridgeEvent = SortableEvent & {
-  to: string;
-  from: string;
   amount: BigNumber;
 };
 
