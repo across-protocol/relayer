@@ -72,7 +72,8 @@ export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 // Make the redis client for a particular url essentially a singleton.
 const redisClients: { [url: string]: RedisClient } = {};
 
-export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
+export async function getRedis(logger?: winston.Logger, url?: string): Promise<RedisClient | undefined> {
+  if (!url) return undefined;
   if (!redisClients[url]) {
     let redisClient: _RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
