@@ -427,6 +427,12 @@ export class InventoryClient {
       return [deposit.fromLiteChain ? originChainId : destinationChainId];
     }
 
+    // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
+    // chains and force the relayer to ignore this deposit.
+    if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)) {
+      return [];
+    }
+    
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
     // for disparate output tokens (unless the output token is USDC.e and the input token is USDC),
     // so if one appears here then something is wrong. Throw hard and fast in that case.
@@ -438,12 +444,6 @@ export class InventoryClient {
         `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId.toString()}` +
           ` (${inputToken} != ${outputToken})`
       );
-    }
-
-    // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
-    // chains and force the relayer to ignore this deposit.
-    if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)) {
-      return [];
     }
 
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
