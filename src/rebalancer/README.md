@@ -81,8 +81,9 @@ For example, this bot should work well out of the box on a brand new chain that 
 ### Pros
 
 - There is no need to track "pending" deposits from a chain to the Hub.
-- Tracking balances instead of allocation percentages is simpler, and is not so sensitive to in-flight withdrawals that can skew the percentages temporarily
-- Code will be easier to maintain because it is decoupled and completely independent of the Relayer
+- Rebalancing will not be based on currently outstanding deposits (i.e. "shortfalls"), avoiding issues where we rebalance to fill a deposit, only for that deposit to get filled by a third-party filler.
+- Tracking balances instead of allocation percentages is simpler, and is not so sensitive to in-flight withdrawals that can skew the percentages temporarily.
+- Code will be easier to maintain because it is decoupled and completely independent of the Relayer.
 
 ### Cons
 
