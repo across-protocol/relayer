@@ -38,9 +38,7 @@ export class LineaBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "recipient", "sender", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 
@@ -57,9 +55,7 @@ export class LineaBridge extends BaseBridgeAdapter {
     );
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "recipient", "bridgedToken", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 }

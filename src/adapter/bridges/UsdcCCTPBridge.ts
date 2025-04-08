@@ -76,9 +76,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       fromAddress.toAddress()
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "mintRecipient", "depositor", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 

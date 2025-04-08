@@ -115,8 +115,6 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       expect(depositInitiatedEvents[l2Token]).to.have.lengthOf(1);
       expect(depositInitiatedEvents[l2Token][0]._sequenceNumber.toNumber()).to.equal(0);
       expect(depositInitiatedEvents[l2Token][0]._amount.toNumber()).to.equal(1);
-      expect(depositInitiatedEvents[l2Token][0].from.toAddress()).to.equal(monitoredEoa);
-      expect(depositInitiatedEvents[l2Token][0].to.toAddress()).to.equal(monitoredEoa);
     });
 
     it("get DepositFinalized events from L2", async () => {
@@ -131,7 +129,6 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       );
       expect(depositFinalizedEvents[l2Token]).to.have.lengthOf(1);
       expect(depositFinalizedEvents[l2Token][0].amount.toNumber()).to.equal(1);
-      expect(depositFinalizedEvents[l2Token][0].from.toAddress()).to.equal(monitoredEoa);
     });
 
     it("get outstanding cross-chain transfers", async () => {

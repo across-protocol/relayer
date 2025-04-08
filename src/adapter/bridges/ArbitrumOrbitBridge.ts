@@ -106,7 +106,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
         .filter(({ args }) => args.l1Token === l1Token.toAddress())
-        .map((event) => processEvent(event, "_amount", "_to", "_from", this.l2chainId)),
+        .map((event) => processEvent(event, "_amount")),
     };
   }
 
@@ -122,9 +122,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "to", "from", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 }

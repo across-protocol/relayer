@@ -60,9 +60,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "_amount", "_to", "_from", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount")),
     };
   }
 
@@ -78,9 +76,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "_amount", "_to", "_to", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount")),
     };
   }
 

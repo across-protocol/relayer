@@ -67,7 +67,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     // those with 0 value.
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
-        .map((event) => processEvent(event, "_value", "_to", "_from", this.l2chainId))
+        .map((event) => processEvent(event, "_value"))
         .filter(({ amount }) => amount.gt(bnZero)),
     };
   }
@@ -122,7 +122,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
         // when the finalization event approaches the max look back value. In this case, we filter those out.
         return isDefined(queryEvent)
           ? {
-              ...processEvent(queryEvent, "_value", "_to", "_from", this.l2chainId),
+              ...processEvent(queryEvent, "_value"),
               blockNumber: finalized.blockNumber,
               transactionIndex: finalized.transactionIndex,
               logIndex: finalized.logIndex,

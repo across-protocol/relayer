@@ -161,8 +161,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from.toAddress()).to.equal(atomicDepositorAddress);
-      expect(result[0].to.toAddress()).to.equal(monitoredEoa);
       expect(result[0].amount).to.equal(1);
     });
     // TODO: Add unit tests when from address is contract but need to change the providers such that we can
@@ -193,8 +191,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from.toAddress()).to.equal(atomicDepositorAddress);
-      expect(result[0].to.toAddress()).to.equal(monitoredEoa);
     });
   });
 
@@ -213,8 +209,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to.toAddress()).to.equal(monitoredEoa);
-      expect(events[0].from.toAddress()).to.equal(monitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -231,7 +225,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to.toAddress()).to.equal(monitoredEoa);
     });
   });
 
@@ -250,8 +243,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from.toAddress()).to.equal(monitoredEoa);
-      expect(events[0].to.toAddress()).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -268,8 +259,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from.toAddress()).to.equal(monitoredEoa);
-      expect(events[0].to.toAddress()).to.equal(notMonitoredEoa);
     });
   });
 
@@ -288,8 +277,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from.toAddress()).to.equal(monitoredEoa);
-      expect(events[0].to.toAddress()).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -306,8 +293,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         )
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from.toAddress()).to.equal(monitoredEoa);
-      expect(events[0].to.toAddress()).to.equal(notMonitoredEoa);
     });
   });
 

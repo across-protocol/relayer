@@ -69,9 +69,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "depositReceiver", "depositor", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 
@@ -87,9 +85,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "value", "to", "from", this.l2chainId)
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value")),
     };
   }
 }

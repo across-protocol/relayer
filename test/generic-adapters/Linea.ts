@@ -22,6 +22,7 @@ describe("Cross Chain Adapter: Linea", async function () {
   const toAddress = (address: string): EvmAddress => {
     return EvmAddress.from(address);
   };
+  const bnZero = utils.bnZero;
   beforeEach(async function () {
     searchConfig = {
       fromBlock: 0,
@@ -118,7 +119,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken].length).to.equal(1);
-      expect(result[l2WETHToken][0].to.toAddress()).to.equal(monitoredEoa);
       expect(result[l2WETHToken][0].amount).to.equal(1);
     });
     it("Get L2 finalized events", async function () {
@@ -188,7 +188,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2USDCToken][0].to.toAddress()).to.equal(monitoredEoa);
+      expect(result[l2USDCToken][0].amount).to.equal(bnZero);
     });
     it("Get L2 finalized events", async function () {
       await usdcBridgeContract.emitReceivedFromOtherLayer(randomAddress());
@@ -203,7 +203,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2USDCToken][0].to.toAddress()).to.equal(monitoredEoa);
     });
     it("Matches L1 and L2 events", async function () {
       await usdcBridgeContract.emitDeposited(randomAddress(), monitoredEoa);
@@ -236,7 +235,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Token][0].to.toAddress()).to.equal(monitoredEoa);
     });
     it("Get L2 finalized events", async function () {
       // Should return only event
@@ -253,7 +251,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Token][0].to.toAddress()).to.equal(monitoredEoa);
     });
     it("Matches L1 and L2 events", async function () {
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);

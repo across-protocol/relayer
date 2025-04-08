@@ -21,6 +21,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
   const toAddress = (address: string): EvmAddress => {
     return utils.EvmAddress.from(address);
   };
+  const bnOne = utils.bnOne;
   beforeEach(async function () {
     searchConfig = {
       fromBlock: 0,
@@ -110,7 +111,6 @@ describe("Cross Chain Adapter: Scroll", async function () {
       );
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2Weth].length).to.equal(1);
-      expect(result[l2Weth][0].to.toAddress()).to.equal(monitoredEoa);
       expect(result[l2Weth][0].amount).to.equal(1);
     });
     it("Get L2 finalized events", async function () {
@@ -183,7 +183,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Usdc][0].to.toAddress()).to.equal(monitoredEoa);
+      expect(result[l2Usdc][0].amount).to.deep.equal(bnOne);
     });
     it("Get L2 finalized events", async function () {
       await scrollBridgeContract.finalize(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
@@ -198,7 +198,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Usdc][0].to.toAddress()).to.equal(monitoredEoa);
+      expect(result[l2Usdc][0].amount).to.equal(bnOne);
     });
     it("Matches L1 and L2 events", async function () {
       await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);

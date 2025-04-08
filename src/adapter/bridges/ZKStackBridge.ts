@@ -158,7 +158,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       );
       processedEvents = rawEvents
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
-        .map((e) => processEvent(e, "amount", "receiver", "sender", this.l2chainId));
+        .map((e) => processEvent(e, "amount"));
     } else {
       if (isL2Contract) {
         const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);
@@ -168,24 +168,14 @@ export class ZKStackBridge extends BaseBridgeAdapter {
               compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
               compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
           )
-          .map((e) => {
-            return {
-              ...processEvent(e, "amount", "to", "to", this.l2chainId),
-              from: EvmAddress.from(this.hubPool.address),
-            };
-          });
+          .map((e) => processEvent(e, "amount"));
       } else {
         const rawEvents = await paginatedEventQuery(
           this.sharedBridge,
           this.sharedBridge.filters.BridgehubDepositBaseTokenInitiated(this.l2chainId, annotatedFromAddress),
           eventConfig
         );
-        processedEvents = rawEvents.map((e) => {
-          return {
-            ...processEvent(e, "amount", "from", "from", this.l2chainId),
-            to: toAddress, // Overwrite the from field with toAddress since if we hit this branch we know an EOA initiated the bridge.
-          };
-        });
+        processedEvents = rawEvents.map((e) => processEvent(e, "amount"));
       }
     }
     return {
@@ -223,12 +213,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           );
       processedEvents = events
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
-        .map((event) => {
-          return {
-            ...processEvent(event, "amount", "receiver", "receiver", this.l2chainId),
-            from: isSpokePool ? EvmAddress.from(this.hubPool.address) : fromAddress,
-          };
-        });
+        .map((event) => processEvent(event, "amount"));
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
       let events;
@@ -254,7 +239,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         ]);
         events = matchL2EthDepositAndWrapEvents(_events, wrapEvents);
       }
-      processedEvents = events.map((e) => processEvent(e, "_amount", "_to", "from", this.l2chainId));
+      processedEvents = events.map((e) => processEvent(e, "_amount"));
     }
     return {
       [l2Token]: processedEvents,
