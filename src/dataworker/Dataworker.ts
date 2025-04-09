@@ -1113,12 +1113,11 @@ export class Dataworker {
             continue;
           }
 
-          // Filter out slow fill leaves for other chains and also expired deposits.
-          const currentTime = client.getCurrentTime();
-          const leavesForChain = leaves.filter(
-            (leaf) => leaf.chainId === chainId && leaf.relayData.fillDeadline >= currentTime
-          );
-          const unexecutedLeaves = leavesForChain.filter((leaf) => {
+          const unexecutedLeaves = leaves.filter((leaf) => {
+            // Filter out slow fill leaves for other chains.
+            if (leaf.chainId !== chainId) {
+              return false;
+            }
             const executedLeaf = slowFillsForChain.find(
               (event) =>
                 event.originChainId === leaf.relayData.originChainId && event.depositId.eq(leaf.relayData.depositId)
@@ -1152,12 +1151,24 @@ export class Dataworker {
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
+    const currentTime = client.getCurrentTime();
+
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter((leaf) => {
       const {
-        relayData: { depositor, recipient, message },
+        relayData: { depositor, recipient, message, fillDeadline },
       } = leaf;
+
+      if (fillDeadline < currentTime) {
+        this.logger.debug({
+          at: "Dataworker#_executeSlowFillLeaf",
+          message: "Ignoring slow fill leaf with expired fill deadline",
+          fillDeadline,
+          currentTime,
+        });
+        return false;
+      }
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
