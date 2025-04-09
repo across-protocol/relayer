@@ -254,7 +254,7 @@ export class AdapterManager {
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
-    return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(l1Token, l2ChainId);
+    return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

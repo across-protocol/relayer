@@ -257,7 +257,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       bundleDataClient.setReturnedNextBundleRefunds({
         [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
       });
-      // We need HubPoolClient.l2TokenHasPoolRebalanceRoute() to return true for a given
+      // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
       // L1 token and destination chain ID, otherwise it won't be counted in upcoming
       // refunds.
       hubPoolClient.setEnableAllL2Tokens(true);
@@ -440,7 +440,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       bundleDataClient.setReturnedPendingBundleRefunds({
         [POLYGON]: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
       });
-      // We need HubPoolClient.l2TokenHasPoolRebalanceRoute() to return true for a given
+      // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
       // L1 token and destination chain ID, otherwise it won't be counted in upcoming
       // refunds.
       hubPoolClient.setEnableAllL2Tokens(true);

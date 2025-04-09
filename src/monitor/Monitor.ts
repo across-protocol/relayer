@@ -121,7 +121,7 @@ export class Monitor {
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.map((chainId) => {
         const l2Tokens = l1Tokens
-          .filter((l1Token) => hubPoolClient.l2TokenHasPoolRebalanceRoute(l1Token, chainId))
+          .filter((l1Token) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
           .map((l1Token) => {
             const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
             return l2Token;
@@ -336,7 +336,7 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
-          hubPoolClient.l2TokenHasPoolRebalanceRoute(l1Token, chainId)
+          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
         );
         const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);

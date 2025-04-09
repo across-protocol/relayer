@@ -318,7 +318,7 @@ export class InventoryClient {
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
-        if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(l1Token, chainId)) {
+        if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           refunds[chainId] = bnZero;
         } else {
           const destinationToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
@@ -1429,7 +1429,7 @@ export class InventoryClient {
     return SLOW_WITHDRAWAL_CHAINS.filter(
       (chainId) =>
         this._l1TokenEnabledForChain(l1Token, Number(chainId)) &&
-        this.hubPoolClient.l2TokenHasPoolRebalanceRoute(l1Token, Number(chainId))
+        this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, Number(chainId))
     );
   }
 

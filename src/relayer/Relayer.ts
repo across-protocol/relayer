@@ -234,6 +234,15 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    if (!hubPoolClient.l2TokenHasPoolRebalanceRoute(inputToken, originChainId)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for input token ${inputToken} due to missing pool rebalance route.`,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
@@ -287,15 +296,6 @@ export class Relayer {
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
         outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
-      });
-      return ignoreDeposit();
-    }
-
-    if (!hubPoolClient.l2TokenHasPoolRebalanceRoute(inputToken, originChainId)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: `Skipping ${srcChain} deposit for input token ${inputToken} due to missing pool rebalance route.`,
         transactionHash: deposit.transactionHash,
       });
       return ignoreDeposit();
@@ -724,16 +724,6 @@ export class Relayer {
       }
     }
 
-    if (!hubPoolClient.l2TokenHasPoolRebalanceRoute(inputToken, originChainId)) {
-      this.logger.debug({
-        at: "Relayer::evaluateFill",
-        message: `Skipping ${originChain} deposit ${depositId.toString()} for input token ${
-          deposit.inputToken
-        } due to missing pool rebalance route.`,
-        transactionHash,
-      });
-      return;
-    }
     const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
     if (tokenClient.hasBalanceForFill(deposit)) {
       const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
@@ -995,16 +985,7 @@ export class Relayer {
 
   requestSlowFill(deposit: Deposit): void {
     // don't request slow fill if origin/destination chain is a lite chain
-    if (
-      deposit.fromLiteChain ||
-      deposit.toLiteChain ||
-      !this.clients.hubPoolClient.areTokensEquivalent(
-        deposit.inputToken,
-        deposit.originChainId,
-        deposit.outputToken,
-        deposit.destinationChainId
-      )
-    ) {
+    if (deposit.fromLiteChain || deposit.toLiteChain) {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request to/from lite chain.",
