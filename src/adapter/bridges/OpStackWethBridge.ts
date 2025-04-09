@@ -89,7 +89,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isL2ChainContract) {
+    if (isL2ChainContract || (isContract && fromAddress.toAddress() !== this.hubPoolAddress)) {
       return this.convertEventListToBridgeEvents([]);
     }
 

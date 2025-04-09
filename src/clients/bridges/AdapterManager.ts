@@ -152,19 +152,18 @@ export class AdapterManager {
 
   sendTokenCrossChain(
     address: string,
-    chainId: number | string,
+    chainId: number,
     l1Token: string,
     amount: BigNumber,
     simMode = false,
     l2Token?: string
   ): Promise<TransactionResponse> {
-    chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
-    l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
+    l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
     return this.adapters[chainId].sendTokenToTargetChain(
-      toAddressType(address, Number(chainId)),
+      toAddressType(address, chainId),
       EvmAddress.from(l1Token),
-      toAddressType(l2Token, Number(chainId)),
+      toAddressType(l2Token, chainId),
       amount,
       simMode
     );

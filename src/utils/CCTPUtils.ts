@@ -28,15 +28,6 @@ export type Attestation = { status: string; attestation: string };
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 
 /**
- * Used to convert an ETH Address string to a 32-byte hex string.
- * @param address The address to convert.
- * @returns The 32-byte hex string representation of the address - required for CCTP messages.
- */
-export function cctpAddressToBytes32(address: string): string {
-  return ethers.utils.hexZeroPad(address, 32);
-}
-
-/**
  * Used to convert a 32-byte hex string with padding to a standard ETH address.
  * @param bytes32 The 32-byte hex string to convert.
  * @returns The ETH address representation of the 32-byte hex string.
