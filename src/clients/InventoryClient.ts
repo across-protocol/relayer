@@ -28,6 +28,7 @@ import {
   Profiler,
   getNativeTokenSymbol,
   getL1TokenInfo,
+  depositHasPoolRebalanceRouteMapping,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -425,7 +426,7 @@ export class InventoryClient {
 
     // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
     // chains and force the relayer to ignore this deposit.
-    if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)) {
+    if (!depositHasPoolRebalanceRouteMapping(deposit)) {
       return [];
     }
 

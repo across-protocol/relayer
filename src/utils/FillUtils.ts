@@ -42,6 +42,13 @@ export function getUnfilledDeposits(
     });
 }
 
+export function depositHasPoolRebalanceRouteMapping(deposit: DepositWithBlock, hubPoolClient: HubPoolClient): boolean {
+  return (
+    hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId) &&
+    hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId)
+  );
+}
+
 export function getAllUnfilledDeposits(
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient
