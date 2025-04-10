@@ -146,7 +146,13 @@ export class CommonConfig {
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator([new addressAdapters.fs.AddressList(path)], logger);
+    const addressAggregator = new AddressAggregator(
+      [
+        new addressAdapters.fs.AddressList({ path }),
+        new addressAdapters.risklabs.AddressList({ path, throwOnError: false }),
+      ],
+      logger
+    );
     this.addressFilter = await addressAggregator.update();
   }
 }
