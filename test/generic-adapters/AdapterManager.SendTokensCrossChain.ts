@@ -8,8 +8,8 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   bnZero,
-  cctpAddressToBytes32,
   getCctpDomainForChainId,
+  EvmAddress,
 } from "../../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "../mocks";
 import {
@@ -151,7 +151,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       getCctpDomainForChainId(chainId), // destinationDomain
-      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      EvmAddress.from(relayer.address).toBytes32(), // recipient
       mainnetTokens.usdc // token
     );
 
@@ -203,7 +203,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       getCctpDomainForChainId(chainId), // destinationDomain
-      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      EvmAddress.from(relayer.address).toBytes32(), // recipient
       mainnetTokens.usdc // token
     );
 
@@ -255,7 +255,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       getCctpDomainForChainId(chainId), // destinationDomain
-      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      EvmAddress.from(relayer.address).toBytes32(), // recipient
       mainnetTokens.usdc // token
     );
 
@@ -363,7 +363,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
       getCctpDomainForChainId(chainId), // destinationDomain
-      cctpAddressToBytes32(relayer.address).toLowerCase(), // recipient
+      EvmAddress.from(relayer.address).toBytes32(), // recipient
       mainnetTokens.usdc // token
     );
 
