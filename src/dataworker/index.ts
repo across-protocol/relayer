@@ -73,7 +73,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
   try {
-    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", config });
+    // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+    const { addressFilter: _addressFilter, ...loggedConfig } = config;
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", loggedConfig });
 
     for (;;) {
       profiler.mark("loopStart");
