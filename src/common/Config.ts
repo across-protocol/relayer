@@ -148,7 +148,7 @@ export class CommonConfig {
 
     const addressAggregator = new AddressAggregator(
       [
-        new addressAdapters.fs.AddressList({ path, logger}),
+        new addressAdapters.fs.AddressList({ path, logger }),
         new addressAdapters.risklabs.AddressList({ logger, throwOnError: false }),
       ],
       logger
