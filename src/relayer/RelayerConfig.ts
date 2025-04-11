@@ -354,7 +354,7 @@ export class RelayerConfig extends CommonConfig {
     chainIds.forEach((chainId) => {
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =
-        process.env[`RELAYER_SPOKEPOOL_INDEXER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
+        process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
     });
 
     // Only validate config for chains that the relayer cares about.
