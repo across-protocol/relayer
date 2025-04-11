@@ -13,11 +13,8 @@ import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
 
-import {
-  IOFT,
-  MessagingFeeStruct,
-  SendParamStruct,
-} from "@across-protocol/contracts/typechain/contracts/interfaces/IOFT";
+import { IOFT, MessagingFeeStruct, SendParamStruct } from "@across-protocol/contracts/dist/typechain/contracts/interfaces/IOFT";
+
 import { resolveToken } from "../../../scripts/utils";
 
 export type OFTRouteInfo = {
