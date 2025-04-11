@@ -10,8 +10,8 @@
     "node": ">=20.18.0"
   },
   "dependencies": {
-    "@across-protocol/contracts": "^v4.0.7",
     "@across-protocol/constants": "^3.1.51",
+    "@across-protocol/contracts": "4.0.7",
     "@across-protocol/sdk": "4.1.43",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
