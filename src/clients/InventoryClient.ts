@@ -426,7 +426,11 @@ export class InventoryClient {
 
     // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
     // chains and force the relayer to ignore this deposit.
-    if (!depositHasPoolRebalanceRouteMapping(deposit)) {
+    if (!depositHasPoolRebalanceRouteMapping(deposit, this.hubPoolClient)) {
+      return [];
+    }
+
+    if (sdkUtils.invalidOutputToken(deposit)) {
       return [];
     }
 

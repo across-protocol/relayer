@@ -250,6 +250,26 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
     });
 
+    it("Can refund deposits with output token as expired deposit", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      generateV3Deposit({
+        inputToken: ZERO_ADDRESS,
+        fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
+      });
+
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    });
+
     it("Does not consider expired zero value deposits from prior bundle", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
         [originChainId, destinationChainId],

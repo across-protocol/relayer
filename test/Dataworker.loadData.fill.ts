@@ -263,6 +263,25 @@ describe("Dataworker: Load bundle data", async function () {
       expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(0);
     });
 
+    it("Does not refund fills for zero address output token deposits", async function () {
+      generateV3Deposit({
+        outputToken: ZERO_ADDRESS,
+      });
+
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+      generateV3FillFromDeposit(deposits[0]);
+
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(0);
+    });
+
     describe("Duplicate deposits in same bundle as fill", function () {
       it("Sends duplicate deposit refunds for fills in bundle", async function () {
         // Send duplicate deposits.

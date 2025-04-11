@@ -245,6 +245,15 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    if (sdkUtils.invalidOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",

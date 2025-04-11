@@ -42,7 +42,10 @@ export function getUnfilledDeposits(
     });
 }
 
-export function depositHasPoolRebalanceRouteMapping(deposit: DepositWithBlock, hubPoolClient: HubPoolClient): boolean {
+export function depositHasPoolRebalanceRouteMapping(
+  deposit: Pick<DepositWithBlock, "inputToken" | "originChainId">,
+  hubPoolClient: HubPoolClient
+): boolean {
   return hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
 }
 
