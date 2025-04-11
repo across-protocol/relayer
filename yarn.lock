@@ -21,10 +21,19 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.51.tgz#992beaba4c7540f62bfcde180403494ea5ac989a"
   integrity sha512-XuXZXqbTxt/r+WQKwyMKnlg7z63SdN7AehdD1uWzF+FCM6u9XAECB8RlK1+wBj1RAJuuZGbrNMyfS9szq+X11Q==
 
-"@across-protocol/contracts@4.0.7":
-  version "4.0.7"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.7.tgz#71e45e322ad256c43c2bc1c5d93690b65d7dc4d8"
-  integrity sha512-nXBhShxSbrZrLr+wDgDs4VZ5A5R1KHToadd1KE90+GCRHCXJYRnBe7fiWmZPifQWo6Lszl8fMchHBjgEHL88oQ==
+"@across-protocol/contracts@^0.1.4":
+  version "0.1.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
+  integrity sha512-y9FVRSFdPgEdGWBcf8rUmmzdYhzGdy0752HwpaAFtMJ1pn+HFgNaI0EZc/UudMKIPOkk+/BxPIHYPy7tKad5/A==
+  dependencies:
+    "@eth-optimism/contracts" "^0.5.5"
+    "@openzeppelin/contracts" "4.1.0"
+    "@uma/core" "^2.18.0"
+
+"@across-protocol/contracts@^4.0.5":
+  version "4.0.5"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.5.tgz#9844b20214bee078049c622f896300b4c1ee4d3c"
+  integrity sha512-14eezq7ABlPYsy/sPjcMGE7L/1MRRSwvHRaBDQHiFh100EHwO07GHCgP3JjPQAh0eYuO4RkvR+IGxtn3RFLi7w==
   dependencies:
     "@across-protocol/constants" "^3.1.46"
     "@coral-xyz/anchor" "^0.30.1"
@@ -51,19 +60,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@^0.1.4":
-  version "0.1.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
-  integrity sha512-y9FVRSFdPgEdGWBcf8rUmmzdYhzGdy0752HwpaAFtMJ1pn+HFgNaI0EZc/UudMKIPOkk+/BxPIHYPy7tKad5/A==
-  dependencies:
-    "@eth-optimism/contracts" "^0.5.5"
-    "@openzeppelin/contracts" "4.1.0"
-    "@uma/core" "^2.18.0"
-
-"@across-protocol/contracts@^4.0.5":
-  version "4.0.5"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.5.tgz#9844b20214bee078049c622f896300b4c1ee4d3c"
-  integrity sha512-14eezq7ABlPYsy/sPjcMGE7L/1MRRSwvHRaBDQHiFh100EHwO07GHCgP3JjPQAh0eYuO4RkvR+IGxtn3RFLi7w==
+"@across-protocol/contracts@^4.0.7":
+  version "4.0.7"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.7.tgz#71e45e322ad256c43c2bc1c5d93690b65d7dc4d8"
+  integrity sha512-nXBhShxSbrZrLr+wDgDs4VZ5A5R1KHToadd1KE90+GCRHCXJYRnBe7fiWmZPifQWo6Lszl8fMchHBjgEHL88oQ==
   dependencies:
     "@across-protocol/constants" "^3.1.46"
     "@coral-xyz/anchor" "^0.30.1"
