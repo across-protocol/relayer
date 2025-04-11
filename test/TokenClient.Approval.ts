@@ -16,6 +16,7 @@ import {
   toBNWei,
   utf8ToHex,
   winston,
+  deployMulticall3,
 } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
@@ -98,6 +99,9 @@ describe("TokenClient: Origin token approval", async function () {
     hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
     hubPoolClient.setTokenMapping(l1Token_2.address, originChainId, weth_1.address);
     hubPoolClient.setTokenMapping(l1Token_2.address, destinationChainId, weth_2.address);
+
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
 
     tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
   });

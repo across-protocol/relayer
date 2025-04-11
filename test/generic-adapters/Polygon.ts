@@ -145,9 +145,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       const deposit = result[l2Weth];
       expect(deposit).to.exist;
-      const { from, to, amount } = deposit[0];
-      expect(from).to.equal(monitoredEoa);
-      expect(to).to.equal(monitoredEoa);
+      const { amount } = deposit[0];
       expect(amount).to.equal(amount);
     });
 
@@ -165,9 +163,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       const receipt = result[l2Weth];
       expect(receipt).to.exist;
-      const { from, to, amount } = receipt[0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(monitoredEoa);
+      const { amount } = receipt[0];
       expect(amount).to.equal(amount);
     });
 
@@ -308,9 +304,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       const deposit = result[l2Weth];
       expect(deposit[0]).to.exist;
-      const { to, amount, from } = deposit[0];
-      expect(from).to.equal(hubPool.address);
-      expect(to).to.equal(spokePool.address);
+      const { amount } = deposit[0];
       expect(amount).to.equal(depositAmount);
     });
 
@@ -327,9 +321,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
       const receipt = result[l2Weth];
       expect(receipt).to.exist;
-      const { from, to, amount } = receipt[0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(spokePool.address);
+      const { amount } = receipt[0];
       expect(amount).to.equal(depositAmount);
     });
 
@@ -479,9 +471,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, rootToken } = deposit[0];
-        expect(from).to.equal(monitoredEoa);
-        expect(to).to.equal(recipient);
+        const { rootToken } = deposit[0];
         expect(rootToken).to.equal(l1Token);
       }
     });
@@ -507,9 +497,6 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to } = deposit[0];
-        expect(from).to.equal(ZERO_ADDRESS);
-        expect(to).to.equal(recipient);
       }
     });
 
@@ -655,9 +642,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to, rootToken } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
+        const { rootToken } = deposit[0];
         expect(rootToken).to.equal(l1Token);
       }
     });
@@ -687,9 +672,6 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
         const deposit = result[l2Token];
         expect(deposit[0]).to.exist;
-        const { from, to } = deposit[0];
-        expect(from).to.equal(sender);
-        expect(to).to.equal(recipient);
       }
     });
 
@@ -864,9 +846,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
       );
       expect(events[l2Usdc].length).to.equal(0);
       expect(events[l2UsdcE].length).to.equal(1);
-      const { from, to, amount } = events[l2UsdcE][0];
-      expect(from).to.equal(monitoredEoa);
-      expect(to).to.equal(monitoredEoa);
+      const { amount } = events[l2UsdcE][0];
       expect(amount).to.equal(depositAmount);
     });
 

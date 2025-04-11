@@ -1,6 +1,6 @@
 import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
 import hre from "hardhat";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, TokenClient } from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient, TokenClient } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
@@ -48,6 +48,7 @@ import {
   toBNWei,
   updateDeposit,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
@@ -60,8 +61,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   let owner: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
   let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
-  let spokePoolClient_1: clients.SpokePoolClient, spokePoolClient_2: clients.SpokePoolClient;
-  let spokePoolClients: { [chainId: number]: clients.SpokePoolClient };
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: clients.EVMSpokePoolClient;
+  let spokePoolClients: { [chainId: number]: SpokePoolClient };
   let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: TokenClient;
   let relayerInstance: Relayer;
   let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
@@ -97,6 +98,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       { l2ChainId: 1, spokePool: spokePool_1 },
     ]));
 
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     await enableRoutesOnHubPool(hubPool, [
       { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
@@ -122,14 +127,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new clients.SpokePoolClient(
+    spokePoolClient_1 = new SpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new clients.SpokePoolClient(
+    spokePoolClient_2 = new SpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -863,7 +868,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Ignores deposit from preconfigured addresses", async function () {
-      relayerInstance.config.ignoredAddresses = new Set([depositor.address]);
+      relayerInstance.config.addressFilter = new Set([ethers.utils.getAddress(depositor.address)]);
 
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();

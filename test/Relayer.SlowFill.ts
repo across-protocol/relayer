@@ -35,6 +35,7 @@ import {
   sinon,
   spyLogIncludes,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 import { Relayer } from "../src/relayer/Relayer";
@@ -87,6 +88,10 @@ describe("Relayer: Initiates slow fill requests", async function () {
       { destinationChainId: originChainId, l1Token, destinationToken: erc20_1 },
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
     ]);
+
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(

@@ -9,7 +9,18 @@ const { ZERO_ADDRESS } = constants;
 export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
 export function getNativeTokenAddressForChain(chainId: number): string {
-  return CONTRACT_ADDRESSES[chainId]?.eth?.address ?? ZERO_ADDRESS;
+  return CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS;
+}
+
+export function getWrappedNativeTokenAddress(chainId: number): string {
+  const tokenSymbol = utils.getNativeTokenSymbol(chainId);
+  // If the native token is ETH, then we know the wrapped native token is WETH. Otherwise, some ERC20 token is the native token.
+  // In PUBLIC_NETWORKS, the native token symbol is the symbol corresponding to the L1 token contract, so "W" should not be prepended
+  // to the symbol.
+  const wrappedTokenSymbol = tokenSymbol === "ETH" ? "WETH" : tokenSymbol;
+
+  // Undefined returns should be caught and handled by consumers of this function.
+  return TOKEN_SYMBOLS_MAP[wrappedTokenSymbol]?.addresses[chainId];
 }
 
 /**

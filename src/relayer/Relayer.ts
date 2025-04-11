@@ -31,6 +31,7 @@ import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
+const RELAYER_DEPOSIT_RATE_LIMIT = 25;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
@@ -88,7 +89,10 @@ export class Relayer {
    */
   async init(): Promise<void> {
     const { inventoryClient, tokenClient } = this.clients;
-    await tokenClient.update();
+    await Promise.all([
+      this.config.update(this.logger), // Update address filter.
+      tokenClient.update(),
+    ]);
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
       await tokenClient.setOriginTokenApprovals();
@@ -202,7 +206,7 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { ignoredAddresses, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const { addressFilter, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
 
@@ -249,7 +253,7 @@ export class Relayer {
       deposit.outputToken,
     ].some((address) => {
       try {
-        ethersUtils.getAddress(address);
+        getAddress(address);
       } catch {
         return true;
       }
@@ -264,7 +268,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (ignoredAddresses?.has(getAddress(depositor)) || ignoredAddresses?.has(getAddress(recipient))) {
+    if (addressFilter?.has(getAddress(depositor)) || addressFilter?.has(getAddress(recipient))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
@@ -577,7 +581,7 @@ export class Relayer {
   }
 
   /**
-   * For all origin chains chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
+   * For all origin chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
    * filled by this relayer.
    * @returns A mapping of chain ID to an array of origin chain fill limits in USD, ordered by origin chain block range.
    */
@@ -727,6 +731,8 @@ export class Relayer {
       } = repaymentChainProfitability;
       if (!isDefined(repaymentChainId)) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
       } else {
         const { blockNumber, outputToken, outputAmount } = deposit;
         const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
@@ -910,8 +916,12 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       const deposits = _deposits.map(({ deposit }) => deposit);
-      const fillStatus = await sdkUtils.fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+      const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
 
+      // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
+      // an activity surge on any single chain from significantly degrading overall performance. When running in
+      // single-shot mode (pollingDelay 0), do not limit. This permits sweeper instances to work correctly.
+      const depositLimit = this.config.pollingDelay === 0 ? deposits.length : RELAYER_DEPOSIT_RATE_LIMIT;
       const unfilledDeposits = deposits
         .map((deposit, idx) => ({ ...deposit, fillStatus: fillStatus[idx] }))
         .filter(({ fillStatus, ...deposit }) => {
@@ -919,7 +929,8 @@ export class Relayer {
           const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
           this.fillStatus[depositHash] = fillStatus;
           return fillStatus !== FillStatus.Filled;
-        });
+        })
+        .slice(0, depositLimit);
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(

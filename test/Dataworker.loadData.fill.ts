@@ -23,6 +23,7 @@ import {
   sinon,
   smock,
   spyLogIncludes,
+  deployMulticall3,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -72,6 +73,10 @@ describe("Dataworker: Load bundle data", async function () {
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
     bundleDataClient = dataworkerInstance.clients.bundleDataClient;
+
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
   });
 
   it("Default conditions", async function () {
@@ -155,7 +160,8 @@ describe("Dataworker: Load bundle data", async function () {
           hubPoolClient: mockHubPoolClient as unknown as HubPoolClient,
         },
         dataworkerInstance.clients.bundleDataClient.spokePoolClients,
-        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers
+        dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
+        dataworkerInstance.blockRangeEndBlockBuffer
       );
       dataworkerInstance = new Dataworker(
         dataworkerInstance.logger,
@@ -163,8 +169,7 @@ describe("Dataworker: Load bundle data", async function () {
         { ...dataworkerInstance.clients, bundleDataClient },
         dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
         dataworkerInstance.maxRefundCountOverride,
-        dataworkerInstance.maxL1TokenCountOverride,
-        dataworkerInstance.blockRangeEndBlockBuffer
+        dataworkerInstance.maxL1TokenCountOverride
       );
     });
 

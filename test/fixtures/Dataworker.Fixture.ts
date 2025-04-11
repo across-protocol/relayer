@@ -47,7 +47,7 @@ async function _constructSpokePoolClientsWithLookback(
   await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
-    return new sdkClients.SpokePoolClient(
+    return new clients.SpokePoolClient(
       spyLogger,
       pool.connect(signer),
       hubPoolClient,
@@ -219,7 +219,8 @@ export async function setupDataworker(
       hubPoolClient,
     },
     spokePoolClients,
-    testChainIdList
+    testChainIdList,
+    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   const dataworkerClients: DataworkerClients = {
@@ -236,8 +237,7 @@ export async function setupDataworker(
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
-    maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
+    maxL1TokensPerPoolRebalanceLeaf
   );
 
   // Give owner tokens to LP on HubPool with.

@@ -1,4 +1,5 @@
-import { clients, constants } from "@across-protocol/sdk";
+import { constants } from "@across-protocol/sdk";
+import { SpokePoolClient } from "../../src/clients";
 
 /**
  * This is a helper function to generate an array of empty objects that are typed as SpokePoolClients.
@@ -9,12 +10,12 @@ import { clients, constants } from "@across-protocol/sdk";
  * @returns An array of empty objects that are typed as SpokePoolClients
  */
 export function generateNoOpSpokePoolClientsForDefaultChainIndices(
-  desiredClients?: Record<string, clients.SpokePoolClient>
-): Record<string, clients.SpokePoolClient> {
+  desiredClients?: Record<string, SpokePoolClient>
+): Record<string, SpokePoolClient> {
   const defaultClients = Object.fromEntries(
     constants.PROTOCOL_DEFAULT_CHAIN_ID_INDICES.map((chainId) => [
       chainId,
-      { isUpdated: true } as unknown as clients.SpokePoolClient,
+      { isUpdated: true } as unknown as SpokePoolClient,
     ])
   );
   return {

@@ -110,7 +110,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       const result = await wethBridge.queryL1BridgeInitiationEvents(l1WETHToken, undefined, monitoredEoa, searchConfig);
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2WETHToken].length).to.equal(1);
-      expect(result[l2WETHToken][0].to).to.equal(monitoredEoa);
       expect(result[l2WETHToken][0].amount).to.equal(1);
     });
     it("Get L2 finalized events", async function () {
@@ -190,7 +189,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2USDCToken][0].to).to.equal(monitoredEoa);
     });
     it("Matches L1 and L2 events", async function () {
       await usdcBridgeContract.emitDeposited(randomAddress(), monitoredEoa);
@@ -218,7 +216,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       const result = await erc20Bridge.queryL1BridgeInitiationEvents(l1Token, undefined, monitoredEoa, searchConfig);
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Token][0].to).to.equal(monitoredEoa);
     });
     it("Get L2 finalized events", async function () {
       // Should return only event
@@ -230,7 +227,6 @@ describe("Cross Chain Adapter: Linea", async function () {
       const result = await erc20Bridge.queryL2BridgeFinalizationEvents(l1Token, undefined, monitoredEoa, searchConfig);
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Token][0].to).to.equal(monitoredEoa);
     });
     it("Matches L1 and L2 events", async function () {
       await erc20BridgeContract.emitBridgingInitiated(randomAddress(), monitoredEoa, l1Token);

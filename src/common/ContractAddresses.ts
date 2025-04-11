@@ -15,9 +15,9 @@ import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
-import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI from "./abi/ZkSyncDefaultErc20BridgeL1.json";
-import ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI from "./abi/ZkSyncDefaultErc20BridgeL2.json";
-import ZK_SYNC_MAILBOX_ABI from "./abi/ZkSyncMailbox.json";
+import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
+import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
+import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -34,8 +34,6 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
-import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
-import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -59,13 +57,17 @@ export const CONTRACT_ADDRESSES: {
       address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
       abi: LINEA_USDC_BRIDGE_ABI,
     },
-    zkSyncMailbox: {
-      address: "0x32400084C286CF3E17e7B677ea9583e60a000324",
-      abi: ZK_SYNC_MAILBOX_ABI,
+    zkStackSharedBridge: {
+      address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
-    zkSyncDefaultErc20Bridge: {
-      address: "0x57891966931Eb4Bb6FB81430E6cE0A03AAbDe063",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L1_ABI,
+    zkStackBridgeHub: {
+      address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
+      abi: ZKSTACK_BRIDGE_HUB_ABI,
+    },
+    zkStackNativeTokenVault: {
+      address: "0xbeD1EB542f9a5aA6419Ff3deb921A372681111f6",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -231,7 +233,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     cctpMessageTransmitter: {
@@ -255,20 +257,21 @@ export const CONTRACT_ADDRESSES: {
       address: "0x9daF8c91AEFAE50b9c0E69629D3F6Ca40cA3B3FE",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
-    // The "eth" entries in this dictionary should be renamed to gasToken/nativeToken to make it more clear
-    // how they are used in the code. For now, set this address to the MATIC address on Polygon. This address
-    // is used in TokenUtils/getEthAddress() and should be set if the native token address is not 0x0.
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
-    zkSyncDefaultErc20Bridge: {
-      address: "0x11f943b2c77b743AB90f4A0Ae7d5A4e7FCA3E102",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    weth: {
+      address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
       abi: WETH_ABI,
     },
   },
@@ -285,7 +288,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -298,7 +301,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -311,7 +314,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -320,7 +323,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -329,7 +332,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -338,7 +341,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     cctpMessageTransmitter: {
@@ -355,7 +358,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -364,7 +367,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -373,7 +376,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
     blastBridge: {
@@ -401,6 +404,28 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBSYS_L2_ABI,
     },
   },
+  [CHAIN_IDs.LENS]: {
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
+    // The native token for Lens is GHO, not ETH.
+    nativeToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: WETH_ABI,
+    },
+    // This is Lens wrapped GHO, NOT WETH.
+    wrappedNativeToken: {
+      address: "0x6bDc36E20D267Ff0dd6097799f82e78907105e2F",
+      abi: WETH_ABI,
+    },
+    // The weth address on Lens is treated like an ERC20, meaning that mint events
+    // are initiated by the L2 bridge and come from the zero address.
+    weth: {
+      address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
+      abi: WETH_ABI,
+    },
+  },
   [CHAIN_IDs.LINEA]: {
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
@@ -414,7 +439,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",
       abi: LINEA_TOKEN_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
@@ -428,7 +453,7 @@ export const CONTRACT_ADDRESSES: {
     // the spoke pool. However, the relayer may need to wrap eth on
     // the L2; therefore, we need to define an address here so the
     // dataworker won't error.
-    eth: {
+    nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
@@ -437,7 +462,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
-    eth: {
+    nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
@@ -504,10 +529,11 @@ export const CONTRACT_ADDRESSES: {
     },
     // The shared bridge is the "spender" of the token we wish to bridge, so we only
     // need its contract address so that we may approve it.
-    zkStackSharedBridge_37111: {
+    zkStackSharedBridge: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
-    nativeTokenVault_37111: {
+    zkStackNativeTokenVault: {
       address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
@@ -547,19 +573,19 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
-    zkStackBridge: {
-      address: "0x427373Be173120D7A042b44D0804E37F25E7330b",
-      abi: ZK_SYNC_DEFAULT_ERC20_BRIDGE_L2_ABI,
+    nativeTokenVault: {
+      address: "0x0000000000000000000000000000000000010004",
+      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
-    gasToken: {
+    nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
     },
-    wrappedGasToken: {
+    wrappedNativeToken: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
       abi: WETH_ABI,
     },
-    l2Weth: {
+    weth: {
       address: "0xaA91D645D7a6C1aeaa5988e0547267B77d33fe16",
       abi: WETH_ABI,
     },
@@ -607,6 +633,11 @@ export const CONTRACT_ADDRESSES: {
     scrollGatewayRouter: {
       address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.TATARA]: {
+    withdrawableErc20: {
+      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
     },
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
