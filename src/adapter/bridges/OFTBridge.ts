@@ -240,7 +240,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     return {
       [this.dstTokenAddress]: events.map((event) => {
         event.args.toAddress = toAddress;
-        return processEvent(event, "amountReceivedLD", "toAddress", "fromAddress");
+        return processEvent(event, "amountReceivedLD");
       }),
     };
   }
@@ -289,7 +289,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     return {
       [this.dstTokenAddress]: events.map((event) => {
         event.args.fromAddress = fromAddress;
-        return processEvent(event, "amountReceivedLD", "toAddress", "fromAddress");
+        return processEvent(event, "amountReceivedLD");
       }),
     };
   }
