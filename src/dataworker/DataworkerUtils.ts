@@ -237,6 +237,16 @@ export function _buildRelayerRefundRoot(
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(refundsForChain).forEach(([l2TokenAddress, refunds]) => {
+      // If the token cannot be mapped to any PoolRebalanceRoute, then the amount to return must be 0 since there
+      // is no way to send the token back to the HubPool.
+      if (!clients.hubPoolClient.l2TokenHasPoolRebalanceRoute(l2TokenAddress, repaymentChainId, endBlockForMainnet)) {
+        relayerRefundLeaves.push(
+          ..._getRefundLeaves(refunds, bnZero, repaymentChainId, l2TokenAddress, maxRefundCount)
+        );
+        return;
+      }
+      // If the token can be mapped to a PoolRebalanceRoute, then we need to calculate the amount to return based
+      // on its running balances.
       const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
         l2TokenAddress,
         repaymentChainId,
@@ -255,8 +265,9 @@ export function _buildRelayerRefundRoot(
         runningBalances[repaymentChainId][l1TokenCounterpart]
       );
 
-      const _refundLeaves = _getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount);
-      relayerRefundLeaves.push(..._refundLeaves);
+      relayerRefundLeaves.push(
+        ..._getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount)
+      );
     });
   });
 

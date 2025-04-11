@@ -65,6 +65,13 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     }
     return this.enableAllL2Tokens;
   }
+
+  l2TokenHasPoolRebalanceRoute(l2Token: string, l2ChainId: number): boolean {
+    if (this.enableAllL2Tokens === undefined) {
+      return super.l2TokenHasPoolRebalanceRoute(l2Token, l2ChainId);
+    }
+    return this.enableAllL2Tokens;
+  }
 }
 
 export class SimpleMockHubPoolClient extends HubPoolClient {
