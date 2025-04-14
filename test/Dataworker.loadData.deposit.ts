@@ -250,7 +250,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
     });
 
-    it("Can refund deposits with output token as expired deposit", async function () {
+    it("Can refund expired deposits with unresolvable output token", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
         [originChainId, destinationChainId],
         getDefaultBlockRange(5),
