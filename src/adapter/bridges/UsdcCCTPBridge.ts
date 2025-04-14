@@ -109,9 +109,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) =>
-        processEvent(event, "amount")
-      ),
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 }
