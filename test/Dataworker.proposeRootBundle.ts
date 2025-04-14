@@ -89,7 +89,7 @@ describe("Dataworker: Propose root bundle", async function () {
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     // Should have enqueued a new transaction:
-    expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot2.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot2.tree.getHexRoot());
@@ -156,7 +156,7 @@ describe("Dataworker: Propose root bundle", async function () {
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     // Should have enqueued a new transaction:
-    expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot4.tree.getHexRoot());
