@@ -5,3 +5,4 @@ coverage*
 gasReporterOutput.json
 dist
 typechain*
+addresses.json
