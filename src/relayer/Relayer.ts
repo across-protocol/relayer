@@ -581,7 +581,7 @@ export class Relayer {
   }
 
   /**
-   * For all origin chains chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
+   * For all origin chains, map the relayer's deposit confirmation requirements to tiered USD amounts that can be
    * filled by this relayer.
    * @returns A mapping of chain ID to an array of origin chain fill limits in USD, ordered by origin chain block range.
    */
@@ -916,7 +916,7 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       const deposits = _deposits.map(({ deposit }) => deposit);
-      const fillStatus = await sdkUtils.fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+      const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
 
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
       // an activity surge on any single chain from significantly degrading overall performance. When running in

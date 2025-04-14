@@ -97,6 +97,8 @@ type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
 export class Dataworker {
   rootCache: PoolRebalanceRootCache = {};
 
+  blockRangeEndBlockBuffer: { [chainId: number]: number };
+
   // eslint-disable-next-line no-useless-constructor
   constructor(
     readonly logger: winston.Logger,
@@ -105,16 +107,16 @@ export class Dataworker {
     readonly chainIdListForBundleEvaluationBlockNumbers: number[],
     readonly maxRefundCountOverride: number | undefined,
     readonly maxL1TokenCountOverride: number | undefined,
-    readonly blockRangeEndBlockBuffer: { [chainId: number]: number } = {},
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
     readonly forceProposal = false,
     readonly forceBundleRange?: [number, number][]
   ) {
+    this.blockRangeEndBlockBuffer = clients.bundleDataClient.blockRangeEndBlockBuffer;
     if (
       maxRefundCountOverride !== undefined ||
       maxL1TokenCountOverride !== undefined ||
-      Object.keys(blockRangeEndBlockBuffer).length > 0
+      Object.keys(this.blockRangeEndBlockBuffer).length > 0
     ) {
       this.logger.debug({
         at: "Dataworker#Constructor",
@@ -444,7 +446,7 @@ export class Dataworker {
     // 4. Propose roots to HubPool contract.
     this.logger.debug({
       at: "Dataworker#propose",
-      message: "Enqueing new root bundle proposal txn",
+      message: "Enqueuing new root bundle proposal txn",
       blockRangesForProposal,
       poolRebalanceLeavesCount: rootBundleData.poolRebalanceLeaves.length,
       poolRebalanceRoot: rootBundleData.poolRebalanceTree.getHexRoot(),
@@ -1111,12 +1113,11 @@ export class Dataworker {
             continue;
           }
 
-          // Filter out slow fill leaves for other chains and also expired deposits.
-          const currentTime = client.getCurrentTime();
-          const leavesForChain = leaves.filter(
-            (leaf) => leaf.chainId === chainId && leaf.relayData.fillDeadline >= currentTime
-          );
-          const unexecutedLeaves = leavesForChain.filter((leaf) => {
+          const unexecutedLeaves = leaves.filter((leaf) => {
+            // Filter out slow fill leaves for other chains.
+            if (leaf.chainId !== chainId) {
+              return false;
+            }
             const executedLeaf = slowFillsForChain.find(
               (event) =>
                 event.originChainId === leaf.relayData.originChainId && event.depositId.eq(leaf.relayData.depositId)
@@ -1150,12 +1151,24 @@ export class Dataworker {
     submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
+    const currentTime = client.getCurrentTime();
+
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
     // The original depositor can always execute these and pay for the gas themselves.
     const leaves = _leaves.filter((leaf) => {
       const {
-        relayData: { depositor, recipient, message },
+        relayData: { depositor, recipient, message, fillDeadline },
       } = leaf;
+
+      if (fillDeadline < currentTime) {
+        this.logger.debug({
+          at: "Dataworker#_executeSlowFillLeaf",
+          message: "Ignoring slow fill leaf with expired fill deadline",
+          fillDeadline,
+          currentTime,
+        });
+        return false;
+      }
 
       // If there is a message, we ignore the leaf and log an error.
       if (!sdk.utils.isMessageEmpty(message)) {
@@ -1218,12 +1231,7 @@ export class Dataworker {
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
-          const fillStatus = await sdkUtils.relayFillStatus(
-            client.spokePool,
-            slowFill.relayData,
-            "latest",
-            destinationChainId
-          );
+          const fillStatus = await client.relayFillStatus(slowFill.relayData, "latest");
           if (fillStatus === FillStatus.Filled) {
             this.logger.debug({
               at: "Dataworker#executeSlowRelayLeaves",

@@ -118,8 +118,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         .filter((e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token))
         .map((e) => {
           return {
-            ...processEvent(e, "amount", "to", "to"),
-            from: this.hubPool.address,
+            ...processEvent(e, "amount"),
           };
         });
     } else {
@@ -129,8 +128,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         this.getAtomicDepositor().filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
         eventConfig
       );
-      // If we are in this branch, then the depositor is an EOA, so we can assume that from == to.
-      processedEvents = events.map((e) => processEvent(e, "amount", "from", "from"));
+      processedEvents = events.map((e) => processEvent(e, "amount"));
     }
     return {
       [this.resolveL2TokenAddress(l1Token)]: processedEvents,
@@ -181,7 +179,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
       );
     }
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount", "_to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: processedEvents.map((e) => processEvent(e, "_amount")),
     };
   }
   private getAtomicDepositor(): Contract {

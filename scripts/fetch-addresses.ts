@@ -7,7 +7,10 @@ const OUTPUT_PATH = "addresses.json";
 let logger: typeof Logger;
 
 async function run(): Promise<number> {
-  const addressList = new AddressAggregator([new addressAdapters.risklabs.AddressList()], logger);
+  const addressList = new AddressAggregator(
+    [new addressAdapters.risklabs.AddressList({ throwOnError: false })],
+    logger
+  );
   const addresses = await addressList.update();
   await writeFile(OUTPUT_PATH, JSON.stringify(addresses, null, 4));
   console.log(`Stored ${addresses.size} addresses at ${OUTPUT_PATH}.`);
