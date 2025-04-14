@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.51",
     "@across-protocol/contracts": "^4.0.5",
-    "@across-protocol/sdk": "4.1.43",
+    "@across-protocol/sdk": "4.1.44",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
@@ -50,7 +50,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "yarn build-bigint-buffer; yarn update-addresses || true",
+    "postinstall": "yarn build-bigint-buffer; yarn update-addresses",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
