@@ -1,5 +1,5 @@
 import { utils } from "@across-protocol/sdk";
-import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
@@ -108,7 +108,7 @@ export function cctpBytes32ToAddress(bytes32: string): string {
  */
 export function getCctpDomainForChainId(chainId: number): number {
   const cctpDomain = PUBLIC_NETWORKS[chainId]?.cctpDomain;
-  if (!isDefined(cctpDomain)) {
+  if (!isDefined(cctpDomain) || cctpDomain === CCTP_NO_DOMAIN) {
     throw new Error(`No CCTP domain found for chainId: ${chainId}`);
   }
   return cctpDomain;
@@ -312,7 +312,7 @@ export async function getAttestationsForCCTPDepositEvents(
             nonceHash: attestationForDeposit.eventNonce,
             messageBytes: attestationForDeposit.message,
             attestation: attestationForDeposit?.attestation, // Will be undefined if status is "pending"
-            status: _getPendingAttestationStatus(attestationForDeposit.status),
+            status: _getPendingV2AttestationStatus(attestationForDeposit.status),
           };
         }
       } else {
@@ -327,8 +327,12 @@ export async function getAttestationsForCCTPDepositEvents(
   return attestedDeposits;
 }
 
-function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
+function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
   return attestation === "pending_confirmation" ? "pending" : "ready";
+}
+
+function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
+  return attestation === "pending_confirmations" ? "pending" : "ready";
 }
 
 async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
