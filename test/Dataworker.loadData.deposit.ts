@@ -258,7 +258,7 @@ describe("Dataworker: Load bundle data", async function () {
       );
 
       generateV3Deposit({
-        inputToken: ZERO_ADDRESS,
+        outputToken: ZERO_ADDRESS,
         fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
       });
 
