@@ -64,7 +64,7 @@ export async function run(): Promise<void> {
       ? { maxFeePerGas, maxPriorityFeePerGas }
       : await getGasPrice(connectedSigner.provider);
   console.log(
-    `Submitting txn withmaxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
+    `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
   );
   // Send ETH
   if (token === ZERO_ADDRESS || token === "0x") {
