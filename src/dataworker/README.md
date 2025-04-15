@@ -138,7 +138,7 @@ event FilledRelay(
     uint256 indexed depositId,
     uint32 fillDeadline,
     uint32 exclusivityDeadline,
-    bytess32 exclusiveRelayer,
+    bytes32 exclusiveRelayer,
     bytes32 indexed relayer,
     bytes32 depositor,
     bytes32 recipient,
