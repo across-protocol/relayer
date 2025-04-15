@@ -27,7 +27,7 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const searchConfig: EventSearchConfig = {
     fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
@@ -35,7 +35,7 @@ export async function cctpL1toL2Finalizer(
     maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
   const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
-    l1ToL2AddressesToFinalize,
+    senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
