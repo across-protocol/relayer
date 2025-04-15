@@ -1,6 +1,7 @@
 import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
+import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
@@ -25,7 +26,6 @@ import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
 import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
-import LINEA_USDC_BRIDGE_ABI from "./abi/LineaUsdcBridge.json";
 import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
 import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
@@ -52,10 +52,6 @@ export const CONTRACT_ADDRESSES: {
     lineaL1TokenBridge: {
       address: "0x051F1D88f0aF5763fB888eC4378b4D8B29ea3319",
       abi: LINEA_TOKEN_BRIDGE_ABI,
-    },
-    lineaL1UsdcBridge: {
-      address: "0x504A330327A089d8364C4ab3811Ee26976d388ce",
-      abi: LINEA_USDC_BRIDGE_ABI,
     },
     zkStackSharedBridge: {
       address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
@@ -182,6 +178,14 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0xbd3fa81b58ba92a82136038b25adec7066af3155",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI, // Same ABI as V1 as far as functions we care about, so overload for now.
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
@@ -427,13 +431,17 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LINEA]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_MESSAGE_SERVICE_ABI,
-    },
-    lineaL2UsdcBridge: {
-      address: "0xA2Ee6Fce4ACB62D95448729cDb781e3BEb62504A",
-      abi: LINEA_USDC_BRIDGE_ABI,
     },
     lineaL2TokenBridge: {
       address: "0x353012dc4a9A6cF55c941bADC267f82004A8ceB9",

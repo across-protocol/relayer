@@ -9,7 +9,6 @@ import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
   findMessageFromTokenBridge,
-  findMessageFromUsdcBridge,
   findMessageSentEvents,
   getL1MessageServiceContractFromL1ClaimingService,
   initLineaSdk,
@@ -55,29 +54,22 @@ export async function lineaL1ToL2Finalizer(
     CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.abi,
     hubPoolClient.hubPool.provider
   );
-  const l1UsdcBridge = new Contract(
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.address,
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.abi,
-    hubPoolClient.hubPool.provider
-  );
-
   const searchConfig: EventSearchConfig = {
     fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
     toBlock: l1SpokePoolClient.latestBlockSearched,
     maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
 
-  const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
+  const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
     findMessageSentEvents(
       getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
       l1ToL2AddressesToFinalize,
       searchConfig
     ),
     findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
-    findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
   ]);
 
-  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents, ...usdcBridgeEvents];
+  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents];
   const enrichedMessageSentEvents = await sdkUtils.mapAsync(messageSentEvents, async (event) => {
     const {
       transactionHash: txHash,
