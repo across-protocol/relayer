@@ -10,6 +10,7 @@ import {
   toBN,
   getCctpDomainForChainId,
   paginatedEventQuery,
+  ethers,
 } from "../../utils";
 import { processEvent } from "../utils";
 import {
@@ -18,7 +19,6 @@ import {
   getCctpTokenMessenger,
   isCctpV2L2ChainId,
 } from "../../utils/CCTPUtils";
-import { ethers } from "hardhat";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
