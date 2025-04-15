@@ -25,8 +25,6 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
   private IS_CCTP_V2 = false;
 
-  private l2TokenMessenger: Contract;
-
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
@@ -95,13 +93,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       compareAddressesSimple(cctpBytes32ToAddress(event.args.mintRecipient), toAddress)
     );
     return {
-      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
-        const processedEvent = processEvent(event, "amount", "mintRecipient", "depositor");
-        return {
-          ...processedEvent,
-          to: cctpBytes32ToAddress(processedEvent.to),
-        };
-      }),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 
@@ -117,9 +109,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) =>
-        processEvent(event, "amount", "mintRecipient", "mintToken")
-      ),
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 }

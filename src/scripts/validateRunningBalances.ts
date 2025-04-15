@@ -309,7 +309,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
             );
             const slowFills = _buildSlowRelayRoot(bundleData.bundleSlowFillsV3).leaves;
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
-            // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
+            // was sent to the spoke pool. This would reduce the amount transferred when the slow fill is executed.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
               (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
             );
@@ -319,8 +319,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
                 const fillStatus = await spokePoolClients[leaf.chainId].relayFillStatus(
                   slowFillForChain.relayData,
-                  bundleEndBlockForChain.toNumber(),
-                  leaf.chainId
+                  bundleEndBlockForChain.toNumber()
                 );
 
                 // For v3 slow fills if there is a matching fast fill, then the fill is completed.

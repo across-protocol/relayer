@@ -1,5 +1,5 @@
 import { utils } from "@across-protocol/sdk";
-import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
@@ -23,14 +23,19 @@ type CCTPDeposit = {
 };
 type CCTPDepositEvent = CCTPDeposit & { log: Log };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
-type CCTPV2APIGetAttestationResponse = {
+type CCTPV2APIAttestation = {
   status: string;
   attestation: string;
   message: string;
   eventNonce: string;
   cctpVersion: number;
 };
-type CCTPV2APIGetAttestationResponses = { messages: CCTPV2APIGetAttestationResponse[] };
+type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
+function isCctpV2ApiResponse(
+  obj: CCTPAPIGetAttestationResponse | CCTPV2APIGetAttestationResponse
+): obj is CCTPV2APIGetAttestationResponse {
+  return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
+}
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
 
@@ -103,7 +108,7 @@ export function cctpBytes32ToAddress(bytes32: string): string {
  */
 export function getCctpDomainForChainId(chainId: number): number {
   const cctpDomain = PUBLIC_NETWORKS[chainId]?.cctpDomain;
-  if (!isDefined(cctpDomain)) {
+  if (!isDefined(cctpDomain) || cctpDomain === CCTP_NO_DOMAIN) {
     throw new Error(`No CCTP domain found for chainId: ${chainId}`);
   }
   return cctpDomain;
@@ -214,7 +219,8 @@ async function getCCTPDepositEventsWithStatus(
   return await Promise.all(
     deposits.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
-      // so skip this step for V2.
+      // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
+      // query the Attestation API service.
       if (isCctpV2) {
         return {
           ...deposit,
@@ -280,40 +286,53 @@ export async function getAttestationsForCCTPDepositEvents(
       const _txReceiptHashCount = txnReceiptHashCount[deposit.log.transactionHash] ?? 0;
       txnReceiptHashCount[deposit.log.transactionHash] = _txReceiptHashCount + 1;
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(
-            deposit.sourceDomain,
-            deposit.log.transactionHash,
-            isMainnet,
-            _txReceiptHashCount
-          )
+        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, deposit.log.transactionHash, isMainnet)
         : await _generateCCTPAttestationProof(deposit.messageHash, isMainnet);
 
-      // Temporarily, for V2 we now have the nonceHash and we can query whether the message has been processed.
-      // We can skip this once we can derive nonceHashes locally.
-      if (isCctpV2) {
-        const attestationV2 = attestation as CCTPV2APIGetAttestationResponse;
-        const processed = await _hasCCTPMessageBeenProcessed(attestationV2.eventNonce, destinationMessageTransmitter);
+      // For V2 we now have the nonceHash and we can query whether the message has been processed.
+      // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
+      // deposits in getCCTPDepositEventsWithStatus().
+      if (isCctpV2ApiResponse(attestation)) {
+        const attestationForDeposit = attestation.messages[_txReceiptHashCount];
+        const processed = await _hasCCTPMessageBeenProcessed(
+          attestationForDeposit.eventNonce,
+          destinationMessageTransmitter
+        );
         if (processed) {
           return {
             ...deposit,
             status: "finalized" as CCTPMessageStatus,
           };
+        } else {
+          return {
+            ...deposit,
+            // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
+            // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
+            // because its not needed for V2
+            nonceHash: attestationForDeposit.eventNonce,
+            messageBytes: attestationForDeposit.message,
+            attestation: attestationForDeposit?.attestation, // Will be undefined if status is "pending"
+            status: _getPendingV2AttestationStatus(attestationForDeposit.status),
+          };
         }
+      } else {
+        return {
+          ...deposit,
+          attestation: attestation?.attestation, // Will be undefined if status is "pending"
+          status: _getPendingAttestationStatus(attestation.status),
+        };
       }
-      const attestationStatus: CCTPMessageStatus = attestation.status === "pending_confirmations" ? "pending" : "ready";
-      return {
-        ...deposit,
-        // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
-        // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
-        // because its not needed for V2
-        nonceHash: (attestation as CCTPV2APIGetAttestationResponse).eventNonce,
-        messageBytes: isCctpV2 ? (attestation as CCTPV2APIGetAttestationResponse).message : deposit.messageBytes,
-        attestation: attestation?.attestation, // Will be undefined if status is "pending"
-        status: attestationStatus,
-      };
     })
   );
   return attestedDeposits;
+}
+
+function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
+  return attestation === "pending_confirmation" ? "pending" : "ready";
+}
+
+function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
+  return attestation === "pending_confirmations" ? "pending" : "ready";
 }
 
 async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
@@ -353,21 +372,14 @@ function _decodeCCTPV2Message(message: { data: string; transactionHash: string; 
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
-  // the API service.
   const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
   const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
 
-  // @TODO: This isn't working yet:
-  const derivedNonceHash = ethers.utils.solidityKeccak256(
-    ["bytes32", "uint256", "bytes32"],
-    [message.transactionHash, message.logIndex, ethers.utils.keccak256(messageBytes)]
-  );
-  // console.log(`Decoded nonce hash for message: ${derivedNonceHash}`, message.logIndex, message.transactionHash);
-
   return {
-    nonceHash: derivedNonceHash,
+    // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
+    // the API service. For now, we cannot compute it here as Circle will not disclose the hashing algorithm.
+    nonceHash: ethers.constants.HashZero,
     amount: BigNumber.from(amount).toString(),
     sourceDomain,
     destinationDomain,
@@ -397,19 +409,16 @@ async function _generateCCTPAttestationProof(
   return attestationResponse;
 }
 
-// @todo: We can use pass in a nonceHash here once we know how to recreate the nonceHash. Until then we need to assume
-// that the responses are ordered in the same order as the transaction hashes.
+// @todo: We can pass in a nonceHash here once we know how to recreate the nonceHash.
 async function _generateCCTPV2AttestationProof(
   sourceDomainId: number,
   transactionHash: string,
-  isMainnet: boolean,
-  txnReceiptHashCount: number
+  isMainnet: boolean
 ): Promise<CCTPV2APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV2APIGetAttestationResponses>(
+  const httpResponse = await axios.get<CCTPV2APIGetAttestationResponse>(
     `https://iris-api${
       isMainnet ? "" : "-sandbox"
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
-  const attestationResponse = httpResponse.data;
-  return attestationResponse.messages[txnReceiptHashCount];
+  return httpResponse.data;
 }

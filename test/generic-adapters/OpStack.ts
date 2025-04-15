@@ -151,8 +151,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await wethBridge.queryL1BridgeInitiationEvents(l1WethAddress, monitoredEoa, undefined, searchConfig)
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from).to.equal(atomicDepositorAddress);
-      expect(result[0].to).to.equal(monitoredEoa);
       expect(result[0].amount).to.equal(1);
     });
     // TODO: Add unit tests when from address is contract but need to change the providers such that we can
@@ -173,8 +171,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from).to.equal(atomicDepositorAddress);
-      expect(result[0].to).to.equal(monitoredEoa);
     });
   });
 
@@ -188,8 +184,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await snxBridge.queryL1BridgeInitiationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to).to.equal(monitoredEoa);
-      expect(events[0].from).to.equal(monitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -201,7 +195,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await snxBridge.queryL2BridgeFinalizationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to).to.equal(monitoredEoa);
     });
   });
 
@@ -215,8 +208,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await daiBridge.queryL1BridgeInitiationEvents(l1DaiAddress, monitoredEoa, undefined, searchConfig)
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -228,8 +219,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await daiBridge.queryL2BridgeFinalizationEvents(l1DaiAddress, monitoredEoa, undefined, searchConfig)
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
   });
 
@@ -243,8 +232,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await erc20Bridge.queryL1BridgeInitiationEvents(l1Erc20Address, monitoredEoa, undefined, searchConfig)
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -256,8 +243,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         await erc20Bridge.queryL2BridgeFinalizationEvents(l1Erc20Address, monitoredEoa, undefined, searchConfig)
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
   });
 

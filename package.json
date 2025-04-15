@@ -10,9 +10,9 @@
     "node": ">=20.18.0"
   },
   "dependencies": {
-    "@across-protocol/constants": "3.1.47-beta.0",
-    "@across-protocol/contracts": "^4.0.4",
-    "@across-protocol/sdk": "4.1.35",
+    "@across-protocol/constants": "^3.1.52",
+    "@across-protocol/contracts": "^4.0.5",
+    "@across-protocol/sdk": "4.1.44",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@defi-wonderland/smock": "^2.3.5",
@@ -39,7 +39,7 @@
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
-    "viem": "^2.23.7",
+    "viem": "^2.26.1",
     "winston": "^3.10.0",
     "zksync-ethers": "^5.7.2"
   },
@@ -50,7 +50,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "yarn build-bigint-buffer; yarn update-addresses || true",
+    "postinstall": "yarn build-bigint-buffer; yarn update-addresses",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",

@@ -17,7 +17,6 @@ import {
   convertFromWei,
   createFormatFunction,
   ERC20,
-  fillStatusArray,
   blockExplorerLink,
   blockExplorerLinks,
   formatUnits,
@@ -194,7 +193,7 @@ export class Monitor {
         const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
           ({ deposit }) => deposit
         );
-        const fillStatus = await fillStatusArray(spokePoolClients[destinationChainId].spokePool, deposits);
+        const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
         return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
       })
     );
