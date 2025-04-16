@@ -119,7 +119,7 @@ async function dispute(args: Record<string, number | string>, signer: Signer): P
     await deposit.wait();
   }
   if (latestBlock.timestamp >= challengePeriodEndTimestamp && !force) {
-    console.log("Nothing to dispute: no active propopsal.");
+    console.log("Nothing to dispute: no active proposal.");
     return txnHash === undefined;
   }
 
