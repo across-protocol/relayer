@@ -41,7 +41,10 @@ module.exports = {
     "no-restricted-imports": [
       "error",
       {
-        patterns: [{ group: ["@ethersproject/bignumber"], message: "Use 'src/utils/BNUtils' instead" }],
+        patterns: [
+          { group: ["@ethersproject/bignumber"], message: "Use 'src/utils/BNUtils' instead" },
+          { group: ["hardhat"], message: "Use 'src/utils or 'ethers'' instead" },
+        ],
         paths: [
           { name: "ethers", importNames: ["BigNumber"], message: "Use 'src/utils/BNUtils' instead" },
           { name: "ethers", importNames: ["Event"], message: "Use Log from 'src/interfaces/Common' instead" },
@@ -59,6 +62,12 @@ module.exports = {
       files: ["scripts/*.ts", "tasks/*.ts", "src/scripts/*.ts"],
       rules: {
         "no-console": 0,
+      },
+    },
+    {
+      files: ["test/**/*.ts", "hardhat.config.ts", "tasks/*.ts"],
+      rules: {
+        "no-restricted-imports": "off",
       },
     },
   ],
