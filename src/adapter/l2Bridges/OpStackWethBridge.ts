@@ -12,13 +12,21 @@ import {
   Provider,
   Signer,
   toBN,
+  EvmAddress,
+  Address,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class OpStackWethBridge extends BaseL2BridgeAdapter {
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Provider: Provider | Signer, l1Token: string) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
     const { address, abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
@@ -28,13 +36,13 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: string,
-    l2Token: string,
-    _l1Token: string,
+    toAddress: Address,
+    l2Token: Address,
+    _l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
-    const weth = new Contract(l2Token, WETH_ABI, this.l2Signer);
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const weth = new Contract(l2Token.toAddress(), WETH_ABI, this.l2Signer);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
     const unwrapTxn: AugmentedTransaction = {
       contract: weth,
@@ -71,8 +79,8 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: string,
-    _l2Token: string
+    fromAddress: Address,
+    _l2Token: Address
   ): Promise<BigNumber> {
     _l2Token; // unused
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
