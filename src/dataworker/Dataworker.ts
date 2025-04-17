@@ -2330,6 +2330,8 @@ export class Dataworker {
           // If simulating mainnet execution, can fail as it may require funds to be sent from
           // pool rebalance leaf.
           canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          // Don't batch any Polygon L2->L1 withdrawals due to L1 MAX_LOGS limitation, specific to Polygon.
+          nonMulticall: leaf.amountToReturn.gt(0) && leaf.chainId === CHAIN_IDs.POLYGON
         });
       } else {
         this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
