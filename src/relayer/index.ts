@@ -104,7 +104,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!stop) {
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
+        // txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 

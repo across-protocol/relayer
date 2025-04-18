@@ -356,6 +356,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       enabledChainIds.forEach((chainId) => {
         hubPoolClient.mapTokenInfo(nativeUSDC[chainId], "USDC", 6);
+        hubPoolClient.mapTokenInfo(bridgedUSDC[chainId], "USDC", 6);
       });
     });
 
@@ -393,6 +394,26 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
           expect(nativeBalance.eq(bridgedBalance)).to.be.true;
         });
+    });
+
+    it("Correctly normalizes remote token balance to L1 token decimals", async function () {
+      // Let's pretend that the Optimism USDC version uses 18 decimals instead of 6, like the L1 token decimals:
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      let bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(bnZero)).to.be.true;
+
+      // Add balance of optimism token:
+      const testBalance = toWei("10");
+      tokenClient.setTokenData(testChain, bridgedUSDC[testChain], testBalance);
+
+      const convertedTestBalance = toMegaWei("10");
+      bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
+
+      // Cumulative balance returns in L1 token decimals:
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      expect(cumulativeBalance.eq(initialUsdcTotal.add(convertedTestBalance))).to.be.true;
     });
 
     it("Correctly sums 1:many token balances", async function () {

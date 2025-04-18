@@ -172,7 +172,7 @@ export class Relayer {
       // It's necessary to update token balances in case WETH was wrapped.
       tokenClient.clearTokenData();
       await tokenClient.update();
-      await inventoryClient.rebalanceInventoryIfNeeded();
+      // await inventoryClient.rebalanceInventoryIfNeeded();
       await inventoryClient.withdrawExcessBalances();
     }
 
