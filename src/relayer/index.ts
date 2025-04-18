@@ -57,7 +57,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const { spokePoolClients } = relayerClients;
   const simulate = !sendingTransactionsEnabled;
-  const txnReceipts: { [chainId: number]: Promise<string[]> } = {};
+  let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
 
   try {
     for (let run = 1; !stop; ++run) {
