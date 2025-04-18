@@ -91,6 +91,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
       hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
       hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
+      hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
+      hubPoolClient.mapTokenInfo(mainnetWeth[chainId], "WETH", 18);
     });
   };
 

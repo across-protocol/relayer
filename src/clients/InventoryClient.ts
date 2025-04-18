@@ -122,6 +122,8 @@ export class InventoryClient {
    * Includes both the actual balance on the chain and any pending inbound transfers to the target chain.
    * If l2Token is supplied, return its balance on the specified chain. Otherwise, return the total allocation
    * of l1Token on the specified chain.
+   * @notice Returns the balance of the tokens normalized to the L1 token decimals, which matters if the L2 token
+   * decimals differs from the L1 token decimals.
    * @param chainId Chain to query token balance on.
    * @param l1Token L1 token to query on chainId (after mapping).
    * @param l2Token Optional l2 token address to narrow the balance reporting.
@@ -131,9 +133,12 @@ export class InventoryClient {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
 
+    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+
     // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
-      balance = tokenClient.getBalance(chainId, l2Token);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+      balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
       return balance.add(
         crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
       );
@@ -141,7 +146,10 @@ export class InventoryClient {
 
     const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
     balance = l2Tokens
-      .map((l2Token) => tokenClient.getBalance(chainId, l2Token))
+      .map((l2Token) => {
+        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+        return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
+      })
       .reduce((acc, curr) => acc.add(curr), bnZero);
 
     return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
@@ -152,7 +160,7 @@ export class InventoryClient {
    * @param l1Token L1 token to query.
    * @returns Distribution of l1Token by chain ID and l2Token.
    */
-  getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
+  private getChainDistribution(l1Token: string): { [chainId: number]: TokenDistribution } {
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     const distribution: { [chainId: number]: TokenDistribution } = {};
 
@@ -1134,6 +1142,9 @@ export class InventoryClient {
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+          const l2TokenFormatter = createFormatFunction(2, 4, false, l2TokenDecimals);
+          const l2BalanceFromL1Decimals = sdkUtils.ConvertDecimals(l1TokenInfo.decimals, l2TokenDecimals);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
           if (!isDefined(tokenConfig)) {
             return;
@@ -1172,7 +1183,8 @@ export class InventoryClient {
 
           const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
-          const desiredWithdrawalAmount = cumulativeBalance.mul(withdrawPct).div(this.scalar);
+          const cumulativeBalanceInL2TokenDecimals = l2BalanceFromL1Decimals(cumulativeBalance);
+          const desiredWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
 
           this.log(
             `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
@@ -1189,7 +1201,7 @@ export class InventoryClient {
               withdrawalParams: shouldWithdrawExcess
                 ? {
                     withdrawPct: formatUnits(withdrawPct, 18),
-                    desiredWithdrawalAmount: formatter(desiredWithdrawalAmount),
+                    desiredWithdrawalAmount: l2TokenFormatter(desiredWithdrawalAmount),
                   }
                 : undefined,
             }
@@ -1201,7 +1213,7 @@ export class InventoryClient {
           // maxL2WithdrawalPeriodSeconds does not exceed the maxL2WithdrawalVolume.
           const maxL2WithdrawalVolume = excessWithdrawThresholdPct
             .sub(targetPct)
-            .mul(cumulativeBalance)
+            .mul(cumulativeBalanceInL2TokenDecimals)
             .div(this.scalar);
           const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
             withdrawExcessPeriod,
@@ -1216,17 +1228,17 @@ export class InventoryClient {
           this.log(
             `Total withdrawal volume for the last ${withdrawExcessPeriod} seconds is ${
               withdrawalVolumeOverCap ? "OVER" : "UNDER"
-            } the limit of ${formatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
+            } the limit of ${l2TokenFormatter(maxL2WithdrawalVolume)} for ${l1TokenInfo.symbol} on ${getNetworkName(
               chainId
-            )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${formatter(
+            )}, ${withdrawalVolumeOverCap ? "cannot" : "proceeding to"} withdraw ${l2TokenFormatter(
               desiredWithdrawalAmount
             )}.`,
             {
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
               targetPct: formatUnits(targetPct, 18),
               maximumWithdrawalPct: formatUnits(excessWithdrawThresholdPct.sub(targetPct), 18),
-              maximumWithdrawalAmount: formatter(maxL2WithdrawalVolume),
-              pendingWithdrawalAmount: formatter(pendingWithdrawalAmount),
+              maximumWithdrawalAmount: l2TokenFormatter(maxL2WithdrawalVolume),
+              pendingWithdrawalAmount: l2TokenFormatter(pendingWithdrawalAmount),
             }
           );
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
@@ -1271,10 +1283,11 @@ export class InventoryClient {
         message: `L2->L1 withdrawals on ${getNetworkName(chainId)} submitted`,
         chainId,
         withdrawalsRequired: withdrawalsRequired[chainId].map((withdrawal: L2Withdrawal) => {
-          const l1TokenInfo = getL1TokenInfo(withdrawal.l2Token, Number(chainId));
-          const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+          const l2TokenInfo = this.hubPoolClient.getTokenInfoForAddress(withdrawal.l2Token, Number(chainId));
+
+          const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
           return {
-            l2Token: l1TokenInfo.symbol,
+            l2Token: l2TokenInfo.symbol,
             amountToWithdraw: formatter(withdrawal.amountToWithdraw.toString()),
           };
         }),
