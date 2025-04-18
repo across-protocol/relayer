@@ -465,6 +465,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000000000",
     },
   },
+  [CHAIN_IDs.SOLANA]: {
+    cctpTokenMessenger: {
+      address: "CCTPiPYPc6AsJuwueEnWgSgucamXDZwBd53dQ11YiKX3",
+    },
+    cctpMessageTransmitter: {
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    },
+  },
   [CHAIN_IDs.ZORA]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
@@ -641,6 +649,14 @@ export const CONTRACT_ADDRESSES: {
     scrollGatewayRouter: {
       address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    },
+  },
+  [CHAIN_IDs.SOLANA_DEVNET]: {
+    cctpTokenMessenger: {
+      address: "CCTPiPYPc6AsJuwueEnWgSgucamXDZwBd53dQ11YiKX3",
+    },
+    cctpMessageTransmitter: {
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     },
   },
   [CHAIN_IDs.TATARA]: {
