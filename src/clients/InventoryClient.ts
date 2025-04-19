@@ -108,6 +108,7 @@ export class InventoryClient {
   /*
    * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
    * virtual balance on that chain.
+   * @notice Returns the balance in the decimals of the L1 token.
    * @param l1Token L1 token address to query.
    * returns Cumulative balance of l1Token across all inventory-managed chains.
    */
@@ -129,7 +130,7 @@ export class InventoryClient {
    * @param l2Token Optional l2 token address to narrow the balance reporting.
    * @returns Balance of l1Token on chainId.
    */
-  getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
+  protected getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
 
@@ -203,7 +204,12 @@ export class InventoryClient {
       return bnZero;
     }
 
-    const shortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
+    const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const shortfall = sdkUtils.ConvertDecimals(
+      l2TokenDecimals,
+      l1TokenDecimals
+    )(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token));
     const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token).sub(shortfall);
 
     // Multiply by scalar to avoid rounding errors.
@@ -311,8 +317,10 @@ export class InventoryClient {
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
-  async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
+  // @notice Returns refunds using decimals of the l1Token.
+  private async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
+    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
 
     let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
@@ -330,12 +338,11 @@ export class InventoryClient {
           refunds[chainId] = bnZero;
         } else {
           const destinationToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
-          refunds[chainId] = this.bundleDataClient.getTotalRefund(
-            refundsToConsider,
-            this.relayer,
-            chainId,
-            destinationToken
-          );
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
+          refunds[chainId] = sdkUtils.ConvertDecimals(
+            l2TokenDecimals,
+            l1TokenDecimals
+          )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
           return refunds;
         }
         return refunds;
@@ -511,6 +518,7 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
+    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
@@ -518,7 +526,11 @@ export class InventoryClient {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
       // Destination chain:
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
-      const chainShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
+      const l2BalanceToL1Decimals = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
+      const chainShortfall = l2BalanceToL1Decimals(
+        this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken)
+      );
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
@@ -528,7 +540,7 @@ export class InventoryClient {
         chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall
-          : chainVirtualBalanceWithShortfall.add(inputAmount);
+          : chainVirtualBalanceWithShortfall.add(l2BalanceToL1Decimals(inputAmount));
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
@@ -1166,7 +1178,6 @@ export class InventoryClient {
             return;
           }
 
-          const currentBalance = this.tokenClient.getBalance(chainId, l2Token);
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
 
           // We apply a discount on the effective target % because the repayment chain choice
@@ -1193,7 +1204,6 @@ export class InventoryClient {
             {
               l1Token,
               l2Token,
-              currentBalance: formatter(currentBalance),
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1328,6 +1338,8 @@ export class InventoryClient {
         logData[symbol][chainId] ??= {};
 
         Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+          const l2Formatter = createFormatFunction(2, 4, false, l2TokenDecimals);
           const balanceOnChain = this.getBalanceOnChain(chainId, l1Token, l2Token);
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
@@ -1337,10 +1349,10 @@ export class InventoryClient {
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
           logData[symbol][chainId][l2Token] = {
-            actualBalanceOnChain: formatter(actualBalanceOnChain.toString()),
+            actualBalanceOnChain: l2Formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),
-            tokenShortFalls: formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()),
+            tokenShortFalls: l2Formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()),
             proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
           };
         });

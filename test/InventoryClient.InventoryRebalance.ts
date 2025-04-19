@@ -489,6 +489,37 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       expect(cumulativeBalance.eq(initialUsdcTotal.add(convertedTestBalance))).to.be.true;
     });
 
+    it("Correctly normalizes shortfalls to L1 token decimals", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      let bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(bnZero)).to.be.true;
+
+      // Add balance of optimism token:
+      const testBalance = toWei("10");
+      tokenClient.setTokenData(testChain, bridgedUSDC[testChain], testBalance);
+
+      const convertedTestBalance = toMegaWei("10");
+      bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
+
+      const shortfallAmount = toWei("1");
+      tokenClient.setTokenShortFallData(testChain, bridgedUSDC[testChain], [6969], shortfallAmount);
+      await inventoryClient.update();
+
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      const currentAllocationPct = inventoryClient.getCurrentAllocationPct(
+        mainnetUsdc,
+        testChain,
+        bridgedUSDC[testChain]
+      );
+      const expectedCurrentAllocationPct = testBalance
+        .sub(shortfallAmount)
+        .mul(toWei("1"))
+        .div(sdkUtils.ConvertDecimals(6, 18)(cumulativeBalance));
+      expect(currentAllocationPct).eq(expectedCurrentAllocationPct);
+    });
+
     it("Correctly sums 1:many token balances", async function () {
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
