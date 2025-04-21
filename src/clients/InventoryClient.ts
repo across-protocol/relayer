@@ -933,18 +933,30 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Rebalances sent to ${getNetworkName(chainId)}:*\n`;
-        for (const { l2Token, amount, targetPct, thresholdPct, cumulativeBalance, hash, chainId } of rebalances) {
+        for (const {
+          l1Token,
+          l2Token,
+          amount,
+          targetPct,
+          thresholdPct,
+          cumulativeBalance,
+          hash,
+          chainId,
+        } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
             `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
           }
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
+          const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
           mrkdwn +=
             ` - ${formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
             `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
-            `${formatter(
+            `${l1Formatter(
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
             `${formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${symbol} ` +
@@ -963,6 +975,9 @@ export class InventoryClient {
               `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
             );
           }
+          const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+
           const { symbol, decimals } = tokenInfo;
           const formatter = createFormatFunction(2, 4, false, decimals);
           const distributionPct = tokenDistributionPerL1Token[l1Token][chainId][l2Token].mul(100);
@@ -970,10 +985,10 @@ export class InventoryClient {
             `- ${symbol} transfer blocked. Required to send ` +
             `${formatter(amount.toString())} but relayer has ` +
             `${formatter(balance.toString())} on L1. There is currently ` +
-            `${formatter(this.getBalanceOnChain(chainId, l1Token, l2Token).toString())} ${symbol} on ` +
+            `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
             `${this.formatWei(distributionPct.toString())}% of the total ` +
-            `${formatter(cumulativeBalance.toString())} ${symbol}.` +
+            `${l1Formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${formatter(
               this.crossChainTransferClient
