@@ -717,6 +717,8 @@ describe("InventoryClient: Refund chain selection", async function () {
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
 
     beforeEach(async function () {
+      hubPoolClient.mapTokenInfo(nativeUSDC[ARBITRUM], "USDC", 6);
+
       // Sub in a nested USDC config for the existing USDC config.
       const usdcConfig = {
         [nativeUSDC[OPTIMISM]]: {

@@ -527,12 +527,13 @@ export class InventoryClient {
       // Destination chain:
       const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
-      const l2BalanceToL1Decimals = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
-      const chainShortfall = l2BalanceToL1Decimals(
-        this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken)
-      );
+      const chainShortfall = sdkUtils.ConvertDecimals(
+        l2TokenDecimals,
+        l1TokenDecimals
+      )(this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken));
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
+      const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
@@ -540,7 +541,9 @@ export class InventoryClient {
         chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall
-          : chainVirtualBalanceWithShortfall.add(l2BalanceToL1Decimals(inputAmount));
+          : chainVirtualBalanceWithShortfall.add(
+              sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount)
+            );
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
