@@ -979,14 +979,10 @@ describe("Dataworker: Load bundle data", async function () {
           bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
         });
         fills.forEach((fill) => {
-          const legacyFill = {
-            ...fill,
-            messageHash: "", // Superstruct defaults to "" for undefined.
-          };
           bundleFillsV3[fill.originChainId] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
-          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(legacyFill);
+          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
         });
         const mockArweaveData = [
           {
