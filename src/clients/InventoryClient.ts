@@ -745,16 +745,12 @@ export class InventoryClient {
   private _getExcessRunningBalancePcts(
     excessRunningBalances: { [chainId: number]: BigNumber },
     l1Token: string,
-    refundAmount: BigNumber
+    refundAmountInL1TokenDecimals: BigNumber
   ): { [chainId: number]: BigNumber } {
-    const l1TokenDecimals = this.hubPoolClient.getTokenInfoForL1Token(l1Token).decimals;
     const pcts = Object.fromEntries(
       Object.entries(excessRunningBalances).map(([_chainId, excess]) => {
         const chainId = Number(_chainId);
         const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(l1Token, chainId).target;
-        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
-        const refundAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
         const excessPostRelay = excess.sub(refundAmountInL1TokenDecimals);
         const returnObj = {
           pct: toBN(0),
@@ -780,7 +776,7 @@ export class InventoryClient {
       })
     );
     this.log(`Computed excess running balances for ${l1Token}`, {
-      refundAmount,
+      refundAmountInL1TokenDecimals,
       excessRunningBalancePcts: Object.fromEntries(
         Object.entries(pcts).map(([k, v]) => [
           k,
@@ -796,7 +792,7 @@ export class InventoryClient {
 
   async getExcessRunningBalancePcts(
     l1Token: string,
-    refundAmount: BigNumber,
+    refundAmountInL1TokenDecimals: BigNumber,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
     if (!isDefined(this.excessRunningBalancePromises[l1Token])) {
@@ -804,7 +800,7 @@ export class InventoryClient {
       this.excessRunningBalancePromises[l1Token] = this._getLatestRunningBalances(l1Token, chainsToEvaluate);
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token]);
-    return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmount);
+    return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);
   }
 
   getPossibleRebalances(): Rebalance[] {
