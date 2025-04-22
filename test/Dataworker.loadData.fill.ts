@@ -923,13 +923,9 @@ describe("Dataworker: Load bundle data", async function () {
         const bundleDepositsV3 = {};
         const bundleFillsV3 = {};
         deposits.forEach((deposit) => {
-          const legacyDeposit = {
-            ...deposit,
-            messageHash: "", // Superstruct defaults to "" for undefined.
-          };
           bundleDepositsV3[deposit.originChainId] ??= {};
           bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(legacyDeposit);
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
         });
         fills.forEach((fill) => {
           bundleFillsV3[fill.originChainId] ??= {};
