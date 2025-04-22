@@ -700,7 +700,7 @@ export class InventoryClient {
         // one of the refund entries for a chain can be undefined.
         const upcomingRefundsAfterLastValidatedBundle = Object.values(
           allBundleRefunds.pop()?.[chainId]?.[l2Token] ?? {}
-        ).reduce((acc, curr) => acc.add(curr), bnZero);
+        ).reduce((acc, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance
