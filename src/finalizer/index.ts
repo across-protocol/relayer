@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
-import { Contract } from "ethers";
+import { Contract, ethers } from "ethers";
 import { getAddress } from "ethers/lib/utils";
 import { groupBy, uniq } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
@@ -93,8 +93,8 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL2: [],
   },
   [CHAIN_IDs.LINEA]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer],
+    finalizeOnL1: [lineaL2ToL1Finalizer, cctpL2toL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer, cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],
@@ -234,18 +234,20 @@ export async function finalize(
 
     const network = getNetworkName(chainId);
 
-    // For certain chains we always want to track certain addresses for finalization:
-    // If the chain needs an L1->L2 finalization, always track HubPool, AtomicDepositor. HubPool sends messages and
-    // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor
-    if (sdkUtils.chainRequiresL1ToL2Finalization(chainId)) {
-      const addressesToEnsure = [
-        hubPoolClient.hubPool.address,
-        CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ];
-      // Add the spoke pool address to the list of addresses to ensure.
-      addressesToEnsure.push(spokePoolClients[chainId].spokePool.address);
-      l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
-    }
+    // Not all finalizer adapters query TokensBridged events on the L2 spoke pools to discover withdrawals that
+    // need to be finalized, so add extra addresses we know we'll want to always finalize for. Not all adapters
+    // will use this list, but eventually they should be upgraded to read from here instead of just querying Tokens
+    // Bridged events. Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
+    // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
+    const addressesToEnsure = [hubPoolClient.hubPool.address, CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address];
+    // Add the spoke pool address to the list of addresses to ensure.
+    addressesToEnsure.push(spokePoolClients[chainId].spokePool.address);
+    // Add user specified addresses to the list of addresses to finalize.
+    const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
+      ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
+      : [];
+    addressesToEnsure.push(...withdrawalToAddresses);
+    l1ToL2AddressesToFinalize = enrichL1ToL2AddressesToFinalize(l1ToL2AddressesToFinalize, addressesToEnsure);
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the

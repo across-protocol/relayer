@@ -446,7 +446,7 @@ export class Dataworker {
     // 4. Propose roots to HubPool contract.
     this.logger.debug({
       at: "Dataworker#propose",
-      message: "Enqueing new root bundle proposal txn",
+      message: "Enqueuing new root bundle proposal txn",
       blockRangesForProposal,
       poolRebalanceLeavesCount: rootBundleData.poolRebalanceLeaves.length,
       poolRebalanceRoot: rootBundleData.poolRebalanceTree.getHexRoot(),
@@ -2227,10 +2227,12 @@ export class Dataworker {
             rootBundleId,
             leaf.leafId
           );
-          const duplicateEvents = await client.spokePool.queryFilter(
-            eventFilter,
-            client.latestBlockSearched - (client.eventSearchConfig.maxBlockLookBack ?? 5_000)
-          );
+          const searchConfig = {
+            maxBlockLookBack: client.eventSearchConfig.maxBlockLookBack,
+            fromBlock: client.latestBlockSearched - client.eventSearchConfig.maxBlockLookBack,
+            toBlock: await client.spokePool.provider.getBlockNumber(),
+          };
+          const duplicateEvents = await sdkUtils.paginatedEventQuery(client.spokePool, eventFilter, searchConfig);
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",

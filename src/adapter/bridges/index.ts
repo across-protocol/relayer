@@ -5,7 +5,6 @@ export * from "./UsdcTokenSplitterBridge";
 export * from "./OpStackWethBridge";
 export * from "./ArbitrumOrbitBridge";
 export * from "./LineaBridge";
-export * from "./LineaUSDCBridge";
 export * from "./PolygonERC20Bridge";
 export * from "./PolygonWethBridge";
 export * from "./OpStackDefaultErc20Bridge";
