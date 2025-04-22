@@ -270,7 +270,9 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([1]);
 
-      sampleDepositData.outputToken = ZERO_ADDRESS;
+      // In this test, output token has a valid pool rebalance mapping but its not the equivalent token as the
+      // input token
+      sampleDepositData.outputToken = l2TokensForUsdc[OPTIMISM];
       const srcChain = getNetworkName(sampleDepositData.originChainId);
       const dstChain = getNetworkName(sampleDepositData.destinationChainId);
       await assertPromiseError(
