@@ -8,6 +8,7 @@ import {
   isDefined,
   paginatedEventQuery,
   isContractDeployedToAddress,
+  assert,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -20,14 +21,16 @@ import {
 } from "@across-protocol/contracts/dist/typechain/contracts/interfaces/IOFT";
 
 import { resolveToken } from "../../../scripts/utils";
+import { utils } from "@across-protocol/sdk";
+const { toBytes32 } = utils;
 
-export type OFTRouteInfo = {
+type OFTRouteInfo = {
   hubChainIOFTAddress: string;
   dstIOFTAddress: string;
 };
 
 // Routes are organized by token address and destination chain ID
-export type OFTRoutes = {
+type OFTRoutes = {
   [tokenAddress: string]: {
     [dstChainId: number]: OFTRouteInfo;
   };
@@ -45,14 +48,12 @@ export class OFTBridge extends BaseBridgeAdapter {
     },
   };
 
-  // Maximum amount of tokens that can be sent in a single transaction (hardcoded safety limit)
-  private static readonly MAX_AMOUNT = ethers.utils.parseUnits("100000.0", 6); // 100K USDT
   // Cap the messaging fee to prevent excessive costs
   private static readonly FEE_CAP = ethers.utils.parseEther("0.1"); // 0.1 ether
 
+  public readonly dstTokenAddress: string;
+  
   // Bridge-specific properties
-  private readonly hubTokenAddress: string;
-  private readonly dstTokenAddress: string;
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
   private readonly tokenDecimals: number;
@@ -64,14 +65,14 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @param hubChainId - Hub chain ID (must be Ethereum mainnet, 1)
    * @param hubSigner - Signer for the hub chain
    * @param dstSignerOrProvider - Signer or provider for the destination chain
-   * @param hubChainToken - Token address on the hub chain
+   * @param hubTokenAddress - Token address on the hub chain
    */
   constructor(
     dstChainId: number,
     hubChainId: number,
     hubSigner: Signer,
     dstSignerOrProvider: Signer | Provider,
-    hubChainToken: string
+    public readonly hubTokenAddress: string
   ) {
     // OFT bridge currently only supports Ethereum as hub chain
     if (hubChainId !== CHAIN_IDs.MAINNET) {
@@ -79,26 +80,21 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Check if the route exists for this token and chain
-    const route = OFTBridge.SUPPORTED_ROUTES[hubChainToken]?.[dstChainId];
+    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress]?.[dstChainId];
     if (!isDefined(route)) {
-      throw new Error(`No route found for token ${hubChainToken} from chain ${hubChainId} to ${dstChainId}`);
+      throw new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`);
     }
 
-    // todo: do we really want to approve every supported IOFT for `export const MAX_SAFE_ALLOWANCE = "79228162514264337593543950335";`?
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
 
-    // Store token addresses
-    this.hubTokenAddress = hubChainToken;
-    this.dstTokenAddress = this.resolveL2TokenAddress(hubChainToken);
+    this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
 
     // Get chain-specific EID for OFT messaging
     this.dstChainEid = getOFTEidForChainId(dstChainId);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
 
-    if (!this.hubPoolAddress) {
-      throw new Error(`Hub pool address not found for chain ${hubChainId}`);
-    }
+    assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
 
     // Initialize L1 contract using the hubChainIOFTAddress from the route
     this.l1Bridge = new Contract(route.hubChainIOFTAddress, IOFT_ABI_FULL, hubSigner);
@@ -106,7 +102,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Initialize L2 contract using the dstIOFTAddress from the route
     this.l2Bridge = new Contract(route.dstIOFTAddress, IOFT_ABI_FULL, dstSignerOrProvider);
 
-    this.tokenDecimals = resolveToken(hubChainToken, hubChainId).decimals;
+    this.tokenDecimals = resolveToken(hubTokenAddress, hubChainId).decimals;
   }
 
   /**
@@ -128,12 +124,6 @@ export class OFTBridge extends BaseBridgeAdapter {
       throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
     }
 
-    // SAFETY LIMIT: Cap transfer amount to prevent large transfers
-    // This is retained as a safety measure to protect against large accidental transfers
-    if (amount.gt(OFTBridge.MAX_AMOUNT)) {
-      throw new Error(`Amount exceeds maximum allowed (${amount} > ${OFTBridge.MAX_AMOUNT})`);
-    }
-
     // we need to be careful what amounts we pass into OFT transfers to prevent rounding
     await this.validateAmountPrecision(amount);
 
@@ -142,7 +132,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // must be zero to prevent rounding on the contract side
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress).toLowerCase(),
+      to: oftAddressToBytes32(toAddress),
       amountLD: amount,
       minAmountLD: amount,
       extraOptions: "0x", // Empty bytes
@@ -162,12 +152,12 @@ export class OFTBridge extends BaseBridgeAdapter {
     const refundAddress = await l1Bridge.signer.getAddress();
 
     // Return transaction details
-    return Promise.resolve({
+    return {
       contract: l1Bridge,
       method: "send",
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
-    });
+    };
   }
 
   /**
@@ -178,9 +168,7 @@ export class OFTBridge extends BaseBridgeAdapter {
    */
   private async validateAmountPrecision(amount: BigNumber): Promise<void> {
     // Lazy-load shared decimals if not loaded yet
-    if (this.sharedDecimals === undefined) {
-      this.sharedDecimals = await this.l1Bridge.sharedDecimals();
-    }
+    this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
 
     // Verify the amount has the correct precision
     // The last (tokenDecimals - sharedDecimals) digits must be zero
@@ -211,16 +199,16 @@ export class OFTBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Verify the token matches the one this bridge was constructed for
+    // If request is for a different L1 token, return an empty list
     if (l1Token !== this.hubTokenAddress) {
-      throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
+      return {};
     }
 
     const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
     if (isSpokePool && fromAddress != this.hubPoolAddress) {
-      return Promise.resolve({});
+      return {};
     } else if (fromAddress != toAddress) {
-      return Promise.resolve({});
+      return {};
     }
 
     // Get all OFTSent events for the fromAddress
@@ -239,7 +227,6 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     return {
       [this.dstTokenAddress]: events.map((event) => {
-        event.args.toAddress = toAddress;
         return processEvent(event, "amountReceivedLD");
       }),
     };
@@ -259,16 +246,16 @@ export class OFTBridge extends BaseBridgeAdapter {
     toAddress: string,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Verify the token matches the one this bridge was constructed for
+    // If request is for a different L1 token, return an empty list
     if (l1Token !== this.hubTokenAddress) {
-      throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
+      return {};
     }
 
     const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
     if (isSpokePool && fromAddress != this.hubPoolAddress) {
-      return Promise.resolve({});
+      return {};
     } else if (fromAddress != toAddress) {
-      return Promise.resolve({});
+      return {};
     }
 
     // Get all OFTReceived events for the toAddress
@@ -288,7 +275,6 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     return {
       [this.dstTokenAddress]: events.map((event) => {
-        event.args.fromAddress = fromAddress;
         return processEvent(event, "amountReceivedLD");
       }),
     };
@@ -314,5 +300,5 @@ export function getOFTEidForChainId(chainId: number): number {
  * @returns The bytes32 representation of the address
  */
 export function oftAddressToBytes32(address: string): string {
-  return ethers.utils.hexZeroPad(address, 32);
+  return toBytes32(address);
 }
