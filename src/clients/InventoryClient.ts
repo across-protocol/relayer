@@ -640,6 +640,7 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     const mark = this.profiler.start("getLatestRunningBalances");
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
+    const l1TokenDecimals = this.hubPoolClient.getTokenInfoForL1Token(l1Token).decimals;
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -660,6 +661,8 @@ export class InventoryClient {
           l1Token
         );
         const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
+        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
+        const l2AmountToL1Amount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
 
         // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
         // default the bundle end block to 0. This will force getUpcomingDepositAmount to count any deposit
@@ -685,10 +688,8 @@ export class InventoryClient {
             lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
           }
         }
-        const upcomingDepositsAfterLastValidatedBundle = this.bundleDataClient.getUpcomingDepositAmount(
-          chainId,
-          l2Token,
-          lastValidatedBundleEndBlock
+        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(
+          this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, lastValidatedBundleEndBlock)
         );
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
