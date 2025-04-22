@@ -75,15 +75,11 @@ export class OFTBridge extends BaseBridgeAdapter {
     public readonly hubTokenAddress: string
   ) {
     // OFT bridge currently only supports Ethereum as hub chain
-    if (hubChainId !== CHAIN_IDs.MAINNET) {
-      throw new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`);
-    }
+    assert(hubChainId == CHAIN_IDs.MAINNET, new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`));
 
     // Check if the route exists for this token and chain
     const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress]?.[dstChainId];
-    if (!isDefined(route)) {
-      throw new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`);
-    }
+    assert(isDefined(route), new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`));
 
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
 
@@ -124,8 +120,9 @@ export class OFTBridge extends BaseBridgeAdapter {
       throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
     }
 
-    // we need to be careful what amounts we pass into OFT transfers to prevent rounding
-    await this.validateAmountPrecision(amount);
+    // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
+    // receive the exact amount we sent in the transaction
+    const roundedAmount = await this.roundAmountToOftPrecision(amount);
 
     // Construct the send parameters for the OFT bridge
     // @dev last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount
@@ -133,8 +130,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
       to: oftAddressToBytes32(toAddress),
-      amountLD: amount,
-      minAmountLD: amount,
+      amountLD: roundedAmount,
+      minAmountLD: roundedAmount, // Use the same rounded amount for minimum
       extraOptions: "0x", // Empty bytes
       composeMsg: "0x", // Empty bytes
       oftCmd: "0x", // Empty bytes
@@ -144,6 +141,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const l1Bridge = this.l1Bridge;
     const feeStruct: MessagingFeeStruct = await (l1Bridge as IOFT).quoteSend(sendParamStruct, false);
 
+    // todo: instead of throwing here, log and cancel tx sending? How? Return null?
     if (BigNumber.from(feeStruct.nativeFee).gt(OFTBridge.FEE_CAP)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${OFTBridge.FEE_CAP})`);
     }
@@ -161,28 +159,27 @@ export class OFTBridge extends BaseBridgeAdapter {
   }
 
   /**
-   * Validates that the token amount has the correct precision for OFT transfer.
+   * Rounds the token amount down to the correct precision for OFT transfer.
    * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent rounding.
-   * @param amount - Amount to validate
-   * @throws Error if the amount has invalid precision
+   * @param amount - Amount to round
+   * @returns The amount rounded down to the correct precision
    */
-  private async validateAmountPrecision(amount: BigNumber): Promise<void> {
+  private async roundAmountToOftPrecision(amount: BigNumber): Promise<BigNumber> {
     // Lazy-load shared decimals if not loaded yet
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
 
-    // Verify the amount has the correct precision
-    // The last (tokenDecimals - sharedDecimals) digits must be zero
+    // Calculate the precision difference
     const decimalDifference = this.tokenDecimals - this.sharedDecimals;
+
     if (decimalDifference > 0) {
       const divisor = BigNumber.from(10).pow(decimalDifference);
       const remainder = amount.mod(divisor);
-      if (!remainder.isZero()) {
-        throw new Error(
-          `Amount precision is invalid. Last ${decimalDifference} digits must be zero. ` +
-            `Amount: ${amount}, Remainder: ${remainder}`
-        );
-      }
+      // Subtract the remainder to round down
+      return amount.sub(remainder);
     }
+
+    // If no rounding is needed, return the original amount
+    return amount;
   }
 
   /**
