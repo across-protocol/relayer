@@ -747,13 +747,15 @@ export class InventoryClient {
     l1Token: string,
     refundAmount: BigNumber
   ): { [chainId: number]: BigNumber } {
+    const l1TokenDecimals = this.hubPoolClient.getTokenInfoForL1Token(l1Token).decimals;
     const pcts = Object.fromEntries(
-      Object.entries(excessRunningBalances).map(([chainId, excess]) => {
-        const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
-          l1Token,
-          Number(chainId)
-        ).target;
-        const excessPostRelay = excess.sub(refundAmount);
+      Object.entries(excessRunningBalances).map(([_chainId, excess]) => {
+        const chainId = Number(_chainId);
+        const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(l1Token, chainId).target;
+        const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
+        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId).decimals;
+        const refundAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+        const excessPostRelay = excess.sub(refundAmountInL1TokenDecimals);
         const returnObj = {
           pct: toBN(0),
           target,
@@ -948,18 +950,20 @@ export class InventoryClient {
             `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
           }
           const { symbol, decimals } = tokenInfo;
-          const formatter = createFormatFunction(2, 4, false, decimals);
+          const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
           const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
           const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
           mrkdwn +=
-            ` - ${formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
+            ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
             `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
             `${l1Formatter(
               cumulativeBalance.toString()
             )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
-            `${formatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${symbol} ` +
+            `${l2TokenFormatter(
+              this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
+            )} ${symbol} ` +
             `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
         }
       }
@@ -979,23 +983,23 @@ export class InventoryClient {
           const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
           const { symbol, decimals } = tokenInfo;
-          const formatter = createFormatFunction(2, 4, false, decimals);
+          const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
           const distributionPct = tokenDistributionPerL1Token[l1Token][chainId][l2Token].mul(100);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
-            `${formatter(amount.toString())} but relayer has ` +
-            `${formatter(balance.toString())} on L1. There is currently ` +
+            `${l1Formatter(amount.toString())} but relayer has ` +
+            `${l1Formatter(balance.toString())} on L1. There is currently ` +
             `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token).toString())} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
             `${this.formatWei(distributionPct.toString())}% of the total ` +
             `${l1Formatter(cumulativeBalance.toString())} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
-            `${formatter(
+            `${l1Formatter(
               this.crossChainTransferClient
                 .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
                 .toString()
             )}.` +
-            ` This chain has a shortfall of ${formatter(
+            ` This chain has a shortfall of ${l2TokenFormatter(
               this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
             )} ${symbol}.\n`;
         }
@@ -1243,6 +1247,8 @@ export class InventoryClient {
             .sub(targetPct)
             .mul(cumulativeBalanceInL2TokenDecimals)
             .div(this.scalar);
+          // Note: getL2PendingWithdrawalAmount() returns a value in L2 token decimals so we can compare it with
+          // maxL2WithdrawalVolume.
           const pendingWithdrawalAmount = await this.adapterManager.getL2PendingWithdrawalAmount(
             withdrawExcessPeriod,
             chainId,
