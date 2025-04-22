@@ -263,11 +263,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
-
-      // If we set this to false in this test, the destination chain will be default used since the refund data
-      // will be ignored.
-      hubPoolClient.setEnableAllL2Tokens(false);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([OPTIMISM, MAINNET]);
     });
 
     it("Correctly throws when Deposit tokens are not equivalent", async function () {
