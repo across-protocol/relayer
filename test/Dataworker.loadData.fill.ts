@@ -1020,9 +1020,9 @@ describe("Dataworker: Load bundle data", async function () {
         const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Create three valid deposits
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit());
+        depositV3Events.push(generateV3Deposit());
+        depositV3Events.push(generateV3Deposit());
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
