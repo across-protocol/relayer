@@ -456,6 +456,9 @@ export class InventoryClient {
     }
 
     l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
+    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
+    const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
     // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
     // time, return an object with zero refunds for all chains.
@@ -476,7 +479,7 @@ export class InventoryClient {
     if (!deposit.fromLiteChain && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
-        inputAmount,
+        inputAmountInL1TokenDecimals,
         this.getSlowWithdrawalRepaymentChains(l1Token)
       );
       // Sort chains by highest excess percentage over the spoke target, so we can prioritize
@@ -518,7 +521,6 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
-    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
@@ -533,7 +535,6 @@ export class InventoryClient {
       )(this.tokenClient.getShortfallTotalRequirement(chainId, repaymentToken));
       const chainVirtualBalance = this.getBalanceOnChain(chainId, l1Token, repaymentToken);
       const chainVirtualBalanceWithShortfall = chainVirtualBalance.sub(chainShortfall);
-      const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
       // @dev Do not subtract outputAmount from virtual balance if output token and input token are not equivalent.
       // This is possible when the output token is USDC.e and the input token is USDC which would still cause
       // validateOutputToken() to return true above.
@@ -541,9 +542,7 @@ export class InventoryClient {
         chainId === destinationChainId &&
         this.hubPoolClient.areTokensEquivalent(inputToken, originChainId, outputToken, destinationChainId)
           ? chainVirtualBalanceWithShortfall
-          : chainVirtualBalanceWithShortfall.add(
-              sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount)
-            );
+          : chainVirtualBalanceWithShortfall.add(inputAmountInL1TokenDecimals);
 
       // Add upcoming refunds:
       chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfallPostRelay.add(
