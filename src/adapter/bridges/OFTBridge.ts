@@ -52,7 +52,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   private static readonly FEE_CAP = ethers.utils.parseEther("0.1"); // 0.1 ether
 
   public readonly dstTokenAddress: string;
-  
+
   // Bridge-specific properties
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
@@ -75,11 +75,17 @@ export class OFTBridge extends BaseBridgeAdapter {
     public readonly hubTokenAddress: string
   ) {
     // OFT bridge currently only supports Ethereum as hub chain
-    assert(hubChainId == CHAIN_IDs.MAINNET, new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`));
+    assert(
+      hubChainId == CHAIN_IDs.MAINNET,
+      new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`)
+    );
 
     // Check if the route exists for this token and chain
     const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress]?.[dstChainId];
-    assert(isDefined(route), new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`));
+    assert(
+      isDefined(route),
+      new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`)
+    );
 
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
 
