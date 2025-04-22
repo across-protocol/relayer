@@ -15,7 +15,7 @@ import { SpokePoolClient } from "../../src/clients";
 
 import { ZERO_ADDRESS } from "../constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger, toBN } from "../utils";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId } from "../../src/utils";
 
 const atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 const l1WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
@@ -42,7 +42,6 @@ let daiBridgeContract: Contract;
 let snxBridgeContract: Contract;
 let erc20BridgeContract: Contract;
 let cctpBridgeContract: Contract;
-let cctpMessageTransmitterContract: Contract;
 
 let wethContract: Contract;
 let spokePoolContract: Contract;
@@ -60,9 +59,9 @@ class TestBaseChainAdapter extends BaseChainAdapter {
     this.bridges[address].l2Weth = l2Weth;
   }
 
-  public setCctpBridge(address: string, cctpBridge: Contract, messageTransmitter: Contract) {
+  public setCctpBridge(address: string, cctpBridge: Contract) {
     this.bridges[address].cctpBridge.l1Bridge = cctpBridge;
-    this.bridges[address].cctpBridge.l2Bridge = messageTransmitter;
+    this.bridges[address].cctpBridge.l2Bridge = cctpBridge;
   }
 }
 
@@ -83,7 +82,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     snxBridgeContract = await (await getContractFactory("OpStackSnxBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
-    cctpMessageTransmitterContract = await (await getContractFactory("CctpMessageTransmitter", deployer)).deploy();
 
     const bridges = {
       [l1WethAddress]: new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, deployer, deployer, undefined),
@@ -132,7 +130,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     adapter.setBridge(l1SnxAddress, snxBridgeContract);
     adapter.setBridge(l1DaiAddress, daiBridgeContract);
     adapter.setBridge(l1Erc20Address, erc20BridgeContract);
-    adapter.setCctpBridge(l1UsdcAddress, cctpBridgeContract, cctpMessageTransmitterContract);
+    adapter.setCctpBridge(l1UsdcAddress, cctpBridgeContract);
     adapter.setL2Weth(l1WethAddress, wethContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
@@ -248,9 +246,8 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     });
   });
 
-  describe("USDC token splitter bridge", () => {
+  describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const usdcTokenSplitterBridge = adapter.bridges[l1UsdcAddress];
       const processedNonce = 1;
       const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
@@ -260,7 +257,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
@@ -270,24 +267,12 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
-        processedNonce
-      );
-
-      const events = (
-        await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-          l1UsdcAddress,
-          monitoredEoa,
-          undefined,
-          searchConfig
-        )
-      )[l2UsdcAddress];
-      expect(events.length).to.equal(1);
-      expect(events[0].nonce.toString()).to.equal(unprocessedNonce.toString());
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1UsdcAddress]);
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
     });
   });
 

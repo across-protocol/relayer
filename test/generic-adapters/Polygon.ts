@@ -14,7 +14,7 @@ import {
   toBN,
 } from "../utils";
 import { ZERO_ADDRESS } from "../constants";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId } from "../../src/utils";
 
 const { MAINNET, POLYGON } = CHAIN_IDs;
 const { USDC, WETH, WBTC } = TOKEN_SYMBOLS_MAP;
@@ -22,10 +22,10 @@ const l1Weth = WETH.addresses[MAINNET];
 const l1Token = WBTC.addresses[MAINNET];
 const l1Usdc = USDC.addresses[MAINNET];
 const l2Usdc = USDC.addresses[POLYGON];
-let l2Weth, l2UsdcE, l2Token;
+let l2Weth, l2Token;
 
 let l1Bridge: Contract, l2Bridge: Contract;
-let l1TokenMessenger: Contract, l2MessageTransmitter: Contract;
+let l1TokenMessenger: Contract;
 let hubPool: Contract, spokePool: Contract;
 
 class TestBaseChainAdapter extends BaseChainAdapter {
@@ -110,7 +110,6 @@ describe("Cross Chain Adapter: Polygon", async function () {
     l1Bridge = await (await getContractFactory("Polygon_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("Polygon_L2Bridge", depositor)).deploy();
     l1TokenMessenger = await (await getContractFactory("CctpTokenMessenger", depositor)).deploy();
-    l2MessageTransmitter = await (await getContractFactory("CctpMessageTransmitter", depositor)).deploy();
     // WBTC
     adapter.setL1Bridge(l1Token, l1Bridge);
     adapter.setL2Bridge(l1Token, l2Bridge);
@@ -121,12 +120,15 @@ describe("Cross Chain Adapter: Polygon", async function () {
     adapter.setL1CanonicalBridge(l1Usdc, l1Bridge);
     adapter.setL2CanonicalBridge(l1Usdc, l2Bridge);
     adapter.setL1UsdcBridge(l1Usdc, l1TokenMessenger);
-    adapter.setL2UsdcBridge(l1Usdc, l2MessageTransmitter);
+    adapter.setL2UsdcBridge(l1Usdc, l1TokenMessenger);
 
     depositAmount = toBN(Math.round(Math.random() * 1e18));
-    l2UsdcE = adapter.bridges[l1Usdc].resolveL2TokenAddress(l1Usdc);
     l2Token = adapter.bridges[l1Token].resolveL2TokenAddress(l1Token);
     l2Weth = adapter.bridges[l1Weth].resolveL2TokenAddress(l1Weth);
+
+    // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
+    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
   });
 
   describe("WETH bridge", function () {
@@ -794,9 +796,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
     });
   });
 
-  describe("USDC Token Splitter Bridge", () => {
-    it("Queries L1 Events: CCTP Bridge", async () => {
-      const usdcTokenSplitterBridge = adapter.bridges[l1Usdc];
+  describe("CCTP", () => {
+    it("return only relevant L1 bridge init events", async () => {
       const processedNonce = 1;
       const unprocessedNonce = 2;
       await l1TokenMessenger.emitDepositForBurn(
@@ -805,8 +806,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        getCctpDomainForChainId(POLYGON),
-        ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
+        getCctpDomainForChainId(CHAIN_IDs.POLYGON),
+        ethers.utils.hexZeroPad(l1TokenMessenger.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await l1TokenMessenger.emitDepositForBurn(
@@ -815,230 +816,13 @@ describe("Cross Chain Adapter: Polygon", async function () {
         1,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
-        getCctpDomainForChainId(POLYGON),
-        ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
+        getCctpDomainForChainId(CHAIN_IDs.POLYGON),
+        ethers.utils.hexZeroPad(l1TokenMessenger.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await l2MessageTransmitter.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(MAINNET), processedNonce),
-        processedNonce
-      );
-
-      const events = await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
-        searchConfig
-      );
-      expect(events[l2Usdc].length).to.equal(1);
-      expect(events[l2UsdcE].length).to.equal(0);
-      expect(events[l2Usdc][0].nonce.toString()).to.equal(unprocessedNonce.toString());
-    });
-    it("Queries L1 Events: Canonical Bridge", async () => {
-      const usdcTokenSplitterBridge = adapter.bridges[l1Usdc];
-      await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Usdc, depositAmount);
-
-      const events = await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
-        searchConfig
-      );
-      expect(events[l2Usdc].length).to.equal(0);
-      expect(events[l2UsdcE].length).to.equal(1);
-      const { amount } = events[l2UsdcE][0];
-      expect(amount).to.equal(depositAmount);
-    });
-
-    // L2 Query events for the UsdcCCTPBridge does not exist.
-    it("Queries L2 Events: Canonical Bridge", async () => {
-      const usdcTokenSplitterBridge = adapter.bridges[l1Usdc];
-      await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
-
-      const events = await usdcTokenSplitterBridge.queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
-        searchConfig
-      );
-      expect(events[l2Usdc]).to.be.undefined;
-      expect(events[l2UsdcE].length).to.equal(1);
-      const { from, to, amount } = events[l2UsdcE][0];
-      expect(from).to.equal(ZERO_ADDRESS);
-      expect(to).to.equal(monitoredEoa);
-      expect(amount).to.equal(depositAmount);
-    });
-
-    it("Determines outstanding transfers", async () => {
-      // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      let transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
-      expect(transfers).to.deep.equal({
-        [monitoredEoa]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [spokePool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [hubPool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-      });
-
-      // Make a single l1 -> l2 deposit via canonical bridge and via CCTP Bridge.
-      const unprocessedNonce = 2;
-      await l1TokenMessenger.emitDepositForBurn(
-        unprocessedNonce,
-        l1Usdc,
-        1,
-        monitoredEoa,
-        ethers.utils.hexZeroPad(monitoredEoa, 32),
-        getCctpDomainForChainId(POLYGON),
-        ethers.utils.hexZeroPad(l2MessageTransmitter.address, 32),
-        ethers.utils.hexZeroPad(monitoredEoa, 32)
-      );
-      await l1Bridge.depositFor(monitoredEoa, monitoredEoa, l1Usdc, depositAmount);
-      const deposits = await adapter.bridges[l1Usdc].queryL1BridgeInitiationEvents(l1Usdc, null, null, searchConfig);
-      expect(deposits).to.exist;
-      expect(deposits[l2Usdc].length).to.equal(1);
-      expect(deposits[l2UsdcE].length).to.equal(1);
-
-      let receipts = await adapter.bridges[l1Usdc].queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
-        searchConfig
-      );
-      expect(receipts).to.exist;
-      expect(receipts[l2UsdcE].length).to.equal(0);
-      expect(receipts[l2Usdc]).to.be.undefined;
-
-      // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
-      expect(transfers).to.deep.equal({
-        [monitoredEoa]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [deposits[l2Usdc][0].transactionHash],
-              totalAmount: deposits[l2Usdc][0].amount,
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [deposits[l2UsdcE][0].transactionHash],
-              totalAmount: deposits[l2UsdcE][0].amount,
-            },
-          },
-        },
-        [spokePool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [hubPool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-      });
-
-      // Finalise the ongoing deposit on the destination chain.
-      await l2Bridge.transfer(ZERO_ADDRESS, monitoredEoa, depositAmount);
-      await l2MessageTransmitter.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(MAINNET), unprocessedNonce),
-        unprocessedNonce
-      );
-      receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Usdc,
-        monitoredEoa,
-        monitoredEoa,
-        searchConfig
-      );
-      expect(receipts).to.exist;
-      expect(receipts[l2UsdcE].length).to.equal(1);
-      expect(receipts[l2Usdc]).to.be.undefined;
-
-      // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
-      transfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
-      expect(transfers).to.deep.equal({
-        [monitoredEoa]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [spokePool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-        [hubPool.address]: {
-          [l1Usdc]: {
-            [l2Usdc]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-            [l2UsdcE]: {
-              depositTxHashes: [],
-              totalAmount: BigNumber.from(0),
-            },
-          },
-        },
-      });
+      await l1TokenMessenger.emitMintAndWithdraw(monitoredEoa, 1, l2Usdc);
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      expect(outstandingTransfers[monitoredEoa][l1Usdc][l2Usdc].totalAmount).to.equal(toBN(1));
     });
   });
 });

@@ -5,7 +5,7 @@ import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
@@ -21,7 +21,6 @@ const l2UsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM];
 
 let erc20BridgeContract: Contract;
 let cctpBridgeContract: Contract;
-let cctpMessageTransmitterContract: Contract;
 
 let adapter: ArbitrumAdapter;
 
@@ -51,7 +50,6 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
-    cctpMessageTransmitterContract = await (await getContractFactory("CctpMessageTransmitter", deployer)).deploy();
 
     const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
       fromBlock: 0,
@@ -91,7 +89,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     adapter.setL1Bridge(l1Token, erc20BridgeContract);
     adapter.setL2Bridge(l1Token, erc20BridgeContract);
     adapter.setCCTPL1Bridge(l1UsdcAddress, cctpBridgeContract);
-    adapter.setCCTPL2Bridge(l1UsdcAddress, cctpMessageTransmitterContract);
+    adapter.setCCTPL2Bridge(l1UsdcAddress, cctpBridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
     l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
@@ -170,7 +168,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
@@ -180,13 +178,10 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
-        processedNonce
-      );
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1UsdcAddress]);
       expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
     });

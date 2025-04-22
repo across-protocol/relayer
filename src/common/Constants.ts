@@ -20,7 +20,6 @@ import {
   PolygonERC20Bridge,
   ArbitrumOrbitBridge,
   LineaBridge,
-  LineaUSDCBridge,
   LineaWethBridge,
   BlastBridge,
   ScrollERC20Bridge,
@@ -464,7 +463,7 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
   },
   [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: LineaUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
   },
   [CHAIN_IDs.LISK]: {

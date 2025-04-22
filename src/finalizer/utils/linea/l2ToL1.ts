@@ -15,6 +15,7 @@ import {
   paginatedEventQuery,
   mapAsync,
   BigNumber,
+  TOKEN_SYMBOLS_MAP,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -202,7 +203,12 @@ export async function lineaL2ToL1Finalizer(
   // Get src events
   const l2SrcEvents = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber >= l2FromBlock && blockNumber <= l2ToBlock);
+    .filter(
+      ({ blockNumber, l2TokenAddress }) =>
+        blockNumber >= l2FromBlock &&
+        blockNumber <= l2ToBlock &&
+        l2TokenAddress !== TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId]
+    );
 
   // Get Linea's MessageSent events for each src event
   const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map((event) => event.transactionHash)));
