@@ -3,7 +3,6 @@ import {
   BigNumber,
   EventSearchConfig,
   Signer,
-  Provider,
   getTranslatedTokenAddress,
   assert,
   isDefined,
@@ -11,6 +10,7 @@ import {
   Address,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
+import { l2SignerOrProvider } from "../../common";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
@@ -34,7 +34,7 @@ export abstract class BaseBridgeAdapter {
     protected l2chainId: number,
     protected hubChainId: number,
     protected l1Signer: Signer,
-    protected l2SignerOrProvider: Signer | Provider,
+    protected l2SignerOrProvider: l2SignerOrProvider,
     public l1Gateways: EvmAddress[]
   ) {}
 

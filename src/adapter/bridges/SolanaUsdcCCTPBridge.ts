@@ -1,9 +1,9 @@
 import { Contract, Signer } from "ethers";
+import { l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
   EventSearchConfig,
-  Provider,
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   assert,
@@ -13,11 +13,13 @@ import {
   EvmAddress,
   SvmAddress,
   paginatedEventQuery,
+  ZERO_BYTES,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
-import { getSlotForBlock } from "@across-protocol/sdk";
+import { arch } from "@across-protocol/sdk";
+import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { Rpc, SolanaRpcApi } from "@solana/kit";
 
 export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
@@ -25,9 +27,12 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly solanaMessageTransmitter: SvmAddress;
-  private readonly l2Provider: Rpc<SolanaRpcApi>;
+  // We need the constructor to operate in a synchronous context, but the call to construct an event client is asynchronous, so
+  // this bridge holds onto the client promise and lazily evaluates it for when it needs to use it (in `queryL2BridgeFinalizationEvents`).
+  private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
+  private solanaEventsClient: arch.svm.SvmCpiEventsClient;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Rpc<SolanaRpcApi>) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address),
     ]);
@@ -40,9 +45,13 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const { address: l1Address, abi: l1Abi } = getCctpTokenMessenger(l2chainId, hubChainId);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address } = getCctpMessageTransmitter(l2ChainId, hubChainId);
+    const { address: l2Address } = getCctpTokenMessenger(l2chainId, l2chainId);
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
-    this.l2Provider = l2SignerOrProvider;
+    this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
+      l2SignerOrProvider as Rpc<SolanaRpcApi>,
+      l2Address,
+      TokenMessengerMinterIdl
+    );
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
   }
@@ -73,7 +82,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
             this.l2DestinationDomain,
             toAddress.toBytes32(),
             this.l1UsdcTokenAddress.toAddress(),
-            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+            ZERO_BYTES, // Anyone can finalize the message on domain when this is set to bytes32(0)
             0, // maxFee set to 0 so this will be a "standard" speed transfer
             2000, // Hardcoded minFinalityThreshold value for standard transfer
           ]
@@ -106,14 +115,16 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    // Lazily evaluate the events client.
+    this.solanaEventsClient ??= await this.solanaEventsClientPromise;
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    const [fromSlot, toSlot] = await Promise.all([
-      getSlotForBlock(this.l2Provider, eventConfig.fromBlock, BigInt(0)),
-      getSlotForBlock(this.l2Provider, eventConfig.toBlock, BigInt(0)),
-    ]);
-    const allSignatures = [];
-    // Will need events client
-    
-    return {};
+    const l2FinalizationEvents = await this.solanaEventsClient.queryEvents(
+      "mintAndWithdraw",
+      BigInt(eventConfig.fromBlock),
+      BigInt(eventConfig.toBlock)
+    );
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")), // TODO
+    };
   }
 }

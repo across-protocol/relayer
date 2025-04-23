@@ -14,6 +14,7 @@ import {
   paginatedEventQuery,
   ethers,
 } from "../../utils";
+import { l2SignerOrProvider } from "../../common";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
@@ -23,7 +24,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address),
     ]);
@@ -37,7 +38,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpTokenMessenger(l2chainId, l2chainId);
-    this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider as Signer | Provider);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
   }

@@ -1,16 +1,16 @@
 import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider, EvmAddress } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
 export class LineaBridge extends BaseBridgeAdapter {
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
   }
 
   async constructL1ToL2Txn(

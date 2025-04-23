@@ -11,7 +11,7 @@ import {
   isDefined,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -22,7 +22,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   // We by default do not include a fee for Linea bridges.
   protected bridgeFee = 0;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaMessageService;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].l2MessageService;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
@@ -30,7 +30,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
 
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
   }
 
   async constructL1ToL2Txn(

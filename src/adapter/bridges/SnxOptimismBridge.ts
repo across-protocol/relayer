@@ -8,12 +8,12 @@ import {
   isContractDeployedToAddress,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
 export class SnxOptimismBridge extends BaseBridgeAdapter {
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address),
     ]);
@@ -22,7 +22,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].snxOptimismBridge;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
   }
 
   async constructL1ToL2Txn(

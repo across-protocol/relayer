@@ -9,7 +9,7 @@ import {
   ZERO_ADDRESS,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -24,7 +24,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
+    l2SignerOrProvider: l2SignerOrProvider,
     l1Token: EvmAddress
   ) {
     // @dev This method fetches the *SDK's* most up-to-date values of
@@ -41,7 +41,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
     const l2TokenAddress = this.resolveL2TokenAddress(l1Token);
-    this.l2Bridge = new Contract(l2TokenAddress, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2TokenAddress, l2Abi, l2SignerOrProvider as Signer | Provider);
   }
 
   async constructL1ToL2Txn(

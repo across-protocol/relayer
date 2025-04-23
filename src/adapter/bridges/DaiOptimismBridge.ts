@@ -1,16 +1,16 @@
 import { Contract, Signer, Provider, EvmAddress } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { OpStackDefaultERC20Bridge } from "./OpStackDefaultErc20Bridge";
 
 export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].daiOptimismBridge;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
 
     // Since we define this bridge as an extension of the OpStackDefaultERC20Bridge,
     // we will need to overwrite the l1Gateways parameter, since when calling the super()

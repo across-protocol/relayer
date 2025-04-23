@@ -13,7 +13,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
+import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY, l2SignerOrProvider } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -34,7 +34,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
+    l2SignerOrProvider: l2SignerOrProvider,
     l1Token: EvmAddress
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
@@ -47,10 +47,10 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1BridgeAddress, l1Abi, l1Signer);
-    this.l2Bridge = new Contract(l2BridgeAddress, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2BridgeAddress, l2Abi, l2SignerOrProvider as Signer | Provider);
 
     this.scrollGatewayRouter = new Contract(l1Address, l1Abi, l1Signer);
-    this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer);
+    this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer as Signer | Provider);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId].hubPool.address;
   }

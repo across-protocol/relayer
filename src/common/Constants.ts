@@ -1,4 +1,5 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import { Rpc, SolanaRpcApi } from "@solana/kit";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -375,6 +376,9 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+// Type alias for an L2 signer or provider needed for the Inventory Client's bridge adapters.
+export type l2SignerOrProvider = Signer | Provider | Rpc<SolanaRpcApi>;
+
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
 export const CANONICAL_BRIDGE: {
@@ -383,7 +387,7 @@ export const CANONICAL_BRIDGE: {
       l2chainId: number,
       hubChainId: number,
       l1Signer: Signer,
-      l2SignerOrProvider: Signer | Provider,
+      l2SignerOrProvider: l2SignerOrProvider,
       l1Token?: EvmAddress
     ): BaseBridgeAdapter;
   };
@@ -402,7 +406,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
-  [CHAIN_IDs.SOLANA]: UsdcCCTPBridge, // TODO
+  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge, // TODO
   [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
@@ -417,7 +421,6 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-  [CHAIN_IDs.SOLANA_DEVNET]: UsdcCCTPBridge, // TODO
   [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalacing is supported.
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
@@ -448,7 +451,7 @@ export const CUSTOM_BRIDGE: {
         l2chainId: number,
         hubChainId: number,
         l1Signer: Signer,
-        l2SignerOrProvider: Signer | Provider,
+        l2SignerOrProvider: l2SignerOrProvider,
         l1Token?: EvmAddress
       ): BaseBridgeAdapter;
     };
@@ -544,9 +547,6 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
-  },
-  [CHAIN_IDs.SOLANA_DEVNET]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: SolanaUsdcCCTPBridge,
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,

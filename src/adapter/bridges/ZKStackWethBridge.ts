@@ -13,7 +13,7 @@ import {
 } from "../../utils";
 import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 
@@ -27,7 +27,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
+    l2SignerOrProvider: l2SignerOrProvider,
     l1Token: EvmAddress
   ) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
@@ -41,10 +41,10 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
     // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
     const { address: l2WethAddress, abi: l2WethAbi } = CONTRACT_ADDRESSES[l2chainId].weth;
-    this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider);
+    this.l2Weth = new Contract(l2WethAddress, l2WethAbi, l2SignerOrProvider as Signer | Provider);
     if (!isDefined(this.gasToken)) {
       const { address: l2EthAddress, abi: l2EthAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
-      this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider);
+      this.l2Eth = new Contract(l2EthAddress, l2EthAbi, l2SignerOrProvider as Signer | Provider);
     }
   }
 

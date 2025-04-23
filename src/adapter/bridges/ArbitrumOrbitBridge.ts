@@ -14,7 +14,12 @@ import {
   CHAIN_IDs,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
+import {
+  CONTRACT_ADDRESSES,
+  CUSTOM_ARBITRUM_GATEWAYS,
+  DEFAULT_ARBITRUM_GATEWAY,
+  l2SignerOrProvider,
+} from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -47,7 +52,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
+    l2SignerOrProvider: l2SignerOrProvider,
     l1Token: EvmAddress
   ) {
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
@@ -67,7 +72,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     this.l1SubmitValue = bridgeSubmitValue[l2chainId];
     this.l2GasPrice = maxFeePerGas[l2chainId];
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
     this.l1GatewayRouter = new Contract(gatewayAddress, gatewayRouterAbi, l1Signer);
   }
 

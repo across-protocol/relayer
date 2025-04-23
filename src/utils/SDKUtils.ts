@@ -69,6 +69,7 @@ export const {
   toBytes32,
   validateFillForDeposit,
   toAddressType,
+  chainIsEvm,
 } = sdk.utils;
 
 export const {

@@ -15,7 +15,7 @@ import {
   ZERO_BYTES,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { gasPriceOracle } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -45,7 +45,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    l2SignerOrProvider: Signer | Provider,
+    l2SignerOrProvider: l2SignerOrProvider,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: EvmAddress
   ) {
@@ -59,17 +59,21 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
 
       const { address: nativeTokenAddress, abi: nativeTokenAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
-      this.nativeToken = new Contract(nativeTokenAddress, nativeTokenAbi, l2SignerOrProvider);
+      this.nativeToken = new Contract(nativeTokenAddress, nativeTokenAbi, l2SignerOrProvider as Signer | Provider);
       const { address: wrappedNativeTokenAddress, abi: wrappedNativeTokenAbi } =
         CONTRACT_ADDRESSES[l2chainId].wrappedNativeToken;
-      this.wrappedNativeToken = new Contract(wrappedNativeTokenAddress, wrappedNativeTokenAbi, l2SignerOrProvider);
+      this.wrappedNativeToken = new Contract(
+        wrappedNativeTokenAddress,
+        wrappedNativeTokenAbi,
+        l2SignerOrProvider as Signer | Provider
+      );
     }
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].zkStackBridgeHub;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].nativeTokenVault;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
 
     const { address: nativeTokenVaultAddress, abi: nativeTokenVaultAbi } =
       CONTRACT_ADDRESSES[hubChainId].zkStackNativeTokenVault;

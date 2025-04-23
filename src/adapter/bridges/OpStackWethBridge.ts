@@ -10,7 +10,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { CONTRACT_ADDRESSES, l2SignerOrProvider } from "../../common";
 import { Log } from "../../interfaces";
 import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
 import { utils } from "@across-protocol/sdk";
@@ -25,7 +25,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
     super(
       l2chainId,
       hubChainId,
@@ -39,12 +39,16 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
-    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider as Signer | Provider);
 
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
-    this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
+    this.l2Weth = new Contract(
+      TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId],
+      WETH_ABI,
+      l2SignerOrProvider as Signer | Provider
+    );
     this.l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
     this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
