@@ -22,6 +22,7 @@ import {
   Profiler,
   formatGwei,
   toBytes32,
+  depositHasPoolRebalanceRouteMapping,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -230,6 +231,25 @@ export class Relayer {
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
         deposit,
+      });
+      return ignoreDeposit();
+    }
+
+    if (!depositHasPoolRebalanceRouteMapping(deposit, this.clients.hubPoolClient)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for input token ${inputToken} due to missing pool rebalance route.`,
+        deposit,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
+    if (sdkUtils.invalidOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
+        transactionHash: deposit.transactionHash,
       });
       return ignoreDeposit();
     }

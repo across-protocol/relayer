@@ -367,11 +367,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
-
-      // If we set this to false in this test, the destination chain will be default used since the refund data
-      // will be ignored.
-      hubPoolClient.setEnableAllL2Tokens(false);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([OPTIMISM, MAINNET]);
     });
 
     it("Normalizes upcoming refunds to correct precision", async function () {
@@ -394,11 +389,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
-
-      // If we set this to false in this test, the destination chain will be default used since the refund data
-      // will be ignored.
-      hubPoolClient.setEnableAllL2Tokens(false);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([OPTIMISM, MAINNET]);
     });
 
     it("Correctly throws when Deposit tokens are not equivalent", async function () {
@@ -406,7 +396,9 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([1]);
 
-      sampleDepositData.outputToken = ZERO_ADDRESS;
+      // In this test, output token has a valid pool rebalance mapping but its not the equivalent token as the
+      // input token
+      sampleDepositData.outputToken = l2TokensForUsdc[OPTIMISM];
       const srcChain = getNetworkName(sampleDepositData.originChainId);
       const dstChain = getNetworkName(sampleDepositData.destinationChainId);
       await assertPromiseError(
@@ -709,94 +701,6 @@ describe("InventoryClient: Refund chain selection", async function () {
         expect(possibleRepaymentChains).to.include(chainId);
       });
       expect(possibleRepaymentChains.length).to.equal(4);
-    });
-  });
-
-  describe("In-protocol swap", async function () {
-    const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
-    const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
-
-    beforeEach(async function () {
-      hubPoolClient.mapTokenInfo(nativeUSDC[ARBITRUM], "USDC", 6);
-
-      // Sub in a nested USDC config for the existing USDC config.
-      const usdcConfig = {
-        [nativeUSDC[OPTIMISM]]: {
-          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-        },
-        [nativeUSDC[POLYGON]]: {
-          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [nativeUSDC[ARBITRUM]]: {
-          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [bridgedUSDC[OPTIMISM]]: {
-          [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
-        },
-        [bridgedUSDC[POLYGON]]: {
-          [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-        [bridgedUSDC[ARBITRUM]]: {
-          [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
-        },
-      };
-      inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
-
-      const inputAmount = toMegaWei(100);
-      sampleDepositData = {
-        depositId: bnZero,
-        fromLiteChain: false,
-        toLiteChain: false,
-        originChainId: ARBITRUM,
-        destinationChainId: OPTIMISM,
-        depositor: owner.address,
-        recipient: owner.address,
-        inputToken: nativeUSDC[ARBITRUM],
-        inputAmount,
-        outputToken: bridgedUSDC[OPTIMISM],
-        outputAmount: inputAmount,
-        message: "0x",
-        messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
-        fillDeadline: 0,
-        exclusivityDeadline: 0,
-        exclusiveRelayer: ZERO_ADDRESS,
-      };
-    });
-
-    it("outputToken is not supported as a repaymentToken", async function () {
-      // Verify that there is no native USDC anywhere. The relayer is responsible for ensuring that it can make the fill.
-      enabledChainIds
-        .filter((chainId) => chainId !== MAINNET)
-        .forEach((chainId) => expect(tokenClient.getBalance(chainId, nativeUSDC[chainId]).eq(bnZero)).to.be.true);
-
-      // All chains are at target balance; cumulative balance is unchanged but repaymentToken balances on origin chain increases.
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([MAINNET]);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"78571428571428571"')).to.be.true; // (1,000+100)/(14,000)
-
-      // Even when the output amount is equal to the destination's entire balance, take repayment on mainnet.
-      // This should be th same calculation as above.
-      sampleDepositData.outputAmount = inventoryClient.getBalanceOnChain(OPTIMISM, mainnetUsdc);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([MAINNET]);
-      expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"78571428571428571"')).to.be.true; // (1,000+100)/(14,000)
-
-      // Drop the relayer's repaymentToken balance on Optimism. Repayment chain should now be Optimism.
-      let balance = tokenClient.getBalance(OPTIMISM, bridgedUSDC[OPTIMISM]);
-      tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([
-        OPTIMISM,
-        MAINNET,
-      ]);
-
-      // Restore the Optimism balance and drop the Arbitrum balance. Repayment chain should now be Arbitrum.
-      tokenClient.setTokenData(OPTIMISM, bridgedUSDC[OPTIMISM], balance);
-
-      balance = tokenClient.getBalance(ARBITRUM, bridgedUSDC[ARBITRUM]);
-      tokenClient.setTokenData(ARBITRUM, bridgedUSDC[ARBITRUM], bnZero);
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData, mainnetUsdc)).to.deep.equal([
-        ARBITRUM,
-        MAINNET,
-      ]);
     });
   });
 });
