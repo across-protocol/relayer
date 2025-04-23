@@ -57,7 +57,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     _l2Token: Address,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(l1Token.eq(this.l1UsdcTokenAddress));
     amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
@@ -82,7 +82,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(l1Token.eq(this.l1UsdcTokenAddress));
     const eventFilterArgs = this.IS_CCTP_V2
       ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
       : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
@@ -101,7 +101,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(l1Token.eq(this.l1UsdcTokenAddress));
     const eventFilterArgs = [toAddress.toAddress(), undefined, this.resolveL2TokenAddress(this.l1UsdcTokenAddress)];
     const eventFilter = this.getL2Bridge().filters.MintAndWithdraw(...eventFilterArgs);
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
