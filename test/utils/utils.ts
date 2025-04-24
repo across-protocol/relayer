@@ -343,13 +343,13 @@ export async function depositV3(
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
-  const { blockNumber, transactionHash, txnIndex } = txnReceipt;
+  const { blockNumber, transactionHash: txnRef, transactionIndex: txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
   const depositObject = {
     originChainId: Number(originChainId),
     blockNumber,
-    transactionHash,
+    txnRef,
     txnIndex,
     logIndex,
     ...spreadEvent(args),
