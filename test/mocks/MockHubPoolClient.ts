@@ -3,7 +3,6 @@ import { Contract, winston, BigNumber } from "../utils";
 import { ConfigStoreClient, HubPoolClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
 import { L1Token } from "../../src/interfaces";
-import { L1Token } from "@across-protocol/sdk/dist/cjs/interfaces/HubPool";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
@@ -75,7 +74,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   }
 }
 
-export class SimpleMockHubPoolClient extends HubPoolClient {
+export class SimpleMockHubPoolClient extends clients.HubPoolClient {
   private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
 
   mapTokenInfo(token: string, symbol: string, decimals = 18): void {
