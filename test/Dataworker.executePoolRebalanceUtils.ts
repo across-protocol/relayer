@@ -63,7 +63,6 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       hubPoolClient.configStoreClient as unknown as ConfigStoreClient
     );
     mockHubPoolClient.chainId = hubPoolClient.chainId;
-    mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
 
     // Sub in a dummy root bundle proposal for use in HubPoolClient update.
     const zero = "0x0000000000000000000000000000000000000000000000000000000000000000";
