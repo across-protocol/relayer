@@ -231,7 +231,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
       describe("Pre-fill has invalid repayment information", function () {
         it("Refunds fill to msg.sender if fill is not in-memory and repayment info is invalid", async function () {
-          generateV3Deposit({ outputToken: randomAddress() });
+          generateV3Deposit();
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -287,7 +287,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         });
 
         it("Refunds fill to msg.sender if fill is in-memory and repayment info is invalid", async function () {
-          generateV3Deposit({ outputToken: randomAddress() });
+          generateV3Deposit();
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -329,7 +329,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         });
 
         it("Does not refund fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for repayment chain", async function () {
-          generateV3Deposit({ outputToken: randomAddress() });
+          generateV3Deposit();
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -373,7 +373,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         });
 
         it("Does not refund fill to msg.sender if fill is in-memory and repayment address and msg.sender are invalid for repayment chain", async function () {
-          generateV3Deposit({ outputToken: randomAddress() });
+          generateV3Deposit();
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -404,7 +404,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         });
 
         it("Does not refund lite chain fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for origin chain", async function () {
-          generateV3Deposit({ outputToken: randomAddress(), fromLiteChain: true });
+          generateV3Deposit({ fromLiteChain: true });
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -447,7 +447,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         });
 
         it("Does not refund lite chain fill to msg.sender if fill is in-memory and repayment address and msg.sender are invalid for origin chain", async function () {
-          generateV3Deposit({ outputToken: randomAddress(), fromLiteChain: true });
+          generateV3Deposit({ fromLiteChain: true });
           await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
@@ -478,7 +478,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       });
 
       it("Refunds deposit as a duplicate if fill is not in-memory and is a slow fill", async function () {
-        generateV3Deposit({ outputToken: randomAddress() });
+        generateV3Deposit();
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 

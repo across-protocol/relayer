@@ -28,6 +28,7 @@ import {
   Profiler,
   getNativeTokenSymbol,
   getL1TokenInfo,
+  depositHasPoolRebalanceRouteMapping,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -437,6 +438,16 @@ export class InventoryClient {
   async determineRefundChainId(deposit: Deposit, l1Token?: string): Promise<number[]> {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
+
+    // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
+    // chains and force the relayer to ignore this deposit.
+    if (!depositHasPoolRebalanceRouteMapping(deposit, this.hubPoolClient)) {
+      return [];
+    }
+
+    if (sdkUtils.invalidOutputToken(deposit)) {
+      return [];
+    }
 
     if (!this.isInventoryManagementEnabled()) {
       return [deposit.fromLiteChain ? originChainId : destinationChainId];
