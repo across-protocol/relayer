@@ -1481,7 +1481,10 @@ export class Relayer {
   }
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(deposit.inputToken, deposit.originChainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+      deposit.inputToken,
+      deposit.originChainId
+    );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
