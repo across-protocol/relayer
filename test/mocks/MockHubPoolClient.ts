@@ -1,6 +1,6 @@
 import { clients } from "@across-protocol/sdk";
 import { Contract, winston, BigNumber } from "../utils";
-import { ConfigStoreClient, HubPoolClient } from "../../src/clients";
+import { ConfigStoreClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
 import { L1Token } from "../../src/interfaces";
 
