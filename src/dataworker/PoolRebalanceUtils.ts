@@ -111,9 +111,9 @@ export function generateMarkdownForRootBundle(
     }`;
   });
 
-  const convertTokenListFromWei = (l1TokenAddresses: string[], weiVals: string[]) => {
-    return l1TokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfoForL1Token(token);
+  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+    return tokenAddresses.map((token, index) => {
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
       return convertFromWei(weiVals[index], decimals);
     });
   };
@@ -131,9 +131,9 @@ export function generateMarkdownForRootBundle(
     delete leaf.leafId;
     leaf.groupId = leaf.groupIndex;
     delete leaf.groupIndex;
-    leaf.bundleLpFees = convertTokenListFromWei(leaf.l1Tokens, leaf.bundleLpFees);
-    leaf.runningBalances = convertTokenListFromWei(leaf.l1Tokens, leaf.runningBalances);
-    leaf.netSendAmounts = convertTokenListFromWei(leaf.l1Tokens, leaf.netSendAmounts);
+    leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+    leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+    leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
     leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
     poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
@@ -147,6 +147,7 @@ export function generateMarkdownForRootBundle(
       hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
     );
     leaf.refundAmounts = convertTokenListFromWei(
+      leaf.chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
       leaf.refundAmounts
     );
