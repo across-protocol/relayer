@@ -9,7 +9,7 @@ import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import { Deposit, DepositWithBlock, Fill, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
 import {
   BigNumber,
   isDefined,
@@ -410,16 +410,16 @@ export async function fillV3Relay(
   assert.exists(args);
   args = args!;
 
-  const { blockNumber, transactionHash, txnIndex, logIndex } = lastEvent!;
+  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
 
   const parsedEvent = spreadEvent(args);
   return {
     destinationChainId,
     blockNumber,
-    transactionHash,
-    txnIndex,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
     logIndex,
-    ...parsedEvent,
+    ...parsedEvent as Fill,
     messageHash: args.messageHash ?? getMessageHash(args.message),
     relayExecutionInfo: {
       ...parsedEvent.relayExecutionInfo,
