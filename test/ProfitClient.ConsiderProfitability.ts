@@ -270,7 +270,6 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Verify token price and gas cost lookup failures", async () => {
     const outputAmount = toBNWei(1);
     const l1Token = tokens.WETH;
-    hubPoolClient.setTokenInfoToReturn(l1Token);
 
     for (const destinationChainId of chainIds) {
       const deposit = { ...v3DepositTemplate, outputAmount, destinationChainId };
