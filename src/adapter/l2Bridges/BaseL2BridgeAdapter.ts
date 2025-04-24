@@ -1,5 +1,5 @@
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { BigNumber, Contract, EventSearchConfig, Provider, Signer } from "../../utils";
+import { BigNumber, Contract, EventSearchConfig, Provider, Signer, EvmAddress, Address } from "../../utils";
 
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
@@ -10,20 +10,20 @@ export abstract class BaseL2BridgeAdapter {
     protected hubChainId: number,
     protected l2Signer: Signer,
     protected l1Provider: Provider | Signer,
-    protected l1Token: string
+    protected l1Token: EvmAddress
   ) {}
 
   abstract constructWithdrawToL1Txns(
-    toAddress: string,
-    l2Token: string,
-    l1Token: string,
+    toAddress: Address,
+    l2Token: Address,
+    l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[];
 
   abstract getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,
     l1EventSearchConfig: EventSearchConfig,
-    fromAddress: string,
-    l2Token: string
+    fromAddress: Address,
+    l2Token: Address
   ): Promise<BigNumber>;
 }

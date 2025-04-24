@@ -9,6 +9,10 @@ export const addressAdapters = sdk.addressAggregator.adapters;
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 
+export class Address extends sdk.utils.Address {}
+export class EvmAddress extends sdk.utils.EvmAddress {}
+export class SvmAddress extends sdk.utils.SvmAddress {}
+
 export const { fillStatusArray, populateV3Relay, relayFillStatus } = sdk.arch.evm;
 
 export const {
@@ -63,6 +67,7 @@ export const {
   getRelayEventKey,
   toBytes32,
   validateFillForDeposit,
+  toAddressType,
 } = sdk.utils;
 
 export const {
