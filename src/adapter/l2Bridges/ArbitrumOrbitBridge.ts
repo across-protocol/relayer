@@ -12,7 +12,6 @@ import {
   Provider,
   Signer,
   toBN,
-  Address,
   EvmAddress,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -44,9 +43,9 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: Address,
+    toAddress: EvmAddress,
     l2Token: EvmAddress,
-    _l1Token: Address,
+    _l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
     const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
@@ -57,7 +56,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       method: "outboundTransfer",
       args: [
         l1TokenInfo.address, // l1Token
-        toAddress, // to
+        toAddress.toAddress(), // to
         amount, // amount
         "0x", // data
       ],
@@ -73,8 +72,8 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: Address,
-    l2Token: Address
+    fromAddress: EvmAddress,
+    l2Token: EvmAddress
   ): Promise<BigNumber> {
     const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
@@ -82,7 +81,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
         this.l2Bridge,
         this.l2Bridge.filters.WithdrawalInitiated(
           null, // l1Token non-indexed
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l2EventConfig
       ),
@@ -90,7 +89,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
         this.l1Bridge,
         this.l1Bridge.filters.WithdrawalFinalized(
           null, // l1Token non-indexed
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l1EventConfig
       ),

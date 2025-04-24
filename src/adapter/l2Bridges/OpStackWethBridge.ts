@@ -13,7 +13,6 @@ import {
   Signer,
   toBN,
   EvmAddress,
-  Address,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -36,8 +35,8 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: Address,
-    l2Token: Address,
+    toAddress: EvmAddress,
+    l2Token: EvmAddress,
     _l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
@@ -60,7 +59,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       chainId: this.l2chainId,
       method: "bridgeETHTo",
       args: [
-        toAddress, // to
+        toAddress.toAddress(), // to
         200_000, // minGasLimit
         "0x", // extraData
       ],
@@ -79,22 +78,22 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: Address,
-    _l2Token: Address
+    fromAddress: EvmAddress,
+    _l2Token: EvmAddress
   ): Promise<BigNumber> {
     _l2Token; // unused
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.ETHBridgeInitiated(
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l2EventConfig
       ),
       paginatedEventQuery(
         this.l1Bridge,
         this.l1Bridge.filters.ETHBridgeFinalized(
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l1EventConfig
       ),
