@@ -117,12 +117,12 @@ export function generateMarkdownForRootBundle(
       return convertFromWei(weiVals[index], decimals);
     });
   };
-  const convertTokenAddressToSymbol = (l1Token: string) => {
-    return hubPoolClient.getTokenInfoForL1Token(l1Token).symbol;
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
+    return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
   };
   const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
     return l1Tokens.map((l1Token) => {
-      return convertTokenAddressToSymbol(l1Token);
+      return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
     });
   };
   let poolRebalanceLeavesPretty = "";
@@ -150,7 +150,7 @@ export function generateMarkdownForRootBundle(
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
       leaf.refundAmounts
     );
-    leaf.l2Token = convertTokenAddressToSymbol(leaf.l2TokenAddress);
+    leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
     leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
