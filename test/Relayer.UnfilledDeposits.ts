@@ -18,7 +18,13 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
+import {
+  MockInventoryClient,
+  MockProfitClient,
+  MockConfigStoreClient,
+  MockedMultiCallerClient,
+  SimpleMockHubPoolClient,
+} from "./mocks";
 import {
   BigNumber,
   Contract,
@@ -103,8 +109,11 @@ describe("Relayer: Unfilled Deposits", async function () {
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(l1Token.address, "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, "L1Token1");
 
     spokePoolClient_1 = new SpokePoolClient(
       spyLogger,

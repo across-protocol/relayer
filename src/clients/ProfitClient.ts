@@ -403,23 +403,12 @@ export class ProfitClient {
     deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
-    let l1Token: L1Token;
 
-    try {
-      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
-    } catch {
-      this.logger.debug({
-        at: "ProfitClient#getFillAmountInUsd",
-        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
-      });
-      return undefined;
-    }
-
-    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+    const tokenPriceInUsd = this.getPriceOfToken(symbol);
 
     // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
-    const outputTokenDecimals = this.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId).decimals;
-    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(outputTokenDecimals));
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(decimals));
   }
 
   async getFillProfitability(
