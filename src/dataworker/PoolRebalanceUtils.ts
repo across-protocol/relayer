@@ -147,11 +147,10 @@ export function generateMarkdownForRootBundle(
       hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
     );
     leaf.refundAmounts = convertTokenListFromWei(
-      leaf.chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
       leaf.refundAmounts
     );
-    leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
+    leaf.l2Token = convertTokenAddressToSymbol(leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
     leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
