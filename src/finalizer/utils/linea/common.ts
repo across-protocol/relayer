@@ -268,8 +268,8 @@ export async function findMessageFromTokenBridge(
   );
   const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
   const associatedMessages = await Promise.all(
-    bridgeEvents.map(async (event) => {
-      const { logs } = await bridgeContract.provider.getTransactionReceipt(event.transactionHash);
+    bridgeEvents.map(async ({ args, transactionHash }) => {
+      const { logs } = await bridgeContract.provider.getTransactionReceipt(transactionHash);
       return logs
         .filter((log) => log.topics[0] === messageSent)
         .map((log) => ({
@@ -280,9 +280,7 @@ export async function findMessageFromTokenBridge(
           // Start with the TokenBridge calldata format.
           try {
             const decoded = bridgeContract.interface.decodeFunctionData("completeBridging", log.args._calldata);
-            return (
-              compareAddressesSimple(decoded._recipient, event.args.recipient) && decoded._amount.eq(event.args.amount)
-            );
+            return compareAddressesSimple(decoded._recipient, args.recipient) && decoded._amount.eq(args.amount);
           } catch (_e) {
             // We don't care about this because we have more to check
             return false;

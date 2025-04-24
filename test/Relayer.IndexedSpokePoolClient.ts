@@ -139,7 +139,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
     deposits.forEach((deposit, idx) => {
-      expect(deposit.transactionIndex).to.equal(events[idx].transactionIndex);
+      expect(deposit.txnIndex).to.equal(events[idx].txnIndex);
       expect(deposit.transactionHash).to.equal(events[idx].transactionHash);
       expect(deposit.logIndex).to.equal(events[idx].logIndex);
       expect(deposit.depositId).to.equal(events[idx].args!.depositId);

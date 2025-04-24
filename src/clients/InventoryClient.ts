@@ -728,7 +728,7 @@ export class InventoryClient {
             upcomingDeposits: upcomingDepositsAfterLastValidatedBundle,
             upcomingRefunds: upcomingRefundsAfterLastValidatedBundle,
             bundleEndBlock: lastValidatedBundleEndBlock,
-            proposedRootBundle: proposedRootBundle?.transactionHash,
+            proposedRootBundle: proposedRootBundle?.txnRef,
           },
         ];
       })
@@ -1308,14 +1308,14 @@ export class InventoryClient {
       const chainId = Number(_chainId);
       txnReceipts[chainId] = [];
       await sdkUtils.forEachAsync(withdrawalsRequired[chainId], async (withdrawal) => {
-        const txnHash = await this.adapterManager.withdrawTokenFromL2(
+        const txnRef = await this.adapterManager.withdrawTokenFromL2(
           this.relayer,
           chainId,
           withdrawal.l2Token,
           withdrawal.amountToWithdraw,
           this.simMode
         );
-        txnReceipts[chainId].push(...txnHash);
+        txnReceipts[chainId].push(...txnRef);
       });
     });
     Object.keys(txnReceipts).forEach((chainId) => {

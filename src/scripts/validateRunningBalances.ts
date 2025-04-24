@@ -444,8 +444,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
           if (
-            leaf.transactionHash.toLowerCase() ===
-              "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
+            leaf.txnRef.toLowerCase() === "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
             leaf.chainId === CHAIN_IDs.REDSTONE
           ) {
             // Note: This bundle never made it to Redstone due to a configuration error when deploying the Redstone
@@ -477,7 +476,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     logger.debug({
       at: "validateRunningBalances#index",
       message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
-      proposalTxnHash: mostRecentValidatedBundle.transactionHash,
+      proposalTxnHash: mostRecentValidatedBundle.txnRef,
       bundleBlockRanges: JSON.stringify(bundleBlockRanges),
       logs,
     });

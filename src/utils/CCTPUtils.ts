@@ -139,16 +139,16 @@ async function getCCTPDepositEvents(
   const receipts = await Promise.all(
     depositForBurnEvents.map((event) => srcProvider.getTransactionReceipt(event.transactionHash))
   );
-  const messageSentEvents = depositForBurnEvents.map((_depositEvent, i) => {
+  const messageSentEvents = depositForBurnEvents.map(({ transactionHash: txnHash, logIndex }, i) => {
     // The MessageSent event should always precede the DepositForBurn event in the same transaction. We should
     // search from right to left so we find the nearest preceding MessageSent event.
     const _messageSentEvent = findLast(
       receipts[i].logs,
-      (l) => l.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH && l.logIndex < _depositEvent.logIndex
+      (l) => l.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH && l.logIndex < logIndex
     );
     if (!isDefined(_messageSentEvent)) {
       throw new Error(
-        `Could not find MessageSent event for DepositForBurn event in ${_depositEvent.transactionHash} at log index ${_depositEvent.logIndex}`
+        `Could not find MessageSent event for DepositForBurn event in ${txnHash} at log index ${logIndex}`
       );
     }
     return _messageSentEvent;
@@ -178,8 +178,10 @@ async function getCCTPDepositEvents(
       decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
       decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
     ) {
+      const { transactionHash: txnHash, logIndex } = _depositEvent;
       throw new Error(
-        `Decoded message at log index ${_messageSentEvent.logIndex} does not match the DepositForBurn event in ${_depositEvent.transactionHash} at log index ${_depositEvent.logIndex}`
+        `Decoded message at log index ${_messageSentEvent.logIndex}` +
+          ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
       );
     }
     return {
@@ -283,17 +285,19 @@ export async function getAttestationsForCCTPDepositEvents(
         return deposit;
       }
       // Otherwise, update the deposit's status after loading its attestation.
-      const _txReceiptHashCount = txnReceiptHashCount[deposit.log.transactionHash] ?? 0;
-      txnReceiptHashCount[deposit.log.transactionHash] = _txReceiptHashCount + 1;
+      const { transactionHash } = deposit.log;
+      const count = (txnReceiptHashCount[transactionHash] ??= 0);
+      ++txnReceiptHashCount[transactionHash];
+
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, deposit.log.transactionHash, isMainnet)
+        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, transactionHash, isMainnet)
         : await _generateCCTPAttestationProof(deposit.messageHash, isMainnet);
 
       // For V2 we now have the nonceHash and we can query whether the message has been processed.
       // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
       // deposits in getCCTPDepositEventsWithStatus().
       if (isCctpV2ApiResponse(attestation)) {
-        const attestationForDeposit = attestation.messages[_txReceiptHashCount];
+        const attestationForDeposit = attestation.messages[count];
         const processed = await _hasCCTPMessageBeenProcessed(
           attestationForDeposit.eventNonce,
           destinationMessageTransmitter

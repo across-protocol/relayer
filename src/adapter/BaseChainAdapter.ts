@@ -355,7 +355,7 @@ export class BaseChainAdapter {
           const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
           assign(outstandingTransfers, [monitoredAddress, l1Token, l2Token], {
             totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
-            depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
+            depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
           });
         });
       });

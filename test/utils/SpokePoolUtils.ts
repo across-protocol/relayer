@@ -9,7 +9,7 @@ export function V3FillFromDeposit(
   repaymentChainId?: number,
   fillType = interfaces.FillType.FastFill
 ): interfaces.Fill {
-  const { blockNumber, transactionHash, logIndex, transactionIndex, quoteTimestamp, ...relayData } = deposit;
+  const { blockNumber, transactionHash, logIndex, txnIndex, quoteTimestamp, ...relayData } = deposit;
   const fill: interfaces.Fill = {
     ...relayData,
     relayer,
@@ -56,7 +56,7 @@ export async function requestSlowFill(
     blockNumber: lastEvent.blockNumber,
     transactionHash: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
-    transactionIndex: lastEvent.transactionIndex,
+    txnIndex: lastEvent.txnIndex,
     ...spreadEvent(lastEvent.args!),
   };
   return requestObject;

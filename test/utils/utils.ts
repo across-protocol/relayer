@@ -343,14 +343,14 @@ export async function depositV3(
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
-  const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
+  const { blockNumber, transactionHash, txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
   const depositObject = {
     originChainId: Number(originChainId),
     blockNumber,
     transactionHash,
-    transactionIndex,
+    txnIndex,
     logIndex,
     ...spreadEvent(args),
     messageHash: args.messageHash ?? getMessageHash(args.message),
@@ -410,14 +410,14 @@ export async function fillV3Relay(
   assert.exists(args);
   args = args!;
 
-  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
+  const { blockNumber, transactionHash, txnIndex, logIndex } = lastEvent!;
 
   const parsedEvent = spreadEvent(args);
   return {
     destinationChainId,
     blockNumber,
     transactionHash,
-    transactionIndex,
+    txnIndex,
     logIndex,
     ...parsedEvent,
     messageHash: args.messageHash ?? getMessageHash(args.message),

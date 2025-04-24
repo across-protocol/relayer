@@ -15,12 +15,19 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
     return;
   }
 
-  events = sortEventsAscending(events);
+  const sortedEvents = sortEventsAscending(
+    events.map(({ transactionHash, transactionIndex, ...event }) => ({
+      ...event,
+      txnRef: transactionHash,
+      txnIndex: transactionIndex,
+    }))
+  );
+
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,
-    nEvents: events.length,
-    data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
+    nEvents: sortedEvents.length,
+    data: JSON.stringify(sortedEvents, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
