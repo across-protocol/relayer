@@ -299,6 +299,20 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits with unmatching input/output tokens.
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
+        notificationPath: "across-unprofitable-fills",
+      });
+      return ignoreDeposit();
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -321,19 +335,6 @@ export class Relayer {
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
-      });
-      return ignoreDeposit();
-    }
-
-    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit including in-protocol token swap.",
-        originChainId,
-        destinationChainId,
-        outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
-        notificationPath: "across-unprofitable-fills",
       });
       return ignoreDeposit();
     }
