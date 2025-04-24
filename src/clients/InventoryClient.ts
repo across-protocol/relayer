@@ -27,7 +27,6 @@ import {
   getUsdcSymbol,
   Profiler,
   getNativeTokenSymbol,
-  getL1TokenInfo,
   depositHasPoolRebalanceRouteMapping,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
