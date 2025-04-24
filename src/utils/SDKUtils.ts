@@ -56,7 +56,6 @@ export const {
   blockExplorerLinks,
   createShortHexString: shortenHexString,
   compareAddressesSimple,
-  getTokenInfo,
   getL1TokenInfo,
   getUsdcSymbol,
   Profiler,
