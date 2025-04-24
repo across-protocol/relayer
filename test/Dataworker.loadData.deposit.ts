@@ -327,9 +327,7 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].txnRef).to.equal(
-        deposit.transactionHash
-      );
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].txnRef).to.equal(deposit.transactionHash);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address][1].txnRef).to.equal(dupe1.transactionHash);
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address][2].txnRef).to.equal(dupe2.transactionHash);
     });

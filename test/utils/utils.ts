@@ -419,7 +419,7 @@ export async function fillV3Relay(
     txnRef: transactionHash,
     txnIndex: transactionIndex,
     logIndex,
-    ...parsedEvent as Fill,
+    ...(parsedEvent as Fill),
     messageHash: args.messageHash ?? getMessageHash(args.message),
     relayExecutionInfo: {
       ...parsedEvent.relayExecutionInfo,
