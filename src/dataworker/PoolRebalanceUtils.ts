@@ -111,18 +111,18 @@ export function generateMarkdownForRootBundle(
     }`;
   });
 
-  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
-    return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfo(chainId, token);
+  const convertTokenListFromWei = (l1TokenAddresses: string[], weiVals: string[]) => {
+    return l1TokenAddresses.map((token, index) => {
+      const { decimals } = hubPoolClient.getTokenInfoForL1Token(token);
       return convertFromWei(weiVals[index], decimals);
     });
   };
-  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-    return hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+  const convertTokenAddressToSymbol = (l1Token: string) => {
+    return hubPoolClient.getTokenInfoForL1Token(l1Token).symbol;
   };
   const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
     return l1Tokens.map((l1Token) => {
-      return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
+      return convertTokenAddressToSymbol(l1Token);
     });
   };
   let poolRebalanceLeavesPretty = "";
@@ -131,9 +131,9 @@ export function generateMarkdownForRootBundle(
     delete leaf.leafId;
     leaf.groupId = leaf.groupIndex;
     delete leaf.groupIndex;
-    leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
-    leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
-    leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+    leaf.bundleLpFees = convertTokenListFromWei(leaf.l1Tokens, leaf.bundleLpFees);
+    leaf.runningBalances = convertTokenListFromWei(leaf.l1Tokens, leaf.runningBalances);
+    leaf.netSendAmounts = convertTokenListFromWei(leaf.l1Tokens, leaf.netSendAmounts);
     leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
     poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });

@@ -172,7 +172,7 @@ function populateClaimWithdrawal(
   l2ChainId: number,
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
-  const l1Token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, claim.l1Token);
+  const l1Token = hubPoolClient.getTokenInfoForL1Token(claim.l1Token);
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,

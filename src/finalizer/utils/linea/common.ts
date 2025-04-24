@@ -226,7 +226,7 @@ export function determineMessageType(
     );
     const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
-    const token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, decoded._nativeToken);
+    const token = hubPoolClient.getTokenInfoForL1Token(decoded._nativeToken);
     return {
       type: "bridge",
       l1TokenSymbol: token.symbol,
