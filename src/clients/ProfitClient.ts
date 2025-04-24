@@ -17,7 +17,6 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
-  getNetworkName,
   isDefined,
   min,
   winston,
