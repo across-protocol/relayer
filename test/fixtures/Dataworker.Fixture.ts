@@ -29,7 +29,7 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
 
@@ -174,13 +174,18 @@ export async function setupDataworker(
 
   await configStoreClient.update();
 
-  const hubPoolClient = new sdkClients.HubPoolClient(
+  const hubPoolClient = new SimpleMockHubPoolClient(
     spyLogger,
     hubPool,
     configStoreClient,
     hubPoolDeploymentBlock,
     hubPoolChainId
   );
+  hubPoolClient.mapTokenInfo(l1Token_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(l1Token_2.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_2.address, "TEST");
+
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
