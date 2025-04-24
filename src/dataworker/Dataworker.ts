@@ -1792,7 +1792,7 @@ export class Dataworker {
       const currentLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
       updatedLiquidReserves[l1Token] = currentLiquidReserves;
       assert(currentLiquidReserves !== undefined && currentLiquidReserves.gte(0), "Liquid reserves should be >= 0");
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // If netSendAmounts is negative, there is no need to update this exchange rate.
       if (netSendAmounts[idx].lte(0)) {
@@ -1892,7 +1892,7 @@ export class Dataworker {
         return;
       }
 
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
@@ -1964,7 +1964,7 @@ export class Dataworker {
     // multiple transactions for the same token.
     if (submitExecution) {
       for (const l1Token of updatedL1Tokens) {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,
@@ -1990,7 +1990,7 @@ export class Dataworker {
         return;
       }
       seenL1Tokens.add(l1Token);
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
       const latestFeesCompoundedTime =

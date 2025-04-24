@@ -253,6 +253,7 @@ export class Monitor {
       address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
       decimals: 6,
     });
+    // @dev TODO: Handle special case for tokens that do not have an L1 token mapped to them via PoolRebalanceRoutes
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);

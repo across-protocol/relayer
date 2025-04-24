@@ -113,12 +113,12 @@ export function generateMarkdownForRootBundle(
 
   const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfo(chainId, token);
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
       return convertFromWei(weiVals[index], decimals);
     });
   };
   const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-    return hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+    return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
   };
   const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
     return l1Tokens.map((l1Token) => {
@@ -144,7 +144,7 @@ export function generateMarkdownForRootBundle(
     delete leaf.leafId;
     leaf.amountToReturn = convertFromWei(
       leaf.amountToReturn,
-      hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
+      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
     );
     leaf.refundAmounts = convertTokenListFromWei(
       leaf.chainId,
@@ -161,7 +161,7 @@ export function generateMarkdownForRootBundle(
   slowRelayLeaves.forEach((leaf, index) => {
     const { outputToken } = leaf.relayData;
     const destinationChainId = leaf.chainId;
-    const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
+    const outputTokenDecimals = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     // Scale amounts to 18 decimals for realizedLpFeePct computation.

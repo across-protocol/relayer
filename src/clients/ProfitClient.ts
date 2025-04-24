@@ -17,7 +17,6 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
-  getNetworkName,
   isDefined,
   min,
   winston,
@@ -331,7 +330,7 @@ export class ProfitClient {
   ): Promise<FillProfit> {
     const { hubPoolClient } = this;
 
-    const inputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, deposit.originChainId);
+    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken, deposit.originChainId);
     const inputTokenPriceUsd = this.getPriceOfToken(inputTokenInfo.symbol);
     const inputTokenScalar = toBNWei(1, 18 - inputTokenInfo.decimals);
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
@@ -339,24 +338,10 @@ export class ProfitClient {
 
     // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
     // can be any arbitrary token.
-    let outputTokenSymbol: string, outputTokenDecimals: number;
-    // If the output token and the input token are equivalent, then we can look up the token info
-    // via the HubPoolClient since the output token is mapped via PoolRebalanceRoute to the HubPool.
-    // If not, then we should look up outputToken in the TOKEN_SYMBOLS_MAP for the destination chain.
-    const matchingTokens =
-      TOKEN_SYMBOLS_MAP[inputTokenInfo.symbol]?.addresses[deposit.destinationChainId] === deposit.outputToken;
-    if (matchingTokens) {
-      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getL1TokenInfoForL2Token(
-        deposit.outputToken,
-        deposit.destinationChainId
-      ));
-    } else {
-      // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
-      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken,
-        deposit.destinationChainId
-      ));
-    }
+    const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
+      deposit.outputToken,
+      deposit.destinationChainId
+    );
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenSymbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenDecimals);
     const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
@@ -417,22 +402,12 @@ export class ProfitClient {
     deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
-    let l1Token: L1Token;
 
-    try {
-      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
-    } catch {
-      this.logger.debug({
-        at: "ProfitClient#getFillAmountInUsd",
-        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
-      });
-      return undefined;
-    }
-
-    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+    const tokenPriceInUsd = this.getPriceOfToken(symbol);
 
     // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
-    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(l1Token.decimals));
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(decimals));
   }
 
   async getFillProfitability(

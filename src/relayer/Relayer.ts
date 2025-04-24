@@ -299,6 +299,20 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits with unmatching input/output tokens.
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        txnRef: deposit.txnRef,
+        notificationPath: "across-unprofitable-fills",
+      });
+      return ignoreDeposit();
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -321,19 +335,6 @@ export class Relayer {
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
-      });
-      return ignoreDeposit();
-    }
-
-    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit including in-protocol token swap.",
-        originChainId,
-        destinationChainId,
-        outputToken: deposit.outputToken,
-        txnRef: deposit.txnRef,
-        notificationPath: "across-unprofitable-fills",
       });
       return ignoreDeposit();
     }
@@ -1026,7 +1027,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfo(destinationChainId, outputToken);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1468,9 +1469,9 @@ export class Relayer {
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
-        deposit.destinationChainId,
-        deposit.outputToken
+      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+        deposit.outputToken,
+        deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
       mrkdwn += ` Reduced output amount: ${updatedOutputAmount} ${symbol}.`;
@@ -1480,7 +1481,10 @@ export class Relayer {
   }
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+      deposit.inputToken,
+      deposit.originChainId
+    );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);

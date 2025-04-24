@@ -12,6 +12,7 @@ import {
   Provider,
   Signer,
   toBN,
+  EvmAddress,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -20,14 +21,20 @@ import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20Gateway
 export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   protected l2GatewayRouter: Contract;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Provider: Provider | Signer, l1Token: string) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
     const { address, abi } = CONTRACT_ADDRESSES[l2chainId].erc20GatewayRouter;
     this.l2GatewayRouter = new Contract(address, abi, l2Signer);
 
     const { l1: l1Address, l2: l2Address } =
-      CUSTOM_ARBITRUM_GATEWAYS[this.l2chainId]?.[l1Token] ?? DEFAULT_ARBITRUM_GATEWAY[this.l2chainId];
+      CUSTOM_ARBITRUM_GATEWAYS[this.l2chainId]?.[l1Token.toAddress()] ?? DEFAULT_ARBITRUM_GATEWAY[this.l2chainId];
     const l2GatewayContract = new Contract(l2Address, ARBITRUM_ERC20_GATEWAY_L2_ABI, this.l2Signer);
     const l1GatewayContractAbi = CONTRACT_ADDRESSES[this.hubChainId][`orbitErc20Gateway_${this.l2chainId}`].abi;
     const l1GatewayContract = new Contract(l1Address, l1GatewayContractAbi, this.l1Provider);
@@ -36,12 +43,12 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: string,
-    l2Token: string,
-    _l1Token: string,
+    toAddress: EvmAddress,
+    l2Token: EvmAddress,
+    _l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2GatewayRouter,
@@ -49,7 +56,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       method: "outboundTransfer",
       args: [
         l1TokenInfo.address, // l1Token
-        toAddress, // to
+        toAddress.toAddress(), // to
         amount, // amount
         "0x", // data
       ],
@@ -65,16 +72,16 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: string,
-    l2Token: string
+    fromAddress: EvmAddress,
+    l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.WithdrawalInitiated(
           null, // l1Token non-indexed
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l2EventConfig
       ),
@@ -82,7 +89,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
         this.l1Bridge,
         this.l1Bridge.filters.WithdrawalFinalized(
           null, // l1Token non-indexed
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l1EventConfig
       ),
