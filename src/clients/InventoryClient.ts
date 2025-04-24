@@ -1165,7 +1165,7 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
-      const l1TokenInfo = getL1TokenInfo(l1Token, this.hubPoolClient.chainId);
+      const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
       const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
       // We do not currently count any outstanding L2->L1 pending withdrawal balance in the cumulative balance
