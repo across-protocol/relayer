@@ -774,6 +774,13 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.ZORA]: {
+    l1: {
+      L2OutputOracle: ZERO_ADDRESS,
+      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
 
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
