@@ -39,7 +39,7 @@ export async function lineaL1ToL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
@@ -63,10 +63,10 @@ export async function lineaL1ToL2Finalizer(
   const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
     findMessageSentEvents(
       getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
-      l1ToL2AddressesToFinalize,
+      senderAddresses,
       searchConfig
     ),
-    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, senderAddresses, searchConfig),
   ]);
 
   const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents];
