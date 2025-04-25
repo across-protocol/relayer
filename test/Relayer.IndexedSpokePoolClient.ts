@@ -5,7 +5,7 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { IndexedSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
-import { EventSearchConfig } from "../src/utils";
+import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
@@ -28,18 +28,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
   const makeTopic = () => ethersUtils.id(randomNumber().toString()).slice(0, 40);
 
   let blockNumber = 100;
-
-  const sortLogsAscendingInPlace = (logs: Log[]) => {
-    logs.sort((x, y) => {
-      if (x.blockNumber !== y.blockNumber) {
-        return x.blockNumber - y.blockNumber;
-      }
-      if (x.transactionIndex !== y.transactionIndex) {
-        return x.transactionIndex - y.transactionIndex;
-      }
-      return x.logIndex - y.logIndex;
-    });
-  };
 
   const generateEvent = (event: string, blockNumber: number): Log => {
     return {
@@ -99,15 +87,12 @@ describe("IndexedSpokePoolClient: Update", async function () {
    * process.send() to submit a message to the SpokePoolClient. In this test, the SpokePoolClient
    * instance is immediately accessible and the message handler callback is called directly.
    */
-  const postEvents = (blockNumber: number, currentTime: number, logs: Log[]): void => {
-    const _logs = [...logs];
-    sortLogsAscendingInPlace(_logs);
-
+  const postEvents = (blockNumber: number, currentTime: number, events: Log[]): void => {
     const message: SpokePoolClientMessage = {
       blockNumber,
       currentTime,
-      nEvents: logs.length,
-      data: JSON.stringify(_logs, sdkUtils.jsonReplacerWithBigNumbers),
+      nEvents: events.length,
+      data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
     };
 
     spokePoolClient.indexerUpdate(JSON.stringify(message));
@@ -140,21 +125,21 @@ describe("IndexedSpokePoolClient: Update", async function () {
   });
 
   it("Correctly receives and unpacks SpokePoolEventsAdded messages from indexer", async function () {
-    const logs: Log[] = [];
+    const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
-      logs.push(getDepositEvent(blockNumber));
+      events.push(getDepositEvent(blockNumber));
     }
-    sortLogsAscendingInPlace(logs);
+    sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, logs);
+    postEvents(blockNumber, currentTime, events);
     await spokePoolClient.update();
 
     expect(spokePoolClient.latestBlockSearched).to.equal(blockNumber);
 
     const deposits = spokePoolClient.getDeposits();
-    expect(deposits.length).to.equal(logs.length);
+    expect(deposits.length).to.equal(events.length);
     deposits.forEach((deposit, idx) => {
-      const log = logs[idx];
+      const log = events[idx];
       expect(deposit.txnIndex).to.equal(log.transactionIndex);
       expect(deposit.txnRef).to.equal(log.transactionHash);
       expect(deposit.logIndex).to.equal(log.logIndex);
@@ -172,62 +157,62 @@ describe("IndexedSpokePoolClient: Update", async function () {
   });
 
   it("Correctly removes pending events that are dropped before update", async function () {
-    const logs: Log[] = [];
+    const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
-      logs.push(getDepositEvent(blockNumber++));
+      events.push(getDepositEvent(blockNumber++));
     }
-    sortLogsAscendingInPlace(logs);
+    sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, logs);
-    const [droppedEvent] = logs.splice(-2, 1); // Drop the 2nd-last event.
+    postEvents(blockNumber, currentTime, events);
+    const [droppedEvent] = events.splice(-2, 1); // Drop the 2nd-last event.
     removeEvent(droppedEvent);
 
     await spokePoolClient.update();
 
     // Verify that the dropped event is _not_ present in deposits.
     const deposits = spokePoolClient.getDeposits();
-    expect(deposits.length).to.equal(logs.length);
+    expect(deposits.length).to.equal(events.length);
     const droppedDeposit = deposits.find(({ txnRef }) => txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 
   it("Correctly removes pending events that are dropped after update", async function () {
-    const logs: Log[] = [];
+    const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
-      logs.push(getDepositEvent(blockNumber++));
+      events.push(getDepositEvent(blockNumber++));
     }
-    sortLogsAscendingInPlace(logs);
+    sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, logs);
+    postEvents(blockNumber, currentTime, events);
     await spokePoolClient.update();
 
     let deposits = spokePoolClient.getDeposits();
-    expect(deposits.length).to.equal(logs.length);
+    expect(deposits.length).to.equal(events.length);
 
-    const [droppedEvent] = logs.splice(-2, 1); // Drop the 2nd-last event.
+    const [droppedEvent] = events.splice(-2, 1); // Drop the 2nd-last event.
     removeEvent(droppedEvent);
 
     await spokePoolClient.update();
     deposits = spokePoolClient.getDeposits();
-    expect(deposits.length).to.equal(logs.length);
+    expect(deposits.length).to.equal(events.length);
     const droppedDeposit = deposits.find((deposit) => deposit.txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 
   it("Throws on post-ingested dropped EnabledDepositRoute events", async function () {
-    const logs: Log[] = [];
+    const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
-      logs.push(getDepositRouteEvent(blockNumber++));
+      events.push(getDepositRouteEvent(blockNumber++));
     }
-    sortLogsAscendingInPlace(logs);
+    sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, logs);
+    postEvents(blockNumber, currentTime, events);
     await spokePoolClient.update();
 
     const depositRoutes = spokePoolClient.getDepositRoutes();
-    expect(Object.keys(depositRoutes).length).to.equal(logs.length);
+    expect(Object.keys(depositRoutes).length).to.equal(events.length);
 
-    const [droppedEvent] = logs.splice(-2, 1); // Drop the 2nd-last event.
+    const [droppedEvent] = events.splice(-2, 1); // Drop the 2nd-last event.
     removeEvent(droppedEvent);
 
     await assertPromiseError(spokePoolClient.update(), "Detected re-org affecting deposit route events");
