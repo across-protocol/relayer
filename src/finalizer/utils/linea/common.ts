@@ -245,25 +245,23 @@ export function determineMessageType(
 
 export async function findMessageSentEvents(
   contract: Contract,
-  l1ToL2AddressesToFinalize: string[],
+  senderAddresses: string[],
   searchConfig: EventSearchConfig
 ): Promise<MessageSentEvent[]> {
-  return paginatedEventQuery(
-    contract,
-    contract.filters.MessageSent(l1ToL2AddressesToFinalize, l1ToL2AddressesToFinalize),
-    searchConfig
-  ) as Promise<MessageSentEvent[]>;
+  return paginatedEventQuery(contract, contract.filters.MessageSent(senderAddresses), searchConfig) as Promise<
+    MessageSentEvent[]
+  >;
 }
 
 export async function findMessageFromTokenBridge(
   bridgeContract: Contract,
   messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
-  l1ToL2AddressesToFinalize: string[],
+  senderAddresses: string[],
   searchConfig: EventSearchConfig
 ): Promise<MessageSentEvent[]> {
   const bridgeEvents = await paginatedEventQuery(
     bridgeContract,
-    bridgeContract.filters.BridgingInitiatedV2(l1ToL2AddressesToFinalize),
+    bridgeContract.filters.BridgingInitiatedV2(senderAddresses),
     searchConfig
   );
   const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
