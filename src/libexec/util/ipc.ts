@@ -1,5 +1,5 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { isDefined, sortEventsAscending } from "../../utils";
+import { isDefined } from "../../utils";
 import { Log, SpokePoolClientMessage } from "./../types";
 
 /**
@@ -10,24 +10,17 @@ import { Log, SpokePoolClientMessage } from "./../types";
  * @param events An array of Log objects to be submitted.
  * @returns void
  */
-export function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
+export function postEvents(blockNumber: number, currentTime: number, logs: Log[]): void {
   if (!isDefined(process.send)) {
     return;
   }
 
-  const sortedEvents = sortEventsAscending(
-    events.map(({ transactionHash, transactionIndex, ...event }) => ({
-      ...event,
-      txnRef: transactionHash,
-      txnIndex: transactionIndex,
-    }))
-  );
-
+  const sortedLogs = sortLogs(logs);
   const message: SpokePoolClientMessage = {
     blockNumber,
     currentTime,
-    nEvents: sortedEvents.length,
-    data: JSON.stringify(sortedEvents, sdkUtils.jsonReplacerWithBigNumbers),
+    nEvents: sortedLogs.length,
+    data: JSON.stringify(sortedLogs, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
 }
@@ -46,4 +39,17 @@ export function removeEvent(event: Log): void {
     event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
   process.send(JSON.stringify(message));
+}
+
+/**
+ * Return a new, sorted instance of a Logs array.
+ */
+function sortLogs(logs: Log[]): Log[] {
+  return [...logs].sort((x, y) => {
+    if (x.blockNumber !== y.blockNumber) {
+      return x.blockNumber - y.blockNumber;
+    }
+
+    return x.logIndex - y.logIndex;
+  });
 }
