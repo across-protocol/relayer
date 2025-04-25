@@ -312,10 +312,20 @@ async function viem_multicallOptimismFinalizations(
         },
       },
       l2OutputOracle: {
-        [sourceId]: { address: contracts.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.l2OutputOracle?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
+            viem.zeroAddress,
+        },
       },
       disputeGameFactory: {
-        [sourceId]: { address: contracts.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.disputeGameFactory?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
+            viem.zeroAddress,
+        },
       },
     },
   };

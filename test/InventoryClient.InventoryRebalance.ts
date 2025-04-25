@@ -30,6 +30,8 @@ import {
   parseUnits,
   TOKEN_SYMBOLS_MAP,
 } from "../src/utils";
+import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
@@ -320,6 +322,77 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
   });
 
+  describe("Withdraws excess balance from L2 to L1", function () {
+    const testChain = OPTIMISM;
+    const testL1Token = mainnetUsdc;
+    const testL2Token = l2TokensForUsdc[testChain];
+    const targetOverageBuffer = toWei("2");
+    beforeEach(function () {
+      inventoryConfig.tokenConfig[testL1Token][testChain].withdrawExcessPeriod = 7200;
+      inventoryConfig.tokenConfig[testL1Token][testChain].targetOverageBuffer = targetOverageBuffer;
+      const mockAdapter = new MockBaseChainAdapter();
+      adapterManager.setAdapters(testChain, mockAdapter);
+    });
+
+    it("Withdraws excess balance from L2 to L1", async function () {
+      // The threshold to trigger an excess withdrawal is when the currentAllocPct is greater than the
+      // targetPct multiplied by the "targetPctMultiplier"
+      const targetPctMultiplier = targetOverageBuffer.mul(toWei("0.95")).div(toWei("1"));
+      const excessWithdrawThresholdPct = inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+        .mul(targetPctMultiplier)
+        .div(toWei("1"));
+
+      // We can trigger this by increasing the balance on the chain a lot. In this case, we set it
+      // equal to the current cumulative balance so the chain allocation gets set close to 50%.
+      let currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+      const increaseBalanceAmount = currentCumulativeBalance;
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
+      currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+      const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, testL1Token);
+      const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
+      expect(currentAllocationPct.gte(excessWithdrawThresholdPct)).to.be.true;
+
+      await inventoryClient.withdrawExcessBalances();
+      const expectedWithdrawalPct = currentAllocationPct.sub(
+        inventoryConfig.tokenConfig[testL1Token][testChain].targetPct
+      );
+      const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
+      expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
+      expect(adapterManager.withdrawalsRequired[0].l2Token).eq(testL2Token);
+      expect(adapterManager.withdrawalsRequired[0].address).eq(owner.address);
+    });
+
+    it("Withdrawal amount is in correct L2 token decimals", async function () {
+      // This test validates when an L2 token has different decimals than the L1 token, that the
+      // withdrawal amount is in the correct L2 token decimals.
+      hubPoolClient.mapTokenInfo(testL2Token, "USDC", 18);
+      const l2TokenConverter = sdkUtils.ConvertDecimals(6, 18);
+
+      // We set the token balance on the L2 chain using 18 decimals rather than 6:
+      let currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+      const increaseBalanceAmount = l2TokenConverter(currentCumulativeBalance);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
+      currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+
+      // Current allocation computations should still be able to be performed correctly:
+      const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, testL1Token);
+      const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
+      expect(currentAllocationPct).eq(toWei("0.5"));
+
+      await inventoryClient.withdrawExcessBalances();
+      const expectedWithdrawalPct = currentAllocationPct.sub(
+        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
+      );
+
+      // Expected withdrawal amount is in correct decimals:
+      const expectedWithdrawalAmount = l2TokenConverter(
+        expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1))
+      );
+      expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
+    });
+  });
+
   describe("Remote chain token mappings", async function () {
     const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
@@ -356,6 +429,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       enabledChainIds.forEach((chainId) => {
         hubPoolClient.mapTokenInfo(nativeUSDC[chainId], "USDC", 6);
+        hubPoolClient.mapTokenInfo(bridgedUSDC[chainId], "USDC", 6);
       });
     });
 
@@ -393,6 +467,57 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           bridgedBalance = inventoryClient.getBalanceOnChain(chainId, mainnetUsdc, bridgedUSDC[chainId]);
           expect(nativeBalance.eq(bridgedBalance)).to.be.true;
         });
+    });
+
+    it("Correctly normalizes remote token balance to L1 token decimals", async function () {
+      // Let's pretend that the Optimism USDC version uses 18 decimals instead of 6, like the L1 token decimals:
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      let bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(bnZero)).to.be.true;
+
+      // Add balance of optimism token:
+      const testBalance = toWei("10");
+      tokenClient.setTokenData(testChain, bridgedUSDC[testChain], testBalance);
+
+      const convertedTestBalance = toMegaWei("10");
+      bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
+
+      // Cumulative balance returns in L1 token decimals:
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      expect(cumulativeBalance.eq(initialUsdcTotal.add(convertedTestBalance))).to.be.true;
+    });
+
+    it("Correctly normalizes shortfalls to L1 token decimals", async function () {
+      const testChain = CHAIN_IDs.OPTIMISM;
+      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      let bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(bnZero)).to.be.true;
+
+      // Add balance of optimism token:
+      const testBalance = toWei("10");
+      tokenClient.setTokenData(testChain, bridgedUSDC[testChain], testBalance);
+
+      const convertedTestBalance = toMegaWei("10");
+      bridgedBalance = inventoryClient.getBalanceOnChain(testChain, mainnetUsdc, bridgedUSDC[testChain]);
+      expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
+
+      const shortfallAmount = toWei("1");
+      tokenClient.setTokenShortFallData(testChain, bridgedUSDC[testChain], [6969], shortfallAmount);
+      await inventoryClient.update();
+
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(mainnetUsdc);
+      const currentAllocationPct = inventoryClient.getCurrentAllocationPct(
+        mainnetUsdc,
+        testChain,
+        bridgedUSDC[testChain]
+      );
+      const expectedCurrentAllocationPct = testBalance
+        .sub(shortfallAmount)
+        .mul(toWei("1"))
+        .div(sdkUtils.ConvertDecimals(6, 18)(cumulativeBalance));
+      expect(currentAllocationPct).eq(expectedCurrentAllocationPct);
     });
 
     it("Correctly sums 1:many token balances", async function () {

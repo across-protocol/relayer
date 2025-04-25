@@ -9,6 +9,7 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   isContractDeployedToAddress,
+  EvmAddress,
   isDefined,
   bnZero,
   ZERO_BYTES,
@@ -46,16 +47,16 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _l1Token: string
+    _l1Token: EvmAddress
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [sharedBridgeAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
+      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
 
       const { address: nativeTokenAddress, abi: nativeTokenAbi } = CONTRACT_ADDRESSES[l2chainId].nativeToken;
       this.nativeToken = new Contract(nativeTokenAddress, nativeTokenAbi, l2SignerOrProvider);
@@ -80,9 +81,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     // The zkStack bridges need to know the l2 gas price bid beforehand. If this bid is too small, the transaction will revert.
@@ -91,14 +92,14 @@ export class ZKStackBridge extends BaseBridgeAdapter {
 
     // The method/arguments change depending on whether or not we are bridging the gas token or another ERC20.
     let method, args, value;
-    const bridgingGasToken = isDefined(this.gasToken) && compareAddressesSimple(this.gasToken, l1Token);
+    const bridgingGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     if (bridgingGasToken) {
       method = "requestL2TransactionDirect";
       args = [
         [
           this.l2chainId,
           amount.add(txBaseCost),
-          toAddress,
+          toAddress.toAddress(),
           amount,
           "0x",
           this.l2GasLimit,
@@ -117,7 +118,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           0,
           this.l2GasLimit,
           this.gasPerPubdataLimit,
-          toAddress,
+          toAddress.toAddress(),
           this.sharedBridge.address,
           0,
           secondBridgeCalldata,
@@ -135,18 +136,18 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
-    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress;
-    const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
+    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toAddress();
+    const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
-      const assetId = await this.nativeTokenVault.assetId(l1Token);
+      const assetId = await this.nativeTokenVault.assetId(l1Token.toAddress());
       if (assetId === ZERO_BYTES) {
         throw new Error(`Undefined assetId for L1 token ${l1Token}`);
       }
@@ -156,31 +157,25 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         eventConfig
       );
       processedEvents = rawEvents
-        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
         .map((e) => processEvent(e, "amount"));
     } else {
       if (isL2Contract) {
         const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);
         processedEvents = rawEvents
           .filter(
-            (e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token)
+            (e) =>
+              compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
+              compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
           )
-          .map((e) => {
-            return {
-              ...processEvent(e, "amount"),
-            };
-          });
+          .map((e) => processEvent(e, "amount"));
       } else {
         const rawEvents = await paginatedEventQuery(
           this.sharedBridge,
           this.sharedBridge.filters.BridgehubDepositBaseTokenInitiated(this.l2chainId, annotatedFromAddress),
           eventConfig
         );
-        processedEvents = rawEvents.map((e) => {
-          return {
-            ...processEvent(e, "amount"),
-          };
-        });
+        processedEvents = rawEvents.map((e) => processEvent(e, "amount"));
       }
     }
     return {
@@ -189,16 +184,16 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
     // so we add a special case for this reason.
-    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
-    const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken === l1Token;
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
       const assetId = await this.getL2Bridge().assetId(l2Token);
@@ -217,26 +212,30 @@ export class ZKStackBridge extends BaseBridgeAdapter {
             eventConfig
           );
       processedEvents = events
-        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress))
-        .map((event) => {
-          return {
-            ...processEvent(event, "amount"),
-          };
-        });
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
+        .map((event) => processEvent(event, "amount"));
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
       let events;
       if (isSpokePool) {
         events = await paginatedEventQuery(
           this.nativeToken,
-          this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+          this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toAddress()),
           eventConfig
         );
       } else {
         // The transaction originated from the atomic depositor and the L2 does not use a custom gas token.
         const [_events, wrapEvents] = await Promise.all([
-          paginatedEventQuery(this.nativeToken, this.nativeToken.filters.Transfer(fromAddress, toAddress), eventConfig),
-          paginatedEventQuery(this.wrappedNativeToken, this.wrappedNativeToken.filters.Deposit(toAddress), eventConfig),
+          paginatedEventQuery(
+            this.nativeToken,
+            this.nativeToken.filters.Transfer(fromAddress.toAddress(), toAddress.toAddress()),
+            eventConfig
+          ),
+          paginatedEventQuery(
+            this.wrappedNativeToken,
+            this.wrappedNativeToken.filters.Deposit(toAddress.toAddress()),
+            eventConfig
+          ),
         ]);
         events = matchL2EthDepositAndWrapEvents(_events, wrapEvents);
       }
@@ -247,8 +246,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     };
   }
 
-  _secondBridgeCalldata(toAddress: string, l1Token: string, amount: BigNumber): string {
-    return ethers.utils.defaultAbiCoder.encode(["address", "uint256", "address"], [l1Token, amount, toAddress]);
+  _secondBridgeCalldata(toAddress: EvmAddress, l1Token: EvmAddress, amount: BigNumber): string {
+    return ethers.utils.defaultAbiCoder.encode(
+      ["address", "uint256", "address"],
+      [l1Token.toAddress(), amount, toAddress.toAddress()]
+    );
   }
 
   async _txBaseCost(): Promise<BigNumber> {
@@ -275,10 +277,10 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     return isContractDeployedToAddress(address, provider);
   }
 
-  protected override resolveL2TokenAddress(l1Token: string): string {
+  protected override resolveL2TokenAddress(l1Token: EvmAddress): string {
     // ZkStack chains may or may not have native USDC, but all will have only one USDC "type" supported by Across. If there is an entry in the TOKEN_SYMBOLS_MAP for USDC, then use this, otherwise, bubble up the resolution.
     if (
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token.toAddress()) &&
       isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
     ) {
       return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];

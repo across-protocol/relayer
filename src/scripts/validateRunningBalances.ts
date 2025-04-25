@@ -156,7 +156,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       }
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
-        const tokenInfo = clients.hubPoolClient.getTokenInfo(clients.hubPoolClient.chainId, l1Token);
+        const tokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
         if (process.env.SINGLE_TOKEN && tokenInfo.symbol !== process.env.SINGLE_TOKEN) {
           continue;
         }

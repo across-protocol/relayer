@@ -12,12 +12,19 @@ import {
   Provider,
   Signer,
   toBN,
+  EvmAddress,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class OpStackBridge extends BaseL2BridgeAdapter {
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Provider: Provider | Signer, l1Token: string) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
     const { address, abi } = CONTRACT_ADDRESSES[l2chainId].ovmStandardBridge;
@@ -27,24 +34,24 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   }
 
   constructWithdrawToL1Txns(
-    toAddress: string,
-    l2Token: string,
-    l1Token: string,
+    toAddress: EvmAddress,
+    l2Token: EvmAddress,
+    l1Token: EvmAddress,
     amount: BigNumber
   ): AugmentedTransaction[] {
-    const l1TokenInfo = getL1TokenInfo(l2Token, this.l2chainId);
+    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "bridgeERC20To",
       args: [
-        l2Token, // _localToken
-        l1Token, // Remote token to be received on L1 side. If the
+        l2Token.toAddress(), // _localToken
+        l1Token.toAddress(), // Remote token to be received on L1 side. If the
         // remoteL1Token on the other chain does not recognize the local token as the correct
         // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
         // this chain.
-        toAddress, // _to
+        toAddress.toAddress(), // _to
         amount, // _amount
         200_000, // minGasLimit
         "0x", // _data
@@ -59,16 +66,16 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
     l1EventConfig: EventSearchConfig,
-    fromAddress: string,
-    l2Token: string
+    fromAddress: EvmAddress,
+    l2Token: EvmAddress
   ): Promise<BigNumber> {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.ERC20BridgeInitiated(
-          l2Token, // localToken
+          l2Token.toAddress(), // localToken
           null, // remoteToken
-          fromAddress // from
+          fromAddress.toAddress() // from
         ),
         l2EventConfig
       ),
@@ -76,8 +83,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
         this.l1Bridge,
         this.l1Bridge.filters.ERC20BridgeFinalized(
           null, // localToken
-          l2Token, // remoteToken
-          fromAddress // from
+          l2Token.toAddress(), // remoteToken
+          fromAddress.toAddress() // from
         ),
         l1EventConfig
       ),
