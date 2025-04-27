@@ -9,6 +9,7 @@ import {
   compareAddressesSimple,
   paginatedEventQuery,
   isDefined,
+  EvmAddress,
 } from "../../utils";
 import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
@@ -16,7 +17,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import * as zksync from "zksync-ethers";
 
-const ETH_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000001";
+const ETH_TOKEN_ADDRESS = EvmAddress.from("0x0000000000000000000000000000000000000001");
 export class ZKStackWethBridge extends ZKStackBridge {
   private readonly atomicDepositor: Contract;
   private readonly l2Weth: Contract;
@@ -27,7 +28,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: string
+    l1Token: EvmAddress
   ) {
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
@@ -35,7 +36,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
 
     // Overwrite the bridge gateway to the correct gateway. The correct gateway is the atomic depositor since this is the
     // address which is pulling weth out of the relayer via a `transferFrom`.
-    this.l1Gateways = [atomicDepositorAddress];
+    this.l1Gateways = [EvmAddress.from(atomicDepositorAddress)];
 
     // Grab both the l2 WETH and l2 ETH contract addresses. Note: If the L2 uses a custom gas token, then the l2 ETH contract
     // will be unused, so it must not necessarily be defined in CONTRACT_ADDRESSES.
@@ -48,9 +49,9 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   override async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const txBaseCost = await this._txBaseCost();
@@ -65,7 +66,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
           0,
           this.l2GasLimit,
           this.gasPerPubdataLimit,
-          toAddress,
+          toAddress.toAddress(),
           this.sharedBridge.address,
           amount,
           this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero),
@@ -78,13 +79,13 @@ export class ZKStackWethBridge extends ZKStackBridge {
         [
           this.l2chainId,
           txBaseCost.add(amount),
-          toAddress,
+          toAddress.toAddress(),
           amount,
           "0x",
           this.l2GasLimit,
           this.gasPerPubdataLimit,
           [],
-          toAddress, // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
+          toAddress.toAddress(), // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
         ],
       ]);
       netValue = amount.add(txBaseCost);
@@ -99,33 +100,33 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   override async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // If the fromAddress is the hub pool then ignore the query. This is because for calculating cross-chain
     // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
     // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
-    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
       return {};
     }
 
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
     let processedEvents;
     if (isL2Contract) {
       processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
-        .filter((e) => compareAddressesSimple(e.args.to, toAddress) && compareAddressesSimple(e.args.l1Token, l1Token))
-        .map((e) => {
-          return {
-            ...processEvent(e, "amount"),
-          };
-        });
+        .filter(
+          (e) =>
+            compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
+            compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
+        )
+        .map((e) => processEvent(e, "amount"));
     } else {
       // This means we are bridging via an EOA, so we should just look for atomic weth deposits.
       const events = await paginatedEventQuery(
         this.getAtomicDepositor(),
-        this.getAtomicDepositor().filters.AtomicWethDepositInitiated(fromAddress, this.l2chainId),
+        this.getAtomicDepositor().filters.AtomicWethDepositInitiated(fromAddress.toAddress(), this.l2chainId),
         eventConfig
       );
       processedEvents = events.map((e) => processEvent(e, "amount"));
@@ -136,16 +137,16 @@ export class ZKStackWethBridge extends ZKStackBridge {
   }
 
   override async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Ignore hub pool queries for the same reason as above.
-    if (compareAddressesSimple(fromAddress, this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
       return {};
     }
-    const isL2Contract = await this._isContract(toAddress, this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
     const usingCustomGasToken = isDefined(this.gasToken);
 
     let processedEvents;
@@ -156,7 +157,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         // Assume the transfer came from the hub pool if the L2 toAddress is a contract.
         processedEvents = await paginatedEventQuery(
           this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress),
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toAddress()),
           eventConfig
         );
       } else {
@@ -164,17 +165,24 @@ export class ZKStackWethBridge extends ZKStackBridge {
         const [events, wrapEvents] = await Promise.all([
           paginatedEventQuery(
             this.l2Eth,
-            this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address), toAddress),
+            this.l2Eth.filters.Transfer(
+              zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address),
+              toAddress.toAddress()
+            ),
             eventConfig
           ),
-          paginatedEventQuery(this.l2Weth, this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress), eventConfig),
+          paginatedEventQuery(
+            this.l2Weth,
+            this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+            eventConfig
+          ),
         ]);
         processedEvents = matchL2EthDepositAndWrapEvents(events, wrapEvents);
       }
     } else {
       processedEvents = await paginatedEventQuery(
         this.l2Weth,
-        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress),
+        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
         eventConfig
       );
     }

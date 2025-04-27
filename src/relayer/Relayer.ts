@@ -22,6 +22,7 @@ import {
   Profiler,
   formatGwei,
   toBytes32,
+  depositHasPoolRebalanceRouteMapping,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -234,6 +235,25 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    if (!depositHasPoolRebalanceRouteMapping(deposit, this.clients.hubPoolClient)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for input token ${inputToken} due to missing pool rebalance route.`,
+        deposit,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
+    if (sdkUtils.invalidOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
@@ -279,6 +299,20 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits with unmatching input/output tokens.
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
+        notificationPath: "across-unprofitable-fills",
+      });
+      return ignoreDeposit();
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -301,19 +335,6 @@ export class Relayer {
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
-      });
-      return ignoreDeposit();
-    }
-
-    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit including in-protocol token swap.",
-        originChainId,
-        destinationChainId,
-        outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
-        notificationPath: "across-unprofitable-fills",
       });
       return ignoreDeposit();
     }
@@ -1006,7 +1027,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfo(destinationChainId, outputToken);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1328,7 +1349,7 @@ export class Relayer {
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
+          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForL2Token(token, chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerAddress,
@@ -1449,9 +1470,9 @@ export class Relayer {
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
-        deposit.destinationChainId,
-        deposit.outputToken
+      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+        deposit.outputToken,
+        deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
       mrkdwn += ` Reduced output amount: ${updatedOutputAmount} ${symbol}.`;
@@ -1461,7 +1482,10 @@ export class Relayer {
   }
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+      deposit.inputToken,
+      deposit.originChainId
+    );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);

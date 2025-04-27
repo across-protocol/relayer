@@ -397,6 +397,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x19330d10D9Cc8751218eaf51E8885D058642E08A",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
+    arbSys: {
+      address: "0x0000000000000000000000000000000000000064",
+      abi: ARBSYS_L2_ABI,
+    },
+    erc20GatewayRouter: {
+      address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
   },
   [CHAIN_IDs.ALEPH_ZERO]: {
     erc20GatewayRouter: {

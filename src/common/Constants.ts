@@ -8,6 +8,7 @@ import {
   Provider,
   ZERO_ADDRESS,
   bnUint32Max,
+  EvmAddress,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -373,7 +374,7 @@ export const CANONICAL_BRIDGE: {
       hubChainId: number,
       l1Signer: Signer,
       l2SignerOrProvider: Signer | Provider,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseBridgeAdapter;
   };
 } = {
@@ -416,7 +417,7 @@ export const CANONICAL_L2_BRIDGE: {
       hubChainId: number,
       l2Signer: Signer,
       l1Provider: Provider | Signer,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseL2BridgeAdapter;
   };
 } = {
@@ -436,7 +437,7 @@ export const CUSTOM_BRIDGE: {
         hubChainId: number,
         l1Signer: Signer,
         l2SignerOrProvider: Signer | Provider,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseBridgeAdapter;
     };
   };
@@ -543,7 +544,7 @@ export const CUSTOM_L2_BRIDGE: {
         hubChainId: number,
         l2Signer: Signer,
         l1Provider: Provider | Signer,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseL2BridgeAdapter;
     };
   };
@@ -770,6 +771,13 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       L2OutputOracle: ZERO_ADDRESS,
       OptimismPortal2: "0x0bd48f6B86a26D3a217d0Fa6FfE2B491B956A7a2",
       DisputeGameFactory: "0x2F12d621a16e2d3285929C9996f478508951dFe4",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.ZORA]: {
+    l1: {
+      L2OutputOracle: ZERO_ADDRESS,
+      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },

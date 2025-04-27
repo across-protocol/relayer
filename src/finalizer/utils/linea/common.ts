@@ -226,7 +226,7 @@ export function determineMessageType(
     );
     const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
-    const token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, decoded._nativeToken);
+    const token = hubPoolClient.getTokenInfoForL1Token(decoded._nativeToken);
     return {
       type: "bridge",
       l1TokenSymbol: token.symbol,
@@ -245,25 +245,23 @@ export function determineMessageType(
 
 export async function findMessageSentEvents(
   contract: Contract,
-  l1ToL2AddressesToFinalize: string[],
+  senderAddresses: string[],
   searchConfig: EventSearchConfig
 ): Promise<MessageSentEvent[]> {
-  return paginatedEventQuery(
-    contract,
-    contract.filters.MessageSent(l1ToL2AddressesToFinalize, l1ToL2AddressesToFinalize),
-    searchConfig
-  ) as Promise<MessageSentEvent[]>;
+  return paginatedEventQuery(contract, contract.filters.MessageSent(senderAddresses), searchConfig) as Promise<
+    MessageSentEvent[]
+  >;
 }
 
 export async function findMessageFromTokenBridge(
   bridgeContract: Contract,
   messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
-  l1ToL2AddressesToFinalize: string[],
+  senderAddresses: string[],
   searchConfig: EventSearchConfig
 ): Promise<MessageSentEvent[]> {
   const bridgeEvents = await paginatedEventQuery(
     bridgeContract,
-    bridgeContract.filters.BridgingInitiatedV2(l1ToL2AddressesToFinalize),
+    bridgeContract.filters.BridgingInitiatedV2(senderAddresses),
     searchConfig
   );
   const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
