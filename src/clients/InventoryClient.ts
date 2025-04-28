@@ -334,12 +334,16 @@ export class InventoryClient {
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
         const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
-        refunds[chainId] = sdkUtils.ConvertDecimals(
-          l2TokenDecimals,
-          l1TokenDecimals
-        )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
-        return refunds;
+        if (!destinationToken) {
+          refunds[chainId] = bnZero;
+        } else {
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
+          refunds[chainId] = sdkUtils.ConvertDecimals(
+            l2TokenDecimals,
+            l1TokenDecimals
+          )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
+          return refunds;
+        }
       },
       {}
     );
