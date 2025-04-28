@@ -318,8 +318,8 @@ export class Relayer {
 
     // Skip any L1 tokens that are not specified in the config.
     // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId).address;
-    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token)) {
+    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
+    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
