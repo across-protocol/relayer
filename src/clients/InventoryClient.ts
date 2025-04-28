@@ -30,6 +30,7 @@ import {
   getL1TokenInfo,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
+  depositCanTakeDestinationChainRepayment,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
@@ -461,8 +462,22 @@ export class InventoryClient {
       return [];
     }
 
+    const canTakeDestinationChainRepayment = (deposit: Deposit): boolean => {
+      return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId);
+    };
+
+    const canTakeHubChainRepayment = (deposit: Deposit): boolean => {
+      // If input token maps to an L1 token then repayment can be taken on the hub chain in this input token
+      // equivalent.
+      return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
+    };
+
     if (!this.isInventoryManagementEnabled()) {
-      return [depositForcesOriginChainRepayment(deposit, this.hubPoolClient) ? originChainId : destinationChainId];
+      return [
+        depositForcesOriginChainRepayment(deposit, this.hubPoolClient) || !canTakeDestinationChainRepayment(deposit)
+          ? originChainId
+          : destinationChainId,
+      ];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -530,6 +545,7 @@ export class InventoryClient {
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
     if (
+      canTakeDestinationChainRepayment(deposit) &&
       !chainsToEvaluate.includes(destinationChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
       !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
@@ -549,8 +565,15 @@ export class InventoryClient {
     // highest priority to take repayment on, assuming the chain is under-allocated.
     for (const chainId of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
+
       // Destination chain:
       const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      if (chainId !== originChainId) {
+        assert(
+          this.hubPoolClient.l2TokenHasPoolRebalanceRoute(repaymentToken, chainId),
+          `Token ${repaymentToken} not enabled as PoolRebalanceRoute for chain ${chainId} for l1 token ${l1Token}`
+        );
+      }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
         l2TokenDecimals,
@@ -649,7 +672,11 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
+    if (
+      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
+      canTakeHubChainRepayment(deposit) &&
+      !eligibleRefundChains.includes(hubChainId)
+    ) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
