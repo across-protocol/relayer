@@ -366,15 +366,28 @@ export class InventoryClient {
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
-    // Destination and Origin chain are always included in the repayment chain list.
+    // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
-    const chainIds = [originChainId, destinationChainId];
-    const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
-
-    if (this.isInventoryManagementEnabled()) {
-      chainIds.push(...this.getSlowWithdrawalRepaymentChains(l1Token));
+    const chainIds = [originChainId];
+    if (
+      this.canTakeDestinationChainRepayment(deposit) &&
+      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
+    ) {
+      chainIds.push(destinationChainId);
     }
-    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
+
+    if (this.isInventoryManagementEnabled() && originChainId !== this.hubPoolClient.chainId) {
+      const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
+      chainIds.push(
+        ...this.getSlowWithdrawalRepaymentChains(l1Token).filter((chainId) =>
+          this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
+        )
+      );
+    }
+    if (
+      ![originChainId, destinationChainId].includes(this.hubPoolClient.chainId) &&
+      this.canTakeHubChainRepayment(deposit)
+    ) {
       chainIds.push(this.hubPoolClient.chainId);
     }
     return chainIds;
@@ -433,6 +446,16 @@ export class InventoryClient {
     return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
+  private canTakeDestinationChainRepayment(deposit: Deposit): boolean {
+    return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId);
+  }
+
+  private canTakeHubChainRepayment(deposit: Deposit): boolean {
+    // If input token maps to an L1 token then repayment can be taken on the hub chain in this input token
+    // equivalent.
+    return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
+  }
+
   /*
    * Return all eligible repayment chains for a deposit. If inventory management is enabled, then this function will
    * only choose chains where the post-relay balance allocation for a potential repayment chain is under the maximum
@@ -461,19 +484,10 @@ export class InventoryClient {
       return [];
     }
 
-    const canTakeDestinationChainRepayment = (deposit: Deposit): boolean => {
-      return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId);
-    };
-
-    const canTakeHubChainRepayment = (deposit: Deposit): boolean => {
-      // If input token maps to an L1 token then repayment can be taken on the hub chain in this input token
-      // equivalent.
-      return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
-    };
-
     if (!this.isInventoryManagementEnabled()) {
       return [
-        depositForcesOriginChainRepayment(deposit, this.hubPoolClient) || !canTakeDestinationChainRepayment(deposit)
+        depositForcesOriginChainRepayment(deposit, this.hubPoolClient) ||
+        !this.canTakeDestinationChainRepayment(deposit)
           ? originChainId
           : destinationChainId,
       ];
@@ -544,7 +558,7 @@ export class InventoryClient {
     // since its the fallback chain if both destination and origin chain are over allocated.
     // If destination chain is hub chain, we still want to evaluate it before the origin chain.
     if (
-      canTakeDestinationChainRepayment(deposit) &&
+      this.canTakeDestinationChainRepayment(deposit) &&
       !chainsToEvaluate.includes(destinationChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
       !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
@@ -559,6 +573,14 @@ export class InventoryClient {
       chainsToEvaluate.push(originChainId);
     }
 
+    // Sanity check that the possible chains used to pre-compute LP fees by the relayer are a subset of the
+    // chains that are actually eligible for repayment.
+    const possibleRepaymentChainIds = this.getPossibleRepaymentChainIds(deposit);
+    if (chainsToEvaluate.some((_chain) => !possibleRepaymentChainIds.includes(_chain))) {
+      throw new Error(
+        `InventoryClient.getPossibleRepaymentChainIds (${possibleRepaymentChainIds})and determineRefundChainId (${chainsToEvaluate}) disagree on eligible repayment chains`
+      );
+    }
     const eligibleRefundChains: number[] = [];
     // At this point, all chains to evaluate have defined token configs and are sorted in order of
     // highest priority to take repayment on, assuming the chain is under-allocated.
@@ -673,7 +695,7 @@ export class InventoryClient {
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
     if (
       !depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
-      canTakeHubChainRepayment(deposit) &&
+      this.canTakeHubChainRepayment(deposit) &&
       !eligibleRefundChains.includes(hubChainId)
     ) {
       eligibleRefundChains.push(hubChainId);

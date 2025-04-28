@@ -647,6 +647,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains.length).to.equal(0);
     });
+    it("includes only origin chain repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(1);
+    });
   });
 
   describe("destination token and origin token are both not mapped to a PoolRebalanceRoute", function () {
@@ -687,6 +694,13 @@ describe("InventoryClient: Refund chain selection", async function () {
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(10));
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains.length).to.equal(0);
+    });
+    it("includes only origin chain repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(1);
     });
   });
 
