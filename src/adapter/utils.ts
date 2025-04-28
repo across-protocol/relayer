@@ -1,3 +1,4 @@
+import { createHmac } from "crypto";
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../common";
 import {
   BigNumber,
@@ -61,4 +62,8 @@ export function processEvent(event: Log, amountField: string): BridgeEvent {
     ...eventSpread,
     amount: eventSpread[amountField],
   };
+}
+
+export function hmac(queryString: string, secretKey: string, hashFn = "sha256"): string {
+  return createHmac(hashFn, secretKey).update(queryString).digest("hex");
 }
