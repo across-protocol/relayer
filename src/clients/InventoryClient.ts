@@ -27,10 +27,12 @@ import {
   getUsdcSymbol,
   Profiler,
   getNativeTokenSymbol,
-  depositHasPoolRebalanceRouteMapping,
+  getL1TokenInfo,
+  depositForcesOriginChainRepayment,
+  getRemoteTokenForL1Token,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { Deposit, ProposedRootBundle } from "../interfaces";
+import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -216,13 +218,10 @@ export class InventoryClient {
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
   }
 
-  getRepaymentTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
-    // @todo: Update HubPoolClient.getL2TokenForL1TokenAtBlock() such that it returns `undefined` instead of throwing.
-    try {
-      return this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
-    } catch {
-      return undefined;
-    }
+  protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    return chainId === this.hubPoolClient.chainId
+      ? l1Token
+      : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
   }
 
   /**
@@ -247,7 +246,7 @@ export class InventoryClient {
       return Object.keys(tokenConfig).filter((k) => isDefined(tokenConfig[k][chainId]));
     }
 
-    const destinationToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
+    const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
     if (!isDefined(destinationToken)) {
       return [];
     }
@@ -334,17 +333,12 @@ export class InventoryClient {
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
-        if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
-          refunds[chainId] = bnZero;
-        } else {
-          const destinationToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
-          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
-          refunds[chainId] = sdkUtils.ConvertDecimals(
-            l2TokenDecimals,
-            l1TokenDecimals
-          )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
-          return refunds;
-        }
+        const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
+        refunds[chainId] = sdkUtils.ConvertDecimals(
+          l2TokenDecimals,
+          l1TokenDecimals
+        )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
         return refunds;
       },
       {}
@@ -370,7 +364,7 @@ export class InventoryClient {
     // Destination and Origin chain are always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = [originChainId, destinationChainId];
-    const l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId).address;
+    const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
 
     if (this.isInventoryManagementEnabled()) {
       chainIds.push(...this.getSlowWithdrawalRepaymentChains(l1Token));
@@ -379,6 +373,12 @@ export class InventoryClient {
       chainIds.push(this.hubPoolClient.chainId);
     }
     return chainIds;
+  }
+
+  getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.hubPoolClient.chainId
+      ? this.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      : getL1TokenInfo(l2Token, chainId);
   }
 
   /**
@@ -399,6 +399,20 @@ export class InventoryClient {
     );
     if (equivalentTokens) {
       return true;
+    }
+
+    // Return true if the input and output token are defined as equivalent according to a hardcoded mapping
+    // of equivalent tokens. This should allow relayer to define which tokens it should be able to fill despite them
+    // not being linked via a PoolRebalanceRoute.
+    try {
+      const l1TokenMappedToInputToken = this.getL1TokenInfo(inputToken, originChainId).address;
+      const l1TokenMappedToOutputToken = this.getL1TokenInfo(outputToken, destinationChainId).address;
+      if (l1TokenMappedToInputToken === l1TokenMappedToOutputToken) {
+        return true;
+      }
+    } catch (e) {
+      // @dev getL1TokenInfo will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
+      return false;
     }
 
     // Return true if input token is Native USDC and output token is Bridged USDC or if input token
@@ -438,18 +452,12 @@ export class InventoryClient {
     const { originChainId, destinationChainId, inputToken, outputToken, inputAmount } = deposit;
     const hubChainId = this.hubPoolClient.chainId;
 
-    // If the token cannot be mapped to any PoolRebalanceRoute, then the decision for now is to return zero repayment
-    // chains and force the relayer to ignore this deposit.
-    if (!depositHasPoolRebalanceRouteMapping(deposit, this.hubPoolClient)) {
-      return [];
-    }
-
     if (sdkUtils.invalidOutputToken(deposit)) {
       return [];
     }
 
     if (!this.isInventoryManagementEnabled()) {
-      return [deposit.fromLiteChain ? originChainId : destinationChainId];
+      return [depositForcesOriginChainRepayment(deposit, this.hubPoolClient) ? originChainId : destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -465,7 +473,7 @@ export class InventoryClient {
       );
     }
 
-    l1Token ??= this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
+    l1Token ??= this.getL1TokenInfo(inputToken, originChainId).address;
     const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
@@ -486,7 +494,7 @@ export class InventoryClient {
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
-    if (!deposit.fromLiteChain && this.prioritizeLpUtilization) {
+    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmountInL1TokenDecimals,
@@ -519,7 +527,7 @@ export class InventoryClient {
     if (
       !chainsToEvaluate.includes(destinationChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
-      !deposit.fromLiteChain
+      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
@@ -537,7 +545,7 @@ export class InventoryClient {
     for (const chainId of chainsToEvaluate) {
       assert(this._l1TokenEnabledForChain(l1Token, chainId), `Token ${l1Token} not enabled for chain ${chainId}`);
       // Destination chain:
-      const repaymentToken = this.getRepaymentTokenForL1Token(l1Token, chainId);
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const chainShortfall = sdkUtils.ConvertDecimals(
         l2TokenDecimals,
@@ -627,13 +635,16 @@ export class InventoryClient {
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
     // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
-    if (deposit.fromLiteChain && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
+    if (
+      depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
+      (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))
+    ) {
       return [];
     }
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!deposit.fromLiteChain && !eligibleRefundChains.includes(hubChainId)) {
+    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;

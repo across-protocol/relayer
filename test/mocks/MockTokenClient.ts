@@ -1,5 +1,6 @@
-import { BigNumber, toBN } from "../../src/utils";
+import { BigNumber, Contract, toBN } from "../../src/utils";
 import { TokenClient } from "../../src/clients";
+import { L1Token } from "../../src/interfaces";
 
 export class MockTokenClient extends TokenClient {
   public override tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } =
@@ -49,5 +50,20 @@ export class MockTokenClient extends TokenClient {
       this.tokenData[chainId][token] = { balance: toBN(0), allowance: toBN(0) };
     }
     this.tokenData[chainId][token].balance = this.tokenData[chainId][token].balance.sub(amount);
+  }
+}
+
+export class SimpleMockTokenClient extends TokenClient {
+  private tokenContracts: Contract[] | undefined = undefined;
+
+  setRemoteTokens(tokens: Contract[]): void {
+    this.tokenContracts = tokens;
+  }
+
+  resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
+    if (this.tokenContracts) {
+      return this.tokenContracts;
+    }
+    return super.resolveRemoteTokens(chainId, hubPoolTokens);
   }
 }

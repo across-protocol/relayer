@@ -43,6 +43,8 @@ import {
   getWidestPossibleExpectedBlockRange,
   utils,
   _buildPoolRebalanceRoot,
+  getL1TokenInfo,
+  getRemoteTokenForL1Token,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -120,12 +122,7 @@ export class Monitor {
     const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.map((chainId) => {
-        const l2Tokens = l1Tokens
-          .filter((l1Token) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-          .map((l1Token) => {
-            const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-            return l2Token;
-          });
+        const l2Tokens = l1Tokens.map((l1Token) => this.getRemoteTokenForL1Token(l1Token, chainId)).filter(isDefined);
         return [chainId, l2Tokens];
       })
     );
@@ -337,7 +334,7 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
-          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
+          isDefined(this.getRemoteTokenForL1Token(l1Token, chainId))
         );
         const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -1119,7 +1116,7 @@ export class Monitor {
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
-        const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+        const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
 
         let tokenSymbol = tokenInfo.symbol;
         if (
@@ -1134,6 +1131,18 @@ export class Monitor {
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
+  }
+
+  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      : getL1TokenInfo(l2Token, chainId);
+  }
+
+  protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? l1Token
+      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
   }
 
   private updateRelayerBalanceTable(
