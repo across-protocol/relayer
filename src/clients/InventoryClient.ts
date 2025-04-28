@@ -30,7 +30,6 @@ import {
   getL1TokenInfo,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
-  depositCanTakeDestinationChainRepayment,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
