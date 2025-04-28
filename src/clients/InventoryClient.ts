@@ -344,6 +344,7 @@ export class InventoryClient {
           )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
           return refunds;
         }
+        return refunds;
       },
       {}
     );
