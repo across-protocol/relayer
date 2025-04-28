@@ -55,12 +55,19 @@ export class MockTokenClient extends TokenClient {
 
 export class SimpleMockTokenClient extends TokenClient {
   private tokenContracts: Contract[] | undefined = undefined;
+  private remoteTokenContracts: { [chainId: number]: Contract[] } | undefined = {};
 
-  setRemoteTokens(tokens: Contract[]): void {
+  setRemoteTokens(tokens: Contract[], remoteTokenContracts?: { [chainId: number]: Contract[] }): void {
     this.tokenContracts = tokens;
+    if (remoteTokenContracts) {
+      this.remoteTokenContracts = remoteTokenContracts;
+    }
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
+    if (this.remoteTokenContracts?.[chainId]) {
+      return this.remoteTokenContracts[chainId];
+    }
     if (this.tokenContracts) {
       return this.tokenContracts;
     }

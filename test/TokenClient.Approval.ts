@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -18,7 +18,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { MockHubPoolClient } from "./mocks";
+import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 
 describe("TokenClient: Origin token approval", async function () {
   let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
@@ -30,7 +30,7 @@ describe("TokenClient: Origin token approval", async function () {
     l1Token_2: Contract;
   let hubPoolClient: MockHubPoolClient, spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-  let tokenClient: TokenClient; // tested
+  let tokenClient: SimpleMockTokenClient; // tested
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
   const updateAllClients = async () => {
@@ -103,7 +103,8 @@ describe("TokenClient: Origin token approval", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient.setRemoteTokens([l1Token_1, l1Token_2, erc20_1, erc20_2, weth_1, weth_2]);
   });
 
   it("Executes expected L2 token approvals and produces logs", async function () {
