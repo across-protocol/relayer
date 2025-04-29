@@ -684,12 +684,10 @@ describe("InventoryClient: Refund chain selection", async function () {
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
     });
     it("only origin chain can be repayment chain", async function () {
-      hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([POLYGON]);
     });
     it("returns no repayment chains if origin chain is over allocated", async function () {
-      hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(10));
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
@@ -701,6 +699,51 @@ describe("InventoryClient: Refund chain selection", async function () {
         expect(possibleRepaymentChains).to.include(chainId);
       });
       expect(possibleRepaymentChains.length).to.equal(1);
+    });
+  });
+
+  describe("destination token is not mapped to a PoolRebalanceRoute", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[POLYGON],
+        inputAmount,
+        outputToken: l2TokensForWeth[ARBITRUM],
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+      hubPoolClient.deleteTokenMapping(mainnetWeth, ARBITRUM);
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
+      tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+    });
+    it("origin chain and hub chain can be repayment chain", async function () {
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON, MAINNET]);
+    });
+    it("returns hub chain if origin chain is over allocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains.length).to.equal(1);
+      expect(refundChains).to.deep.equal([MAINNET]);
+    });
+    it("includes hub chain and origin chain on repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, hubPoolClient.chainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(2);
     });
   });
 

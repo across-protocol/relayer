@@ -224,7 +224,7 @@ export class InventoryClient {
   /**
    * From an L1Token and remote chain ID, resolve all supported corresponding tokens.
    * This should include at least the relevant repayment token on the relevant chain, but may also include other
-   * "equivalent" tokens (i.e. as with Bridged & Native USDC).
+   * "equivalent" tokens (i.e. as with Bridged & Native USDC) as defined by a custom token configuration.
    * @param l1Token Mainnet token to query.
    * @param chainId Remove chain to query.
    * @returns An array of supported tokens on chainId that map back to l1Token on mainnet.
@@ -382,7 +382,10 @@ export class InventoryClient {
         )
       );
     }
-    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
+    if (
+      this.canTakeHubChainRepayment(deposit) &&
+      ![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)
+    ) {
       chainIds.push(this.hubPoolClient.chainId);
     }
     return chainIds;
