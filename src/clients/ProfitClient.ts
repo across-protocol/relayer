@@ -29,6 +29,7 @@ import {
   ZERO_ADDRESS,
   formatGwei,
   fixedPointAdjustment,
+  getRemoteTokenForL1Token,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -551,7 +552,7 @@ export class ProfitClient {
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = this.hubPoolClient
       .getL1Tokens()
-      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol]));
     if (unknownTokens.length > 0) {
       this.logger.debug({
         at: "ProfitClient#updateTokenPrices",
@@ -651,7 +652,7 @@ export class ProfitClient {
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
-            : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
+            : getRemoteTokenForL1Token(hubToken, destinationChainId, this.hubPoolClient);
         assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
         const deposit = { ...sampleDeposit, destinationChainId, outputToken };

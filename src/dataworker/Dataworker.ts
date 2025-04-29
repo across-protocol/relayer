@@ -19,6 +19,7 @@ import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   ERC20,
+  getL1TokenInfo,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -30,6 +31,7 @@ import {
   RelayerRefundLeaf,
   SlowFillLeaf,
   FillStatus,
+  L1Token,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -2181,6 +2183,12 @@ export class Dataworker {
     }
   }
 
+  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      : getL1TokenInfo(l2Token, chainId);
+  }
+
   async _executeRelayerRefundLeaves(
     leaves: RelayerRefundLeaf[],
     balanceAllocator: BalanceAllocator,
@@ -2215,7 +2223,7 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
-          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2309,7 +2317,7 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach((leaf) => {
-      const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+      const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
 
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId

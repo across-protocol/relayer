@@ -146,7 +146,12 @@ describe("Relayer: Initiates slow fill requests", async function () {
       null,
       mockCrossChainTransferClient
     );
-
+    mockInventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,

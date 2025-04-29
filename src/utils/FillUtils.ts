@@ -42,11 +42,13 @@ export function getUnfilledDeposits(
     });
 }
 
-export function depositHasPoolRebalanceRouteMapping(
-  deposit: Pick<DepositWithBlock, "inputToken" | "originChainId">,
+export function depositForcesOriginChainRepayment(
+  deposit: Pick<DepositWithBlock, "inputToken" | "originChainId" | "fromLiteChain">,
   hubPoolClient: HubPoolClient
 ): boolean {
-  return hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
+  return (
+    deposit.fromLiteChain || !hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)
+  );
 }
 
 export function getAllUnfilledDeposits(
