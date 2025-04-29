@@ -382,10 +382,7 @@ export class InventoryClient {
         )
       );
     }
-    if (
-      this.canTakeHubChainRepayment(deposit) &&
-      ![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)
-    ) {
+    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
       chainIds.push(this.hubPoolClient.chainId);
     }
     return chainIds;
@@ -432,12 +429,6 @@ export class InventoryClient {
 
   private canTakeDestinationChainRepayment(deposit: Deposit): boolean {
     return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId);
-  }
-
-  private canTakeHubChainRepayment(deposit: Deposit): boolean {
-    // If input token maps to an L1 token then repayment can be taken on the hub chain in this input token
-    // equivalent.
-    return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId);
   }
 
   /*
@@ -677,11 +668,7 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (
-      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
-      this.canTakeHubChainRepayment(deposit) &&
-      !eligibleRefundChains.includes(hubChainId)
-    ) {
+    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
