@@ -1101,19 +1101,19 @@ export class Monitor {
     relayer: string,
     balanceType: BalanceType
   ) {
-    const getL1TokenInfoForRelayerReport = (l2Token: string, chainId: number): L1Token => {
-      const tokenInfo =
-        chainId === this.clients.hubPoolClient.chainId
-          ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
-          : getL1TokenInfo(l2Token, chainId);
 
+    const getL1TokenInfoForRelayerReport = (l2Token: string, chainId: number): L1Token => {
+      const tokenInfo = chainId === this.clients.hubPoolClient.chainId
+        ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+        : getL1TokenInfo(l2Token, chainId);
+  
       // The monitor indexes all token balances using the L1 token symbol so rewrite the token symbol:
       const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenInfo.symbol] ?? tokenInfo.symbol;
       return {
         ...tokenInfo,
-        symbol: l1TokenSymbol,
-      };
-    };
+        symbol: l1TokenSymbol
+      }
+    }
 
     for (const chainId of this.monitorChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
