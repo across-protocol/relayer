@@ -49,7 +49,7 @@ import {
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
-import { PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -1101,6 +1101,22 @@ export class Monitor {
     relayer: string,
     balanceType: BalanceType
   ) {
+    const getL1TokenInfoFroRelayerBalanceTable = (l2Token: string, chainId: number): L1Token => {
+      const l1TokenInfo =
+        chainId === this.clients.hubPoolClient.chainId
+          ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+          : getL1TokenInfo(l2Token, chainId);
+
+      // The monitor indexes all token balances using the L1 token symbol so rewrite the token symbol:
+      const invertedTokenEquivalenceRemapping = Object.fromEntries(
+        Object.entries(TOKEN_EQUIVALENCE_REMAPPING).map(([x, y]) => [y, x])
+      );
+      const l1TokenSymbol = invertedTokenEquivalenceRemapping[l1TokenInfo.symbol] ?? l1TokenInfo.symbol;
+      return {
+        ...l1TokenInfo,
+        symbol: l1TokenSymbol,
+      };
+    };
     for (const chainId of this.monitorChains) {
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
@@ -1116,38 +1132,19 @@ export class Monitor {
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
-        const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
+        const tokenInfo = getL1TokenInfoFroRelayerBalanceTable(tokenAddress, chainId);
 
-        // In the following remappings we essentially need to perform the reverse of the TOKEN_EQUIVALENCE_REMAPPING
-        // since all balances are indexed by the L1 token symbol and we are resolving L2 token symbols using
-        // getL1TokenInfo
         let tokenSymbol = tokenInfo.symbol;
-        if (
-          tokenSymbol === "USDC" &&
-          chainId !== this.clients.hubPoolClient.chainId &&
-          (compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], tokenAddress) ||
-            compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], tokenAddress))
-        ) {
-          tokenSymbol = "USDC.e";
-        }
         // WETH is the symbol that `getL1TokenInfo()` will return for WETH on Mainnet but ETH is what
         // it will return for a non-Mainnet chain, so unify the symbols. This is because TOKEN_SYMBOLS_MAP
         // defines both an ETH and WETH mapping that both reference "WETH" addresses but the ETH mapping comes first.
-        else if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
+        if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
           tokenSymbol = "WETH";
-        } else if (tokenSymbol === "WGHO" && chainId !== this.clients.hubPoolClient.chainId) {
-          tokenSymbol = "LGHO";
         }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
-  }
-
-  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    return chainId === this.clients.hubPoolClient.chainId
-      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
-      : getL1TokenInfo(l2Token, chainId);
   }
 
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
