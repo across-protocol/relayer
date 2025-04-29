@@ -16,15 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.46.tgz#9f567eecd47eaa5035460193c49307f413623167"
   integrity sha512-EHwFVLlSfwIOOQsqnL53UUPtjw9GUN1Y7PDEXUDttPxuqcc/IRDSp7xBnYgn7OWhrEg3404SzBKmc2A1l3Sqhw==
 
-"@across-protocol/constants@^3.1.51":
-  version "3.1.51"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.51.tgz#992beaba4c7540f62bfcde180403494ea5ac989a"
-  integrity sha512-XuXZXqbTxt/r+WQKwyMKnlg7z63SdN7AehdD1uWzF+FCM6u9XAECB8RlK1+wBj1RAJuuZGbrNMyfS9szq+X11Q==
-
-"@across-protocol/constants@^3.1.52":
-  version "3.1.52"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.52.tgz#e58914d7b0787b86db0b9be3330afb3db50cfbad"
-  integrity sha512-MFghLk+te8WNfG+gBb5813aNcVujcCaNCM5gY8nBcHy02XjoK04UKn8CibzccQ1gWTvJTMmFgzBXv89kEW20Kw==
+"@across-protocol/constants@^3.1.57":
+  version "3.1.57"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.57.tgz#7f6d3b00e52e142b04d8a1a72be81bdff631646d"
+  integrity sha512-drkdEYdURc4IcUr0KzcehLhmYU20H3WkHfukodcjvcLogDGHFd8p5Uwajd2kMGDu1GwgM5wehGt7KIEqYLw4eg==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -65,13 +60,13 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.47":
-  version "4.1.47"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.47.tgz#d67f120800c4959cba491337b2184acaa08245ed"
-  integrity sha512-3vuKp7M6EjE00ukp82/ludXVJ9LwKFW7MyvAHtJRHPGlb6JoLkT1scMEjoJ9NAarSBUyFM7r1mrThg9gWffidA==
+"@across-protocol/sdk@4.1.48":
+  version "4.1.48"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.48.tgz#36773bcec2de461f4a7eebc2f6906a7bdd2c73da"
+  integrity sha512-exD4kXDQcaTf2jAvQHkk+Xf+3OBIsULNd4u/Gq+bh1aDpCgRn+tiogtBBvzxf/DJ5lkRDUmmgvyZabMHKk/L3g==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.51"
+    "@across-protocol/constants" "^3.1.57"
     "@across-protocol/contracts" "^4.0.5"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
