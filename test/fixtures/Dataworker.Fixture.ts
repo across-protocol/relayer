@@ -32,6 +32,7 @@ import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
+import { MockDataworker } from "../mocks/MockDataworker";
 
 export { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 
@@ -236,7 +237,7 @@ export async function setupDataworker(
     configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     priceClient,
   };
-  const dataworkerInstance = new Dataworker(
+  const dataworkerInstance = new MockDataworker(
     spyLogger,
     {} as DataworkerConfig,
     dataworkerClients,
@@ -244,6 +245,21 @@ export async function setupDataworker(
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf
   );
+  dataworkerInstance.setTokenMap(originChainId, erc20_1.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
+  dataworkerInstance.setTokenMap(destinationChainId, erc20_2.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
+  dataworkerInstance.setTokenMap(hubPoolChainId, l1Token_1.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], undefined, 100); // Seed owner to LP.
