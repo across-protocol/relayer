@@ -1118,8 +1118,9 @@ export class Monitor {
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
 
-        // Bridged USDC.e does not have the same symbol on all chains, so convert it so we can unify the report
-        // balances for USDC.e
+        // In the following remappings we essentially need to perform the reverse of the TOKEN_EQUIVALENCE_REMAPPING
+        // since all balances are indexed by the L1 token symbol and we are resolving L2 token symbols using 
+        // getL1TokenInfo
         let tokenSymbol = tokenInfo.symbol;
         if (
           tokenSymbol === "USDC" &&
@@ -1134,6 +1135,8 @@ export class Monitor {
         // defines both an ETH and WETH mapping that both reference "WETH" addresses but the ETH mapping comes first.
         else if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
           tokenSymbol = "WETH";
+        } else if (tokenSymbol === "WGHO" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "LGHO"
         }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
