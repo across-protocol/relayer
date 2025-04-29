@@ -552,7 +552,7 @@ export class ProfitClient {
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = this.hubPoolClient
       .getL1Tokens()
-      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol]));
     if (unknownTokens.length > 0) {
       this.logger.debug({
         at: "ProfitClient#updateTokenPrices",

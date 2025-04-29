@@ -1118,6 +1118,8 @@ export class Monitor {
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
 
+        // Bridged USDC.e does not have the same symbol on all chains, so convert it so we can unify the report
+        // balances for USDC.e
         let tokenSymbol = tokenInfo.symbol;
         if (
           tokenSymbol === "USDC" &&
@@ -1126,6 +1128,12 @@ export class Monitor {
             compareAddressesSimple(TOKEN_SYMBOLS_MAP["USDbC"].addresses[chainId], tokenAddress))
         ) {
           tokenSymbol = "USDC.e";
+        }
+        // WETH is the symbol that `getL1TokenInfo()` will return for WETH on Mainnet but ETH is what
+        // it will return for a non-Mainnet chain, so unify the symbols. This is because TOKEN_SYMBOLS_MAP
+        // defines both an ETH and WETH mapping that both reference "WETH" addresses but the ETH mapping comes first.
+        else if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "WETH";
         }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
