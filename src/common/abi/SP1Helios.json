@@ -1,0 +1,376 @@
+[
+  {
+    "inputs": [
+      {
+        "components": [
+          { "internalType": "bytes32", "name": "executionStateRoot", "type": "bytes32" },
+          { "internalType": "uint256", "name": "genesisTime", "type": "uint256" },
+          { "internalType": "uint256", "name": "head", "type": "uint256" },
+          { "internalType": "bytes32", "name": "header", "type": "bytes32" },
+          { "internalType": "bytes32", "name": "heliosProgramVkey", "type": "bytes32" },
+          { "internalType": "uint256", "name": "secondsPerSlot", "type": "uint256" },
+          { "internalType": "uint256", "name": "slotsPerEpoch", "type": "uint256" },
+          { "internalType": "uint256", "name": "slotsPerPeriod", "type": "uint256" },
+          { "internalType": "bytes32", "name": "syncCommitteeHash", "type": "bytes32" },
+          { "internalType": "address", "name": "verifier", "type": "address" },
+          { "internalType": "address[]", "name": "updaters", "type": "address[]" }
+        ],
+        "internalType": "struct SP1Helios.InitParams",
+        "name": "params",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  { "inputs": [], "name": "AccessControlBadConfirmation", "type": "error" },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "account", "type": "address" },
+      { "internalType": "bytes32", "name": "neededRole", "type": "bytes32" }
+    ],
+    "name": "AccessControlUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "ExecutionStateRootMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "NewHeaderMismatch",
+    "type": "error"
+  },
+  { "inputs": [], "name": "NoUpdatersProvided", "type": "error" },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "NonIncreasingHead",
+    "type": "error"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "PreviousHeadTooOld",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "given", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "expected", "type": "bytes32" }
+    ],
+    "name": "PreviousHeaderMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "PreviousHeaderNotSet",
+    "type": "error"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "period", "type": "uint256" }],
+    "name": "SyncCommitteeAlreadySet",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "given", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "expected", "type": "bytes32" }
+    ],
+    "name": "SyncCommitteeStartMismatch",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "slot", "type": "uint256" },
+      { "indexed": true, "internalType": "bytes32", "name": "root", "type": "bytes32" }
+    ],
+    "name": "HeadUpdate",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "indexed": true, "internalType": "bytes32", "name": "previousAdminRole", "type": "bytes32" },
+      { "indexed": true, "internalType": "bytes32", "name": "newAdminRole", "type": "bytes32" }
+    ],
+    "name": "RoleAdminChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "indexed": true, "internalType": "address", "name": "account", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "sender", "type": "address" }
+    ],
+    "name": "RoleGranted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "indexed": true, "internalType": "address", "name": "account", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "sender", "type": "address" }
+    ],
+    "name": "RoleRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "head", "type": "uint256" },
+      { "indexed": true, "internalType": "bytes32", "name": "key", "type": "bytes32" },
+      { "indexed": false, "internalType": "bytes32", "name": "value", "type": "bytes32" },
+      { "indexed": false, "internalType": "address", "name": "contractAddress", "type": "address" }
+    ],
+    "name": "StorageSlotVerified",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "period", "type": "uint256" },
+      { "indexed": true, "internalType": "bytes32", "name": "root", "type": "bytes32" }
+    ],
+    "name": "SyncCommitteeUpdate",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [{ "indexed": true, "internalType": "address", "name": "updater", "type": "address" }],
+    "name": "UpdaterAdded",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "DEFAULT_ADMIN_ROLE",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "GENESIS_TIME",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_SLOT_AGE",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SECONDS_PER_SLOT",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SLOTS_PER_EPOCH",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SLOTS_PER_PERIOD",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "UPDATER_ROLE",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "beaconSlot", "type": "uint256" },
+      { "internalType": "address", "name": "contractAddress", "type": "address" },
+      { "internalType": "bytes32", "name": "storageSlot", "type": "bytes32" }
+    ],
+    "name": "computeStorageKey",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "beaconSlot", "type": "uint256" }],
+    "name": "executionStateRoots",
+    "outputs": [{ "internalType": "bytes32", "name": "executionStateRoot", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getCurrentEpoch",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes32", "name": "role", "type": "bytes32" }],
+    "name": "getRoleAdmin",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "internalType": "uint256", "name": "index", "type": "uint256" }
+    ],
+    "name": "getRoleMember",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes32", "name": "role", "type": "bytes32" }],
+    "name": "getRoleMemberCount",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "beaconSlot", "type": "uint256" },
+      { "internalType": "address", "name": "contractAddress", "type": "address" },
+      { "internalType": "bytes32", "name": "storageSlot", "type": "bytes32" }
+    ],
+    "name": "getStorageSlot",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "getSyncCommitteePeriod",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "internalType": "address", "name": "account", "type": "address" }
+    ],
+    "name": "grantRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "internalType": "address", "name": "account", "type": "address" }
+    ],
+    "name": "hasRole",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "head",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "headTimestamp",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "beaconSlot", "type": "uint256" }],
+    "name": "headers",
+    "outputs": [{ "internalType": "bytes32", "name": "beaconHeaderRoot", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "heliosProgramVkey",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "internalType": "address", "name": "callerConfirmation", "type": "address" }
+    ],
+    "name": "renounceRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+      { "internalType": "address", "name": "account", "type": "address" }
+    ],
+    "name": "revokeRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "slot", "type": "uint256" }],
+    "name": "slotTimestamp",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes32", "name": "computedStorageKey", "type": "bytes32" }],
+    "name": "storageValues",
+    "outputs": [{ "internalType": "bytes32", "name": "storageValue", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes4", "name": "interfaceId", "type": "bytes4" }],
+    "name": "supportsInterface",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "uint256", "name": "syncCommitteePeriod", "type": "uint256" }],
+    "name": "syncCommittees",
+    "outputs": [{ "internalType": "bytes32", "name": "syncCommitteeHash", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes", "name": "proof", "type": "bytes" },
+      { "internalType": "bytes", "name": "publicValues", "type": "bytes" }
+    ],
+    "name": "update",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "verifier",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

@@ -37,6 +37,7 @@ import {
   arbStackFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
+  heliosL1toL2Finalizer,
   lineaL1ToL2Finalizer,
   lineaL2ToL1Finalizer,
   opStackFinalizer,
@@ -67,6 +68,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.BNB]: {
+    finalizeOnL1: [heliosL1toL2Finalizer],
+    finalizeOnL2: [],
   },
   [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
