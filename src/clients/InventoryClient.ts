@@ -369,14 +369,15 @@ export class InventoryClient {
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = [originChainId];
-    if (
-      this.canTakeDestinationChainRepayment(deposit) &&
-      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
-    ) {
+    if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
+      return chainIds;
+    }
+
+    if (this.canTakeDestinationChainRepayment(deposit)) {
       chainIds.push(destinationChainId);
     }
 
-    if (this.isInventoryManagementEnabled() && originChainId !== this.hubPoolClient.chainId) {
+    if (this.isInventoryManagementEnabled()) {
       const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
       chainIds.push(
         ...this.getSlowWithdrawalRepaymentChains(l1Token).filter((chainId) =>
@@ -384,10 +385,7 @@ export class InventoryClient {
         )
       );
     }
-    if (
-      ![originChainId, destinationChainId].includes(this.hubPoolClient.chainId) &&
-      this.canTakeHubChainRepayment(deposit)
-    ) {
+    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
       chainIds.push(this.hubPoolClient.chainId);
     }
     return chainIds;
