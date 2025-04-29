@@ -1,4 +1,4 @@
-import { constants, utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 import WETH_ABI from "../common/abi/Weth.json";
 import {
   bnZero,
@@ -23,8 +23,6 @@ import {
   MAX_UINT_VAL,
   toBNWei,
   assert,
-  compareAddressesSimple,
-  getUsdcSymbol,
   Profiler,
   getNativeTokenSymbol,
   getL1TokenInfo,
@@ -54,7 +52,6 @@ export type Rebalance = {
   amount: BigNumber;
 };
 
-const { CHAIN_IDs } = constants;
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
 export class InventoryClient {
@@ -423,25 +420,11 @@ export class InventoryClient {
     try {
       const l1TokenMappedToInputToken = this.getL1TokenInfo(inputToken, originChainId).address;
       const l1TokenMappedToOutputToken = this.getL1TokenInfo(outputToken, destinationChainId).address;
-      if (l1TokenMappedToInputToken === l1TokenMappedToOutputToken) {
-        return true;
-      }
+      return l1TokenMappedToInputToken === l1TokenMappedToOutputToken;
     } catch (e) {
       // @dev getL1TokenInfo will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
       return false;
     }
-
-    // Return true if input token is Native USDC and output token is Bridged USDC or if input token
-    // is Bridged USDC and the output token is Native USDC.
-    // @dev getUsdcSymbol() returns defined if the token on the origin chain is either USDC, USDC.e or USDbC.
-    // The contracts should only allow deposits where the input token is the Across-supported USDC variant, so this
-    // check specifically handles the case where the input token is Bridged/Native and the output token Native/Bridged.
-    const isInputTokenUSDC = isDefined(getUsdcSymbol(inputToken, originChainId));
-    const isOutputTokenBridgedUSDC = compareAddressesSimple(
-      outputToken,
-      TOKEN_SYMBOLS_MAP[destinationChainId === CHAIN_IDs.BASE ? "USDbC" : "USDC.e"].addresses?.[destinationChainId]
-    );
-    return isInputTokenUSDC && isOutputTokenBridgedUSDC;
   }
 
   private canTakeDestinationChainRepayment(deposit: Deposit): boolean {
