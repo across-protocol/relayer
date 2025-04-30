@@ -41,7 +41,6 @@ import {
   getWidestPossibleExpectedBlockRange,
   utils,
   _buildPoolRebalanceRoot,
-  getL1TokenInfo,
   getRemoteTokenForL1Token,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -1095,24 +1094,6 @@ export class Monitor {
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
     }
-  }
-
-  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    const l1TokenInfo =
-      chainId === this.clients.hubPoolClient.chainId
-        ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
-        : getL1TokenInfo(l2Token, chainId);
-
-    if (chainId === this.clients.hubPoolClient.chainId) {
-      return l1TokenInfo;
-    }
-
-    // Remap the token symbol to the one used on the L1 chain because the relayer report indexes by L1 token symbol.
-    const tokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[l1TokenInfo.symbol] ?? l1TokenInfo.symbol;
-    return {
-      ...l1TokenInfo,
-      symbol: tokenSymbol,
-    };
   }
 
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
