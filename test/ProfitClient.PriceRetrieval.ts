@@ -4,7 +4,7 @@ import { bnZero, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
-const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "ETH", "MATIC"].map((symbol) => {
+const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "MATIC"].map((symbol) => {
   const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
   const address = addresses[1];
   return { symbol, decimals, address };
