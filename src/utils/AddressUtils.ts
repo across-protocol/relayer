@@ -1,4 +1,4 @@
-import {  TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BigNumber, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
