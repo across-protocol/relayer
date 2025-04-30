@@ -108,7 +108,7 @@ describe("SlowFill utils", function () {
       blockNumber: 0,
       transactionHash: "",
       logIndex: 0,
-      transactionIndex: 0,
+      txnIndex: 0,
       quoteTimestamp: 0,
       fromLiteChain: false,
       toLiteChain: false,

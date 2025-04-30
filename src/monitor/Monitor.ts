@@ -43,6 +43,8 @@ import {
   getWidestPossibleExpectedBlockRange,
   utils,
   _buildPoolRebalanceRoot,
+  getL1TokenInfo,
+  getRemoteTokenForL1Token,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -120,12 +122,7 @@ export class Monitor {
     const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.map((chainId) => {
-        const l2Tokens = l1Tokens
-          .filter((l1Token) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-          .map((l1Token) => {
-            const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-            return l2Token;
-          });
+        const l2Tokens = l1Tokens.map((l1Token) => this.getRemoteTokenForL1Token(l1Token, chainId)).filter(isDefined);
         return [chainId, l2Tokens];
       })
     );
@@ -176,13 +173,13 @@ export class Monitor {
     );
 
     for (const event of proposedBundles) {
-      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.txnRef);
     }
     for (const event of cancelledBundles) {
-      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.txnRef);
     }
     for (const event of disputedBundles) {
-      this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.txnRef);
     }
   }
 
@@ -337,7 +334,7 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
-          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
+          isDefined(this.getRemoteTokenForL1Token(l1Token, chainId))
         );
         const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -662,9 +659,7 @@ export class Monitor {
     // Fetch the data from the latest root bundle.
     const bundle = hubPoolClient.getLatestProposedRootBundle();
     // If there is an outstanding root bundle, then add it to the bundles to check. Otherwise, ignore it.
-    const bundlesToCheck = validatedBundles
-      .map((validatedBundle) => validatedBundle.transactionHash)
-      .includes(bundle.transactionHash)
+    const bundlesToCheck = validatedBundles.map((validatedBundle) => validatedBundle.txnRef).includes(bundle.txnRef)
       ? validatedBundles
       : [...validatedBundles, bundle];
 
@@ -1119,8 +1114,11 @@ export class Monitor {
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
-        const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+        const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
 
+        // In the following remappings we essentially need to perform the reverse of the TOKEN_EQUIVALENCE_REMAPPING
+        // since all balances are indexed by the L1 token symbol and we are resolving L2 token symbols using
+        // getL1TokenInfo
         let tokenSymbol = tokenInfo.symbol;
         if (
           tokenSymbol === "USDC" &&
@@ -1130,10 +1128,30 @@ export class Monitor {
         ) {
           tokenSymbol = "USDC.e";
         }
+        // WETH is the symbol that `getL1TokenInfo()` will return for WETH on Mainnet but ETH is what
+        // it will return for a non-Mainnet chain, so unify the symbols. This is because TOKEN_SYMBOLS_MAP
+        // defines both an ETH and WETH mapping that both reference "WETH" addresses but the ETH mapping comes first.
+        else if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "WETH";
+        } else if (tokenSymbol === "WGHO" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "LGHO";
+        }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
+  }
+
+  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      : getL1TokenInfo(l2Token, chainId);
+  }
+
+  protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? l1Token
+      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
   }
 
   private updateRelayerBalanceTable(
@@ -1164,7 +1182,7 @@ export class Monitor {
       relayerBalanceTable[tokenSymbol][chainName][balanceType].add(amount);
   }
 
-  private notifyIfUnknownCaller(caller: string, action: BundleAction, transactionHash: string) {
+  private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
     if (this.monitorConfig.whitelistedDataworkers.includes(caller)) {
       return;
     }
@@ -1184,7 +1202,7 @@ export class Monitor {
 
     const mrkdwn =
       `An unknown EOA ${blockExplorerLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
-      `\ntx: ${blockExplorerLink(transactionHash, 1)}`;
+      `\ntx: ${blockExplorerLink(txnRef, 1)}`;
     this.logger.error({
       at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${

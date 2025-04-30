@@ -211,7 +211,7 @@ export async function lineaL2ToL1Finalizer(
     );
 
   // Get Linea's MessageSent events for each src event
-  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map((event) => event.transactionHash)));
+  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map(({ txnRef }) => txnRef)));
   const relevantMessages = (
     await Promise.all(uniqueTxHashes.map((txHash) => getMessagesWithStatusByTxHash(txHash)))
   ).flat();
@@ -307,7 +307,7 @@ export async function lineaL2ToL1Finalizer(
 
 function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokensBridgedEvents: TokensBridged[]) {
   const messagesByTxHash = groupBy(messages, ({ txHash }) => txHash);
-  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ transactionHash }) => transactionHash);
+  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ txnRef }) => txnRef);
 
   const merged: {
     message: MessageWithStatus;

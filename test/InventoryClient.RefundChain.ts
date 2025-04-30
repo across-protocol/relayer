@@ -14,6 +14,7 @@ import {
   toWei,
   winston,
   spyLogIncludes,
+  randomAddress,
 } from "./utils";
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
@@ -120,7 +121,7 @@ describe("InventoryClient: Refund chain selection", async function () {
     bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
-    inventoryClient = new InventoryClient(
+    inventoryClient = new MockInventoryClient(
       owner.address,
       spyLogger,
       inventoryConfig,
@@ -361,10 +362,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       bundleDataClient.setReturnedNextBundleRefunds({
         [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
       });
-      // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
-      // L1 token and destination chain ID, otherwise it won't be counted in upcoming
-      // refunds.
-      hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
     });
@@ -383,10 +380,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       bundleDataClient.setReturnedNextBundleRefunds({
         [OPTIMISM]: createRefunds(owner.address, toMegaWei(5), l2TokensForWeth[OPTIMISM]),
       });
-      // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
-      // L1 token and destination chain ID, otherwise it won't be counted in upcoming
-      // refunds.
-      hubPoolClient.setEnableAllL2Tokens(true);
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
     });
@@ -401,6 +394,12 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.outputToken = l2TokensForUsdc[OPTIMISM];
       const srcChain = getNetworkName(sampleDepositData.originChainId);
       const dstChain = getNetworkName(sampleDepositData.destinationChainId);
+      await assertPromiseError(
+        inventoryClient.determineRefundChainId(sampleDepositData),
+        `Unexpected ${dstChain} output token on ${srcChain} deposit`
+      );
+
+      sampleDepositData.outputToken = randomAddress();
       await assertPromiseError(
         inventoryClient.determineRefundChainId(sampleDepositData),
         `Unexpected ${dstChain} output token on ${srcChain} deposit`
@@ -563,10 +562,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       bundleDataClient.setReturnedPendingBundleRefunds({
         [POLYGON]: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
       });
-      // We need HubPoolClient.l2TokenEnabledForL1Token() to return true for a given
-      // L1 token and destination chain ID, otherwise it won't be counted in upcoming
-      // refunds.
-      hubPoolClient.setEnableAllL2Tokens(true);
 
       // Post relay allocations:
       // Optimism (destination chain): (20)/(130+5) > 12%
@@ -618,6 +613,140 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
   });
 
+  describe("origin token and chain are not mapped to a PoolRebalanceRoute", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[POLYGON],
+        inputAmount,
+        outputToken: l2TokensForWeth[ARBITRUM],
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+      hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
+    });
+    it("returns only origin chain as repayment chain if it is underallocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON]);
+    });
+    it("returns no repayment chains if origin chain is over allocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains.length).to.equal(0);
+    });
+    it("includes only origin chain repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(1);
+    });
+  });
+
+  describe("destination token and origin token are both not mapped to a PoolRebalanceRoute", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[POLYGON],
+        inputAmount,
+        outputToken: l2TokensForWeth[ARBITRUM],
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+      hubPoolClient.deleteTokenMapping(mainnetWeth, ARBITRUM);
+      hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
+      tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+    });
+    it("only origin chain can be repayment chain", async function () {
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON]);
+    });
+    it("returns no repayment chains if origin chain is over allocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains.length).to.equal(0);
+    });
+    it("includes only origin chain repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(1);
+    });
+  });
+
+  describe("destination token is not mapped to a PoolRebalanceRoute", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: owner.address,
+        recipient: owner.address,
+        inputToken: l2TokensForWeth[POLYGON],
+        inputAmount,
+        outputToken: l2TokensForWeth[ARBITRUM],
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: ZERO_ADDRESS,
+      };
+      hubPoolClient.deleteTokenMapping(mainnetWeth, ARBITRUM);
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
+      tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+    });
+    it("origin chain and hub chain can be repayment chain", async function () {
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([POLYGON, MAINNET]);
+    });
+    it("returns hub chain if origin chain is over allocated", async function () {
+      tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains.length).to.equal(1);
+      expect(refundChains).to.deep.equal([MAINNET]);
+    });
+    it("includes hub chain and origin chain on repayment chain list", async function () {
+      const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      [sampleDepositData.originChainId, hubPoolClient.chainId].forEach((chainId) => {
+        expect(possibleRepaymentChains).to.include(chainId);
+      });
+      expect(possibleRepaymentChains.length).to.equal(2);
+    });
+  });
+
   describe("evaluates slow withdrawal chains with excess running balances", function () {
     let excessRunningBalances: { [chainId: number]: BigNumber };
     beforeEach(async function () {
@@ -643,11 +772,11 @@ describe("InventoryClient: Refund chain selection", async function () {
         hubPoolClient,
         bundleDataClient,
         adapterManager,
-        crossChainTransferClient
+        crossChainTransferClient,
+        false,
+        true // Need to set prioritizeUtilization to true to force client to consider slow withdrawal chains.
       );
       (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
-      // @dev Set this to undefined so that the balance is read from the non-mocked inventory client.
-      (inventoryClient as MockInventoryClient).setBalanceOnChainForL1Token(undefined);
       const inputAmount = toBNWei(1);
       sampleDepositData = {
         depositId: bnZero,

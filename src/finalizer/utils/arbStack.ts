@@ -137,7 +137,6 @@ export async function arbStackFinalizer(
     ),
     {
       ...spokePoolClient.eventSearchConfig,
-
       toBlock: latestBlockToFinalize,
     }
   );
@@ -195,7 +194,7 @@ export async function arbStackFinalizer(
   ];
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
-  _withdrawalEvents.forEach((event) => {
+  _withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
     try {
       const tokenBridgedEvent: TokensBridged = {
         ...event,
@@ -203,6 +202,8 @@ export async function arbStackFinalizer(
         chainId,
         leafId: 0,
         l2TokenAddress: event.l2TokenAddress,
+        txnRef: transactionHash,
+        txnIndex: transactionIndex,
       };
       withdrawalEvents.push(tokenBridgedEvent);
     } catch (err) {
@@ -342,14 +343,14 @@ async function getMessageOutboxStatusAndProof(
 }> {
   const networkName = getNetworkName(chainId);
   const l2Provider = getCachedProvider(chainId, true);
-  const receipt = await l2Provider.getTransactionReceipt(event.transactionHash);
+  const receipt = await l2Provider.getTransactionReceipt(event.txnRef);
   const l2Receipt = new ChildTransactionReceipt(receipt);
 
   try {
     const l2ToL1Messages = await l2Receipt.getChildToParentMessages(l1Signer);
     if (l2ToL1Messages.length === 0 || l2ToL1Messages.length - 1 < logIndex) {
       const error = new Error(
-        `No outgoing messages found in transaction:${event.transactionHash} for l2 token ${event.l2TokenAddress}`
+        `No outgoing messages found in transaction:${event.txnRef} for l2 token ${event.l2TokenAddress}`
       );
       logger.warn({
         at: `Finalizer#${networkName}Finalizer`,

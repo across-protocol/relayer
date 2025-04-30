@@ -6,7 +6,7 @@ import {
   Signer,
   Provider,
   EvmAddress,
-  getTokenInformationFromAddress,
+  getTokenInfo,
   assert,
   isDefined,
   chainIsProd,
@@ -14,7 +14,6 @@ import {
   mapAsync,
   ethers,
   toBN,
-  getTokenInfo,
   ConvertDecimals,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -49,7 +48,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Token.toAddress(), WETH_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.
-    this.tokenSymbol = getTokenInformationFromAddress(l1Token.toAddress()).symbol;
+    this.tokenSymbol = getTokenInfo(l1Token.toAddress(), this.hubChainId).symbol;
     this.network = chainIsProd(l2chainId) ? "ETH" : "SEP";
   }
 
@@ -105,8 +104,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
         const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
         return {
           amount: ConvertDecimals(strAmount.length - decimalIdx, l1Decimals)(bnAmount),
-          transactionHash: depositTxReceipts[idx].transactionHash,
-          transactionIndex: depositTxReceipts[idx].transactionIndex,
+          txnRef: depositTxReceipts[idx].transactionHash,
+          txnIndex: depositTxReceipts[idx].transactionIndex,
           // Only query the first log in the deposit event since a deposit corresponds to a single ERC20 `Transfer` event.
           logIndex: depositTxReceipts[idx].logs[0].logIndex,
           blockNumber: depositTxReceipts[idx].blockNumber,
@@ -151,8 +150,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
         const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
         return {
           amount: ConvertDecimals(strAmount.length - decimalIdx, l1Decimals)(bnAmount),
-          transactionHash: withdrawalTxReceipts[idx].transactionHash,
-          transactionIndex: withdrawalTxReceipts[idx].transactionIndex,
+          txnRef: withdrawalTxReceipts[idx].transactionHash,
+          txnIndex: withdrawalTxReceipts[idx].transactionIndex,
           // Same as resolving initiation events. Only query the first log since it is just an ERC20 `Transfer` call.
           logIndex: withdrawalTxReceipts[idx].logs[0].logIndex,
           blockNumber: withdrawalTxReceipts[idx].blockNumber,

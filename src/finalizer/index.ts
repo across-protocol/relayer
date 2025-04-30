@@ -350,7 +350,7 @@ export async function finalize(
     // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
     // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
-    let txnHashLookup: Record<number, string[]> = {};
+    let txnRefLookup: Record<number, string[]> = {};
     try {
       const finalizationsByChain = groupBy(
         finalizations,
@@ -371,7 +371,7 @@ export async function finalize(
         };
         multicallerClient.enqueueTransaction(txnToSubmit);
       }
-      txnHashLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
+      txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -406,9 +406,7 @@ export async function finalize(
         at: "Finalizer",
         message: `Submitted ${miscReason} on ${destinationNetwork}`,
         infoLogMessage,
-        transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
-          blockExplorerLink(txnHash, destinationChainId)
-        ),
+        txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
       });
     });
     transfers.forEach(
@@ -418,9 +416,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
-            blockExplorerLink(txnHash, destinationChainId)
-          ),
+          txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
         });
       }
     );

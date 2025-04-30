@@ -261,7 +261,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [monitoredEoa]: {
           [l1Weth]: {
             [l2Weth.address]: {
-              depositTxHashes: [deposits[l2Weth.address][0].transactionHash],
+              depositTxHashes: [deposits[l2Weth.address][0].txnRef],
               totalAmount: deposits[l2Weth.address][0].amount,
             },
           },
@@ -405,7 +405,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [spokePool.address]: {
           [l1Weth]: {
             [l2Weth.address]: {
-              depositTxHashes: [deposits[l2Weth.address][0].transactionHash],
+              depositTxHashes: [deposits[l2Weth.address][0].txnRef],
               totalAmount: deposits[l2Weth.address][0].amount,
             },
           },
@@ -492,7 +492,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [monitoredEoa]: {
           [l1Weth]: {
             [l2Weth.address]: {
-              depositTxHashes: [deposits[l2Weth.address][0].transactionHash],
+              depositTxHashes: [deposits[l2Weth.address][0].txnRef],
               totalAmount: deposits[l2Weth.address][0].amount,
             },
           },
@@ -641,7 +641,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [monitoredEoa]: {
           [l1Token]: {
             [l2Token]: {
-              depositTxHashes: [deposits[l2Token][0].transactionHash],
+              depositTxHashes: [deposits[l2Token][0].txnRef],
               totalAmount: deposits[l2Token][0].amount,
             },
           },
@@ -858,7 +858,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [spokePool.address]: {
           [l1Token]: {
             [l2Token]: {
-              depositTxHashes: [deposits[l2Token][0].transactionHash],
+              depositTxHashes: [deposits[l2Token][0].txnRef],
               totalAmount: deposits[l2Token][0].amount,
             },
           },
@@ -970,7 +970,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         [monitoredEoa]: {
           [l1Token]: {
             [l2Token]: {
-              depositTxHashes: [deposits[l2Token][0].transactionHash],
+              depositTxHashes: [deposits[l2Token][0].txnRef],
               totalAmount: deposits[l2Token][0].amount,
             },
           },

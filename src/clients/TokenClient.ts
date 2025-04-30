@@ -19,6 +19,7 @@ import {
   winston,
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
+  getRemoteTokenForL1Token,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -185,7 +186,7 @@ export class TokenClient {
       .map(({ symbol, address }) => {
         let tokenAddrs: string[] = [];
         try {
-          const spokePoolToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
+          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
           tokenAddrs.push(spokePoolToken);
         } catch {
           // No known deployment for this token on the SpokePool.

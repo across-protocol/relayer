@@ -85,9 +85,9 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Partially create the meta-data information regarding the injected chain id inclusion
       const partialChainIdIndicesUpdate = {
         blockNumber: injectedBlockNumber,
-        transactionIndex: 0,
+        txnIndex: 0,
         logIndex: 0,
-        transactionHash: "",
+        txnRef: "",
       };
 
       // We need to now resolve the last chain id indices update
