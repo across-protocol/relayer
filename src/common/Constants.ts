@@ -218,6 +218,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
+  [CHAIN_IDs.BNB]: 3, // todo: idk what i'm doing. internet says BSC has 3-block finality
   [CHAIN_IDs.UNICHAIN]: 120,
   [CHAIN_IDs.INK]: 120, // Follows Optimism
   [CHAIN_IDs.LENS]: 512,

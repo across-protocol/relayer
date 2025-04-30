@@ -186,8 +186,17 @@ export async function getGasPrice(
 }
 
 export async function willSucceed(transaction: AugmentedTransaction): Promise<TransactionSimulationResult> {
+  console.log("\n--- willSucceed START ---");
+  console.log(
+    `[willSucceed] Simulating: ${transaction.method} on ${transaction.contract.address} (Chain: ${transaction.chainId})`
+  );
+  console.log(`[willSucceed] Args: ${JSON.stringify(transaction.args)}`);
+  console.log(`[willSucceed] Value: ${transaction.value?.toString()}`);
+
   // If the transaction already has a gasLimit, it should have been simulated in advance.
   if (transaction.canFailInSimulation || isDefined(transaction.gasLimit)) {
+    console.log("[willSucceed] Skipping simulation: canFailInSimulation or gasLimit already defined.");
+    console.log("--- willSucceed END ---");
     return { transaction, succeed: true };
   }
 
@@ -200,22 +209,39 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;
   try {
+    console.log(`[willSucceed] Attempting contract.callStatic.${method}(...)`);
+    console.log(`[willSucceed] callStatic Args: ${JSON.stringify(args)}`);
     data = await contract.callStatic[method](...args);
+    console.log(`[willSucceed] callStatic SUCCEEDED. Data: ${JSON.stringify(data)}`);
   } catch (err: any) {
+    console.error("[willSucceed] callStatic FAILED!");
+    console.error(`[willSucceed] Full callStatic Error Object:`, err);
     if (err.errorName) {
+      console.log(`[willSucceed] callStatic failed with known errorName: ${err.errorName}`);
+      console.log("--- willSucceed END ---");
       return {
         transaction,
         succeed: false,
         reason: err.errorName,
       };
     }
+    console.log("[willSucceed] callStatic failed without a known errorName property.");
+    // Optionally rethrow or handle differently if needed, but for now, let estimateGas try
   }
 
   try {
+    console.log(`[willSucceed] Attempting contract.estimateGas.${method}(...)`);
+    console.log(`[willSucceed] estimateGas Args: ${JSON.stringify(args)}`);
     const gasLimit = await contract.estimateGas[method](...args);
+    console.log(`[willSucceed] estimateGas SUCCEEDED. Gas Limit: ${gasLimit.toString()}`);
+    console.log("--- willSucceed END ---");
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (_error) {
+    console.error("[willSucceed] estimateGas FAILED!");
     const error = _error as EthersError;
+    console.error(`[willSucceed] Full estimateGas Error Object:`, error);
+    console.log(`[willSucceed] estimateGas failed with reason: ${error.reason}`);
+    console.log("--- willSucceed END ---");
     return { transaction, succeed: false, reason: error.reason };
   }
 }

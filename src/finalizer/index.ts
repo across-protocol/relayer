@@ -70,8 +70,8 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.BNB]: {
-    finalizeOnL1: [heliosL1toL2Finalizer],
-    finalizeOnL2: [],
+    finalizeOnL1: [],
+    finalizeOnL2: [heliosL1toL2Finalizer],
   },
   [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
@@ -506,6 +506,10 @@ export class FinalizerConfig extends DataworkerConfig {
 
 export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
+
+  // ---- START BSC TEST CODE ----
+  logger.level = "info";
+  // ---- END BSC TEST CODE ----
 
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);

@@ -67,7 +67,7 @@ const proofOutputsAbiTuple = `tuple(
     bytes32 syncCommitteeHash,
     bytes32 startSyncCommitteeHash,
     tuple(bytes32 key, bytes32 value, address contractAddress)[] slots
-+)`;
+)`;
 
 // Type for the decoded ProofOutputs structure
 type DecodedProofOutputs = {
@@ -103,6 +103,7 @@ export async function heliosL1toL2Finalizer(
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address; // Get L2 SpokePool address
 
   // --- Step 1: Query and Filter L1 Events ---
+  // ✅ Step 1 tested and working
   const relevantStoredCallDataEvents = await getAndFilterL1Events(
     logger,
     hubPoolClient,
@@ -111,24 +112,79 @@ export async function heliosL1toL2Finalizer(
     l2ChainId,
     l2SpokePoolAddress
   );
+
+  // ---- START BSC TEST CODE ----
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_1:${l2ChainId}`,
+    message: "--- DEBUGGING STEP 1: StoredCallData Events ---",
+    count: relevantStoredCallDataEvents?.length ?? "null",
+    events: relevantStoredCallDataEvents // Log the actual events for inspection
+      ? relevantStoredCallDataEvents.map((e) => ({
+          txHash: e.transactionHash,
+          blockNumber: e.blockNumber,
+          target: e.args.target,
+          nonce: e.args.nonce.toString(),
+          dataLength: e.args.data.length,
+          data: e.args.data,
+        }))
+      : "null",
+  });
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_1:${l2ChainId}`,
+    message: "--- RETURNING EARLY AFTER STEP 1 FOR TESTING ---",
+  });
+  // ---- END BSC TEST CODE ----
+
   if (!relevantStoredCallDataEvents || relevantStoredCallDataEvents.length === 0) {
     return { callData: [], crossChainMessages: [] };
   }
 
   // --- Step 2: Query L2 Verification Events ---
+  // ✅ Step 2 tested and working
   const verifiedKeys = await getL2VerifiedKeys(logger, l2SpokePoolClient, l2ChainId);
+
+  // ---- START BSC TEST CODE (STEP 2) ----
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_2:${l2ChainId}`,
+    message: "--- DEBUGGING STEP 2: Verified Keys ---",
+    count: verifiedKeys?.size ?? "null (error occurred)",
+    keys: verifiedKeys ? [...verifiedKeys] : "null (error occurred)", // Convert Set to Array for logging
+  });
+  // ---- END BSC TEST CODE (STEP 2) ----
+
   if (verifiedKeys === null) {
     // Indicates an error occurred fetching L2 events
     return { callData: [], crossChainMessages: [] };
   }
 
   // --- Step 3: Identify Unfinalized Messages ---
+  // ✅ Step 3 tested and working
   const unfinalizedMessages = findUnfinalizedMessages(logger, relevantStoredCallDataEvents, verifiedKeys, l2ChainId);
+  // todo: Testing, uncomment above after
+  // const unfinalizedMessages = relevantStoredCallDataEvents;
+
+  // ---- START BSC TEST CODE (STEP 3) ----
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_3:${l2ChainId}`,
+    message: "--- DEBUGGING STEP 3: Unfinalized Messages ---",
+    count: unfinalizedMessages.length,
+    messages: unfinalizedMessages.map((m) => ({
+      txHash: m.transactionHash,
+      blockNumber: m.blockNumber,
+      target: m.args.target,
+      nonce: m.args.nonce.toString(),
+      // Optionally calculate expected slot for verification
+      expectedSlot: calculateHubPoolStoreStorageSlot(m.args),
+    })),
+  });
+  // ---- END BSC TEST CODE (STEP 3) ----
+
   if (unfinalizedMessages.length === 0) {
     return { callData: [], crossChainMessages: [] };
   }
 
   // --- Step 4: Get Proofs for Unfinalized Messages ---
+  // ✅ Step 4. tested and working. Didn't test ALL branches; but happy-cases work
   const proofsToSubmit = await processUnfinalizedHeliosMessages(
     logger,
     unfinalizedMessages, // Pass the unfinalized messages containing original event data
@@ -201,7 +257,7 @@ async function getAndFilterL1Events(
     // Explicitly cast logs to the correct type
     const events: StoredCallDataEvent[] = rawLogs.map((log) => ({
       ...log,
-      args: log.args as StoredCallDataEventArgs, // todo: is this type correct?
+      args: log.args as StoredCallDataEventArgs,
     }));
 
     logger.info({
@@ -336,8 +392,11 @@ async function generateHeliosMulticallData(
 
   for (const proof of proofsToSubmit) {
     try {
-      const proofBytes = ethers.utils.hexlify(proof.proofData.proof);
-      const publicValuesBytes = ethers.utils.hexlify(proof.proofData.public_values);
+      // Ensure the hex strings have the '0x' prefix, adding it only if missing.
+      const proofBytes = proof.proofData.proof.startsWith("0x") ? proof.proofData.proof : "0x" + proof.proofData.proof;
+      const publicValuesBytes = proof.proofData.public_values.startsWith("0x")
+        ? proof.proofData.public_values
+        : "0x" + proof.proofData.public_values;
 
       let decodedOutputs: DecodedProofOutputs;
       try {
@@ -364,8 +423,14 @@ async function generateHeliosMulticallData(
       }
 
       // 1. SP1Helios.update transaction
-      const updateTx = await sp1HeliosContract.populateTransaction.update(proofBytes, publicValuesBytes);
+      // todo: uncomment for prod. Mock verifier wants empty proof, so give it that
+      // const updateTx = await sp1HeliosContract.populateTransaction.update(proofBytes, publicValuesBytes);
+      const updateTx = await sp1HeliosContract.populateTransaction.update("0x", publicValuesBytes);
       multiCallData.push({ target: sp1HeliosAddress, callData: updateTx.data! });
+
+      logger.error({
+        message: `spokePool addr: ${spokePoolContract.address}`,
+      });
 
       // 2. SpokePool.executeMessage transaction
       const executeTx = await spokePoolContract.populateTransaction.executeMessage(
@@ -373,15 +438,23 @@ async function generateHeliosMulticallData(
         proof.sourceMessageData,
         decodedOutputs.newHead
       );
-      multiCallData.push({ target: spokePoolContract.address, callData: executeTx.data! });
+      // todo: uncomment for prod. Check that this is working
+      // multiCallData.push({ target: spokePoolContract.address, callData: executeTx.data! });
 
-      // 3. CrossChainMessage log entry
+      // 3. 2 X CrossChainMessage log entry
       crossChainMessages.push({
         type: "misc",
         miscReason: "ZK bridge finalization",
         originationChainId: l1ChainId,
         destinationChainId: l2ChainId,
       });
+      // todo: uncomment for prod. Check that this is working
+      // crossChainMessages.push({
+      //   type: "misc",
+      //   miscReason: "ZK bridge finalization",
+      //   originationChainId: l1ChainId,
+      //   destinationChainId: l2ChainId,
+      // });
     } catch (error) {
       logger.error({
         at: `Finalizer#heliosL1toL2Finalizer:generateMulticallItem:${l2ChainId}`, // Renamed log point
@@ -535,7 +608,7 @@ async function getL2StorageVerifiedEvents(
  * This assumes the data is stored in a mapping at slot 0, keyed by nonce.
  * storage_slot = keccak256(h(k) . h(p)) where k = nonce, p = mapping slot position (0)
  */
-// ! todo: check this!!! Try with 0xdD6Fa55b12aA2a937BA053d610D76f20cC235c09 + slot 0 and then getStorageAt()
+// ✅ tested and working
 function calculateHubPoolStoreStorageSlot(eventArgs: StoredCallDataEventArgs): string {
   const nonce = eventArgs.nonce;
   const mappingSlotPosition = 0; // The relayMessageCallData mapping is at slot 0
@@ -600,6 +673,8 @@ async function processUnfinalizedHeliosMessages(
   let currentHeader: string;
   try {
     const headBn: ethers.BigNumber = await sp1HeliosContract.head();
+    // todo: well, currently we're taking currentHead to use as prevHead in our ZK proof. There's a particular scenario where we could speed up proofs
+    // todo: (by not making them to wait for finality longer than needed) if our blockNumber that we need a proved slot for is older than this head.
     currentHead = headBn.toNumber(); // Convert BigNumber head to number
     currentHeader = await sp1HeliosContract.headers(headBn);
     if (!currentHeader || currentHeader === ethers.constants.HashZero) {
@@ -621,7 +696,7 @@ async function processUnfinalizedHeliosMessages(
 
   const successfulProofs: SuccessfulProof[] = [];
 
-  // Process messages one by one for now, can optimize with Promise.all later
+  // todo? Process messages one by one for now, can optimize with Promise.all later
   for (const message of unfinalizedMessages) {
     const logContext = {
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
@@ -630,8 +705,36 @@ async function processUnfinalizedHeliosMessages(
       target: message.args.target,
     };
 
+    // const storageSlot = calculateHubPoolStoreStorageSlot(message.args);
+
+    // logger.info({
+    //   ...logContext,
+    //   message: `Calculated this storage slot for stored message with nonce ${message.args.nonce} : ${storageSlot}`,
+    // });
+
+    // const apiRequest: ApiProofRequest = {
+    //   src_chain_contract_address: hubPoolStoreAddress,
+    //   src_chain_storage_slot: storageSlot,
+    //   src_chain_block_number: message.blockNumber,
+    //   dst_chain_contract_from_head: currentHead,
+    //   dst_chain_contract_from_header: currentHeader,
+    // };
+
+    // const proofId = calculateProofId(apiRequest);
+
+    // logger.info({
+    //   ...logContext,
+    //   message: `Args: src_chain_contract_address=${apiRequest.src_chain_contract_address}, src_chain_storage_slot=${apiRequest.src_chain_storage_slot}, src_chain_block_number=${apiRequest.src_chain_block_number}, dst_chain_contract_from_head=${apiRequest.dst_chain_contract_from_head}, dst_chain_contract_from_header=${apiRequest.dst_chain_contract_from_header}, proofId=${proofId}`,
+    // });
+
+    // logger.info({
+    //   ...logContext,
+    //   message: `Calculated this proofId for stored message with nonce ${message.args.nonce} : ${proofId}`,
+    // });
+
+    // continue;
+
     try {
-      // Use the CORRECT function to get the storage slot needed for the proof API
       const storageSlot = calculateHubPoolStoreStorageSlot(message.args);
 
       const apiRequest: ApiProofRequest = {
@@ -767,20 +870,9 @@ async function processUnfinalizedHeliosMessages(
  * Calculates the deterministic Proof ID based on the request parameters.
  * Matches the Rust implementation using RLP encoding and Keccak256.
  */
-/*
-! todo: check this against Rust IDs. Ensure RLP encoding matches exactly.
-! todo: theoretically, we could always just call request_proof first and get proof id that way. Maybe that's better flow actually. Hmmm no that won't deal with proof errors because of how API behaves:(
-{
-  "src_chain_block_number": 22250284,
-  "src_chain_contract_address": "0xdD6Fa55b12aA2a937BA053d610D76f20cC235c09",
-  "src_chain_storage_slot": "0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5",
-  "dst_chain_contract_from_head": 11467072,
-  "dst_chain_contract_from_header": "0xd74e51183c05867b80c091d5beab2e8be3fd88a642ce6fd36907e23fb09b2b13"
-}
-should match `9e08efd841455439cd6ca9548dacc1c77348ab19cab804ff6493a24d38195b2c`
-*/
+// ✅ tested and working
 function calculateProofId(request: ApiProofRequest): string {
-  let encoded = ethers.utils.RLP.encode([
+  const encoded = ethers.utils.RLP.encode([
     request.src_chain_contract_address,
     request.src_chain_storage_slot,
     ethers.BigNumber.from(request.src_chain_block_number).toHexString(), // Ensure block number is hex encoded for RLP

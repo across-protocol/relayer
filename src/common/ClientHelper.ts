@@ -19,6 +19,7 @@ import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";
+import UNIVERSAL_SPOKE_ABI from "./abi/Universal_SpokePool.json";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -204,15 +205,30 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      // TODO: initialize using typechain factory after V3.5 migration.
-      // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
-      const spokePoolContract = new ethers.Contract(
-        spokePoolAddr,
-        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
-        spokePoolSigners[chainId]
-      );
-      const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
+      let spokePoolAddr: string;
+      let spokePoolContract: ethers.Contract;
+      let registrationBlock: number;
+
+      if (chainId === 56) {
+        // ---- START BSC TEST CODE ----
+        spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505"; // Hardcoded BSC SpokePool address
+        registrationBlock = 48762336; // Hardcoded BSC registration block
+        // Use UniversalSpokePool ABI for BSC
+        spokePoolContract = new ethers.Contract(spokePoolAddr, [...UNIVERSAL_SPOKE_ABI], spokePoolSigners[chainId]);
+        // ---- END BSC TEST CODE ----
+      } else {
+        // --- Logic for all other chains ---
+        spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+        // TODO: initialize using typechain factory after V3.5 migration.
+        // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+        spokePoolContract = new ethers.Contract(
+          spokePoolAddr,
+          [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
+          spokePoolSigners[chainId]
+        );
+        registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
+      }
+
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );

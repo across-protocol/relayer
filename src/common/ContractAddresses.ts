@@ -202,7 +202,10 @@ export const CONTRACT_ADDRESSES: {
       abi: HUB_POOL_ABI,
     },
     hubPoolStore: {
-      address: "0x1Ace3BbD69b63063F859514Eca29C9BDd8310E61",
+      // ---- START BSC TEST CODE ----
+      // ! todo: mock hubPool controlled by dev wallet
+      address: "0xdD6Fa55b12aA2a937BA053d610D76f20cC235c09",
+      // ---- END BSC TEST CODE ----
       abi: HUB_POOL_STORE_ABI,
     },
     blastBridge: {
@@ -257,7 +260,10 @@ export const CONTRACT_ADDRESSES: {
   },
   [CHAIN_IDs.BNB]: {
     sp1Helios: {
-      address: "0x6999526e507Cc3b03b180BbE05E1Ff938259A874", // todo: change for prod. This uses a mock proof verifier
+      // ---- START BSC TEST CODE ----
+      // ! todo: this uses a mock proof verifier
+      address: "0x6999526e507Cc3b03b180BbE05E1Ff938259A874",
+      // ---- END BSC TEST CODE ----
       abi: SP1_HELIOS_ABI,
     },
   },
