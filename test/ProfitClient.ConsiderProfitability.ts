@@ -399,6 +399,7 @@ describe("ProfitClient: Consider relay profit", () => {
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
           hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(deposit.inputToken, token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.

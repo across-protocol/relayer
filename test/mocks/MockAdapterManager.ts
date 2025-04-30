@@ -64,7 +64,7 @@ export class MockAdapterManager extends AdapterManager {
     transfers[address] ??= {};
     transfers[address][l1Token] ??= {};
 
-    l2Token ??= getRemoteTokenForL1Token(l1Token, 1, { chainId });
+    l2Token ??= getRemoteTokenForL1Token(l1Token, chainId, { chainId: 1 });
 
     transfers[address][l1Token][l2Token] = {
       totalAmount: amount,
