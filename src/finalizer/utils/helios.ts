@@ -423,6 +423,7 @@ async function generateHeliosTxns(
         method: "update",
         args: updateArgs,
         unpermissioned: false,
+        canFailInSimulation: false,
         nonMulticall: true,
         message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
       };
@@ -456,6 +457,8 @@ async function generateHeliosTxns(
         args: executeArgs,
         // todo: check this
         unpermissioned: true,
+        // @dev Notice, in order for this tx to succeed in simulation, the SP1Helios.update(..) would be required to have updated the blockchain state already. Which is not how our sim. is done in index.ts
+        canFailInSimulation: true,
         message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
       };
       // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
@@ -715,35 +718,6 @@ async function processUnfinalizedHeliosMessages(
       nonce: message.args.nonce.toString(),
       target: message.args.target,
     };
-
-    // const storageSlot = calculateHubPoolStoreStorageSlot(message.args);
-
-    // logger.info({
-    //   ...logContext,
-    //   message: `Calculated this storage slot for stored message with nonce ${message.args.nonce} : ${storageSlot}`,
-    // });
-
-    // const apiRequest: ApiProofRequest = {
-    //   src_chain_contract_address: hubPoolStoreAddress,
-    //   src_chain_storage_slot: storageSlot,
-    //   src_chain_block_number: message.blockNumber,
-    //   dst_chain_contract_from_head: currentHead,
-    //   dst_chain_contract_from_header: currentHeader,
-    // };
-
-    // const proofId = calculateProofId(apiRequest);
-
-    // logger.info({
-    //   ...logContext,
-    //   message: `Args: src_chain_contract_address=${apiRequest.src_chain_contract_address}, src_chain_storage_slot=${apiRequest.src_chain_storage_slot}, src_chain_block_number=${apiRequest.src_chain_block_number}, dst_chain_contract_from_head=${apiRequest.dst_chain_contract_from_head}, dst_chain_contract_from_header=${apiRequest.dst_chain_contract_from_header}, proofId=${proofId}`,
-    // });
-
-    // logger.info({
-    //   ...logContext,
-    //   message: `Calculated this proofId for stored message with nonce ${message.args.nonce} : ${proofId}`,
-    // });
-
-    // continue;
 
     try {
       const storageSlot = calculateHubPoolStoreStorageSlot(message.args);
