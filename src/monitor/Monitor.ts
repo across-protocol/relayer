@@ -48,7 +48,7 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
-import { utils as sdkUtils } from "@across-protocol/sdk"
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -353,13 +353,7 @@ export class Monitor {
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
-          const tokenInfo = l2ToL1Tokens[l2TokenAddresses[i]];
-          let symbol: string;
-          if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
-            symbol = "USDC.e";
-          } else {
-            symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-          }
+          const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer],
             symbol,
@@ -392,7 +386,14 @@ export class Monitor {
           // like USDC which has multiple L2 tokens mapped to the same L1 token for a given chain ID.
           return l2TokenSymbols
             .filter((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[chainId] !== undefined)
-            .map((symbol) => [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], l1Token]);
+            .map((symbol) => {
+              if (chainId !== this.clients.hubPoolClient.chainId && sdkUtils.isBridgedUsdc(symbol)) {
+                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: "USDC.e" }];
+              } else {
+                const remappedSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+                return [TOKEN_SYMBOLS_MAP[symbol].addresses[chainId], { ...l1Token, symbol: remappedSymbol }];
+              }
+            });
         })
         .flat()
     );
@@ -1028,13 +1029,6 @@ export class Monitor {
 
       for (const l2Token of l2TokenAddresses) {
         const tokenInfo = l2ToL1Tokens[l2Token];
-        let symbol: string;
-        if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
-          symbol = "USDC.e";
-        } else {
-          symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-        }
-
         const bridgedTransferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
           relayer,
           chainId,
@@ -1043,7 +1037,7 @@ export class Monitor {
         );
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
-          symbol,
+          tokenInfo.symbol,
           getNetworkName(chainId),
           BalanceType.PENDING_TRANSFERS,
           bridgedTransferBalance
@@ -1091,19 +1085,12 @@ export class Monitor {
       for (const tokenAddress of Object.keys(fillsToRefund)) {
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
-        if (fillsToRefund[tokenAddress] === undefined) {
+        if (fillsToRefund[tokenAddress] === undefined || l2ToL1Tokens[tokenAddress] === undefined) {
           continue;
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
-        const tokenInfo = l2ToL1Tokens[tokenAddress];
-
-        let symbol: string;
-        if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
-          symbol = "USDC.e";
-        } else {
-          symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-        }
+        const { symbol } = l2ToL1Tokens[tokenAddress];
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
