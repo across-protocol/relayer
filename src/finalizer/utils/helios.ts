@@ -13,6 +13,8 @@ import { getSp1Helios } from "../../utils/Sp1HeliosUtils";
 import { Log } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import axios from "axios";
+// --- Structs ---
+import { AugmentedTransaction } from "../../clients";
 
 // Define interfaces for the event arguments for clarity
 interface StoredCallDataEventArgs {
@@ -92,7 +94,7 @@ type SuccessfulProof = {
 
 export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
-  _signer: Signer,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient, // Used for filtering target address
   l1SpokePoolClient: SpokePoolClient,
@@ -200,13 +202,7 @@ export async function heliosL1toL2Finalizer(
   }
 
   // --- Step 5: Generate Multicall Data from Proofs ---
-  return generateHeliosTxns(
-    logger,
-    proofsToSubmit,
-    l1ChainId,
-    l2ChainId,
-    l2SpokePoolClient // Pass the client to access spokePool contract
-  );
+  return generateHeliosTxns(logger, proofsToSubmit, l1ChainId, l2ChainId, l2SpokePoolClient, signer);
 }
 
 // ==================================
@@ -374,9 +370,10 @@ async function generateHeliosTxns(
   proofsToSubmit: SuccessfulProof[],
   l1ChainId: number,
   l2ChainId: number,
-  l2SpokePoolClient: SpokePoolClient
+  l2SpokePoolClient: SpokePoolClient,
+  signer: Signer
 ): Promise<FinalizerPromise> {
-  const multiCallData: Multicall2Call[] = [];
+  const transactions: AugmentedTransaction[] = [];
   const crossChainMessages: CrossChainMessage[] = [];
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
@@ -387,7 +384,9 @@ async function generateHeliosTxns(
     });
     return { callData: [], crossChainMessages: [] };
   }
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any);
+  // Create contract instances with a signer/provider if needed for AugmentedTransaction
+  // Assuming l2SpokePoolClient.spokePool has a signer or provider attached
+  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, signer);
   const spokePoolContract = l2SpokePoolClient.spokePool; // Get contract instance from client
 
   for (const proof of proofsToSubmit) {
@@ -423,43 +422,55 @@ async function generateHeliosTxns(
       }
 
       // 1. SP1Helios.update transaction
-      // todo: uncomment for prod. Mock verifier wants empty proof, so give it that
-      // const updateTx = await sp1HeliosContract.populateTransaction.update(proofBytes, publicValuesBytes);
-      const updateTx = await sp1HeliosContract.populateTransaction.update("0x", publicValuesBytes);
-      multiCallData.push({ target: sp1HeliosAddress, callData: updateTx.data! });
-
-      logger.error({
-        message: `spokePool addr: ${spokePoolContract.address}`,
-      });
-
-      // 2. SpokePool.executeMessage transaction
-      const executeTx = await spokePoolContract.populateTransaction.executeMessage(
-        proof.sourceNonce,
-        proof.sourceMessageData,
-        decodedOutputs.newHead
-      );
-      // todo: uncomment for prod. Check that this is working
-      // multiCallData.push({ target: spokePoolContract.address, callData: executeTx.data! });
-
-      // 3. 2 X CrossChainMessage log entry
+      // todo: Change "0x" to `proofBytes` for production when not using mock verifier
+      const updateArgs = ["0x", publicValuesBytes]; // Use actual args
+      const updateTx: AugmentedTransaction = {
+        contract: sp1HeliosContract,
+        chainId: l2ChainId,
+        method: "update",
+        args: updateArgs,
+        unpermissioned: false,
+        nonMulticall: true,
+        message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
+      };
+      transactions.push(updateTx);
       crossChainMessages.push({
         type: "misc",
-        miscReason: "ZK bridge finalization",
+        miscReason: "ZK bridge finalization (Helios Update)",
         originationChainId: l1ChainId,
         destinationChainId: l2ChainId,
       });
-      // todo: uncomment for prod. Check that this is working
+
+      logger.debug({
+        // Changed from error to debug for this specific log
+        message: `SpokePool address for executeMessage: ${spokePoolContract.address}`,
+        nonce: proof.sourceNonce.toString(),
+      });
+
+      // 2. SpokePool.executeMessage transaction
+      // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
+      // const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
+      // const executeTx: AugmentedTransaction = {
+      //   contract: spokePoolContract,
+      //   chainId: l2ChainId,
+      //   method: "executeMessage",
+      //   args: executeArgs,
+      //   // todo: check this
+      //   unpermissioned: true,
+      //   message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
+      // };
+      // transactions.push(executeTx);
       // crossChainMessages.push({
       //   type: "misc",
-      //   miscReason: "ZK bridge finalization",
+      //   miscReason: "ZK bridge finalization (Execute Message)",
       //   originationChainId: l1ChainId,
       //   destinationChainId: l2ChainId,
       // });
     } catch (error) {
       logger.error({
-        at: `Finalizer#heliosL1toL2Finalizer:generateMulticallItem:${l2ChainId}`, // Renamed log point
-        message: `Failed to populate transaction for proof of nonce ${proof.sourceNonce.toString()}`,
-        error,
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`, // Renamed log point
+        message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
+        error: error, // Use stringify helper
         proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target }, // Log less data
       });
       continue;
@@ -467,12 +478,12 @@ async function generateHeliosTxns(
   }
 
   logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:generateHeliosMulticallData:${l2ChainId}`,
-    message: `Generated ${multiCallData.length} calls (${multiCallData.length / 2} finalizations) for multicall.`,
+    at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
+    message: `Generated ${transactions.length} transactions (${transactions.length / 2} finalizations).`,
     proofNoncesFinalized: proofsToSubmit.map((p) => p.sourceNonce.toString()),
   });
 
-  return { callData: multiCallData, crossChainMessages: crossChainMessages };
+  return { callData: transactions, crossChainMessages: crossChainMessages };
 }
 
 // ==================================
