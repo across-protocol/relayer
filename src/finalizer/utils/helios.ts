@@ -1,20 +1,13 @@
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import {
-  EventSearchConfig,
-  Signer,
-  Multicall2Call,
-  winston,
-  paginatedEventQuery,
-  compareAddressesSimple,
-} from "../../utils";
+import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { getSp1Helios } from "../../utils/Sp1HeliosUtils";
 import { Log } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import axios from "axios";
-// --- Structs ---
 import { AugmentedTransaction } from "../../clients";
+import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 
 // Define interfaces for the event arguments for clarity
 interface StoredCallDataEventArgs {
@@ -448,30 +441,37 @@ async function generateHeliosTxns(
       });
 
       // 2. SpokePool.executeMessage transaction
+      const universalSpokePoolContract = new ethers.Contract(
+        spokePoolContract.address,
+        [...UNIVERSAL_SPOKE_ABI],
+        // todo: is this the correct signer? Is the executeMessage on Universal_SpokePool permissioned even?
+        signer
+      );
+
+      const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
+      const executeTx: AugmentedTransaction = {
+        contract: universalSpokePoolContract,
+        chainId: l2ChainId,
+        method: "executeMessage",
+        args: executeArgs,
+        // todo: check this
+        unpermissioned: true,
+        message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
+      };
       // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
-      // const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
-      // const executeTx: AugmentedTransaction = {
-      //   contract: spokePoolContract,
-      //   chainId: l2ChainId,
-      //   method: "executeMessage",
-      //   args: executeArgs,
-      //   // todo: check this
-      //   unpermissioned: true,
-      //   message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
-      // };
-      // transactions.push(executeTx);
-      // crossChainMessages.push({
-      //   type: "misc",
-      //   miscReason: "ZK bridge finalization (Execute Message)",
-      //   originationChainId: l1ChainId,
-      //   destinationChainId: l2ChainId,
-      // });
+      transactions.push(executeTx);
+      crossChainMessages.push({
+        type: "misc",
+        miscReason: "ZK bridge finalization (Execute Message)",
+        originationChainId: l1ChainId,
+        destinationChainId: l2ChainId,
+      });
     } catch (error) {
       logger.error({
-        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`, // Renamed log point
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
         error: error, // Use stringify helper
-        proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target }, // Log less data
+        proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target },
       });
       continue;
     }

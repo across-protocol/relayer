@@ -19,7 +19,6 @@ import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";
-import UNIVERSAL_SPOKE_ABI from "./abi/Universal_SpokePool.json";
 
 export interface Clients {
   hubPoolClient: HubPoolClient;
@@ -200,34 +199,34 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
-
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      let spokePoolAddr: string;
-      let spokePoolContract: ethers.Contract;
-      let registrationBlock: number;
+      let spokePoolAddr;
 
-      if (chainId === 56) {
-        // ---- START BSC TEST CODE ----
-        spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505"; // Hardcoded BSC SpokePool address
-        registrationBlock = 48762336; // Hardcoded BSC registration block
-        // Use UniversalSpokePool ABI for BSC
-        spokePoolContract = new ethers.Contract(spokePoolAddr, [...UNIVERSAL_SPOKE_ABI], spokePoolSigners[chainId]);
-        // ---- END BSC TEST CODE ----
+      // ---- START BSC TEST CODE ----
+      if (chainId == 56) {
+        spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505";
       } else {
-        // --- Logic for all other chains ---
         spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-        // TODO: initialize using typechain factory after V3.5 migration.
-        // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
-        spokePoolContract = new ethers.Contract(
-          spokePoolAddr,
-          [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
-          spokePoolSigners[chainId]
-        );
+      }
+      // ---- END BSC TEST CODE ----
+      // TODO: initialize using typechain factory after V3.5 migration.
+      // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+      const spokePoolContract = new ethers.Contract(
+        spokePoolAddr,
+        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
+        spokePoolSigners[chainId]
+      );
+      let registrationBlock;
+      // ---- START BSC TEST CODE ----
+      if (chainId == 56) {
+        registrationBlock = 48762336;
+      } else {
         registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
       }
+      // ---- END BSC TEST CODE ----
 
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
