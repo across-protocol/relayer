@@ -37,7 +37,7 @@ export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
   for (const event of events) {
     const logIndex = uniqueTokenhashes[event.txnRef] ?? 0;
     logIndexesForMessage.push(logIndex);
-    ++uniqueTokenhashes[event.txnRef];
+    uniqueTokenhashes[event.txnRef] = logIndex + 1;
   }
   return logIndexesForMessage;
 }
