@@ -76,14 +76,6 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
-export function getTranslatedTokenAddress(l1Token: string, hubChainId: number, l2ChainId: number): string {
-  // Base Case
-  if (hubChainId === l2ChainId) {
-    return l1Token;
-  }
-  return getRemoteTokenForL1Token(l1Token, l2ChainId, { chainId: hubChainId });
-}
-
 export function checkAddressChecksum(tokenAddress: string): boolean {
   return ethers.utils.getAddress(tokenAddress) === tokenAddress;
 }

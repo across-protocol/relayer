@@ -1,5 +1,5 @@
 import { AdapterManager } from "../../src/clients/bridges";
-import { BigNumber, TransactionResponse, bnZero, getTranslatedTokenAddress } from "../../src/utils";
+import { BigNumber, TransactionResponse, bnZero, getRemoteTokenForL1Token } from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
@@ -64,7 +64,7 @@ export class MockAdapterManager extends AdapterManager {
     transfers[address] ??= {};
     transfers[address][l1Token] ??= {};
 
-    l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId);
+    l2Token ??= getRemoteTokenForL1Token(l1Token, 1, { chainId });
 
     transfers[address][l1Token][l2Token] = {
       totalAmount: amount,

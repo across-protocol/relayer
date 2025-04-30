@@ -4,11 +4,11 @@ import {
   EventSearchConfig,
   Signer,
   Provider,
-  getTranslatedTokenAddress,
   assert,
   isDefined,
   EvmAddress,
   Address,
+  getRemoteTokenForL1Token,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
@@ -60,7 +60,7 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {
-    return getTranslatedTokenAddress(l1Token.toAddress(), this.hubChainId, this.l2chainId);
+    return getRemoteTokenForL1Token(l1Token.toAddress(), this.l2chainId, { chainId: this.hubChainId });
   }
 
   protected getL1Bridge(): Contract {
