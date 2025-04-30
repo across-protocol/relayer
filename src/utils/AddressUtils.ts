@@ -1,5 +1,5 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BigNumber, compareAddressesSimple, ethers, isDefined } from ".";
+import {  TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { BigNumber, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
   // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
@@ -76,33 +76,12 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
-export function getTranslatedTokenAddress(
-  l1Token: string,
-  hubChainId: number,
-  l2ChainId: number,
-  isNativeUsdc = false
-): string {
+export function getTranslatedTokenAddress(l1Token: string, hubChainId: number, l2ChainId: number): string {
   // Base Case
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  const onBNB = l2ChainId === CHAIN_IDs.BNB;
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    const onZora = l2ChainId === CHAIN_IDs.ZORA;
-    return isNativeUsdc
-      ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : onBNB ? "USDC-BNB" : "USDC.e"].addresses[l2ChainId];
-  } else if (
-    l2ChainId === CHAIN_IDs.BLAST &&
-    compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
-  ) {
-    return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
-  } else if (onBNB && compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDT.addresses[hubChainId])) {
-    return TOKEN_SYMBOLS_MAP["USDT-BNB"].addresses[l2ChainId];
-  }
-
-  return getTokenAddress(l1Token, hubChainId, l2ChainId);
+  return getRemoteTokenForL1Token(l1Token, l2ChainId, { chainId: hubChainId });
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

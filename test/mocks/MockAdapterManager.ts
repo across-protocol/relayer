@@ -64,7 +64,7 @@ export class MockAdapterManager extends AdapterManager {
     transfers[address] ??= {};
     transfers[address][l1Token] ??= {};
 
-    l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId, false);
+    l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId);
 
     transfers[address][l1Token][l2Token] = {
       totalAmount: amount,
