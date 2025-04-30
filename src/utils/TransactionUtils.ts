@@ -209,17 +209,13 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
         reason: err.errorName,
       };
     }
-
-    // Optionally rethrow or handle differently if needed, but for now, let estimateGas try
   }
 
   try {
     const gasLimit = await contract.estimateGas[method](...args);
-
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
   } catch (_error) {
     const error = _error as EthersError;
-
     return { transaction, succeed: false, reason: error.reason };
   }
 }
