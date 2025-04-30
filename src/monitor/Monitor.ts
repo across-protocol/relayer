@@ -247,11 +247,13 @@ export class Monitor {
     // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
     // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
     const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
-    allL1Tokens.splice(indexOfUsdc, 0, {
-      symbol: "USDC.e",
-      address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
-      decimals: 6,
-    });
+    if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]) {
+      allL1Tokens.splice(indexOfUsdc, 0, {
+        symbol: "USDC.e",
+        address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
+        decimals: 6,
+      });
+    }
     return allL1Tokens;
   }
 
