@@ -9,7 +9,7 @@ import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import { Deposit, DepositWithBlock, Fill, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
 import {
   BigNumber,
   isDefined,
@@ -343,14 +343,14 @@ export async function depositV3(
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
-  const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
+  const { blockNumber, transactionHash: txnRef, transactionIndex: txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
   const depositObject = {
     originChainId: Number(originChainId),
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef,
+    txnIndex,
     logIndex,
     ...spreadEvent(args),
     messageHash: args.messageHash ?? getMessageHash(args.message),
@@ -416,10 +416,10 @@ export async function fillV3Relay(
   return {
     destinationChainId,
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
     logIndex,
-    ...parsedEvent,
+    ...(parsedEvent as Fill),
     messageHash: args.messageHash ?? getMessageHash(args.message),
     relayExecutionInfo: {
       ...parsedEvent.relayExecutionInfo,

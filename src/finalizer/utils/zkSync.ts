@@ -106,9 +106,7 @@ async function sortWithdrawals(
   provider: zksProvider,
   tokensBridged: TokensBridged[]
 ): Promise<Record<string, TokensBridged[]>> {
-  const txnStatus = await Promise.all(
-    tokensBridged.map(({ transactionHash }) => provider.getTransactionStatus(transactionHash))
-  );
+  const txnStatus = await Promise.all(tokensBridged.map(({ txnRef }) => provider.getTransactionStatus(txnRef)));
 
   let idx = 0; // @dev Possible to infer the loop index in groupBy ??
   const statuses = groupBy(tokensBridged, () => txnStatus[idx++]);
@@ -135,7 +133,7 @@ async function filterMessageLogs(
 
   const ready = await sdkUtils.filterAsync(
     withdrawals,
-    async ({ transactionHash, withdrawalIdx }) => !(await wallet.isWithdrawalFinalized(transactionHash, withdrawalIdx))
+    async ({ txnRef, withdrawalIdx }) => !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx))
   );
 
   return ready;
@@ -143,16 +141,16 @@ async function filterMessageLogs(
 
 /**
  * @param wallet zkSync wallet instance.
- * @param msgLogs Array of transactionHash and withdrawal index pairs.
+ * @param msgLogs Array of txnRef and withdrawal index pairs.
  * @returns Withdrawal proof data for each withdrawal.
  */
 async function getWithdrawalParams(
   wallet: zkWallet,
-  msgLogs: { transactionHash: string; withdrawalIdx: number }[]
+  msgLogs: { txnRef: string; withdrawalIdx: number }[]
 ): Promise<zkSyncWithdrawalData[]> {
   return await sdkUtils.mapAsync(
     msgLogs,
-    async ({ transactionHash, withdrawalIdx }) => await wallet.finalizeWithdrawalParams(transactionHash, withdrawalIdx)
+    async ({ txnRef, withdrawalIdx }) => await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx)
   );
 }
 

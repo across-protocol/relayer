@@ -86,17 +86,20 @@ export function getTranslatedTokenAddress(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
+  const onBNB = l2ChainId === CHAIN_IDs.BNB;
   if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
     const onZora = l2ChainId === CHAIN_IDs.ZORA;
     return isNativeUsdc
       ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : "USDC.e"].addresses[l2ChainId];
+      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : onBNB ? "USDC-BNB" : "USDC.e"].addresses[l2ChainId];
   } else if (
     l2ChainId === CHAIN_IDs.BLAST &&
     compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
   ) {
     return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
+  } else if (onBNB && compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDT.addresses[hubChainId])) {
+    return TOKEN_SYMBOLS_MAP["USDT-BNB"].addresses[l2ChainId];
   }
 
   return getTokenAddress(l1Token, hubChainId, l2ChainId);
