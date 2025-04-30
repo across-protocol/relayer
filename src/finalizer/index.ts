@@ -189,7 +189,8 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizationsToBatch: { txn: Multicall2Call; crossChainMessage?: CrossChainMessage }[] = [];
+  const finalizerResponseTxns: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] =
+    [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   await sdkUtils.mapAsync(configuredChainIds, async (chainId) => {
@@ -263,7 +264,7 @@ export async function finalize(
         );
 
         callData.forEach((txn, idx) => {
-          finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
         });
 
         totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
@@ -312,25 +313,39 @@ export async function finalize(
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, crossChainMessage }) => {
-    const txnToSubmit: AugmentedTransaction = {
-      contract: multicall2Lookup[crossChainMessage.destinationChainId],
-      chainId: crossChainMessage.destinationChainId,
-      method: "aggregate",
-      // aggregate() takes an array of tuples: [calldata: bytes, target: address].
-      args: [[_txn]],
-    };
-    const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
+  const finalizations = await sdkUtils.filterAsync(finalizerResponseTxns, async ({ txn: _txn, crossChainMessage }) => {
+    let simErrorReason: string;
+    if ("callData" in _txn && "target" in _txn) {
+      // Multicall transaction simulation flow
+      const txnToSubmit: AugmentedTransaction = {
+        contract: multicall2Lookup[crossChainMessage.destinationChainId],
+        chainId: crossChainMessage.destinationChainId,
+        method: "aggregate",
+        // aggregate() takes an array of tuples: [calldata: bytes, target: address].
+        args: [[_txn]],
+      };
+      const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
 
-    if (succeed) {
-      // Increase running counter of estimated gas cost for batch finalization.
-      // gasLimit should be defined if succeed is True.
-      const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
-      if (updatedGasEstimation.lt(batchGasLimit)) {
-        gasEstimation = updatedGasEstimation;
+      if (succeed) {
+        // Increase running counter of estimated gas cost for batch finalization.
+        // gasLimit should be defined if succeed is True.
+        const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
+        if (updatedGasEstimation.lt(batchGasLimit)) {
+          gasEstimation = updatedGasEstimation;
+          return true;
+        } else {
+          return false;
+        }
+      } else {
+        simErrorReason = reason;
+      }
+    } else {
+      // Individual transaction simulation flow
+      const [{ reason, succeed, transaction: _ }] = await txnClient.simulate([_txn]);
+      if (succeed) {
         return true;
       } else {
-        return false;
+        simErrorReason = reason;
       }
     }
 
@@ -345,7 +360,7 @@ export async function finalize(
       // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
       message = "Unknown finalizer simulation failure.";
     }
-    logger.warn({ at: "finalizer", message, reason, txn: _txn });
+    logger.warn({ at: "finalizer", message, simErrorReason, txn: _txn });
     return false;
   });
 
@@ -362,19 +377,39 @@ export async function finalize(
         ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
-        const finalizerTxns = finalizations.map(({ txn }) => txn);
-        const txnToSubmit: AugmentedTransaction = {
-          contract: multicall2Lookup[Number(chainId)],
-          chainId: Number(chainId),
-          method: "aggregate",
-          args: [finalizerTxns],
-          gasLimit: gasEstimation,
-          gasLimitMultiplier: 2,
-          unpermissioned: true,
-          message: `Batch finalized ${finalizerTxns.length} txns`,
-          mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
-        };
-        multicallerClient.enqueueTransaction(txnToSubmit);
+        // Separate Multicall2Call and AugmentedTransaction objects
+        const multicallTxns: Multicall2Call[] = [];
+
+        // Process each finalization separately
+        finalizations.forEach(({ txn }) => {
+          // Check if this is a Multicall2Call (doesn't have contract property)
+          // or an AugmentedTransaction (has contract property)
+          if ("contract" in txn) {
+            // It's an AugmentedTransaction, enqueue directly
+            // todo? we might want to enqueue these after the batch call
+            txn.nonMulticall = true; // cautiously enforce an invariant that should already be present
+            multicallerClient.enqueueTransaction(txn);
+          } else {
+            // It's a Multicall2Call, collect for batching
+            multicallTxns.push(txn);
+          }
+        });
+
+        // If we have any multicall transactions, bundle them together
+        if (multicallTxns.length > 0) {
+          const txnToSubmit: AugmentedTransaction = {
+            contract: multicall2Lookup[Number(chainId)],
+            chainId: Number(chainId),
+            method: "aggregate",
+            args: [multicallTxns],
+            gasLimit: gasEstimation,
+            gasLimitMultiplier: 2,
+            unpermissioned: true,
+            message: `Batch finalized ${multicallTxns.length} txns`,
+            mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
+          };
+          multicallerClient.enqueueTransaction(txnToSubmit);
+        }
       }
       txnHashLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
     } catch (_error) {

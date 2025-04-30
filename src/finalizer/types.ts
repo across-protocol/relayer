@@ -1,5 +1,5 @@
 import { Signer } from "ethers";
-import { HubPoolClient, SpokePoolClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, SpokePoolClient } from "../clients";
 import { Multicall2Call, winston } from "../utils";
 
 /**
@@ -28,7 +28,10 @@ export type CrossChainMessage = {
     }
 );
 
-export type FinalizerPromise = { callData: Multicall2Call[]; crossChainMessages: CrossChainMessage[] };
+export type FinalizerPromise = {
+  callData: (Multicall2Call | AugmentedTransaction)[];
+  crossChainMessages: CrossChainMessage[];
+};
 
 export interface ChainFinalizer {
   (

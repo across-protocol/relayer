@@ -200,7 +200,7 @@ export async function heliosL1toL2Finalizer(
   }
 
   // --- Step 5: Generate Multicall Data from Proofs ---
-  return generateHeliosMulticallData(
+  return generateHeliosTxns(
     logger,
     proofsToSubmit,
     l1ChainId,
@@ -369,7 +369,7 @@ function findUnfinalizedMessages(
 }
 
 /** STEP 5: Generate Multicall Data */
-async function generateHeliosMulticallData(
+async function generateHeliosTxns(
   logger: winston.Logger,
   proofsToSubmit: SuccessfulProof[],
   l1ChainId: number,
