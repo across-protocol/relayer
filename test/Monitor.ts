@@ -351,7 +351,7 @@ describe("Monitor", async function () {
     crossChainTransferClient.increaseOutstandingTransfer(
       relayer.address,
       l1Token.address,
-      l2Token.address,
+      erc20_2.address,
       toBN(5),
       destinationChainId
     );
