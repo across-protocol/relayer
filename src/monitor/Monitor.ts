@@ -33,8 +33,6 @@ import {
   toBNWei,
   winston,
   TOKEN_SYMBOLS_MAP,
-  compareAddressesSimple,
-  CHAIN_IDs,
   WETH9,
   runTransaction,
   isDefined,
@@ -50,7 +48,7 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
-import { BRIDGED_USDC_SYMBOLS } from "@across-protocol/sdk/dist/types/constants";
+import { utils as sdkUtils } from "@across-protocol/sdk"
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -244,7 +242,7 @@ export class Monitor {
       return {
         ...tokenInfo,
         // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
-        symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol
+        symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
       };
     });
     // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
@@ -357,8 +355,8 @@ export class Monitor {
         for (let i = 0; i < l2TokenAddresses.length; i++) {
           const tokenInfo = l2ToL1Tokens[l2TokenAddresses[i]];
           let symbol: string;
-          if (BRIDGED_USDC_SYMBOLS.includes(tokenInfo.symbol)) {
-            symbol = "USDC.e"
+          if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
+            symbol = "USDC.e";
           } else {
             symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
           }
@@ -1033,19 +1031,18 @@ export class Monitor {
       for (const l2Token of l2TokenAddresses) {
         const tokenInfo = l2ToL1Tokens[l2Token];
         let symbol: string;
-          if (BRIDGED_USDC_SYMBOLS.includes(tokenInfo.symbol)) {
-            symbol = "USDC.e"
-          } else {
-            symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-          }
+        if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
+          symbol = "USDC.e";
+        } else {
+          symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+        }
 
-        const bridgedTransferBalance =
-          this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-            relayer,
-            chainId,
-            tokenInfo.address,
-            l2Token
-          );
+        const bridgedTransferBalance = this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+          relayer,
+          chainId,
+          tokenInfo.address,
+          l2Token
+        );
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
           symbol,
@@ -1086,7 +1083,7 @@ export class Monitor {
   ) {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
     for (const chainId of this.monitorChains) {
-      const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId)
+      const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
       const fillsToRefund = fillsToRefundPerChain[chainId];
       // Skip chains that don't have any refunds.
       if (fillsToRefund === undefined) {
@@ -1104,11 +1101,11 @@ export class Monitor {
         const tokenInfo = l2ToL1Tokens[tokenAddress];
 
         let symbol: string;
-          if (BRIDGED_USDC_SYMBOLS.includes(tokenInfo.symbol)) {
-            symbol = "USDC.e"
-          } else {
-            symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
-          }
+        if (sdkUtils.isBridgedUsdc(tokenInfo.symbol)) {
+          symbol = "USDC.e";
+        } else {
+          symbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+        }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
@@ -1116,9 +1113,10 @@ export class Monitor {
   }
 
   protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    const l1TokenInfo = chainId === this.clients.hubPoolClient.chainId
-      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
-      : getL1TokenInfo(l2Token, chainId);
+    const l1TokenInfo =
+      chainId === this.clients.hubPoolClient.chainId
+        ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+        : getL1TokenInfo(l2Token, chainId);
 
     if (chainId === this.clients.hubPoolClient.chainId) {
       return l1TokenInfo;
@@ -1129,7 +1127,7 @@ export class Monitor {
     return {
       ...l1TokenInfo,
       symbol: tokenSymbol,
-    }
+    };
   }
 
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
