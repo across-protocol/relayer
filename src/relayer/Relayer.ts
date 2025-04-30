@@ -239,7 +239,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
     }
@@ -284,7 +284,7 @@ export class Relayer {
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
         depositor,
         recipient,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
     }
@@ -297,7 +297,7 @@ export class Relayer {
         originChainId,
         destinationChainId,
         outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
         notificationPath: "across-unprofitable-fills",
       });
       return ignoreDeposit();
@@ -311,7 +311,7 @@ export class Relayer {
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
         outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
     }
@@ -371,7 +371,7 @@ export class Relayer {
         blockNumber,
         confirmations: latestBlockSearched - blockNumber,
         minConfirmations,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
       });
       return false;
     }
@@ -384,7 +384,7 @@ export class Relayer {
         currentTime: hubPoolClient.currentTime,
         quoteTimestamp: deposit.quoteTimestamp,
         buffer: this.hubPoolBlockBuffer,
-        transactionHash: deposit.transactionHash,
+        txnRef: deposit.txnRef,
       });
       return false;
     }
@@ -410,7 +410,7 @@ export class Relayer {
           inputToken,
           inputAmount,
           originChainId,
-          transactionHash: deposit.transactionHash,
+          txnRef: deposit.txnRef,
         });
         return false;
       }
@@ -661,7 +661,7 @@ export class Relayer {
     maxBlockNumber: number,
     sendSlowRelays: boolean
   ): Promise<void> {
-    const { depositId, depositor, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
+    const { depositId, depositor, destinationChainId, originChainId, inputToken, txnRef } = deposit;
     const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -671,7 +671,7 @@ export class Relayer {
         at: "Relayer::evaluateFill",
         message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId.toString()}...`,
         originChainId,
-        transactionHash,
+        txnRef,
       });
       return;
     }
@@ -683,7 +683,7 @@ export class Relayer {
         message: `Skipping ${originChain} deposit ${depositId.toString()} due to insufficient deposit confirmations.`,
         blockNumber: deposit.blockNumber,
         maxBlockNumber,
-        transactionHash,
+        txnRef,
       });
       // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
@@ -720,7 +720,7 @@ export class Relayer {
           message: `Skipping ${originChain} deposit due to insufficient fill time for ${destChain}.`,
           depositAge,
           minFillTime,
-          transactionHash,
+          txnRef,
         });
         return;
       }
@@ -761,7 +761,7 @@ export class Relayer {
             blockNumber,
             fillAmountUsd,
             limits,
-            transactionHash,
+            txnRef,
           });
           return;
         }
@@ -1118,7 +1118,7 @@ export class Relayer {
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, txnRef } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -1133,7 +1133,7 @@ export class Relayer {
         message: depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
           ? `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`,
-        txn: blockExplorerLink(transactionHash, originChainId),
+        txn: blockExplorerLink(txnRef, originChainId),
       });
       return {
         repaymentChainProfitability: {
@@ -1255,7 +1255,7 @@ export class Relayer {
         message: `Preferred chains ${JSON.stringify(
           preferredChainIds
         )} are not profitable. Checking destination chain ${destinationChainId} profitability.`,
-        deposit: { originChain, depositId: depositId.toString(), destinationChain, transactionHash },
+        deposit: { originChain, depositId: depositId.toString(), destinationChain, txnRef },
       });
       // Evaluate destination chain profitability to see if we can reset preferred chain.
       const { lpFeePct: destinationChainLpFeePct } = repaymentFees.find(
@@ -1289,7 +1289,7 @@ export class Relayer {
             originChain,
             destinationChain,
             token: hubPoolToken.symbol,
-            txnHash: blockExplorerLink(transactionHash, originChainId),
+            txnRef: blockExplorerLink(txnRef, originChainId),
           },
           preferredChain: getNetworkName(preferredChain),
           preferredChainLpFeePct: `${formatFeePct(profitabilityData.lpFeePct)}%`,
@@ -1312,7 +1312,7 @@ export class Relayer {
           deposit: {
             originChain,
             destinationChain,
-            transactionHash,
+            txnRef,
             token: hubPoolToken.symbol,
             inputAmount,
             outputAmount,
@@ -1407,7 +1407,7 @@ export class Relayer {
         }
 
         const { originChainId, destinationChainId, inputToken, outputToken, inputAmount, outputAmount } = deposit;
-        const depositblockExplorerLink = blockExplorerLink(deposit.transactionHash, originChainId);
+        const depositblockExplorerLink = blockExplorerLink(deposit.txnRef, originChainId);
         const { symbol: inputSymbol, formatter: inputFormatter } = this.formatAmount(originChainId, inputToken);
         const formattedInputAmount = inputFormatter(inputAmount.toString());
         const { symbol: outputSymbol, formatter: outputFormatter } = this.formatAmount(destinationChainId, outputToken);

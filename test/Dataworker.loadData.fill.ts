@@ -287,8 +287,8 @@ describe("Dataworker: Load bundle data", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
@@ -311,8 +311,8 @@ describe("Dataworker: Load bundle data", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe1 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe2 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
@@ -330,10 +330,10 @@ describe("Dataworker: Load bundle data", async function () {
         expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
         expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
         expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].txnRef).to.equal(
           dupe1.transactionHash
         );
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].txnRef).to.equal(
           dupe2.transactionHash
         );
       });

@@ -429,19 +429,19 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       )[monitoredEoa];
       expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].depositTxHashes).to.deep.equal([
-        outstandingWethEvent?.transactionHash,
+        outstandingWethEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].depositTxHashes).to.deep.equal([
-        outstandingSnxEvent?.transactionHash,
+        outstandingSnxEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].depositTxHashes).to.deep.equal([
-        outstandingDaiEvent?.transactionHash,
+        outstandingDaiEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].depositTxHashes).to.deep.equal([
-        outstandingErc20Event?.transactionHash,
+        outstandingErc20Event?.txnRef,
       ]);
     });
 

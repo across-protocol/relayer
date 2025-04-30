@@ -172,13 +172,13 @@ export class Monitor {
     );
 
     for (const event of proposedBundles) {
-      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.txnRef);
     }
     for (const event of cancelledBundles) {
-      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.txnRef);
     }
     for (const event of disputedBundles) {
-      this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.transactionHash);
+      this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.txnRef);
     }
   }
 
@@ -657,9 +657,7 @@ export class Monitor {
     // Fetch the data from the latest root bundle.
     const bundle = hubPoolClient.getLatestProposedRootBundle();
     // If there is an outstanding root bundle, then add it to the bundles to check. Otherwise, ignore it.
-    const bundlesToCheck = validatedBundles
-      .map((validatedBundle) => validatedBundle.transactionHash)
-      .includes(bundle.transactionHash)
+    const bundlesToCheck = validatedBundles.map((validatedBundle) => validatedBundle.txnRef).includes(bundle.txnRef)
       ? validatedBundles
       : [...validatedBundles, bundle];
 
@@ -1164,7 +1162,7 @@ export class Monitor {
       relayerBalanceTable[tokenSymbol][chainName][balanceType].add(amount);
   }
 
-  private notifyIfUnknownCaller(caller: string, action: BundleAction, transactionHash: string) {
+  private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
     if (this.monitorConfig.whitelistedDataworkers.includes(caller)) {
       return;
     }
@@ -1184,7 +1182,7 @@ export class Monitor {
 
     const mrkdwn =
       `An unknown EOA ${blockExplorerLink(caller, 1)} has ${action} a bundle on ${getNetworkName(1)}` +
-      `\ntx: ${blockExplorerLink(transactionHash, 1)}`;
+      `\ntx: ${blockExplorerLink(txnRef, 1)}`;
     this.logger.error({
       at: "Monitor#notifyIfUnknownCaller",
       message: `Unknown bundle caller (${action}) ${emoji}${
