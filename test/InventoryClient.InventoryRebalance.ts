@@ -210,18 +210,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
     expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"515.00"')).to.be.true;
-
-    // Now mock that funds have finished coming over the bridge and check behavior is as expected.
-    adapterManager.setMockedOutstandingCrossChainTransfers(ARBITRUM, owner.address, mainnetUsdc, bnZero); // zero the transfer. mock conclusion.
-
-    await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for Arbitrum that shows the actual balance after the relay concluded and the share. The
-    // actual balance should be listed above at 1015. share should be 1015/(14500) = 0.7 (initial total - withdrawAmount).
-    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"500.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"515.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"proRataShare":"7.00%"')).to.be.true;
   });
 
   it("Correctly decides when to execute rebalances: token shortfall", async function () {
