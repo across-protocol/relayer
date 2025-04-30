@@ -22,6 +22,7 @@ import {
   Profiler,
   formatGwei,
   toBytes32,
+  depositForcesOriginChainRepayment,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -234,6 +235,15 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    if (sdkUtils.invalidOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: `Skipping ${srcChain} deposit for invalid output token ${deposit.outputToken}.`,
+        transactionHash: deposit.transactionHash,
+      });
+      return ignoreDeposit();
+    }
+
     if (!this.routeEnabled(originChainId, destinationChainId)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
@@ -279,6 +289,20 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip deposits with unmatching input/output tokens.
+    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit including in-protocol token swap.",
+        originChainId,
+        destinationChainId,
+        outputToken: deposit.outputToken,
+        transactionHash: deposit.transactionHash,
+        notificationPath: "across-unprofitable-fills",
+      });
+      return ignoreDeposit();
+    }
+
     // Ensure that the individual deposit meets the minimum deposit confirmation requirements for its value.
     const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
     if (!isDefined(fillAmountUsd)) {
@@ -294,26 +318,13 @@ export class Relayer {
 
     // Skip any L1 tokens that are not specified in the config.
     // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
     if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
         deposit,
         l1Token,
-      });
-      return ignoreDeposit();
-    }
-
-    if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit including in-protocol token swap.",
-        originChainId,
-        destinationChainId,
-        outputToken: deposit.outputToken,
-        transactionHash: deposit.transactionHash,
-        notificationPath: "across-unprofitable-fills",
       });
       return ignoreDeposit();
     }
@@ -386,7 +397,7 @@ export class Relayer {
     // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
     // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
     // queries for limits on supported tokens.
-    if (!ignoreLimits && !deposit.fromLiteChain) {
+    if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient)) {
       const { inputAmount } = deposit;
       const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
       if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
@@ -651,7 +662,7 @@ export class Relayer {
     sendSlowRelays: boolean
   ): Promise<void> {
     const { depositId, depositor, destinationChainId, originChainId, inputToken, transactionHash } = deposit;
-    const { hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
+    const { profitClient, spokePoolClients, tokenClient } = this.clients;
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
@@ -715,7 +726,7 @@ export class Relayer {
       }
     }
 
-    const l1Token = hubPoolClient.getL1TokenInfoForL2Token(inputToken, originChainId);
+    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
     if (tokenClient.hasBalanceForFill(deposit)) {
       const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
         deposit,
@@ -766,10 +777,10 @@ export class Relayer {
       }
     } else {
       // Exit early if we want to request a slow fill for a lite chain.
-      if (deposit.fromLiteChain) {
+      if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
-          message: "Skipping requesting slow fill for deposit originating from lite chain.",
+          message: "Skipping requesting slow fill for deposit that forces origin chain repayment",
           originChainId,
           depositId: depositId.toString(),
         });
@@ -976,10 +987,10 @@ export class Relayer {
 
   requestSlowFill(deposit: Deposit): void {
     // don't request slow fill if origin/destination chain is a lite chain
-    if (deposit.fromLiteChain || deposit.toLiteChain) {
+    if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) || deposit.toLiteChain) {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
-        message: "Prevent requesting slow fill request to/from lite chain.",
+        message: "Prevent requesting slow fill request from chain that forces origin chain repayment or to lite chain.",
         deposit,
       });
       return;
@@ -1006,7 +1017,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfo(destinationChainId, outputToken);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1041,10 +1052,13 @@ export class Relayer {
     const { spokePoolClients } = this.clients;
 
     // If a deposit originates from a lite chain, then the repayment chain must be the origin chain.
-    if (deposit.fromLiteChain && repaymentChainId !== deposit.originChainId) {
+    if (
+      depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) &&
+      repaymentChainId !== deposit.originChainId
+    ) {
       this.logger.warn({
         at: "Relayer::fillRelay",
-        message: "Suppressed fill for lite chain deposit where repaymentChainId != originChainId",
+        message: "Suppressed fill for deposit that forces origin chain repayment but repaymentChainId != originChainId",
         deposit,
         repaymentChainId,
       });
@@ -1104,8 +1118,7 @@ export class Relayer {
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
-    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash, fromLiteChain } =
-      deposit;
+    const { depositId, originChainId, destinationChainId, inputAmount, outputAmount, transactionHash } = deposit;
     const originChain = getNetworkName(originChainId);
     const destinationChain = getNetworkName(destinationChainId);
 
@@ -1117,8 +1130,8 @@ export class Relayer {
       // it is a special edge case the relayer should be aware of.
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
-        message: deposit.fromLiteChain
-          ? `Deposit ${depositId.toString()} originated from over-allocated lite chain ${originChain}`
+        message: depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
+          ? `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`
           : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`,
         txn: blockExplorerLink(transactionHash, originChainId),
       });
@@ -1232,7 +1245,11 @@ export class Relayer {
     //
     // Additionally we don't want to take this code path if the origin chain is a lite chain because we can't
     // reason about destination chain repayments on lite chains.
-    if (!isDefined(preferredChain) && !preferredChainIds.includes(destinationChainId) && !fromLiteChain) {
+    if (
+      !isDefined(preferredChain) &&
+      !preferredChainIds.includes(destinationChainId) &&
+      !depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
+    ) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(
@@ -1328,7 +1345,7 @@ export class Relayer {
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.hubPoolClient.getL1TokenInfoForAddress(token, chainId);
+          const l1Token = this.clients.inventoryClient.getL1TokenInfo(token, chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerAddress,
@@ -1401,18 +1418,23 @@ export class Relayer {
         const formattedRelayerFeePct = formatFeePct(relayerFeePct);
         const formattedLpFeePct = formatFeePct(lpFeePct);
 
-        // @dev If the origin chain is a lite chain and the LP fee percentage is infinity, then we can assume that the
-        // deposit originated from an over-allocated lite chain because the originChain, the only possible
-        // repayment chain, was not selected for repayment. So the "unprofitable" log should be modified to indicate
-        // this lite chain edge case.
-        const fromOverallocatedLiteChain = deposit.fromLiteChain && lpFeePct.eq(bnUint256Max);
+        // @dev If the deposit forces origin chain repayment and the LP fee percentage is infinity,
+        // then we can assume that the originChain, the only possible repayment chain,
+        // was not selected for repayment. So the "unprofitable" log should be modified to indicate
+        // this  edge case.
+        const fromOverallocatedLiteChain =
+          depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) && lpFeePct.eq(bnUint256Max);
         const depositFailedToSimulateWithMessage = !isMessageEmpty(deposit.message) && gasCost.eq(bnUint256Max);
         depositMrkdwn +=
           `- DepositId ${deposit.depositId.toString()} (tx: ${depositblockExplorerLink})` +
           ` of input amount ${formattedInputAmount} ${inputSymbol}` +
           ` and output amount ${formattedOutputAmount} ${outputSymbol}` +
           ` from ${getNetworkName(originChainId)} to ${getNetworkName(destinationChainId)}` +
-          `${fromOverallocatedLiteChain ? " is from an over-allocated lite chain" : ""}` +
+          `${
+            fromOverallocatedLiteChain
+              ? " is from an over-allocated origin chain and it forces origin chain repayment"
+              : ""
+          }` +
           `${
             depositFailedToSimulateWithMessage
               ? ` failed to simulate with message of size ${ethersUtils.hexDataLength(deposit.message)} bytes`
@@ -1449,9 +1471,9 @@ export class Relayer {
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
-      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfo(
-        deposit.destinationChainId,
-        deposit.outputToken
+      const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+        deposit.outputToken,
+        deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
       mrkdwn += ` Reduced output amount: ${updatedOutputAmount} ${symbol}.`;
@@ -1461,7 +1483,10 @@ export class Relayer {
   }
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForDeposit(deposit);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+      deposit.inputToken,
+      deposit.originChainId
+    );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
     const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);

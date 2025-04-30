@@ -1,5 +1,5 @@
 import assert from "assert";
-import { groupBy, countBy } from "lodash";
+import { countBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -16,7 +16,6 @@ import { TokensBridged } from "../../interfaces";
 import {
   CHAIN_IDs,
   chainIsOPStack,
-  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCachedProvider,
@@ -35,7 +34,6 @@ import {
   Multicall2Call,
   mapAsync,
   paginatedEventQuery,
-  getCctpDomainForChainId,
   createViemCustomTransportFromEthersProvider,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
@@ -94,7 +92,9 @@ export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
@@ -108,21 +108,9 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
-  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
-    spokePoolClient.getTokensBridged().filter(
-      (e) =>
-        // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
-        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
-    ),
-    (e) => {
-      if (e.blockNumber >= latestBlockToProve) {
-        return "recentTokensBridgedEvents";
-      } else {
-        return "olderTokensBridgedEvents";
-      }
-    }
-  );
+  const recentTokensBridgedEvents: TokensBridged[] = [];
+  const olderTokensBridgedEvents: TokensBridged[] = [];
+
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
@@ -135,86 +123,81 @@ export async function opStackFinalizer(
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-    : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
     logger.warn({
       at: `${networkName}Finalizer`,
       message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
     });
-  } else if (withdrawalToAddresses.length > 0) {
-    const ovmStandardBridge = new Contract(
-      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
-      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
-      spokePoolClient.spokePool.provider
-    );
-    const withdrawalEthEvents = (
-      await paginatedEventQuery(
-        ovmStandardBridge,
-        ovmStandardBridge.filters.ETHBridgeInitiated(
-          null, // from
-          withdrawalToAddresses // to
-        ),
-        {
-          ...spokePoolClient.eventSearchConfig,
-          toBlock: spokePoolClient.latestBlockSearched,
-        }
-      )
-    ).map((event) => {
+  }
+  const ovmStandardBridge = new Contract(
+    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
+    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
+    spokePoolClient.spokePool.provider
+  );
+  const withdrawalEthEvents = (
+    await paginatedEventQuery(
+      ovmStandardBridge,
+      ovmStandardBridge.filters.ETHBridgeInitiated(
+        senderAddresses // from
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        toBlock: spokePoolClient.latestBlockSearched,
+      }
+    )
+  ).map((event) => {
+    return {
+      ...event,
+      l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+    };
+  });
+  const withdrawalErc20Events = (
+    await paginatedEventQuery(
+      ovmStandardBridge,
+      ovmStandardBridge.filters.ERC20BridgeInitiated(
+        null, // localToken
+        null, // remoteToken
+        senderAddresses // from
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        toBlock: spokePoolClient.latestBlockSearched,
+      }
+    )
+  ).map((event) => {
+    // If we're aware of this token, then save the event as one we can finalize.
+    try {
+      getL1TokenInfo(event.args.localToken, chainId);
       return {
         ...event,
-        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+        l2TokenAddress: event.args.localToken,
       };
-    });
-    const withdrawalErc20Events = (
-      await paginatedEventQuery(
-        ovmStandardBridge,
-        ovmStandardBridge.filters.ERC20BridgeInitiated(
-          null, // localToken
-          null, // remoteToken
-          withdrawalToAddresses // from
-        ),
-        {
-          ...spokePoolClient.eventSearchConfig,
-          toBlock: spokePoolClient.latestBlockSearched,
-        }
-      )
-    ).map((event) => {
-      // If we're aware of this token, then save the event as one we can finalize.
-      try {
-        getL1TokenInfo(event.args.localToken, chainId);
-        return {
-          ...event,
-          l2TokenAddress: event.args.localToken,
-        };
-      } catch (err) {
-        logger.debug({
-          at: `${networkName}Finalizer`,
-          message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
-          event: event,
-        });
-        return undefined;
-      }
-    });
-    const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter((event) => event !== undefined);
-    // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
-    // submit proofs and finalizations for.
-    withdrawalEvents.forEach((event) => {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.args.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-      };
-      if (event.blockNumber >= latestBlockToProve) {
-        recentTokensBridgedEvents.push(tokenBridgedEvent);
-      } else {
-        olderTokensBridgedEvents.push(tokenBridgedEvent);
-      }
-    });
-  }
+    } catch (err) {
+      logger.debug({
+        at: `${networkName}Finalizer`,
+        message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
+        event: event,
+      });
+      return undefined;
+    }
+  });
+  const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter((event) => event !== undefined);
+  // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+  // submit proofs and finalizations for.
+  withdrawalEvents.forEach((event) => {
+    const tokenBridgedEvent: TokensBridged = {
+      ...event,
+      amountToReturn: event.args.amount,
+      chainId,
+      leafId: 0,
+      l2TokenAddress: event.l2TokenAddress,
+    };
+    if (event.blockNumber >= latestBlockToProve) {
+      recentTokensBridgedEvents.push(tokenBridgedEvent);
+    } else {
+      olderTokensBridgedEvents.push(tokenBridgedEvent);
+    }
+  });
 
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
@@ -329,10 +312,20 @@ async function viem_multicallOptimismFinalizations(
         },
       },
       l2OutputOracle: {
-        [sourceId]: { address: contracts.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.l2OutputOracle?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
+            viem.zeroAddress,
+        },
       },
       disputeGameFactory: {
-        [sourceId]: { address: contracts.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.disputeGameFactory?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
+            viem.zeroAddress,
+        },
       },
     },
   };

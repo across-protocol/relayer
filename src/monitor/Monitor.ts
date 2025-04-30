@@ -43,6 +43,8 @@ import {
   getWidestPossibleExpectedBlockRange,
   utils,
   _buildPoolRebalanceRoot,
+  getL1TokenInfo,
+  getRemoteTokenForL1Token,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -120,12 +122,7 @@ export class Monitor {
     const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.map((chainId) => {
-        const l2Tokens = l1Tokens
-          .filter((l1Token) => hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId))
-          .map((l1Token) => {
-            const l2Token = hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
-            return l2Token;
-          });
+        const l2Tokens = l1Tokens.map((l1Token) => this.getRemoteTokenForL1Token(l1Token, chainId)).filter(isDefined);
         return [chainId, l2Tokens];
       })
     );
@@ -253,6 +250,7 @@ export class Monitor {
       address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
       decimals: 6,
     });
+    // @dev TODO: Handle special case for tokens that do not have an L1 token mapped to them via PoolRebalanceRoutes
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
     const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
@@ -336,7 +334,7 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         const l1Tokens = _l1Tokens.filter(({ address: l1Token }) =>
-          hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
+          isDefined(this.getRemoteTokenForL1Token(l1Token, chainId))
         );
         const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -1118,8 +1116,11 @@ export class Monitor {
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
-        const tokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(tokenAddress, chainId);
+        const tokenInfo = this.getL1TokenInfo(tokenAddress, chainId);
 
+        // In the following remappings we essentially need to perform the reverse of the TOKEN_EQUIVALENCE_REMAPPING
+        // since all balances are indexed by the L1 token symbol and we are resolving L2 token symbols using
+        // getL1TokenInfo
         let tokenSymbol = tokenInfo.symbol;
         if (
           tokenSymbol === "USDC" &&
@@ -1129,10 +1130,30 @@ export class Monitor {
         ) {
           tokenSymbol = "USDC.e";
         }
+        // WETH is the symbol that `getL1TokenInfo()` will return for WETH on Mainnet but ETH is what
+        // it will return for a non-Mainnet chain, so unify the symbols. This is because TOKEN_SYMBOLS_MAP
+        // defines both an ETH and WETH mapping that both reference "WETH" addresses but the ETH mapping comes first.
+        else if (tokenSymbol === "ETH" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "WETH";
+        } else if (tokenSymbol === "WGHO" && chainId !== this.clients.hubPoolClient.chainId) {
+          tokenSymbol = "LGHO";
+        }
         const amount = totalRefundAmount ?? bnZero;
         this.updateRelayerBalanceTable(relayerBalanceTable, tokenSymbol, getNetworkName(chainId), balanceType, amount);
       }
     }
+  }
+
+  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      : getL1TokenInfo(l2Token, chainId);
+  }
+
+  protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? l1Token
+      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
   }
 
   private updateRelayerBalanceTable(

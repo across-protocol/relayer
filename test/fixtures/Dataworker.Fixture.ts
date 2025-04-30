@@ -29,9 +29,10 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
+import { MockDataworker } from "../mocks/MockDataworker";
 
 export { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 
@@ -174,13 +175,18 @@ export async function setupDataworker(
 
   await configStoreClient.update();
 
-  const hubPoolClient = new sdkClients.HubPoolClient(
+  const hubPoolClient = new SimpleMockHubPoolClient(
     spyLogger,
     hubPool,
     configStoreClient,
     hubPoolDeploymentBlock,
     hubPoolChainId
   );
+  hubPoolClient.mapTokenInfo(l1Token_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(l1Token_2.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_2.address, "TEST");
+
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
@@ -231,7 +237,7 @@ export async function setupDataworker(
     configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     priceClient,
   };
-  const dataworkerInstance = new Dataworker(
+  const dataworkerInstance = new MockDataworker(
     spyLogger,
     {} as DataworkerConfig,
     dataworkerClients,
@@ -239,6 +245,21 @@ export async function setupDataworker(
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf
   );
+  dataworkerInstance.setTokenMap(originChainId, erc20_1.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
+  dataworkerInstance.setTokenMap(destinationChainId, erc20_2.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
+  dataworkerInstance.setTokenMap(hubPoolChainId, l1Token_1.address, {
+    address: l1Token_1.address,
+    symbol: "TEST",
+    decimals: 18,
+  });
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], undefined, 100); // Seed owner to LP.
