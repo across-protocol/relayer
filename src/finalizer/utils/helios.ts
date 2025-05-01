@@ -87,7 +87,7 @@ type SuccessfulProof = {
 
 export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
-  signer: Signer,
+  _signer: Signer,
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient, // Used for filtering target address
   l1SpokePoolClient: SpokePoolClient,
@@ -195,7 +195,7 @@ export async function heliosL1toL2Finalizer(
   }
 
   // --- Step 5: Generate Multicall Data from Proofs ---
-  return generateHeliosTxns(logger, proofsToSubmit, l1ChainId, l2ChainId, l2SpokePoolClient, signer);
+  return generateHeliosTxns(logger, proofsToSubmit, l1ChainId, l2ChainId, l2SpokePoolClient);
 }
 
 // ==================================
@@ -363,8 +363,7 @@ async function generateHeliosTxns(
   proofsToSubmit: SuccessfulProof[],
   l1ChainId: number,
   l2ChainId: number,
-  l2SpokePoolClient: SpokePoolClient,
-  signer: Signer
+  l2SpokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   const transactions: AugmentedTransaction[] = [];
   const crossChainMessages: CrossChainMessage[] = [];
@@ -377,10 +376,9 @@ async function generateHeliosTxns(
     });
     return { callData: [], crossChainMessages: [] };
   }
-  // Create contract instances with a signer/provider if needed for AugmentedTransaction
-  // Assuming l2SpokePoolClient.spokePool has a signer or provider attached
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, signer);
   const spokePoolContract = l2SpokePoolClient.spokePool; // Get contract instance from client
+  // Create SP1Helios contracts instance with new ABI and spokePoolContract signer
+  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, spokePoolContract.signer);
 
   for (const proof of proofsToSubmit) {
     try {
@@ -422,10 +420,11 @@ async function generateHeliosTxns(
         chainId: l2ChainId,
         method: "update",
         args: updateArgs,
+        // gasLimit: BigNumber.from(1000000), // todo: testing
         unpermissioned: false,
         canFailInSimulation: false,
         nonMulticall: true,
-        message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
+        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
       };
       transactions.push(updateTx);
       crossChainMessages.push({
@@ -436,7 +435,6 @@ async function generateHeliosTxns(
       });
 
       logger.debug({
-        // Changed from error to debug for this specific log
         message: `SpokePool address for executeMessage: ${spokePoolContract.address}`,
         nonce: proof.sourceNonce.toString(),
       });
@@ -445,8 +443,7 @@ async function generateHeliosTxns(
       const universalSpokePoolContract = new ethers.Contract(
         spokePoolContract.address,
         [...UNIVERSAL_SPOKE_ABI],
-        // todo: is this the correct signer? Is the executeMessage on Universal_SpokePool permissioned even?
-        signer
+        spokePoolContract.signer
       );
 
       const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
@@ -455,11 +452,12 @@ async function generateHeliosTxns(
         chainId: l2ChainId,
         method: "executeMessage",
         args: executeArgs,
+        // gasLimit: BigNumber.from(1000000), // todo: testing
         // todo: check this
         unpermissioned: true,
         // @dev Notice, in order for this tx to succeed in simulation, the SP1Helios.update(..) would be required to have updated the blockchain state already. Which is not how our sim. is done in index.ts
         canFailInSimulation: true,
-        message: `Finalize Helios msg (nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
+        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
       };
       // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
       transactions.push(executeTx);
@@ -473,7 +471,7 @@ async function generateHeliosTxns(
       logger.error({
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
-        error: error, // Use stringify helper
+        error: error,
         proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target },
       });
       continue;
