@@ -22,17 +22,26 @@ interface StorageSlotVerifiedEventArgs {
   contractAddress: string;
 }
 
+interface RelayedCallDataEventArgs {
+  nonce: ethers.BigNumber;
+  caller: string;
+}
+// --------------------------------
+
 // Type for the structured StoredCallData event
 type StoredCallDataEvent = Log & { args: StoredCallDataEventArgs };
 // Type for the structured StorageSlotVerified event
 type StorageSlotVerifiedEvent = Log & { args: StorageSlotVerifiedEventArgs };
+// Type for the structured RelayedCallData event
+type RelayedCallDataEvent = Log & { args: RelayedCallDataEventArgs };
+// ------------------------------------
 
 // --- API Interaction Types ---
 interface ApiProofRequest {
   src_chain_contract_address: string;
   src_chain_storage_slot: string;
-  src_chain_block_number: number; // u64 in Rustland
-  dst_chain_contract_from_head: number; // u64 in Rustland
+  src_chain_block_number: number; // u64 on Rust API side
+  dst_chain_contract_from_head: number; // u64 on Rust API side
   dst_chain_contract_from_header: string;
 }
 
@@ -75,12 +84,21 @@ type ProofOutputs = {
   slots: { key: string; value: string; contractAddress: string }[];
 };
 
-// Type for successful proof data, augmented with source info.
+type HeliosMessageStatus = "NeedsProofAndExecution" | "NeedsExecutionOnly";
+
+interface PendingHeliosMessage {
+  l1Event: StoredCallDataEvent; // The original L1 event triggering the flow
+  status: HeliosMessageStatus;
+  verifiedHead?: ethers.BigNumber; // Head from the StorageSlotVerified event, only present if status is NeedsExecutionOnly
+}
+// ---------------------------------------
+
+// Type for successful proof data, augmented with HubPoolStore event info.
 type SuccessfulProof = {
   proofData: SP1HeliosProofData;
   sourceNonce: ethers.BigNumber;
   target: string;
-  sourceMessageData: string; // Original calldata from HubPoolStore event
+  sourceMessageData: string;
 };
 
 export async function heliosL1toL2Finalizer(
@@ -93,10 +111,98 @@ export async function heliosL1toL2Finalizer(
 ): Promise<FinalizerPromise> {
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
+
+  // --- Step 1: Identify Pending Messages ---
+  const pendingMessages = await identifyPendingHeliosMessages(
+    logger,
+    hubPoolClient,
+    l1SpokePoolClient,
+    l2SpokePoolClient,
+    l1ChainId,
+    l2ChainId
+  );
+
+  if (!pendingMessages || pendingMessages.length === 0) {
+    logger.info({
+      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+      message: "No pending Helios messages found requiring action.",
+    });
+    return { callData: [], crossChainMessages: [] };
+  }
+
+  // Separate messages based on required action
+  const needsProofAndExecution = pendingMessages.filter((m) => m.status === "NeedsProofAndExecution");
+  const needsExecutionOnly = pendingMessages.filter((m) => m.status === "NeedsExecutionOnly");
+
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+    message: `Identified ${pendingMessages.length} total pending messages.`,
+    counts: {
+      needsProofAndExecution: needsProofAndExecution.length,
+      needsExecutionOnly: needsExecutionOnly.length,
+    },
+    needsExecutionNonces: needsExecutionOnly.map((m) => m.l1Event.args.nonce.toString()), // Log nonces needing only execution
+  });
+
+  // --- Step 2: Get Proofs for Messages Needing Full Finalization ---
+  let proofsToSubmit: SuccessfulProof[] = [];
+  if (needsProofAndExecution.length > 0) {
+    // Pass only the messages that need proofs
+    proofsToSubmit = await processUnfinalizedHeliosMessages(
+      logger,
+      needsProofAndExecution, // Pass PendingHeliosMessage[] here
+      l2SpokePoolClient,
+      l1ChainId
+    );
+    if (proofsToSubmit.length === 0) {
+      logger.info({
+        at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+        message: "No successful proofs retrieved for messages needing full finalization.",
+      });
+      // Don't return yet, might still have needsExecutionOnly messages
+    }
+  }
+
+  // --- Step 3: Generate Multicall Data from Proofs and Partially Finalized Messages ---
+  if (proofsToSubmit.length === 0 && needsExecutionOnly.length === 0) {
+    logger.info({
+      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
+      message: "No proofs obtained and no messages need execution only. Nothing to submit.",
+    });
+    return { callData: [], crossChainMessages: [] };
+  }
+
+  return generateHeliosTxns(
+    logger,
+    proofsToSubmit,
+    needsExecutionOnly, // Pass messages needing only execution
+    l1ChainId,
+    l2ChainId,
+    l2SpokePoolClient
+  );
+}
+
+// ==================================
+// Step-by-step Helper Functions
+// ==================================
+
+/** --- Step 1 ---
+ * Identifies messages stored on L1 HubPoolStore that require action on L2.
+ * Fetches L1 StoredCallData events, L2 StorageSlotVerified events, and L2 RelayedCallData events.
+ * Determines if a message needs both proof+execution or just execution or no actions.
+ */
+async function identifyPendingHeliosMessages(
+  logger: winston.Logger,
+  hubPoolClient: HubPoolClient,
+  l1SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l1ChainId: number,
+  l2ChainId: number
+): Promise<PendingHeliosMessage[] | null> {
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
 
-  // --- Step 1: Query and Filter L1 Events --- ✅ tested
-  const relevantStoredCallDataEvents = await getAndFilterL1Events(
+  // --- Substep 1: Query and Filter L1 Events ---
+  const relevantStoredCallDataEvents = await getRelevantL1Events(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
@@ -105,99 +211,85 @@ export async function heliosL1toL2Finalizer(
     l2SpokePoolAddress
   );
 
-  // ---- START BSC TEST CODE ----
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_1:${l2ChainId}`,
-    message: "--- DEBUGGING STEP 1: StoredCallData Events ---",
-    count: relevantStoredCallDataEvents?.length ?? "null",
-    events: relevantStoredCallDataEvents // Log the actual events for inspection
-      ? relevantStoredCallDataEvents.map((e) => ({
-          txHash: e.transactionHash,
-          blockNumber: e.blockNumber,
-          target: e.args.target,
-          nonce: e.args.nonce.toString(),
-          dataLength: e.args.data.length,
-          data: e.args.data,
-        }))
-      : "null",
-  });
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_1:${l2ChainId}`,
-    message: "--- RETURNING EARLY AFTER STEP 1 FOR TESTING ---",
-  });
-  // ---- END BSC TEST CODE ----
-
   if (!relevantStoredCallDataEvents || relevantStoredCallDataEvents.length === 0) {
-    return { callData: [], crossChainMessages: [] };
-  }
-
-  // --- Step 2: Query L2 Verification Events --- ✅ tested
-  const verifiedKeys = await getL2VerifiedKeys(logger, l2SpokePoolClient, l2ChainId);
-
-  // ---- START BSC TEST CODE (STEP 2) ----
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_2:${l2ChainId}`,
-    message: "--- DEBUGGING STEP 2: Verified Keys ---",
-    count: verifiedKeys?.size ?? "null (error occurred)",
-    keys: verifiedKeys ? [...verifiedKeys] : "null (error occurred)", // Convert Set to Array for logging
-  });
-  // ---- END BSC TEST CODE (STEP 2) ----
-
-  if (verifiedKeys === null) {
-    // Indicates an error occurred fetching L2 events
-    return { callData: [], crossChainMessages: [] };
-  }
-
-  // --- Step 3: Identify Unfinalized Messages --- ✅ tested
-  const unfinalizedMessages = findUnfinalizedMessages(logger, relevantStoredCallDataEvents, verifiedKeys, l2ChainId);
-  // todo: Testing, uncomment above after
-  // const unfinalizedMessages = relevantStoredCallDataEvents;
-
-  // ---- START BSC TEST CODE (STEP 3) ----
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:DEBUG_STEP_3:${l2ChainId}`,
-    message: "--- DEBUGGING STEP 3: Unfinalized Messages ---",
-    count: unfinalizedMessages.length,
-    messages: unfinalizedMessages.map((m) => ({
-      txHash: m.transactionHash,
-      blockNumber: m.blockNumber,
-      target: m.args.target,
-      nonce: m.args.nonce.toString(),
-      // Optionally calculate expected slot for verification
-      expectedSlot: calculateHubPoolStoreStorageSlot(m.args),
-    })),
-  });
-  // ---- END BSC TEST CODE (STEP 3) ----
-
-  if (unfinalizedMessages.length === 0) {
-    return { callData: [], crossChainMessages: [] };
-  }
-
-  // --- Step 4: Get Proofs for Unfinalized Messages --- ✅ tested. Didn't test ALL branches; but happy-cases work
-  const proofsToSubmit = await processUnfinalizedHeliosMessages(
-    logger,
-    unfinalizedMessages, // Pass the unfinalized messages containing original event data
-    l2SpokePoolClient,
-    l1ChainId
-  );
-  if (proofsToSubmit.length === 0) {
-    logger.info({
-      at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
-      message: "No successful proofs retrieved to submit.",
+    logger.debug({
+      at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
+      message: "No relevant StoredCallData events found on L1.",
     });
-    return { callData: [], crossChainMessages: [] };
+    return [];
   }
 
-  // --- Step 5: Generate Multicall Data from Proofs --- ⚠️ testing in progress
-  return generateHeliosTxns(logger, proofsToSubmit, l1ChainId, l2ChainId, l2SpokePoolClient);
+  // --- Substep 2: Query L2 Verification Events (StorageSlotVerified) ---
+  // Store as Map<slotKey, verifiedEvent> to easily access head later
+  const verifiedSlotsMap = await getL2VerifiedSlotsMap(logger, l2SpokePoolClient, l2ChainId);
+  if (verifiedSlotsMap === null) {
+    // Error already logged in helper
+    return null; // Propagate error state
+  }
+
+  // --- Substep 3: Query L2 Execution Events (RelayedCallData) ---
+  const relayedNonces = await getL2RelayedNonces(logger, l2SpokePoolClient, l2ChainId);
+  if (relayedNonces === null) {
+    // Error already logged in helper
+    return null; // Propagate error state
+  }
+
+  // --- Determine Status for each L1 Event ---
+  const pendingMessages: PendingHeliosMessage[] = [];
+  for (const l1Event of relevantStoredCallDataEvents) {
+    const expectedStorageSlot = calculateHubPoolStoreStorageSlot(l1Event.args);
+    const nonce = l1Event.args.nonce;
+
+    const isExecuted = relayedNonces.has(nonce.toString()); // Use nonce string as key
+
+    if (!isExecuted) {
+      if (verifiedSlotsMap.has(expectedStorageSlot) /* isVerified */) {
+        // Verified but not executed -> Needs Execution Only
+        const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
+        pendingMessages.push({
+          l1Event: l1Event,
+          status: "NeedsExecutionOnly",
+          verifiedHead: verifiedEvent.args.head,
+        });
+        // Log a warning for partially finalized messages
+        logger.warn({
+          at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
+          message: `Message requires execution only (already verified). Will generate SpokePool.executeMessage tx.`,
+          l1TxHash: l1Event.transactionHash,
+          nonce: nonce.toString(),
+          storageSlot: expectedStorageSlot,
+          verifiedOnL2TxHash: verifiedEvent.transactionHash,
+          verifiedHead: verifiedEvent.args.head.toString(),
+        });
+      } else {
+        // Not verified and not executed -> Needs Proof and Execution
+        pendingMessages.push({
+          l1Event: l1Event,
+          status: "NeedsProofAndExecution",
+          // verifiedHead is undefined here
+        });
+      }
+    }
+    // If isExecuted is true, the message is fully finalized, do nothing.
+  }
+
+  // todo? Change to debug
+  logger.info({
+    at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
+    message: `Finished identifying pending messages.`,
+    totalL1StoredCallData: relevantStoredCallDataEvents.length,
+    totalL2VerifiedSlots: verifiedSlotsMap.size,
+    totalL2RelayedNonces: relayedNonces.size,
+    pendingMessagesCount: pendingMessages.length,
+    needsProofCount: pendingMessages.filter((m) => m.status === "NeedsProofAndExecution").length,
+    needsExecutionOnlyCount: pendingMessages.filter((m) => m.status === "NeedsExecutionOnly").length,
+  });
+
+  return pendingMessages;
 }
 
-// ==================================
-// Step-by-step Helper Functions
-// ==================================
-
-/** STEP 1: Query and Filter L1 Events */
-async function getAndFilterL1Events(
+/** Query and Filter L1 Events */
+async function getRelevantL1Events(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: SpokePoolClient,
@@ -271,21 +363,22 @@ async function getAndFilterL1Events(
   }
 }
 
-/** STEP 2: Query L2 Verification Events and return verified keys */
-async function getL2VerifiedKeys(
+/** Query L2 Verification Events and return verified slots map */
+async function getL2VerifiedSlotsMap(
   logger: winston.Logger,
   l2SpokePoolClient: SpokePoolClient,
   l2ChainId: number
-): Promise<Set<string> | null> {
+): Promise<Map<string, StorageSlotVerifiedEvent> | null> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
   if (!sp1HeliosAddress || !sp1HeliosAbi) {
+    // todo? Consider erroring here
     logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
       message: `SP1Helios contract not found for destination chain ${l2ChainId}. Cannot verify Helios messages.`,
     });
-    return null;
+    return new Map(); // Return empty map if contract not found, allows process to continue if needed elsewhere
   }
   const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2Provider);
 
@@ -298,7 +391,7 @@ async function getL2VerifiedKeys(
 
   try {
     logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
+      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Querying StorageSlotVerified events on L2 (${l2ChainId})`,
       sp1HeliosAddress,
       fromBlock: l2SearchConfig.fromBlock,
@@ -314,54 +407,102 @@ async function getL2VerifiedKeys(
     }));
 
     logger.info({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
+      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Found ${events.length} StorageSlotVerified events on L2 (${l2ChainId})`,
     });
-    return new Set<string>(events.map((event) => event.args.key));
+
+    // Store events in a map keyed by the storage slot (key)
+    const verifiedSlotsMap = new Map<string, StorageSlotVerifiedEvent>();
+    events.forEach((event) => {
+      // Handle potential duplicates (though unlikely with paginated query): favour latest block/logIndex
+      const existing = verifiedSlotsMap.get(event.args.key);
+      if (
+        !existing ||
+        event.blockNumber > existing.blockNumber ||
+        (event.blockNumber === existing.blockNumber && event.logIndex > existing.logIndex)
+      ) {
+        verifiedSlotsMap.set(event.args.key, event);
+      }
+    });
+    return verifiedSlotsMap;
   } catch (error) {
     logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
+      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Failed to query StorageSlotVerified events from L2 (${l2ChainId})`,
       sp1HeliosAddress,
       error,
     });
-    return null;
+    return null; // Return null on error
   }
 }
 
-/** STEP 3: Identify Unfinalized Messages */
-function findUnfinalizedMessages(
+/** --- Query L2 Execution Events (RelayedCallData) */
+async function getL2RelayedNonces(
   logger: winston.Logger,
-  relevantStoredCallDataEvents: StoredCallDataEvent[],
-  verifiedKeys: Set<string>,
+  l2SpokePoolClient: SpokePoolClient,
   l2ChainId: number
-): StoredCallDataEvent[] {
-  const unfinalizedMessages = relevantStoredCallDataEvents.filter((event) => {
-    const expectedStorageSlot = calculateHubPoolStoreStorageSlot(event.args);
-    return !verifiedKeys.has(expectedStorageSlot);
-  });
+): Promise<Set<string> | null> {
+  const l2Provider = l2SpokePoolClient.spokePool.provider;
+  const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
+  // Use the Universal Spoke Pool ABI for this event
+  const spokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
 
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:findUnfinalizedMessages:${l2ChainId}`,
-    message: `Detected ${unfinalizedMessages.length} unfinalized Helios messages after target filtering and verification check.`,
-    totalRelevantStoredCallData: relevantStoredCallDataEvents.length,
-    totalStorageVerified: verifiedKeys.size,
-  });
+  const l2SearchConfig: EventSearchConfig = {
+    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: l2SpokePoolClient.latestBlockSearched,
+    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+  };
+  const relayedCallDataFilter = spokePoolContract.filters.RelayedCallData();
 
-  return unfinalizedMessages;
+  try {
+    logger.debug({
+      at: `Finalizer#heliosL1toL2Finalizer:getL2RelayedNonces:${l2ChainId}`,
+      message: `Querying RelayedCallData events on L2 SpokePool (${l2ChainId})`,
+      spokePoolAddress: l2SpokePoolAddress,
+      fromBlock: l2SearchConfig.fromBlock,
+      toBlock: l2SearchConfig.toBlock,
+    });
+
+    const rawLogs = await paginatedEventQuery(spokePoolContract, relayedCallDataFilter, l2SearchConfig);
+
+    const events: RelayedCallDataEvent[] = rawLogs.map((log) => ({
+      ...log,
+      args: log.args as RelayedCallDataEventArgs,
+    }));
+
+    logger.info({
+      at: `Finalizer#heliosL1toL2Finalizer:getL2RelayedNonces:${l2ChainId}`,
+      message: `Found ${events.length} RelayedCallData events on L2 (${l2ChainId})`,
+    });
+
+    // Return a Set of nonces (as strings for easy comparison)
+    return new Set<string>(events.map((event) => event.args.nonce.toString()));
+  } catch (error) {
+    logger.warn({
+      at: `Finalizer#heliosL1toL2Finalizer:getL2RelayedNonces:${l2ChainId}`,
+      message: `Failed to query RelayedCallData events from L2 (${l2ChainId})`,
+      spokePoolAddress: l2SpokePoolAddress,
+      error,
+    });
+    return null; // Return null on error
+  }
 }
 
 /**
- * --- Step 4: Get Proofs for Unfinalized Messages ---
- * Processes unfinalized messages by interacting with the ZK Proof API.
+ * --- Get Proofs for Unfinalized Messages ---
+ * Processes messages needing proof+execution by interacting with the ZK Proof API.
  * Returns a list of successfully retrieved proofs.
  */
 async function processUnfinalizedHeliosMessages(
   logger: winston.Logger,
-  unfinalizedMessages: StoredCallDataEvent[],
+  messagesToProcess: PendingHeliosMessage[],
   l2SpokePoolClient: SpokePoolClient,
   l1ChainId: number
 ): Promise<SuccessfulProof[]> {
+  // Filter within the function just in case, though the caller should have already filtered
+  const unfinalizedMessages = messagesToProcess.filter((m) => m.status === "NeedsProofAndExecution");
+  if (unfinalizedMessages.length === 0) return [];
+
   const l2ChainId = l2SpokePoolClient.chainId;
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
@@ -421,22 +562,24 @@ async function processUnfinalizedHeliosMessages(
 
   const successfulProofs: SuccessfulProof[] = [];
 
-  // todo? Process messages one by one for now, can optimize with Promise.all later
-  for (const message of unfinalizedMessages) {
+  // todo? Can be optimized with Promise.All
+  // Process messages one by one
+  for (const pendingMessage of unfinalizedMessages) {
+    const l1Event = pendingMessage.l1Event; // Extract the L1 event
     const logContext = {
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
-      l1TxHash: message.transactionHash,
-      nonce: message.args.nonce.toString(),
-      target: message.args.target,
+      l1TxHash: l1Event.transactionHash,
+      nonce: l1Event.args.nonce.toString(),
+      target: l1Event.args.target,
     };
 
     try {
-      const storageSlot = calculateHubPoolStoreStorageSlot(message.args);
+      const storageSlot = calculateHubPoolStoreStorageSlot(l1Event.args);
 
       const apiRequest: ApiProofRequest = {
         src_chain_contract_address: hubPoolStoreAddress,
         src_chain_storage_slot: storageSlot,
-        src_chain_block_number: message.blockNumber,
+        src_chain_block_number: l1Event.blockNumber, // Use block number from L1 event
         dst_chain_contract_from_head: currentHead,
         dst_chain_contract_from_header: currentHeader,
       };
@@ -458,7 +601,6 @@ async function processUnfinalizedHeliosMessages(
       }
 
       // --- API Interaction Flow ---
-
       // 1. Try to get proof
       if (getError && axios.isAxiosError(getError) && getError.response?.status === 404) {
         // 1a. NOTFOUND -> Request proof
@@ -526,9 +668,9 @@ async function processUnfinalizedHeliosMessages(
             logger.info({ ...logContext, message: "Proof successfully retrieved.", proofId });
             successfulProofs.push({
               proofData: proofState.update_calldata,
-              sourceNonce: message.args.nonce,
-              target: message.args.target,
-              sourceMessageData: message.args.data,
+              sourceNonce: l1Event.args.nonce, // Use nonce from L1 event
+              target: l1Event.args.target, // Use target from L1 event
+              sourceMessageData: l1Event.args.data, // Use data from L1 event
             });
           } else {
             logger.error({
@@ -562,10 +704,11 @@ async function processUnfinalizedHeliosMessages(
   return successfulProofs;
 }
 
-/** STEP 5: Generate Multicall Data */
+/** --- Generate Multicall Data --- */
 async function generateHeliosTxns(
   logger: winston.Logger,
-  proofsToSubmit: SuccessfulProof[],
+  successfulProofs: SuccessfulProof[], // Renamed from proofsToSubmit
+  needsExecutionOnlyMessages: PendingHeliosMessage[], // Added new input
   l1ChainId: number,
   l2ChainId: number,
   l2SpokePoolClient: SpokePoolClient
@@ -574,18 +717,90 @@ async function generateHeliosTxns(
   const crossChainMessages: CrossChainMessage[] = [];
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
+  // SP1Helios contract is only needed for the 'update' transaction part
+  let sp1HeliosContract: ethers.Contract | null = null;
+  if (sp1HeliosAddress && sp1HeliosAbi && successfulProofs.length > 0) {
+    // Only create if needed
+    sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2SpokePoolClient.spokePool.signer);
+  } else if (successfulProofs.length > 0) {
     logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:generateHeliosMulticallData:${l2ChainId}`,
-      message: `SP1Helios contract missing for L2 chain ${l2ChainId} during multicall generation.`,
+      at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
+      message: `SP1Helios contract missing for L2 chain ${l2ChainId}, but proofs were provided. Cannot generate 'update' txns.`,
     });
-    return { callData: [], crossChainMessages: [] };
+    // Cannot proceed with proofs without the contract
+    // We might still be able to process needsExecutionOnly, so don't return yet
   }
-  const spokePoolContract = l2SpokePoolClient.spokePool; // Get contract instance from client
-  // Create SP1Helios contracts instance with new ABI and spokePoolContract signer
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, spokePoolContract.signer);
 
-  for (const proof of proofsToSubmit) {
+  // Universal Spoke Pool contract is needed for 'executeMessage'
+  const spokePoolAddress = l2SpokePoolClient.spokePool.address;
+  const universalSpokePoolContract = new ethers.Contract(
+    spokePoolAddress,
+    [...UNIVERSAL_SPOKE_ABI], // Ensure ABI has executeMessage
+    l2SpokePoolClient.spokePool.signer
+  );
+
+  // --- Process messages needing only execution ---
+  for (const message of needsExecutionOnlyMessages) {
+    const { l1Event, verifiedHead } = message;
+    const nonce = l1Event.args.nonce;
+    const sourceMessageData = l1Event.args.data;
+
+    if (!verifiedHead) {
+      logger.error({
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
+        message: `Logic error: Message ${nonce.toString()} needs execution only but verifiedHead is missing. Skipping.`,
+        l1TxHash: l1Event.transactionHash,
+      });
+      continue;
+    }
+
+    try {
+      logger.warn({
+        // Log warning again here when actually generating the tx
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
+        message: `Generating SpokePool.executeMessage ONLY for partially finalized message.`,
+        nonce: nonce.toString(),
+        l1TxHash: l1Event.transactionHash,
+        verifiedHead: verifiedHead.toString(),
+      });
+
+      const executeArgs = [nonce, sourceMessageData, verifiedHead]; // Use verifiedHead from the message
+      const executeTx: AugmentedTransaction = {
+        contract: universalSpokePoolContract,
+        chainId: l2ChainId,
+        method: "executeMessage",
+        args: executeArgs,
+        unpermissioned: true, // Assuming anyone can call executeMessage if requirements met
+        canFailInSimulation: true, // Still true, depends on state potentially changing
+        message: `Finalize Helios msg (HubPoolStore nonce ${nonce.toString()}) - Step 2 ONLY: Execute on SpokePool`,
+      };
+      transactions.push(executeTx);
+      crossChainMessages.push({
+        type: "misc",
+        miscReason: "ZK bridge finalization (Execute Message Only)",
+        originationChainId: l1ChainId,
+        destinationChainId: l2ChainId,
+      });
+    } catch (error) {
+      logger.error({
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
+        message: `Failed to prepare executeMessage transaction for partially finalized nonce ${nonce.toString()}`,
+        error: error,
+        l1Event: { txHash: l1Event.transactionHash, nonce: nonce.toString(), target: l1Event.args.target },
+      });
+      continue;
+    }
+  }
+
+  // --- Process messages needing proof and execution ---
+  for (const proof of successfulProofs) {
+    if (!sp1HeliosContract) {
+      logger.error({
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
+        message: `SP1Helios contract instance not available. Skipping full finalization for nonce ${proof.sourceNonce.toString()}`,
+      });
+      continue; // Skip this proof if contract is missing
+    }
     try {
       // Ensure the hex strings have the '0x' prefix, adding it only if missing.
       const proofBytes = proof.proofData.proof.startsWith("0x") ? proof.proofData.proof : "0x" + proof.proofData.proof;
@@ -639,18 +854,7 @@ async function generateHeliosTxns(
         destinationChainId: l2ChainId,
       });
 
-      logger.debug({
-        message: `SpokePool address for executeMessage: ${spokePoolContract.address}`,
-        nonce: proof.sourceNonce.toString(),
-      });
-
       // 2. SpokePool.executeMessage transaction
-      const universalSpokePoolContract = new ethers.Contract(
-        spokePoolContract.address,
-        [...UNIVERSAL_SPOKE_ABI],
-        spokePoolContract.signer
-      );
-
       const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
       const executeTx: AugmentedTransaction = {
         contract: universalSpokePoolContract,
@@ -664,7 +868,6 @@ async function generateHeliosTxns(
         canFailInSimulation: true,
         message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
       };
-      // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
       transactions.push(executeTx);
       crossChainMessages.push({
         type: "misc",
@@ -683,10 +886,12 @@ async function generateHeliosTxns(
     }
   }
 
+  const totalFinalizations = successfulProofs.length + needsExecutionOnlyMessages.length;
   logger.info({
     at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
-    message: `Generated ${transactions.length} transactions (${transactions.length / 2} finalizations).`,
-    proofNoncesFinalized: proofsToSubmit.map((p) => p.sourceNonce.toString()),
+    message: `Generated ${transactions.length} transactions for ${totalFinalizations} finalizations (${successfulProofs.length} full, ${needsExecutionOnlyMessages.length} exec only).`,
+    proofNoncesFinalized: successfulProofs.map((p) => p.sourceNonce.toString()),
+    execOnlyNoncesFinalized: needsExecutionOnlyMessages.map((m) => m.l1Event.args.nonce.toString()),
   });
 
   return { callData: transactions, crossChainMessages: crossChainMessages };
