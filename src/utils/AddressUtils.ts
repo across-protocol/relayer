@@ -1,4 +1,4 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BigNumber, compareAddressesSimple, ethers, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
@@ -76,6 +76,15 @@ export function getTokenAddress(tokenAddress: string, chainId: number, targetCha
   return targetAddress;
 }
 
+/**
+ * @notice Returns the token address for a given token address on a given chain ID and lets caller specify
+ * whether they want the native or bridged USDC for an L2 chain, if the l1 token is USDC.
+ * @param l1Token L1 token address
+ * @param hubChainId L1 token chain
+ * @param l2ChainId Chain on which the token address is requested
+ * @param isNativeUsdc True if caller wants native USDC on L2, false if caller wants bridged USDC on L2
+ * @returns L2 token address
+ */
 export function getTranslatedTokenAddress(
   l1Token: string,
   hubChainId: number,
@@ -86,17 +95,16 @@ export function getTranslatedTokenAddress(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  const onBNB = l2ChainId === CHAIN_IDs.BSC;
-  // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    const onZora = l2ChainId === CHAIN_IDs.ZORA;
-    return isNativeUsdc
-      ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : onBNB ? "USDC-BNB" : "USDC.e"].addresses[l2ChainId];
-  } else {
+  // Native USDC or not USDC, we can just look up in the token map directly:
+  if (isNativeUsdc || !compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     return getTokenAddress(l1Token, hubChainId, l2ChainId);
   }
+  // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
+  const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
+    ({ symbol, addresses }) =>
+      symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token) && addresses[l2ChainId]
+  );
+  return bridgedUsdcMapping?.addresses[l2ChainId];
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {
