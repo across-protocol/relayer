@@ -4,7 +4,16 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber, getTokenInfo } from "../../../utils";
+import {
+  EventSearchConfig,
+  Signer,
+  convertFromWei,
+  winston,
+  CHAIN_IDs,
+  ethers,
+  BigNumber,
+  getTokenInfo,
+} from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
