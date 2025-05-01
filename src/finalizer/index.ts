@@ -534,10 +534,6 @@ export class FinalizerConfig extends DataworkerConfig {
 export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
 
-  // ---- START BSC TEST CODE ----
-  logger.level = "info";
-  // ---- END BSC TEST CODE ----
-
   // Same config as Dataworker for now.
   const config = new FinalizerConfig(process.env);
   const profiler = new Profiler({

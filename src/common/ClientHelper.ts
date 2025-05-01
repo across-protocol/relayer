@@ -204,18 +204,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      let spokePoolAddr: string;
-      // ---- START BSC TEST CODE ----
-      /*
-      todo: this is the only way to test finalizations without a mock HubPool contract
-      *Theoretically*, we could have some devnet setup with whatever we want.
-      */
-      if (chainId == CHAIN_IDs.BSC) {
-        spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505";
-      } else {
-        spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      }
-      // ---- END BSC TEST CODE ----
+      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
       // TODO: initialize using typechain factory after V3.5 migration.
       // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
       const spokePoolContract = new ethers.Contract(
@@ -223,15 +212,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
         [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
         spokePoolSigners[chainId]
       );
-      let registrationBlock: number;
-      // ---- START BSC TEST CODE ----
-      if (chainId == CHAIN_IDs.BSC) {
-        registrationBlock = 48762336;
-      } else {
-        registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
-      }
-      // ---- END BSC TEST CODE ----
-
+      const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
       return { chainId, contract: spokePoolContract, registrationBlock };
     })
   );

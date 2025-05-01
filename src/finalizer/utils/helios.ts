@@ -123,7 +123,7 @@ export async function heliosL1toL2Finalizer(
   );
 
   if (!pendingMessages || pendingMessages.length === 0) {
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
       message: "No pending Helios messages found requiring action.",
     });
@@ -134,7 +134,7 @@ export async function heliosL1toL2Finalizer(
   const needsProofAndExecution = pendingMessages.filter((m) => m.status === "NeedsProofAndExecution");
   const needsExecutionOnly = pendingMessages.filter((m) => m.status === "NeedsExecutionOnly");
 
-  logger.info({
+  logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
     message: `Identified ${pendingMessages.length} total pending messages.`,
     counts: {
@@ -155,7 +155,7 @@ export async function heliosL1toL2Finalizer(
       l1ChainId
     );
     if (proofsToSubmit.length === 0) {
-      logger.info({
+      logger.debug({
         at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
         message: "No successful proofs retrieved for messages needing full finalization.",
       });
@@ -165,21 +165,14 @@ export async function heliosL1toL2Finalizer(
 
   // --- Step 3: Generate Multicall Data from Proofs and Partially Finalized Messages ---
   if (proofsToSubmit.length === 0 && needsExecutionOnly.length === 0) {
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
       message: "No proofs obtained and no messages need execution only. Nothing to submit.",
     });
     return { callData: [], crossChainMessages: [] };
   }
 
-  return generateHeliosTxns(
-    logger,
-    proofsToSubmit,
-    needsExecutionOnly, // Pass messages needing only execution
-    l1ChainId,
-    l2ChainId,
-    l2SpokePoolClient
-  );
+  return generateHeliosTxns(logger, proofsToSubmit, needsExecutionOnly, l1ChainId, l2ChainId, l2SpokePoolClient);
 }
 
 // ==================================
@@ -254,7 +247,7 @@ async function identifyPendingHeliosMessages(
         // Log a warning for partially finalized messages
         logger.warn({
           at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
-          message: `Message requires execution only (already verified). Will generate SpokePool.executeMessage tx.`,
+          message: `Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.`,
           l1TxHash: l1Event.transactionHash,
           nonce: nonce.toString(),
           storageSlot: expectedStorageSlot,
@@ -273,8 +266,7 @@ async function identifyPendingHeliosMessages(
     // If isExecuted is true, the message is fully finalized, do nothing.
   }
 
-  // todo? Change to debug
-  logger.info({
+  logger.debug({
     at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
     message: `Finished identifying pending messages.`,
     totalL1StoredCallData: relevantStoredCallDataEvents.length,
@@ -335,25 +327,20 @@ async function getRelevantL1Events(
       args: log.args as StoredCallDataEventArgs,
     }));
 
-    logger.info({
-      at: `Finalizer#heliosL1toL2Finalizer:getAndFilterL1Events:${l2ChainId}`,
-      message: `Found ${events.length} StoredCallData events on L1 (${l1ChainId})`,
-    });
-
     const relevantStoredCallDataEvents = events.filter(
       (event) =>
         compareAddressesSimple(event.args.target, l2SpokePoolAddress) ||
         compareAddressesSimple(event.args.target, ethers.constants.AddressZero)
     );
 
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:getAndFilterL1Events:${l2ChainId}`,
-      message: `Filtered ${events.length} StoredCallData events down to ${relevantStoredCallDataEvents.length} relevant targets (${l2SpokePoolAddress} or zero address).`,
+      message: `Found ${relevantStoredCallDataEvents.length} StoredCallData events on L1 (${l1ChainId})`,
     });
 
     return relevantStoredCallDataEvents;
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:getAndFilterL1Events:${l2ChainId}`,
       message: `Failed to query StoredCallData events from L1 (${l1ChainId})`,
       hubPoolStoreAddress: hubPoolStoreInfo.address,
@@ -373,12 +360,11 @@ async function getL2VerifiedSlotsMap(
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
   if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    // todo? Consider erroring here
-    logger.warn({
+    logger.error({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
       message: `SP1Helios contract not found for destination chain ${l2ChainId}. Cannot verify Helios messages.`,
     });
-    return new Map(); // Return empty map if contract not found, allows process to continue if needed elsewhere
+    return null;
   }
   const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2Provider);
 
@@ -390,14 +376,6 @@ async function getL2VerifiedSlotsMap(
   const storageVerifiedFilter = sp1HeliosContract.filters.StorageSlotVerified();
 
   try {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
-      message: `Querying StorageSlotVerified events on L2 (${l2ChainId})`,
-      sp1HeliosAddress,
-      fromBlock: l2SearchConfig.fromBlock,
-      toBlock: l2SearchConfig.toBlock,
-    });
-
     const rawLogs = await paginatedEventQuery(sp1HeliosContract, storageVerifiedFilter, l2SearchConfig);
 
     // Explicitly cast logs to the correct type
@@ -406,9 +384,12 @@ async function getL2VerifiedSlotsMap(
       args: log.args as StorageSlotVerifiedEventArgs,
     }));
 
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Found ${events.length} StorageSlotVerified events on L2 (${l2ChainId})`,
+      sp1HeliosAddress,
+      fromBlock: l2SearchConfig.fromBlock,
+      toBlock: l2SearchConfig.toBlock,
     });
 
     // Store events in a map keyed by the storage slot (key)
@@ -426,7 +407,7 @@ async function getL2VerifiedSlotsMap(
     });
     return verifiedSlotsMap;
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Failed to query StorageSlotVerified events from L2 (${l2ChainId})`,
       sp1HeliosAddress,
@@ -455,14 +436,6 @@ async function getL2RelayedNonces(
   const relayedCallDataFilter = spokePoolContract.filters.RelayedCallData();
 
   try {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2RelayedNonces:${l2ChainId}`,
-      message: `Querying RelayedCallData events on L2 SpokePool (${l2ChainId})`,
-      spokePoolAddress: l2SpokePoolAddress,
-      fromBlock: l2SearchConfig.fromBlock,
-      toBlock: l2SearchConfig.toBlock,
-    });
-
     const rawLogs = await paginatedEventQuery(spokePoolContract, relayedCallDataFilter, l2SearchConfig);
 
     const events: RelayedCallDataEvent[] = rawLogs.map((log) => ({
@@ -470,9 +443,12 @@ async function getL2RelayedNonces(
       args: log.args as RelayedCallDataEventArgs,
     }));
 
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:getL2RelayedNonces:${l2ChainId}`,
       message: `Found ${events.length} RelayedCallData events on L2 (${l2ChainId})`,
+      spokePoolAddress: l2SpokePoolAddress,
+      fromBlock: l2SearchConfig.fromBlock,
+      toBlock: l2SearchConfig.toBlock,
     });
 
     // Return a Set of nonces (as strings for easy comparison)
@@ -526,10 +502,9 @@ async function processUnfinalizedHeliosMessages(
   const hubPoolStoreAddress = hubPoolStoreInfo.address;
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
   if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    logger.warn({
-      // Warn because maybe other finalizers can run
+    logger.error({
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
-      message: `SP1Helios contract not found for L2 chain ${l2ChainId}. Cannot get head/header.`,
+      message: `SP1Helios contract not found for L2 chain ${l2ChainId}.`,
     });
     return [];
   }
@@ -546,13 +521,13 @@ async function processUnfinalizedHeliosMessages(
     if (!currentHeader || currentHeader === ethers.constants.HashZero) {
       throw new Error(`Invalid header found for head ${currentHead}`);
     }
-    logger.info({
+    logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
       message: `Using SP1Helios head ${currentHead} and header ${currentHeader} for proof requests.`,
       sp1HeliosAddress,
     });
   } catch (error) {
-    logger.error({
+    logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
       message: `Failed to read current head/header from SP1Helios contract ${sp1HeliosAddress}`,
       error,
@@ -562,7 +537,7 @@ async function processUnfinalizedHeliosMessages(
 
   const successfulProofs: SuccessfulProof[] = [];
 
-  // todo? Can be optimized with Promise.All
+  // todo? Can use Promise.All if we really want to
   // Process messages one by one
   for (const pendingMessage of unfinalizedMessages) {
     const l1Event = pendingMessage.l1Event; // Extract the L1 event
@@ -604,14 +579,14 @@ async function processUnfinalizedHeliosMessages(
       // 1. Try to get proof
       if (getError && axios.isAxiosError(getError) && getError.response?.status === 404) {
         // 1a. NOTFOUND -> Request proof
-        logger.info({ ...logContext, message: "Proof not found (404), requesting...", proofId });
+        logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
         try {
           const requestProofUrl = `${apiBaseUrl}/api/proofs`;
           await axios.post(requestProofUrl, apiRequest);
-          logger.info({ ...logContext, message: "Proof requested successfully.", proofId });
+          logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
           // Exit flow for this message, will check again next run
         } catch (postError: any) {
-          logger.error({
+          logger.warn({
             ...logContext,
             message: "Failed to request proof after 404.",
             proofId,
@@ -623,7 +598,7 @@ async function processUnfinalizedHeliosMessages(
         }
       } else if (getError) {
         // Other error during GET
-        logger.error({
+        logger.warn({
           ...logContext,
           message: "Failed to get proof state.",
           proofId,
@@ -636,23 +611,23 @@ async function processUnfinalizedHeliosMessages(
         // GET successful, check status
         if (proofState.status === "pending") {
           // 1b. SUCCESS ("pending") -> Log and exit flow
-          logger.info({ ...logContext, message: "Proof generation is pending.", proofId });
+          logger.debug({ ...logContext, message: "Proof generation is pending.", proofId });
           // Exit flow for this message
         } else if (proofState.status === "errored") {
           // 1c. SUCCESS ("errored") -> Log high severity, request again, exit flow
           logger.error({
             // Use error level log
             ...logContext,
-            message: "Proof generation errored. Requesting again.",
+            message: "Proof generation errored on ZK API side. Requesting again.",
             proofId,
             errorMessage: proofState.error_message,
           });
           try {
             const requestProofUrl = `${apiBaseUrl}/api/proofs`;
             await axios.post(requestProofUrl, apiRequest);
-            logger.info({ ...logContext, message: "Errored proof requested again successfully.", proofId });
+            logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
           } catch (postError: any) {
-            logger.error({
+            logger.warn({
               ...logContext,
               message: "Failed to re-request errored proof.",
               proofId,
@@ -665,7 +640,7 @@ async function processUnfinalizedHeliosMessages(
         } else if (proofState.status === "success") {
           // 1d. SUCCESS ("success") -> Collect proof data for later processing
           if (proofState.update_calldata) {
-            logger.info({ ...logContext, message: "Proof successfully retrieved.", proofId });
+            logger.debug({ ...logContext, message: "Proof successfully retrieved.", proofId });
             successfulProofs.push({
               proofData: proofState.update_calldata,
               sourceNonce: l1Event.args.nonce, // Use nonce from L1 event
@@ -673,7 +648,7 @@ async function processUnfinalizedHeliosMessages(
               sourceMessageData: l1Event.args.data, // Use data from L1 event
             });
           } else {
-            logger.error({
+            logger.warn({
               ...logContext,
               message: "Proof status is success but update_calldata is missing.",
               proofId,
@@ -682,9 +657,9 @@ async function processUnfinalizedHeliosMessages(
             // Treat as error, exit flow for this message
           }
         } else {
-          logger.error({
+          logger.warn({
             ...logContext,
-            message: "Received unexpected proof status.",
+            message: "Received unexpected proof status. Will try again next run.",
             proofId,
             status: proofState.status,
           });
@@ -693,7 +668,7 @@ async function processUnfinalizedHeliosMessages(
       }
       // Implicitly exits flow for the message if none of the success conditions were met
     } catch (processingError) {
-      logger.error({
+      logger.warn({
         ...logContext,
         message: "Error processing unfinalized message for proof.",
         error: processingError,
@@ -707,8 +682,8 @@ async function processUnfinalizedHeliosMessages(
 /** --- Generate Multicall Data --- */
 async function generateHeliosTxns(
   logger: winston.Logger,
-  successfulProofs: SuccessfulProof[], // Renamed from proofsToSubmit
-  needsExecutionOnlyMessages: PendingHeliosMessage[], // Added new input
+  successfulProofs: SuccessfulProof[],
+  needsExecutionOnlyMessages: PendingHeliosMessage[],
   l1ChainId: number,
   l2ChainId: number,
   l2SpokePoolClient: SpokePoolClient
@@ -717,10 +692,8 @@ async function generateHeliosTxns(
   const crossChainMessages: CrossChainMessage[] = [];
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  // SP1Helios contract is only needed for the 'update' transaction part
   let sp1HeliosContract: ethers.Contract | null = null;
   if (sp1HeliosAddress && sp1HeliosAbi && successfulProofs.length > 0) {
-    // Only create if needed
     sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2SpokePoolClient.spokePool.signer);
   } else if (successfulProofs.length > 0) {
     logger.error({
@@ -731,11 +704,10 @@ async function generateHeliosTxns(
     // We might still be able to process needsExecutionOnly, so don't return yet
   }
 
-  // Universal Spoke Pool contract is needed for 'executeMessage'
   const spokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(
     spokePoolAddress,
-    [...UNIVERSAL_SPOKE_ABI], // Ensure ABI has executeMessage
+    [...UNIVERSAL_SPOKE_ABI],
     l2SpokePoolClient.spokePool.signer
   );
 
@@ -743,9 +715,11 @@ async function generateHeliosTxns(
   for (const message of needsExecutionOnlyMessages) {
     const { l1Event, verifiedHead } = message;
     const nonce = l1Event.args.nonce;
-    const sourceMessageData = l1Event.args.data;
+    const l1Target = l1Event.args.target; // Get target from L1 event
+    const l1Data = l1Event.args.data; // Get data from L1 event
 
     if (!verifiedHead) {
+      // @dev This shouldn't happen. If it does, there's a bug that needs fixing
       logger.error({
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Logic error: Message ${nonce.toString()} needs execution only but verifiedHead is missing. Skipping.`,
@@ -755,8 +729,8 @@ async function generateHeliosTxns(
     }
 
     try {
+      // @dev Warn about messages that require only half of finalization. Means that either a tx from prev. run got stuck or failed or something else weird happened
       logger.warn({
-        // Log warning again here when actually generating the tx
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Generating SpokePool.executeMessage ONLY for partially finalized message.`,
         nonce: nonce.toString(),
@@ -764,14 +738,18 @@ async function generateHeliosTxns(
         verifiedHead: verifiedHead.toString(),
       });
 
-      const executeArgs = [nonce, sourceMessageData, verifiedHead]; // Use verifiedHead from the message
+      // --- Encode the message parameter ---
+      const encodedMessage = ethers.utils.defaultAbiCoder.encode(["address", "bytes"], [l1Target, l1Data]);
+      // ------------------------------------
+
+      const executeArgs = [nonce, encodedMessage, verifiedHead]; // Use encodedMessage
       const executeTx: AugmentedTransaction = {
         contract: universalSpokePoolContract,
         chainId: l2ChainId,
         method: "executeMessage",
         args: executeArgs,
-        unpermissioned: true, // Assuming anyone can call executeMessage if requirements met
-        canFailInSimulation: true, // Still true, depends on state potentially changing
+        unpermissioned: true,
+        canFailInSimulation: true,
         message: `Finalize Helios msg (HubPoolStore nonce ${nonce.toString()}) - Step 2 ONLY: Execute on SpokePool`,
       };
       transactions.push(executeTx);
@@ -782,7 +760,8 @@ async function generateHeliosTxns(
         destinationChainId: l2ChainId,
       });
     } catch (error) {
-      logger.error({
+      // most likely encoding error. Not sure if this can ever happen actually
+      logger.warn({
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Failed to prepare executeMessage transaction for partially finalized nonce ${nonce.toString()}`,
         error: error,
@@ -823,7 +802,7 @@ async function generateHeliosTxns(
           slots: decodedResult[8].map((slot: any[]) => ({ key: slot[0], value: slot[1], contractAddress: slot[2] })),
         };
       } catch (decodeError) {
-        logger.error({
+        logger.warn({
           at: `Finalizer#heliosL1toL2Finalizer:decodePublicValues:${l2ChainId}`,
           message: `Failed to decode public_values for nonce ${proof.sourceNonce.toString()}`,
           publicValues: publicValuesBytes,
@@ -833,8 +812,7 @@ async function generateHeliosTxns(
       }
 
       // 1. SP1Helios.update transaction
-      // todo: Change "0x" to `proofBytes` for production when not using mock verifier
-      const updateArgs = ["0x", publicValuesBytes]; // Use actual args
+      const updateArgs = ["0x", publicValuesBytes]; // todo: Change "0x" to `proofBytes` for production
       const updateTx: AugmentedTransaction = {
         contract: sp1HeliosContract,
         chainId: l2ChainId,
@@ -855,7 +833,13 @@ async function generateHeliosTxns(
       });
 
       // 2. SpokePool.executeMessage transaction
-      const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
+      // --- Encode the message parameter ---
+      const l1Target = proof.target; // Get target from SuccessfulProof
+      const l1Data = proof.sourceMessageData; // Get data from SuccessfulProof
+      const encodedMessage = ethers.utils.defaultAbiCoder.encode(["address", "bytes"], [l1Target, l1Data]);
+      // ------------------------------------
+
+      const executeArgs = [proof.sourceNonce, encodedMessage, decodedOutputs.newHead]; // Use encodedMessage
       const executeTx: AugmentedTransaction = {
         contract: universalSpokePoolContract,
         chainId: l2ChainId,
@@ -864,7 +848,7 @@ async function generateHeliosTxns(
         // gasLimit: BigNumber.from(1000000), // todo: testing
         // todo: check this
         unpermissioned: true,
-        // @dev Notice, in order for this tx to succeed in simulation, the SP1Helios.update(..) would be required to have updated the blockchain state already. Which is not how our sim. is done in index.ts
+        // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
         canFailInSimulation: true,
         message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
       };
@@ -876,7 +860,7 @@ async function generateHeliosTxns(
         destinationChainId: l2ChainId,
       });
     } catch (error) {
-      logger.error({
+      logger.warn({
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
         message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
         error: error,
@@ -887,7 +871,7 @@ async function generateHeliosTxns(
   }
 
   const totalFinalizations = successfulProofs.length + needsExecutionOnlyMessages.length;
-  logger.info({
+  logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
     message: `Generated ${transactions.length} transactions for ${totalFinalizations} finalizations (${successfulProofs.length} full, ${needsExecutionOnlyMessages.length} exec only).`,
     proofNoncesFinalized: successfulProofs.map((p) => p.sourceNonce.toString()),
