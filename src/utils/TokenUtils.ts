@@ -13,7 +13,7 @@ export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 export function getRemoteTokenForL1Token(
   l1Token: string,
   chainId: number | string,
-  hubPoolClient: HubPoolClient
+  hubPoolClient: Pick<HubPoolClient, "chainId">
 ): string | undefined {
   const tokenMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
     ({ addresses }) => addresses[hubPoolClient.chainId] === l1Token && isDefined(addresses[chainId])
