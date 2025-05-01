@@ -10,12 +10,12 @@ export type LpFeeRequest = clients.LpFeeRequest;
 
 export class HubPoolClient extends clients.HubPoolClient {
   private readonly injectedChain:
-  | {
-      chainId: number;
-      blockNumber: number;
-      spokePool: string
-    }
-  | undefined;
+    | {
+        chainId: number;
+        blockNumber: number;
+        spokePool: string;
+      }
+    | undefined;
 
   constructor(
     logger: winston.Logger,
@@ -55,7 +55,7 @@ export class HubPoolClient extends clients.HubPoolClient {
       this.injectedChain = {
         chainId: injectedChainId,
         blockNumber: injectedBlockNumber,
-        spokePool
+        spokePool,
       };
     }
   }
@@ -70,9 +70,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     return await super.computeRealizedLpFeePct(deposit);
   }
 
-  async update(
-    eventsToQuery?: any
-  ): Promise<void> {
+  async update(eventsToQuery?: any): Promise<void> {
     if (isDefined(this.injectedChain)) {
       const dataToAdd: CrossChainContractsSet = {
         spokePool: this.injectedChain.spokePool,
@@ -85,4 +83,5 @@ export class HubPoolClient extends clients.HubPoolClient {
       assign(this.crossChainContracts, [this.injectedChain.chainId], [dataToAdd]);
     }
     await super.update(eventsToQuery);
-  }}
+  }
+}
