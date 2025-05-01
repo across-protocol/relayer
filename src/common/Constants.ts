@@ -94,7 +94,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
-    [CHAIN_IDs.BNB]: 1,
+    [CHAIN_IDs.BSC]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
@@ -129,7 +129,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
-  [CHAIN_IDs.BNB]: 10000,
+  [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.UNICHAIN]: 10000,
@@ -171,7 +171,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
-  [CHAIN_IDs.BNB]: 40, // 3s/block.
+  [CHAIN_IDs.BSC]: 40, // 3s/block.
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
   [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
@@ -227,7 +227,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
-  [CHAIN_IDs.BNB]: 100,
+  [CHAIN_IDs.BSC]: 100,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probablistic but it takes an average of 2.5 blocks.
   [CHAIN_IDs.UNICHAIN]: 120,
@@ -268,7 +268,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
-  [CHAIN_IDs.BNB]: 57600,
+  [CHAIN_IDs.BSC]: 57600,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.INK]: 86400,
@@ -313,7 +313,7 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 export const spokesThatHoldNativeTokens = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.BLAST,
-  CHAIN_IDs.BNB,
+  CHAIN_IDs.BSC,
   CHAIN_IDs.UNICHAIN,
   CHAIN_IDs.INK,
   CHAIN_IDs.LENS,
@@ -335,7 +335,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
-  [CHAIN_IDs.BNB]: ["CAKE", "BNB", "USDC", "USDT", "ETH"],
+  [CHAIN_IDs.BSC]: ["CAKE", "BNB", "USDC", "USDT", "ETH"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO"],
@@ -397,7 +397,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BNB]: BinanceCEXBridge,
+  [CHAIN_IDs.BSC]: BinanceCEXBridge,
   [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LENS]: ZKStackBridge,
@@ -438,7 +438,7 @@ export const CANONICAL_L2_BRIDGE: {
   };
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
-  [CHAIN_IDs.BNB]: L2BinanceCEXBridge,
+  [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
@@ -883,7 +883,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
-  [CHAIN_IDs.BNB]: 1.5,
+  [CHAIN_IDs.BSC]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
