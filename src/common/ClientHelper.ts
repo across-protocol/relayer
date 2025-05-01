@@ -210,7 +210,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       todo: this is the only way to test finalizations without a mock HubPool contract
       *Theoretically*, we could have some devnet setup with whatever we want.
       */
-      if (chainId == CHAIN_IDs.BNB) {
+      if (chainId == CHAIN_IDs.BSC) {
         spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505";
       } else {
         spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
@@ -225,7 +225,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       );
       let registrationBlock: number;
       // ---- START BSC TEST CODE ----
-      if (chainId == CHAIN_IDs.BNB) {
+      if (chainId == CHAIN_IDs.BSC) {
         registrationBlock = 48762336;
       } else {
         registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);

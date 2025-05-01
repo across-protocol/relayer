@@ -69,7 +69,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  [CHAIN_IDs.BNB]: {
+  [CHAIN_IDs.BSC]: {
     finalizeOnL1: [],
     finalizeOnL2: [heliosL1toL2Finalizer],
   },

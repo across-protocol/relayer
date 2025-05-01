@@ -258,7 +258,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  [CHAIN_IDs.BNB]: {
+  [CHAIN_IDs.BSC]: {
     sp1Helios: {
       // ---- START BSC TEST CODE ----
       // ! todo: this uses a mock proof verifier
