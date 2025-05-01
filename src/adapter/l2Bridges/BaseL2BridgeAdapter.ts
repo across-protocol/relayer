@@ -18,7 +18,7 @@ export abstract class BaseL2BridgeAdapter {
     l2Token: Address,
     l1Token: EvmAddress,
     amount: BigNumber
-  ): AugmentedTransaction[];
+  ): Promise<AugmentedTransaction[]>;
 
   abstract getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,
