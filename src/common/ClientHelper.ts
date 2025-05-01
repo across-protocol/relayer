@@ -13,6 +13,7 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
+  CHAIN_IDs,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -203,10 +204,13 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      let spokePoolAddr;
-
+      let spokePoolAddr: string;
       // ---- START BSC TEST CODE ----
-      if (chainId == 56) {
+      /*
+      todo: this is the only way to test finalizations without a mock HubPool contract
+      *Theoretically*, we could have some devnet setup with whatever we want.
+      */
+      if (chainId == CHAIN_IDs.BNB) {
         spokePoolAddr = "0x4e8E101924eDE233C13e2D8622DC8aED2872d505";
       } else {
         spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
@@ -219,9 +223,9 @@ export async function constructSpokePoolClientsWithStartBlocks(
         [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
         spokePoolSigners[chainId]
       );
-      let registrationBlock;
+      let registrationBlock: number;
       // ---- START BSC TEST CODE ----
-      if (chainId == 56) {
+      if (chainId == CHAIN_IDs.BNB) {
         registrationBlock = 48762336;
       } else {
         registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);

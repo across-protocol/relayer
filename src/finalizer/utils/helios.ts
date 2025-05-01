@@ -32,8 +32,8 @@ type StorageSlotVerifiedEvent = Log & { args: StorageSlotVerifiedEventArgs };
 interface ApiProofRequest {
   src_chain_contract_address: string;
   src_chain_storage_slot: string;
-  src_chain_block_number: number; // Changed from u64 for JS compatibility
-  dst_chain_contract_from_head: number; // Changed from u64 for JS compatibility
+  src_chain_block_number: number; // u64 in Rustland
+  dst_chain_contract_from_head: number; // u64 in Rustland
   dst_chain_contract_from_header: string;
 }
 
@@ -64,17 +64,16 @@ const proofOutputsAbiTuple = `tuple(
     tuple(bytes32 key, bytes32 value, address contractAddress)[] slots
 )`;
 
-// Type for the decoded ProofOutputs structure
-type DecodedProofOutputs = {
+type ProofOutputs = {
   executionStateRoot: string;
   newHeader: string;
   nextSyncCommitteeHash: string;
-  newHead: ethers.BigNumber; // Access the newHead value
+  newHead: ethers.BigNumber;
   prevHeader: string;
   prevHead: ethers.BigNumber;
   syncCommitteeHash: string;
   startSyncCommitteeHash: string;
-  slots: { key: string; value: string; contractAddress: string }[]; // Added contractAddress
+  slots: { key: string; value: string; contractAddress: string }[];
 };
 
 // Type for successful proof data, augmented with source info.
@@ -89,16 +88,15 @@ export async function heliosL1toL2Finalizer(
   logger: winston.Logger,
   _signer: Signer,
   hubPoolClient: HubPoolClient,
-  l2SpokePoolClient: SpokePoolClient, // Used for filtering target address
+  l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
   _senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
-  const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address; // Get L2 SpokePool address
+  const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
 
-  // --- Step 1: Query and Filter L1 Events ---
-  // ✅ Step 1 tested and working
+  // --- Step 1: Query and Filter L1 Events --- ✅ tested
   const relevantStoredCallDataEvents = await getAndFilterL1Events(
     logger,
     hubPoolClient,
@@ -134,8 +132,7 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
-  // --- Step 2: Query L2 Verification Events ---
-  // ✅ Step 2 tested and working
+  // --- Step 2: Query L2 Verification Events --- ✅ tested
   const verifiedKeys = await getL2VerifiedKeys(logger, l2SpokePoolClient, l2ChainId);
 
   // ---- START BSC TEST CODE (STEP 2) ----
@@ -152,8 +149,7 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
-  // --- Step 3: Identify Unfinalized Messages ---
-  // ✅ Step 3 tested and working
+  // --- Step 3: Identify Unfinalized Messages --- ✅ tested
   const unfinalizedMessages = findUnfinalizedMessages(logger, relevantStoredCallDataEvents, verifiedKeys, l2ChainId);
   // todo: Testing, uncomment above after
   // const unfinalizedMessages = relevantStoredCallDataEvents;
@@ -178,8 +174,7 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
-  // --- Step 4: Get Proofs for Unfinalized Messages ---
-  // ✅ Step 4. tested and working. Didn't test ALL branches; but happy-cases work
+  // --- Step 4: Get Proofs for Unfinalized Messages --- ✅ tested. Didn't test ALL branches; but happy-cases work
   const proofsToSubmit = await processUnfinalizedHeliosMessages(
     logger,
     unfinalizedMessages, // Pass the unfinalized messages containing original event data
@@ -194,7 +189,7 @@ export async function heliosL1toL2Finalizer(
     return { callData: [], crossChainMessages: [] };
   }
 
-  // --- Step 5: Generate Multicall Data from Proofs ---
+  // --- Step 5: Generate Multicall Data from Proofs --- ⚠️ testing in progress
   return generateHeliosTxns(logger, proofsToSubmit, l1ChainId, l2ChainId, l2SpokePoolClient);
 }
 
@@ -211,7 +206,7 @@ async function getAndFilterL1Events(
   l2ChainId: number,
   l2SpokePoolAddress: string
 ): Promise<StoredCallDataEvent[] | null> {
-  const l1Provider = hubPoolClient.hubPool.provider; // Get provider from HubPoolClient
+  const l1Provider = hubPoolClient.hubPool.provider;
 
   const hubPoolStoreInfo = CONTRACT_ADDRESSES[l1ChainId]?.hubPoolStore;
   if (!hubPoolStoreInfo?.address || !hubPoolStoreInfo.abi) {
@@ -283,7 +278,7 @@ async function getL2VerifiedKeys(
   l2SpokePoolClient: SpokePoolClient,
   l2ChainId: number
 ): Promise<Set<string> | null> {
-  const l2Provider = l2SpokePoolClient.spokePool.provider; // Get provider from L2 client
+  const l2Provider = l2SpokePoolClient.spokePool.provider;
 
   const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
   if (!sp1HeliosAddress || !sp1HeliosAbi) {
@@ -316,7 +311,7 @@ async function getL2VerifiedKeys(
     // Explicitly cast logs to the correct type
     const events: StorageSlotVerifiedEvent[] = rawLogs.map((log) => ({
       ...log,
-      args: log.args as StorageSlotVerifiedEventArgs, // todo: is this a correct type?
+      args: log.args as StorageSlotVerifiedEventArgs,
     }));
 
     logger.info({
@@ -357,289 +352,8 @@ function findUnfinalizedMessages(
   return unfinalizedMessages;
 }
 
-/** STEP 5: Generate Multicall Data */
-async function generateHeliosTxns(
-  logger: winston.Logger,
-  proofsToSubmit: SuccessfulProof[],
-  l1ChainId: number,
-  l2ChainId: number,
-  l2SpokePoolClient: SpokePoolClient
-): Promise<FinalizerPromise> {
-  const transactions: AugmentedTransaction[] = [];
-  const crossChainMessages: CrossChainMessage[] = [];
-
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:generateHeliosMulticallData:${l2ChainId}`,
-      message: `SP1Helios contract missing for L2 chain ${l2ChainId} during multicall generation.`,
-    });
-    return { callData: [], crossChainMessages: [] };
-  }
-  const spokePoolContract = l2SpokePoolClient.spokePool; // Get contract instance from client
-  // Create SP1Helios contracts instance with new ABI and spokePoolContract signer
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, spokePoolContract.signer);
-
-  for (const proof of proofsToSubmit) {
-    try {
-      // Ensure the hex strings have the '0x' prefix, adding it only if missing.
-      const proofBytes = proof.proofData.proof.startsWith("0x") ? proof.proofData.proof : "0x" + proof.proofData.proof;
-      const publicValuesBytes = proof.proofData.public_values.startsWith("0x")
-        ? proof.proofData.public_values
-        : "0x" + proof.proofData.public_values;
-
-      let decodedOutputs: DecodedProofOutputs;
-      try {
-        const decodedResult = ethers.utils.defaultAbiCoder.decode([proofOutputsAbiTuple], publicValuesBytes)[0];
-        decodedOutputs = {
-          executionStateRoot: decodedResult[0],
-          newHeader: decodedResult[1],
-          nextSyncCommitteeHash: decodedResult[2],
-          newHead: decodedResult[3],
-          prevHeader: decodedResult[4],
-          prevHead: decodedResult[5],
-          syncCommitteeHash: decodedResult[6],
-          startSyncCommitteeHash: decodedResult[7],
-          slots: decodedResult[8].map((slot: any[]) => ({ key: slot[0], value: slot[1], contractAddress: slot[2] })),
-        };
-      } catch (decodeError) {
-        logger.error({
-          at: `Finalizer#heliosL1toL2Finalizer:decodePublicValues:${l2ChainId}`,
-          message: `Failed to decode public_values for nonce ${proof.sourceNonce.toString()}`,
-          publicValues: publicValuesBytes,
-          error: decodeError,
-        });
-        continue;
-      }
-
-      // 1. SP1Helios.update transaction
-      // todo: Change "0x" to `proofBytes` for production when not using mock verifier
-      const updateArgs = ["0x", publicValuesBytes]; // Use actual args
-      const updateTx: AugmentedTransaction = {
-        contract: sp1HeliosContract,
-        chainId: l2ChainId,
-        method: "update",
-        args: updateArgs,
-        // gasLimit: BigNumber.from(1000000), // todo: testing
-        unpermissioned: false,
-        canFailInSimulation: false,
-        nonMulticall: true,
-        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
-      };
-      transactions.push(updateTx);
-      crossChainMessages.push({
-        type: "misc",
-        miscReason: "ZK bridge finalization (Helios Update)",
-        originationChainId: l1ChainId,
-        destinationChainId: l2ChainId,
-      });
-
-      logger.debug({
-        message: `SpokePool address for executeMessage: ${spokePoolContract.address}`,
-        nonce: proof.sourceNonce.toString(),
-      });
-
-      // 2. SpokePool.executeMessage transaction
-      const universalSpokePoolContract = new ethers.Contract(
-        spokePoolContract.address,
-        [...UNIVERSAL_SPOKE_ABI],
-        spokePoolContract.signer
-      );
-
-      const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
-      const executeTx: AugmentedTransaction = {
-        contract: universalSpokePoolContract,
-        chainId: l2ChainId,
-        method: "executeMessage",
-        args: executeArgs,
-        // gasLimit: BigNumber.from(1000000), // todo: testing
-        // todo: check this
-        unpermissioned: true,
-        // @dev Notice, in order for this tx to succeed in simulation, the SP1Helios.update(..) would be required to have updated the blockchain state already. Which is not how our sim. is done in index.ts
-        canFailInSimulation: true,
-        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
-      };
-      // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
-      transactions.push(executeTx);
-      crossChainMessages.push({
-        type: "misc",
-        miscReason: "ZK bridge finalization (Execute Message)",
-        originationChainId: l1ChainId,
-        destinationChainId: l2ChainId,
-      });
-    } catch (error) {
-      logger.error({
-        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
-        message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
-        error: error,
-        proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target },
-      });
-      continue;
-    }
-  }
-
-  logger.info({
-    at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
-    message: `Generated ${transactions.length} transactions (${transactions.length / 2} finalizations).`,
-    proofNoncesFinalized: proofsToSubmit.map((p) => p.sourceNonce.toString()),
-  });
-
-  return { callData: transactions, crossChainMessages: crossChainMessages };
-}
-
-// ==================================
-// Lower-Level Helper Functions
-// ==================================
-
 /**
- * Queries StoredCallData events from the HubPoolStore contract on L1.
- */
-async function getL1StoredCallDataEvents(
-  logger: winston.Logger,
-  hubPoolClient: HubPoolClient,
-  l1SpokePoolClient: SpokePoolClient, // Used for block range
-  l1ChainId: number,
-  l2ChainId: number // For logging context
-): Promise<StoredCallDataEvent[] | null> {
-  const l1Provider = hubPoolClient.hubPool.provider; // Get provider from HubPoolClient
-
-  const hubPoolStoreInfo = CONTRACT_ADDRESSES[l1ChainId]?.hubPoolStore;
-  if (!hubPoolStoreInfo?.address || !hubPoolStoreInfo.abi) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getL1StoredCallDataEvents:${l2ChainId}`,
-      message: `HubPoolStore contract address or ABI not found for L1 chain ${l1ChainId}.`,
-    });
-    return null;
-  }
-
-  const hubPoolStoreContract = new ethers.Contract(hubPoolStoreInfo.address, hubPoolStoreInfo.abi as any, l1Provider);
-
-  const l1SearchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
-  };
-
-  const storedCallDataFilter = hubPoolStoreContract.filters.StoredCallData();
-
-  try {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:getL1StoredCallDataEvents:${l2ChainId}`,
-      message: `Querying StoredCallData events on L1 (${l1ChainId})`,
-      hubPoolStoreAddress: hubPoolStoreInfo.address,
-      fromBlock: l1SearchConfig.fromBlock,
-      toBlock: l1SearchConfig.toBlock,
-    });
-
-    const rawLogs = await paginatedEventQuery(hubPoolStoreContract, storedCallDataFilter, l1SearchConfig);
-
-    // Explicitly cast logs to the correct type
-    const events: StoredCallDataEvent[] = rawLogs.map((log) => ({
-      ...log,
-      args: log.args as StoredCallDataEventArgs, // todo: is this type correct?
-    }));
-
-    logger.info({
-      at: `Finalizer#heliosL1toL2Finalizer:getL1StoredCallDataEvents:${l2ChainId}`,
-      message: `Found ${events.length} StoredCallData events on L1 (${l1ChainId})`,
-    });
-    return events;
-  } catch (error) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getL1StoredCallDataEvents:${l2ChainId}`,
-      message: `Failed to query StoredCallData events from L1 (${l1ChainId})`,
-      hubPoolStoreAddress: hubPoolStoreInfo.address,
-      error,
-    });
-    return null; // Return null on error
-  }
-}
-
-/**
- * Queries StorageSlotVerified events from the SP1Helios contract on L2.
- */
-async function getL2StorageVerifiedEvents(
-  logger: winston.Logger,
-  l2SpokePoolClient: SpokePoolClient,
-  l2ChainId: number
-): Promise<StorageSlotVerifiedEvent[] | null> {
-  const l2Provider = l2SpokePoolClient.spokePool.provider; // Get provider from L2 client
-
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    logger.warn({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2StorageVerifiedEvents:${l2ChainId}`,
-      message: `SP1Helios contract not found for destination chain ${l2ChainId}. Cannot verify Helios messages.`,
-    });
-    return []; // Return empty array if contract not found, allows finalizer to potentially process other types
-  }
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2Provider);
-
-  const l2SearchConfig: EventSearchConfig = {
-    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l2SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
-  };
-  const storageVerifiedFilter = sp1HeliosContract.filters.StorageSlotVerified();
-
-  try {
-    logger.debug({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2StorageVerifiedEvents:${l2ChainId}`,
-      message: `Querying StorageSlotVerified events on L2 (${l2ChainId})`,
-      sp1HeliosAddress,
-      fromBlock: l2SearchConfig.fromBlock,
-      toBlock: l2SearchConfig.toBlock,
-    });
-
-    const rawLogs = await paginatedEventQuery(sp1HeliosContract, storageVerifiedFilter, l2SearchConfig);
-
-    // Explicitly cast logs to the correct type
-    const events: StorageSlotVerifiedEvent[] = rawLogs.map((log) => ({
-      ...log,
-      args: log.args as StorageSlotVerifiedEventArgs, // todo: is this a correct type?
-    }));
-
-    logger.info({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2StorageVerifiedEvents:${l2ChainId}`,
-      message: `Found ${events.length} StorageSlotVerified events on L2 (${l2ChainId})`,
-    });
-    return events;
-  } catch (error) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2StorageVerifiedEvents:${l2ChainId}`,
-      message: `Failed to query StorageSlotVerified events from L2 (${l2ChainId})`,
-      sp1HeliosAddress,
-      error,
-    });
-    return null; // Return null on error
-  }
-}
-
-/**
- * Calculates the storage slot in the HubPoolStore contract for a given nonce.
- * This assumes the data is stored in a mapping at slot 0, keyed by nonce.
- * storage_slot = keccak256(h(k) . h(p)) where k = nonce, p = mapping slot position (0)
- */
-// ✅ tested and working
-function calculateHubPoolStoreStorageSlot(eventArgs: StoredCallDataEventArgs): string {
-  const nonce = eventArgs.nonce;
-  const mappingSlotPosition = 0; // The relayMessageCallData mapping is at slot 0
-
-  // Ensure nonce and slot position are correctly padded to 32 bytes (64 hex chars + 0x prefix)
-  const paddedNonce = ethers.utils.hexZeroPad(nonce.toHexString(), 32);
-  const paddedSlot = ethers.utils.hexZeroPad(ethers.BigNumber.from(mappingSlotPosition).toHexString(), 32);
-
-  // Concatenate the padded key (nonce) and slot position
-  // ethers.utils.concat expects Uint8Array or hex string inputs
-  const concatenated = ethers.utils.concat([paddedNonce, paddedSlot]);
-
-  // Calculate the Keccak256 hash
-  const storageSlot = ethers.utils.keccak256(concatenated);
-
-  return storageSlot;
-}
-
-/**
+ * --- Step 4: Get Proofs for Unfinalized Messages ---
  * Processes unfinalized messages by interacting with the ZK Proof API.
  * Returns a list of successfully retrieved proofs.
  */
@@ -687,7 +401,7 @@ async function processUnfinalizedHeliosMessages(
     const headBn: ethers.BigNumber = await sp1HeliosContract.head();
     // todo: well, currently we're taking currentHead to use as prevHead in our ZK proof. There's a particular scenario where we could speed up proofs
     // todo: (by not making them to wait for finality longer than needed) if our blockNumber that we need a proved slot for is older than this head.
-    currentHead = headBn.toNumber(); // Convert BigNumber head to number
+    currentHead = headBn.toNumber();
     currentHeader = await sp1HeliosContract.headers(headBn);
     if (!currentHeader || currentHeader === ethers.constants.HashZero) {
       throw new Error(`Invalid header found for head ${currentHead}`);
@@ -849,11 +563,163 @@ async function processUnfinalizedHeliosMessages(
   return successfulProofs;
 }
 
+/** STEP 5: Generate Multicall Data */
+async function generateHeliosTxns(
+  logger: winston.Logger,
+  proofsToSubmit: SuccessfulProof[],
+  l1ChainId: number,
+  l2ChainId: number,
+  l2SpokePoolClient: SpokePoolClient
+): Promise<FinalizerPromise> {
+  const transactions: AugmentedTransaction[] = [];
+  const crossChainMessages: CrossChainMessage[] = [];
+
+  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
+  if (!sp1HeliosAddress || !sp1HeliosAbi) {
+    logger.error({
+      at: `Finalizer#heliosL1toL2Finalizer:generateHeliosMulticallData:${l2ChainId}`,
+      message: `SP1Helios contract missing for L2 chain ${l2ChainId} during multicall generation.`,
+    });
+    return { callData: [], crossChainMessages: [] };
+  }
+  const spokePoolContract = l2SpokePoolClient.spokePool; // Get contract instance from client
+  // Create SP1Helios contracts instance with new ABI and spokePoolContract signer
+  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, spokePoolContract.signer);
+
+  for (const proof of proofsToSubmit) {
+    try {
+      // Ensure the hex strings have the '0x' prefix, adding it only if missing.
+      const proofBytes = proof.proofData.proof.startsWith("0x") ? proof.proofData.proof : "0x" + proof.proofData.proof;
+      const publicValuesBytes = proof.proofData.public_values.startsWith("0x")
+        ? proof.proofData.public_values
+        : "0x" + proof.proofData.public_values;
+
+      let decodedOutputs: ProofOutputs;
+      try {
+        const decodedResult = ethers.utils.defaultAbiCoder.decode([proofOutputsAbiTuple], publicValuesBytes)[0];
+        decodedOutputs = {
+          executionStateRoot: decodedResult[0],
+          newHeader: decodedResult[1],
+          nextSyncCommitteeHash: decodedResult[2],
+          newHead: decodedResult[3],
+          prevHeader: decodedResult[4],
+          prevHead: decodedResult[5],
+          syncCommitteeHash: decodedResult[6],
+          startSyncCommitteeHash: decodedResult[7],
+          slots: decodedResult[8].map((slot: any[]) => ({ key: slot[0], value: slot[1], contractAddress: slot[2] })),
+        };
+      } catch (decodeError) {
+        logger.error({
+          at: `Finalizer#heliosL1toL2Finalizer:decodePublicValues:${l2ChainId}`,
+          message: `Failed to decode public_values for nonce ${proof.sourceNonce.toString()}`,
+          publicValues: publicValuesBytes,
+          error: decodeError,
+        });
+        continue;
+      }
+
+      // 1. SP1Helios.update transaction
+      // todo: Change "0x" to `proofBytes` for production when not using mock verifier
+      const updateArgs = ["0x", publicValuesBytes]; // Use actual args
+      const updateTx: AugmentedTransaction = {
+        contract: sp1HeliosContract,
+        chainId: l2ChainId,
+        method: "update",
+        args: updateArgs,
+        // gasLimit: BigNumber.from(1000000), // todo: testing
+        unpermissioned: false,
+        canFailInSimulation: false,
+        nonMulticall: true,
+        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 1: Update SP1Helios`,
+      };
+      transactions.push(updateTx);
+      crossChainMessages.push({
+        type: "misc",
+        miscReason: "ZK bridge finalization (Helios Update)",
+        originationChainId: l1ChainId,
+        destinationChainId: l2ChainId,
+      });
+
+      logger.debug({
+        message: `SpokePool address for executeMessage: ${spokePoolContract.address}`,
+        nonce: proof.sourceNonce.toString(),
+      });
+
+      // 2. SpokePool.executeMessage transaction
+      const universalSpokePoolContract = new ethers.Contract(
+        spokePoolContract.address,
+        [...UNIVERSAL_SPOKE_ABI],
+        spokePoolContract.signer
+      );
+
+      const executeArgs = [proof.sourceNonce, proof.sourceMessageData, decodedOutputs.newHead];
+      const executeTx: AugmentedTransaction = {
+        contract: universalSpokePoolContract,
+        chainId: l2ChainId,
+        method: "executeMessage",
+        args: executeArgs,
+        // gasLimit: BigNumber.from(1000000), // todo: testing
+        // todo: check this
+        unpermissioned: true,
+        // @dev Notice, in order for this tx to succeed in simulation, the SP1Helios.update(..) would be required to have updated the blockchain state already. Which is not how our sim. is done in index.ts
+        canFailInSimulation: true,
+        message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
+      };
+      // todo: uncomment when we're working with SpokePool that respects the set HubPoolStore address. Otherwise txns will just revert.
+      transactions.push(executeTx);
+      crossChainMessages.push({
+        type: "misc",
+        miscReason: "ZK bridge finalization (Execute Message)",
+        originationChainId: l1ChainId,
+        destinationChainId: l2ChainId,
+      });
+    } catch (error) {
+      logger.error({
+        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
+        message: `Failed to prepare transaction for proof of nonce ${proof.sourceNonce.toString()}`,
+        error: error,
+        proofData: { sourceNonce: proof.sourceNonce.toString(), target: proof.target },
+      });
+      continue;
+    }
+  }
+
+  logger.info({
+    at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
+    message: `Generated ${transactions.length} transactions (${transactions.length / 2} finalizations).`,
+    proofNoncesFinalized: proofsToSubmit.map((p) => p.sourceNonce.toString()),
+  });
+
+  return { callData: transactions, crossChainMessages: crossChainMessages };
+}
+
+/**
+ * Calculates the storage slot in the HubPoolStore contract for a given nonce.
+ * This assumes the data is stored in a mapping at slot 0, keyed by nonce.
+ * storage_slot = keccak256(h(k) . h(p)) where k = nonce, p = mapping slot position (0) ✅ tested
+ */
+function calculateHubPoolStoreStorageSlot(eventArgs: StoredCallDataEventArgs): string {
+  const nonce = eventArgs.nonce;
+  const mappingSlotPosition = 0; // The relayMessageCallData mapping is at slot 0
+
+  // Ensure nonce and slot position are correctly padded to 32 bytes (64 hex chars + 0x prefix)
+  const paddedNonce = ethers.utils.hexZeroPad(nonce.toHexString(), 32);
+  const paddedSlot = ethers.utils.hexZeroPad(ethers.BigNumber.from(mappingSlotPosition).toHexString(), 32);
+
+  // Concatenate the padded key (nonce) and slot position
+  // ethers.utils.concat expects Uint8Array or hex string inputs
+  const concatenated = ethers.utils.concat([paddedNonce, paddedSlot]);
+
+  // Calculate the Keccak256 hash
+  const storageSlot = ethers.utils.keccak256(concatenated);
+
+  return storageSlot;
+}
+
 /**
  * Calculates the deterministic Proof ID based on the request parameters.
- * Matches the Rust implementation using RLP encoding and Keccak256.
+ * Matches the Rust implementation using RLP encoding and Keccak256. ✅ tested
  */
-// ✅ tested and working
 function calculateProofId(request: ApiProofRequest): string {
   const encoded = ethers.utils.RLP.encode([
     request.src_chain_contract_address,

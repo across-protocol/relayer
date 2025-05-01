@@ -79,7 +79,6 @@ export class TransactionClient {
         throw new Error(`chainId mismatch for method ${txn.method} (${txn.chainId} !== ${chainId})`);
       }
 
-      // todo: here, nonce is wrong. chainId is probably wrong
       const nonce = this.nonces[chainId] ? this.nonces[chainId] + 1 : undefined;
       this.logger.info({
         at: "TransactionClient#submit",
