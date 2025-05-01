@@ -80,10 +80,6 @@ export class TransactionClient {
       }
 
       const nonce = this.nonces[chainId] ? this.nonces[chainId] + 1 : undefined;
-      this.logger.info({
-        at: "TransactionClient#submit",
-        message: `XXX ChainID ${chainId} nonce ${nonce}.`,
-      });
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? DEFAULT_GASLIMIT_MULTIPLIER;

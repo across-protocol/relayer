@@ -2,7 +2,6 @@ import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { getSp1Helios } from "../../utils/Sp1HeliosUtils";
 import { Log } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import axios from "axios";
@@ -729,4 +728,8 @@ function calculateProofId(request: ApiProofRequest): string {
     request.dst_chain_contract_from_header,
   ]);
   return ethers.utils.keccak256(encoded);
+}
+
+function getSp1Helios(dstChainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[dstChainId].sp1Helios;
 }

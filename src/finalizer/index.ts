@@ -376,17 +376,14 @@ export async function finalize(
         finalizations,
         ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
+
+      // @dev Here, we enqueueTransaction individual transactions right away, and we batch all multicalls into `multicallTxns` to enqueue as a single tx right after
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
-        // Separate Multicall2Call and AugmentedTransaction objects
         const multicallTxns: Multicall2Call[] = [];
 
-        // Process each finalization separately
         finalizations.forEach(({ txn }) => {
-          // Check if this is a Multicall2Call (doesn't have contract property)
-          // or an AugmentedTransaction (has contract property)
           if ("contract" in txn) {
             // It's an AugmentedTransaction, enqueue directly
-            // todo? we might want to enqueue these after the batch call
             txn.nonMulticall = true; // cautiously enforce an invariant that should already be present
             multicallerClient.enqueueTransaction(txn);
           } else {
@@ -395,7 +392,6 @@ export async function finalize(
           }
         });
 
-        // If we have any multicall transactions, bundle them together
         if (multicallTxns.length > 0) {
           const txnToSubmit: AugmentedTransaction = {
             contract: multicall2Lookup[Number(chainId)],
