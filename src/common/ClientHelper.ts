@@ -13,7 +13,6 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
-  CHAIN_IDs,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -200,6 +199,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
+
   // Set up Spoke signers and connect them to spoke pool contract objects:
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
