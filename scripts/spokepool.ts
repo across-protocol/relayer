@@ -4,7 +4,7 @@ import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
-import { CHAIN_IDs } from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { RelayData } from "../src/interfaces";
@@ -19,7 +19,6 @@ import {
   getSigner,
   isDefined,
   populateV3Relay,
-  resolveTokenSymbols,
   toBN,
   toBytes32,
 } from "../src/utils";
@@ -45,6 +44,24 @@ const { isAddress } = ethers.utils;
 
 const DEPOSIT_EVENT = "FundsDeposited";
 const FILL_EVENT = "FilledRelay";
+
+/**
+ * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @dev This function is dangerous because multiple token addresses can map to the same token symbol
+ * so the output can be unexpected.
+ * @param tokenAddresses The token addresses to resolve the symbols for.
+ * @param chainId The chain ID to resolve the symbols for.
+ * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ */
+function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
+  const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
+  return tokenAddresses
+    .map((tokenAddress) => {
+      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
+        ?.symbol;
+    })
+    .filter(Boolean);
+}
 
 function printDeposit(originChainId: number, log: LogDescription): void {
   const { destinationChainId, inputToken, message } = log.args;
