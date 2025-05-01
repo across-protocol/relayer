@@ -1,4 +1,3 @@
-import Binance from "binance-api-node";
 import {
   Contract,
   BigNumber,
@@ -9,21 +8,16 @@ import {
   getTokenInfo,
   assert,
   isDefined,
-  chainIsProd,
   getTimestampForBlock,
   mapAsync,
   ethers,
-  toBN,
-  ConvertDecimals,
   getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
+  compareAddressesSimple,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
-import { hmac } from "../utils";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
-
-const DEFAULT_API_URL = "https://api.binance.com";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   private readonly binanceApiClient;
@@ -75,7 +69,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
   async queryL1BridgeInitiationEvents(
     l1Token: EvmAddress,
-    _fromAddress: EvmAddress,
+    fromAddress: EvmAddress,
     _toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
@@ -93,12 +87,13 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       depositHistory.map((deposit) => deposit.txId),
       async (transactionHash) => this.getL1Bridge().provider.getTransactionReceipt(transactionHash as string)
     );
-
-    return {
-      [this.resolveL2TokenAddress(l1Token)]: depositHistory.map((deposit, idx) => {
-        // The amount we are given from the deposit history result is a human-readable float string. We want to convert this float into
-        // the same precision as the L1 token's decimals.
-        const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
+    // FilterMap to remove all deposits which originated from another EOA.
+    const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
+    const processedDeposits = depositHistory
+      .map((deposit, idx) => {
+        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toAddress())) {
+          return undefined;
+        }
         return {
           amount: floatToBN(deposit.amount, l1Decimals),
           txnRef: depositTxReceipts[idx].transactionHash,
@@ -107,14 +102,18 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
           logIndex: depositTxReceipts[idx].logs[0].logIndex,
           blockNumber: depositTxReceipts[idx].blockNumber,
         };
-      }),
+      })
+      .filter(isDefined);
+
+    return {
+      [this.resolveL2TokenAddress(l1Token)]: processedDeposits,
     };
   }
 
   async queryL2BridgeFinalizationEvents(
     l1Token: EvmAddress,
     _fromAddress: EvmAddress,
-    _toAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
@@ -131,15 +130,17 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       startTime: fromTimestamp,
     });
     // Filter withdrawals based on whether their destination network was BSC.
-    const withdrawalHistory = _withdrawalHistory.filter((withdrawal) => withdrawal.network === "BSC");
+    const withdrawalHistory = _withdrawalHistory.filter(
+      (withdrawal) => withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.address, toAddress.toAddress())
+    );
     const withdrawalTxReceipts = await mapAsync(
       withdrawalHistory.map((withdrawal) => withdrawal.txId as string),
       async (transactionHash) => l2Provider.getTransactionReceipt(transactionHash as string)
     );
+    const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
 
     return {
       [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal, idx) => {
-        const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
         return {
           amount: floatToBN(withdrawal.amount, l1Decimals),
           txnRef: withdrawalTxReceipts[idx].transactionHash,
