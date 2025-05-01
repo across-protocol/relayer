@@ -86,7 +86,7 @@ export function getTranslatedTokenAddress(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  const onBNB = l2ChainId === CHAIN_IDs.BNB;
+  const onBNB = l2ChainId === CHAIN_IDs.BSC;
   if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
     const onZora = l2ChainId === CHAIN_IDs.ZORA;
