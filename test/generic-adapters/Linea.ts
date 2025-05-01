@@ -155,7 +155,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       expect(result[l2WETHToken][0].amount).to.equal(1);
 
       // The transaction hash should correspond to the L2 finalization call.
-      expect(result[l2WETHToken][0].transactionHash).to.equal(expectedTxn.hash);
+      expect(result[l2WETHToken][0].txnRef).to.equal(expectedTxn.hash);
     });
     it("Matches L1 and L2 events", async function () {
       const messageHash = createRandomBytes32();

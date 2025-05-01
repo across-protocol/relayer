@@ -139,19 +139,20 @@ describe("IndexedSpokePoolClient: Update", async function () {
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
     deposits.forEach((deposit, idx) => {
-      expect(deposit.transactionIndex).to.equal(events[idx].transactionIndex);
-      expect(deposit.transactionHash).to.equal(events[idx].transactionHash);
-      expect(deposit.logIndex).to.equal(events[idx].logIndex);
-      expect(deposit.depositId).to.equal(events[idx].args!.depositId);
-      expect(deposit.inputToken).to.equal(events[idx].args!.inputToken);
-      expect(deposit.inputAmount).to.equal(events[idx].args!.inputAmount);
-      expect(deposit.outputToken).to.equal(events[idx].args!.outputToken);
-      expect(deposit.outputAmount).to.equal(events[idx].args!.outputAmount);
-      expect(deposit.message).to.equal(events[idx].args!.message);
-      expect(deposit.quoteTimestamp).to.equal(events[idx].args!.quoteTimestamp);
-      expect(deposit.fillDeadline).to.equal(events[idx].args!.fillDeadline);
-      expect(deposit.exclusivityDeadline).to.equal(events[idx].args!.exclusivityDeadline);
-      expect(deposit.exclusiveRelayer).to.equal(events[idx].args!.exclusiveRelayer);
+      const log = events[idx];
+      expect(deposit.txnIndex).to.equal(log.transactionIndex);
+      expect(deposit.txnRef).to.equal(log.transactionHash);
+      expect(deposit.logIndex).to.equal(log.logIndex);
+      expect(deposit.depositId).to.equal(log.args!.depositId);
+      expect(deposit.inputToken).to.equal(log.args!.inputToken);
+      expect(deposit.inputAmount).to.equal(log.args!.inputAmount);
+      expect(deposit.outputToken).to.equal(log.args!.outputToken);
+      expect(deposit.outputAmount).to.equal(log.args!.outputAmount);
+      expect(deposit.message).to.equal(log.args!.message);
+      expect(deposit.quoteTimestamp).to.equal(log.args!.quoteTimestamp);
+      expect(deposit.fillDeadline).to.equal(log.args!.fillDeadline);
+      expect(deposit.exclusivityDeadline).to.equal(log.args!.exclusivityDeadline);
+      expect(deposit.exclusiveRelayer).to.equal(log.args!.exclusiveRelayer);
     });
   });
 
@@ -171,7 +172,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     // Verify that the dropped event is _not_ present in deposits.
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
-    const droppedDeposit = deposits.find((deposit) => deposit.transactionHash === droppedEvent.transactionHash);
+    const droppedDeposit = deposits.find(({ txnRef }) => txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 
@@ -194,7 +195,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     await spokePoolClient.update();
     deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
-    const droppedDeposit = deposits.find((deposit) => deposit.transactionHash === droppedEvent.transactionHash);
+    const droppedDeposit = deposits.find((deposit) => deposit.txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 

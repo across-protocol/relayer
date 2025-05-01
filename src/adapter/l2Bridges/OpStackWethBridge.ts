@@ -39,7 +39,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     l2Token: EvmAddress,
     _l1Token: EvmAddress,
     amount: BigNumber
-  ): AugmentedTransaction[] {
+  ): Promise<AugmentedTransaction[]> {
     const weth = new Contract(l2Token.toAddress(), WETH_ABI, this.l2Signer);
     const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
@@ -72,7 +72,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
         this.l2chainId
       )} to L1`,
     };
-    return [unwrapTxn, withdrawTxn];
+    return Promise.resolve([unwrapTxn, withdrawTxn]);
   }
 
   async getL2PendingWithdrawalAmount(

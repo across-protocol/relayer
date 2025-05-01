@@ -9,7 +9,7 @@ import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import { Deposit, DepositWithBlock, Fill, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
 import {
   BigNumber,
   isDefined,
@@ -46,7 +46,6 @@ export const {
   buildSlowRelayTree,
   buildV3SlowRelayTree,
   createRandomBytes32,
-  enableRoutes,
   getContractFactory,
   getUpdatedV3DepositSignature,
   hubPoolFixture,
@@ -109,22 +108,11 @@ export function createSpyLogger(): SpyLoggerResult {
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithToken(
-  fromChainId = 0,
-  toChainId = 0,
-  enableRoute = true
-): Promise<SpokePoolDeploymentResult> {
+export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
   const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
-
-  if (enableRoute) {
-    await utils.enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-      { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-    ]);
-  }
   return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
@@ -226,13 +214,6 @@ export async function deployNewTokenMapping(
     await utils.getContractFactory("ExpandedERC20", l2TokenHolder)
   ).deploy("L2 Token Destination", "L2", 18);
   await l2TokenDestination.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
-
-  await utils.enableRoutes(spokePoolDestination, [
-    { originToken: l2TokenDestination.address, destinationChainId: spokePoolChainId },
-  ]);
-  await utils.enableRoutes(spokePool, [
-    { originToken: l2Token.address, destinationChainId: spokePoolDestinationChainId },
-  ]);
 
   // Deploy L1 token and set as counterpart for L2 token:
   const l1Token = await (await utils.getContractFactory("ExpandedERC20", l1TokenHolder)).deploy("L1 Token", "L1", 18);
@@ -343,14 +324,14 @@ export async function depositV3(
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
-  const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
+  const { blockNumber, transactionHash: txnRef, transactionIndex: txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
   const depositObject = {
     originChainId: Number(originChainId),
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef,
+    txnIndex,
     logIndex,
     ...spreadEvent(args),
     messageHash: args.messageHash ?? getMessageHash(args.message),
@@ -416,10 +397,10 @@ export async function fillV3Relay(
   return {
     destinationChainId,
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
     logIndex,
-    ...parsedEvent,
+    ...(parsedEvent as Fill),
     messageHash: args.messageHash ?? getMessageHash(args.message),
     relayExecutionInfo: {
       ...parsedEvent.relayExecutionInfo,

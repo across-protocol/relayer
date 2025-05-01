@@ -117,7 +117,7 @@ async function getFinalizableTransactions(
 ): Promise<PolygonTokensBridged[]> {
   // First look up which L2 transactions were checkpointed to mainnet.
   const isCheckpointed = await Promise.all(
-    tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.transactionHash))
+    tokensBridged.map((event) => posClient.exitUtil.isCheckPointed(event.txnRef))
   );
 
   // For each token bridge event that was checkpointed, store a unique log index for the event
@@ -128,8 +128,8 @@ async function getFinalizableTransactions(
   // Construct the payload we'll need to finalize each L2 transaction that has been checkpointed to Mainnet and
   // can potentially be finalized.
   const payloads = await Promise.all(
-    checkpointedTokensBridged.map((e, i) => {
-      return posClient.exitUtil.buildPayloadForExit(e.transactionHash, BURN_SIG, false, logIndexesForMessage[i]);
+    checkpointedTokensBridged.map(({ txnRef }, i) => {
+      return posClient.exitUtil.buildPayloadForExit(txnRef, BURN_SIG, false, logIndexesForMessage[i]);
     })
   );
 

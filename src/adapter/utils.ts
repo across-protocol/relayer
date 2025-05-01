@@ -46,7 +46,7 @@ export async function approveTokens(
     let internalMrkdwn =
       ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toAddress(), hubChainId)} ` +
       `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-      `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
+      `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, hubChainId)}`;
     if (receipts.length > 1) {
       internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
     }

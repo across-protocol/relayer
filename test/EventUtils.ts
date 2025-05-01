@@ -1,7 +1,7 @@
 import { expect } from "./utils";
 
 // Tested
-import { getPaginatedBlockRanges } from "../src/utils/EventUtils";
+import { getPaginatedBlockRanges, getUniqueLogIndex } from "../src/utils/EventUtils";
 
 describe("EventUtils", async function () {
   it("getPaginatedBlockRanges", async function () {
@@ -62,5 +62,22 @@ describe("EventUtils", async function () {
         [100, 199],
       ]);
     }
+  });
+  it("getUniqueLogIndex", async function () {
+    const events = [
+      {
+        txnRef: "0x1",
+      },
+      {
+        txnRef: "0x1",
+      },
+      {
+        txnRef: "0x2",
+      },
+      {
+        txnRef: "0x3",
+      },
+    ];
+    expect(getUniqueLogIndex(events)).to.deep.equal([0, 1, 0, 0]);
   });
 });

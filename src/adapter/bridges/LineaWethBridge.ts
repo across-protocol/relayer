@@ -124,9 +124,9 @@ export class LineaWethBridge extends BaseBridgeAdapter {
           ? {
               ...processEvent(queryEvent, "_value"),
               blockNumber: finalized.blockNumber,
-              transactionIndex: finalized.transactionIndex,
+              txnIndex: finalized.transactionIndex,
               logIndex: finalized.logIndex,
-              transactionHash: finalized.transactionHash,
+              txnRef: finalized.transactionHash,
             }
           : undefined;
       })
