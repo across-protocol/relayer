@@ -341,7 +341,7 @@ export async function finalize(
       }
     } else {
       // Individual transaction simulation flow
-      const [{ reason, succeed, transaction: _ }] = await txnClient.simulate([_txn]);
+      const [{ reason, succeed }] = await txnClient.simulate([_txn]);
       if (succeed) {
         return true;
       } else {

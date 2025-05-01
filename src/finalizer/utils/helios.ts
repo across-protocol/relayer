@@ -1,11 +1,10 @@
 import { ethers } from "ethers";
-import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
 import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { Log } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
 import axios from "axios";
-import { AugmentedTransaction } from "../../clients";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 
 // Define interfaces for the event arguments for clarity
@@ -107,6 +106,7 @@ export async function heliosL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const l1ChainId = hubPoolClient.chainId;
@@ -247,7 +247,8 @@ async function identifyPendingHeliosMessages(
         // Log a warning for partially finalized messages
         logger.warn({
           at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
-          message: `Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.`,
+          message:
+            "Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.",
           l1TxHash: l1Event.transactionHash,
           nonce: nonce.toString(),
           storageSlot: expectedStorageSlot,
@@ -268,7 +269,7 @@ async function identifyPendingHeliosMessages(
 
   logger.debug({
     at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
-    message: `Finished identifying pending messages.`,
+    message: "Finished identifying pending messages.",
     totalL1StoredCallData: relevantStoredCallDataEvents.length,
     totalL2VerifiedSlots: verifiedSlotsMap.size,
     totalL2RelayedNonces: relayedNonces.size,
@@ -477,7 +478,9 @@ async function processUnfinalizedHeliosMessages(
 ): Promise<SuccessfulProof[]> {
   // Filter within the function just in case, though the caller should have already filtered
   const unfinalizedMessages = messagesToProcess.filter((m) => m.status === "NeedsProofAndExecution");
-  if (unfinalizedMessages.length === 0) return [];
+  if (unfinalizedMessages.length === 0) {
+    return [];
+  }
 
   const l2ChainId = l2SpokePoolClient.chainId;
   const l2Provider = l2SpokePoolClient.spokePool.provider;
@@ -732,7 +735,7 @@ async function generateHeliosTxns(
       // @dev Warn about messages that require only half of finalization. Means that either a tx from prev. run got stuck or failed or something else weird happened
       logger.warn({
         at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
-        message: `Generating SpokePool.executeMessage ONLY for partially finalized message.`,
+        message: "Generating SpokePool.executeMessage ONLY for partially finalized message.",
         nonce: nonce.toString(),
         l1TxHash: l1Event.transactionHash,
         verifiedHead: verifiedHead.toString(),
@@ -812,7 +815,7 @@ async function generateHeliosTxns(
       }
 
       // 1. SP1Helios.update transaction
-      const updateArgs = ["0x", publicValuesBytes]; // todo: Change "0x" to `proofBytes` for production
+      const updateArgs = [proofBytes, publicValuesBytes]; // Use proofBytes as intended
       const updateTx: AugmentedTransaction = {
         contract: sp1HeliosContract,
         chainId: l2ChainId,
