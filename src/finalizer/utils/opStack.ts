@@ -660,7 +660,9 @@ async function multicallOptimismFinalizations(
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const allMessages = await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger);
-  const finalizableMessages = allMessages;
+  const finalizableMessages = allMessages.filter(
+    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
+  );  
   let callData = await Promise.all(
     finalizableMessages.map((message) =>
       finalizeOptimismMessage(logger, chainId, crossChainMessenger, message, message.logIndex)
