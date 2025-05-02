@@ -221,9 +221,16 @@ export class RelayerConfig extends CommonConfig {
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
-          ? l1Token
+          ? ethersUtils.getAddress(l1Token)
           : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
         assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
+
+        // Filter inventory configuration by supported tokens, if specified.
+        const known = this.relayerTokens.includes(effectiveL1Token) || this.relayerTokens.length === 0;
+        if (!known) {
+          delete rawTokenConfigs[l1Token];
+          return;
+        }
 
         tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
