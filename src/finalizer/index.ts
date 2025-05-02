@@ -71,10 +71,6 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  [CHAIN_IDs.BSC]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-  },
   [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
@@ -129,7 +125,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   },
   [CHAIN_IDs.BSC]: {
     finalizeOnL1: [binanceL2ToL1Finalizer],
-    finalizeOnL2: [binanceL1ToL2Finalizer],
+    finalizeOnL2: [binanceL1ToL2Finalizer, heliosL1toL2Finalizer],
   },
   [CHAIN_IDs.SONEIUM]: {
     finalizeOnL1: [opStackFinalizer],
