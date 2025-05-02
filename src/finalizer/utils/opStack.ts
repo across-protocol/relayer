@@ -36,6 +36,7 @@ import {
   mapAsync,
   paginatedEventQuery,
   createViemCustomTransportFromEthersProvider,
+  bnZero,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -525,6 +526,7 @@ async function getOptimismFinalizableMessages(
     message: "Ethers OpStack SDK Message statuses",
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
+  console.log(messageStatuses.filter((message) => message.status === "ready-to-prove"));
   return messageStatuses.filter(
     (message) =>
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY] ||
@@ -538,7 +540,7 @@ async function finalizeOptimismMessage(
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus,
   logIndex = 0
-): Promise<Multicall2Call> {
+): Promise<Multicall2Call | undefined> {
   if (!chainIsBlast(_chainId)) {
     const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
       message.message as optimismSDK.MessageLike,
@@ -577,7 +579,7 @@ async function finalizeOptimismMessage(
     withdrawalStruct.message,
   ];
 
-  let hintId = 0;
+  let hintId = bnZero;
   if (withdrawalStruct.value.gt(0)) {
     const withdrawalHash = utils.keccak256(
       utils.defaultAbiCoder.encode(["uint256", "address", "address", "uint256", "uint256", "bytes"], l2WithdrawalParams)
@@ -610,6 +612,9 @@ async function finalizeOptimismMessage(
       BLAST_YIELD_MANAGER_STARTING_REQUEST_ID,
       latestCheckpointId
     );
+    if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
+      return undefined;
+    }
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
@@ -646,12 +651,15 @@ async function multicallOptimismFinalizations(
   const finalizableMessages = allMessages.filter(
     (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
   );
-  const callData = await Promise.all(
+  let callData = await Promise.all(
     finalizableMessages.map((message) =>
       finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
     )
   );
-  const withdrawals = finalizableMessages.map((message) => {
+  let withdrawals = finalizableMessages.map((message, i) => {
+    if (!callData[i]) {
+      return undefined;
+    }
     const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
     const withdrawal: CrossChainMessage = {
@@ -663,6 +671,8 @@ async function multicallOptimismFinalizations(
     };
     return withdrawal;
   });
+  callData = callData.filter(isDefined);
+  withdrawals = withdrawals.filter(isDefined);
 
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim that can be made
   // after the withdrawal request is finalized by a Blast admin. This roughly takes ~24 hours after the OpMessager
@@ -697,7 +707,7 @@ async function multicallOptimismFinalizations(
   // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
   // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
   const fromBlock = tokensBridgedEvents[0].blockNumber;
-  const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
+  const [_withdrawalRequests, lastCheckpointId] = await Promise.all([
     usdYieldManager.queryFilter(
       usdYieldManager.filters.WithdrawalRequested(
         null,
@@ -714,9 +724,6 @@ async function multicallOptimismFinalizations(
       fromBlock
     ),
     usdYieldManager.getLastCheckpointId(),
-    // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
-    // logging information as to why a withdrawal request is not ready to be claimed.
-    usdYieldManager.getLastFinalizedRequestId(),
   ]);
 
   // The claimableMessages (i.e. the TokensBridged events) should fall out of the lookback window sooner than
@@ -776,7 +783,6 @@ async function multicallOptimismFinalizations(
           logger.debug({
             at: "BlastFinalizer",
             message: `Blast claim not ready for message ${event.txnRef} with request Id ${withdrawalRequestIds[i]}`,
-            lastFinalizedRequestId,
           });
           return undefined;
         }
