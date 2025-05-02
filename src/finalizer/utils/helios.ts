@@ -11,6 +11,7 @@ import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData }
 import { StorageSlotVerifiedEvent } from "../../interfaces/Helios";
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot } from "../../utils/UniversalUtils";
+import { stringifyThrownValue } from "../../utils/LogUtils";
 
 type CrossChainMessageStatus = "NeedsProofAndExecution" | "NeedsExecutionOnly";
 
@@ -387,7 +388,7 @@ async function processUnfinalizedHeliosMessages(
       // Exit, will check again next run
     } else if (getError) {
       // Other error during GET - something might be wrong with the API. Throw and let finalizer retry this next run
-      throw new Error(`Failed to get proof state for proofId ${proofId}: ${getError.message}`);
+      throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(getError)}`);
     } else if (proofState) {
       // GET successful, check status
       if (proofState.status === "pending") {
