@@ -28,12 +28,14 @@ import {
   UsdcCCTPBridge,
   ZKStackBridge,
   ZKStackWethBridge,
+  BinanceCEXBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
   OpStackWethBridge as L2OpStackWethBridge,
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
+  BinanceCEXBridge as L2BinanceCEXBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
@@ -327,6 +329,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
+  [CHAIN_IDs.BSC]: ["CAKE", "BNB", "USDC", "USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO"],
@@ -388,6 +391,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BSC]: BinanceCEXBridge,
   [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LENS]: ZKStackBridge,
@@ -428,6 +432,7 @@ export const CANONICAL_L2_BRIDGE: {
   };
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
+  [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
@@ -872,6 +877,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
+  [CHAIN_IDs.BSC]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,

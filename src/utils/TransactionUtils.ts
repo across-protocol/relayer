@@ -16,8 +16,12 @@ import {
   toBNWei,
   winston,
   stringifyThrownValue,
+  CHAIN_IDs,
 } from "../utils";
 dotenv.config();
+
+// Define chains that require legacy (type 0) transactions
+const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -81,12 +85,17 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(
+    let gas = await getGasPrice(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
       await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
+
+    // Check if the chain requires legacy transactions
+    if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+      gas = { gasPrice: gas.maxFeePerGas };
+    }
 
     logger.debug({
       at: "TxUtil",

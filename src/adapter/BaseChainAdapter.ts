@@ -305,7 +305,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const expectedTokenSymbol = nativeTokenSymbol === "ETH" ? "WETH" : nativeTokenSymbol;
+      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB";
+      const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
         `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
