@@ -21,7 +21,7 @@ import {
 dotenv.config();
 
 // Define chains that require legacy (type 0) transactions
-const LEGACY_TRANSACTION_CHAINS = new Set<number>([CHAIN_IDs.BSC]);
+const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -93,7 +93,7 @@ export async function runTransaction(
     );
 
     // Check if the chain requires legacy transactions
-    if (LEGACY_TRANSACTION_CHAINS.has(chainId)) {
+    if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
       gas = { gasPrice: gas.maxFeePerGas };
     }
 

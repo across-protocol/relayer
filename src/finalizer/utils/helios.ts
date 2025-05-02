@@ -55,7 +55,7 @@ export async function heliosL1toL2Finalizer(
     l2ChainId
   );
 
-  if (!pendingMessages || pendingMessages.length === 0) {
+  if (pendingMessages.length === 0) {
     logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
       message: "No pending Helios messages found requiring action.",
@@ -124,9 +124,7 @@ async function identifyPendingHeliosMessages(
   l2SpokePoolClient: SpokePoolClient,
   l1ChainId: number,
   l2ChainId: number
-): Promise<PendingCrosschainMessage[] | null> {
-  const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
-
+): Promise<PendingCrosschainMessage[]> {
   // --- Substep 1: Query and Filter L1 Events ---
   const relevantStoredCallDataEvents = await getRelevantL1Events(
     logger,
@@ -134,10 +132,10 @@ async function identifyPendingHeliosMessages(
     l1SpokePoolClient,
     l1ChainId,
     l2ChainId,
-    l2SpokePoolAddress
+    l2SpokePoolClient.spokePool.address
   );
 
-  if (!relevantStoredCallDataEvents || relevantStoredCallDataEvents.length === 0) {
+  if (relevantStoredCallDataEvents.length === 0) {
     logger.debug({
       at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
       message: "No relevant StoredCallData events found on L1.",
@@ -146,19 +144,10 @@ async function identifyPendingHeliosMessages(
   }
 
   // --- Substep 2: Query L2 Verification Events (StorageSlotVerified) ---
-  // Store as Map<slotKey, verifiedEvent> to easily access head later
-  const verifiedSlotsMap = await getL2VerifiedSlotsMap(logger, l2SpokePoolClient, l2ChainId);
-  if (verifiedSlotsMap === null) {
-    // Error already logged in helper
-    return null; // Propagate error state
-  }
+  const verifiedSlotsMap = await getL2VerifiedSlotsMap(l2SpokePoolClient, l2ChainId);
 
   // --- Substep 3: Query L2 Execution Events (RelayedCallData) ---
-  const relayedNonces = await getL2RelayedNonces(logger, l2SpokePoolClient, l2ChainId);
-  if (relayedNonces === null) {
-    // Error already logged in helper
-    return null; // Propagate error state
-  }
+  const relayedNonces = await getL2RelayedNonces(l2SpokePoolClient);
 
   // --- Determine Status for each L1 Event ---
   const pendingMessages: PendingCrosschainMessage[] = [];
@@ -175,7 +164,7 @@ async function identifyPendingHeliosMessages(
         pendingMessages.push({
           l1Event: l1Event,
           status: "NeedsExecutionOnly",
-          verifiedHead: verifiedEvent.args.head,
+          verifiedHead: verifiedEvent.args.head, // set verifiedHead as it's needed for execution
         });
         // Log a warning for partially finalized messages
         logger.warn({
@@ -197,7 +186,7 @@ async function identifyPendingHeliosMessages(
         });
       }
     }
-    // If isExecuted is true, the message is fully finalized, do nothing.
+    // If `isExecuted` is true, the message is fully finalized, do nothing.
   }
 
   logger.debug({
@@ -216,13 +205,13 @@ async function identifyPendingHeliosMessages(
 
 /** Query and Filter L1 Events */
 async function getRelevantL1Events(
-  logger: winston.Logger,
+  _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: SpokePoolClient,
   l1ChainId: number,
-  l2ChainId: number,
+  _l2ChainId: number,
   l2SpokePoolAddress: string
-): Promise<StoredCallDataEvent[] | null> {
+): Promise<StoredCallDataEvent[]> {
   const l1Provider = hubPoolClient.hubPool.provider;
   const hubPoolStoreContract = getHubPoolStoreContract(l1ChainId, l1Provider);
 
@@ -253,10 +242,9 @@ async function getRelevantL1Events(
 
 /** Query L2 Verification Events and return verified slots map */
 async function getL2VerifiedSlotsMap(
-  logger: winston.Logger,
   l2SpokePoolClient: SpokePoolClient,
   l2ChainId: number
-): Promise<Map<string, StorageSlotVerifiedEvent> | null> {
+): Promise<Map<string, StorageSlotVerifiedEvent>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
@@ -292,11 +280,7 @@ async function getL2VerifiedSlotsMap(
 }
 
 /** --- Query L2 Execution Events (RelayedCallData) */
-async function getL2RelayedNonces(
-  logger: winston.Logger,
-  l2SpokePoolClient: SpokePoolClient,
-  l2ChainId: number
-): Promise<Set<string> | null> {
+async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<Set<string>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
@@ -355,14 +339,11 @@ async function processUnfinalizedHeliosMessages(
   const hubPoolStoreAddress = hubPoolStoreInfo.address;
   const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
-  let currentHead: number;
-  let currentHeader: string;
-
   const headBn: ethers.BigNumber = await sp1HeliosContract.head();
   // todo: well, currently we're taking currentHead to use as prevHead in our ZK proof. There's a particular scenario where we could speed up proofs
   // todo: (by not making them to wait for finality longer than needed) if our blockNumber that we need a proved slot for is older than this head.
-  currentHead = headBn.toNumber();
-  currentHeader = await sp1HeliosContract.headers(headBn);
+  const currentHead = headBn.toNumber();
+  const currentHeader = await sp1HeliosContract.headers(headBn);
   if (!currentHeader || currentHeader === ethers.constants.HashZero) {
     throw new Error(`Invalid header found for head ${currentHead}`);
   }
@@ -416,15 +397,8 @@ async function processUnfinalizedHeliosMessages(
       logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
       // Exit, will check again next run
     } else if (getError) {
-      // Other error during GET
-      logger.warn({
-        ...logContext,
-        message: "Failed to get proof state.",
-        proofId,
-        getUrl: getProofUrl,
-        getError: getError.message,
-        getResponseData: getError.response?.data,
-      });
+      // Other error during GET - something might be wrong with the API. Throw and let finalizer retry this next run
+      throw new Error(`Failed to get proof state for proofId ${proofId}: ${getError.message}`);
     } else if (proofState) {
       // GET successful, check status
       if (proofState.status === "pending") {
@@ -547,7 +521,7 @@ async function generateHeliosTxns(
       : "0x" + proof.proofData.public_values;
 
     // @dev Will throw on decode errors here.
-    let decodedOutputs: ProofOutputs = decodeProofOutputs(publicValuesBytes);
+    const decodedOutputs: ProofOutputs = decodeProofOutputs(publicValuesBytes);
 
     // 1. SP1Helios.update transaction
     const updateArgs = [proofBytes, publicValuesBytes];
