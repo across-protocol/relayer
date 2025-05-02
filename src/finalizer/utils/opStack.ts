@@ -526,7 +526,6 @@ async function getOptimismFinalizableMessages(
     message: "Ethers OpStack SDK Message statuses",
     statusesGrouped: groupObjectCountsByProp(messageStatuses, (message: CrossChainMessageWithStatus) => message.status),
   });
-  console.log(messageStatuses.filter((message) => message.status === "ready-to-prove"));
   return messageStatuses.filter(
     (message) =>
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY] ||
@@ -536,6 +535,7 @@ async function getOptimismFinalizableMessages(
 }
 
 async function finalizeOptimismMessage(
+  logger: winston.Logger,
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus,
@@ -592,16 +592,24 @@ async function finalizeOptimismMessage(
 
     // @dev The withdrawal hash should be unique for the L2 withdrawal so there should be exactly 1 event for this query.
     // If the withdrawal hasn't been proven yet then this will error.
-    const [proofReceipt, latestCheckpointId] = await Promise.all([
+    const [proofReceipt, latestCheckpointId, lastFinalizedRequestId] = await Promise.all([
       blastPortal.queryFilter(blastPortal.filters.WithdrawalProven(withdrawalHash)),
       blastEthYield.getLastCheckpointId(),
+      blastEthYield.getLastFinalizedRequestId(),
     ]);
     if (proofReceipt.length !== 1) {
-      throw new Error(`Failed to find Proof receipt matching Blast withdrawal ${message.event.txnRef}`);
+      throw new Error(`Failed to find Proof receipt matching Blast ETH withdrawal ${message.event.txnRef}`);
     }
     const requestId = proofReceipt[0].args?.requestId;
     if (requestId === undefined || requestId === 0) {
-      throw new Error(`Found invalid requestId ${requestId} for Blast withdrawal ${message.event.txnRef}`);
+      throw new Error(`Found invalid requestId ${requestId} for Blast ETH withdrawal ${message.event.txnRef}`);
+    }
+    if (requestId.gt(lastFinalizedRequestId)) {
+      logger.debug({
+        at: "BlastFinalizer",
+        message: `Blast ETH claim for message ${message.event.txnRef} with request Id ${requestId} is > lastFinalizedRequestId ${lastFinalizedRequestId}`,
+      });
+      return undefined;
     }
     // @dev The hintId parameter plays a role in our insurance mechanism that kicks in the rare event that
     // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
@@ -613,6 +621,10 @@ async function finalizeOptimismMessage(
       latestCheckpointId
     );
     if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
+      logger.debug({
+        at: "BlastFinalizer",
+        message: `Blast ETH claim not ready for message ${message.event.txnRef} with request Id ${requestId}`,
+      });
       return undefined;
     }
   }
@@ -648,12 +660,10 @@ async function multicallOptimismFinalizations(
   logger: winston.Logger
 ): Promise<{ callData: Multicall2Call[]; withdrawals: CrossChainMessage[] }> {
   const allMessages = await getOptimismFinalizableMessages(chainId, logger, tokensBridgedEvents, crossChainMessenger);
-  const finalizableMessages = allMessages.filter(
-    (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
-  );
+  const finalizableMessages = allMessages;
   let callData = await Promise.all(
     finalizableMessages.map((message) =>
-      finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
+      finalizeOptimismMessage(logger, chainId, crossChainMessenger, message, message.logIndex)
     )
   );
   let withdrawals = finalizableMessages.map((message, i) => {
@@ -707,7 +717,7 @@ async function multicallOptimismFinalizations(
   // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
   // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
   const fromBlock = tokensBridgedEvents[0].blockNumber;
-  const [_withdrawalRequests, lastCheckpointId] = await Promise.all([
+  const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
     usdYieldManager.queryFilter(
       usdYieldManager.filters.WithdrawalRequested(
         null,
@@ -724,14 +734,24 @@ async function multicallOptimismFinalizations(
       fromBlock
     ),
     usdYieldManager.getLastCheckpointId(),
+    // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
+    // logging information as to why a withdrawal request is not ready to be claimed.
+    usdYieldManager.getLastFinalizedRequestId(),
   ]);
 
   // The claimableMessages (i.e. the TokensBridged events) should fall out of the lookback window sooner than
   // the WithdrawalRequested events will, but we want a 1:1 mapping between them. Therefore, if we have N
   // WithdrawalRequested events, we should keep the last N claimableMessages.
   const withdrawalRequests = [..._withdrawalRequests].slice(-claimableMessages.length);
-  const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
-  assert(withdrawalRequestIds.length === claimableMessages.length);
+  const withdrawalRequestIds = withdrawalRequests
+    .map((request, i) => {
+      return {
+        requestId: request.args.requestId,
+        txnRef: claimableMessages[i].event.txnRef,
+        amountToReturn: claimableMessages[i].event.amountToReturn,
+      };
+    })
+    .filter(({ requestId }) => requestId.lte(lastFinalizedRequestId));
 
   // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
   // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
@@ -750,16 +770,14 @@ async function multicallOptimismFinalizations(
     ),
   ]);
   const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
-  assert(withdrawalRequestIds.length === hintIds.length);
-  assert(withdrawalClaims.length === claimableMessages.length);
 
   logger.debug({
     at: "BlastFinalizer",
     message: "Blast USDB claimable message statuses",
-    claims: claimableMessages.map((message, i) => {
+    claims: withdrawalRequestIds.map(({ requestId, txnRef }, i) => {
       return {
-        withdrawalHash: message.event.txnRef,
-        withdrawRequestId: withdrawalRequestIds[i],
+        withdrawalHash: txnRef,
+        withdrawRequestId: requestId,
         usdYieldManagerHintId: hintIds[i],
         isClaimed: withdrawalRequestIsClaimed[i],
       };
@@ -770,11 +788,11 @@ async function multicallOptimismFinalizations(
   const claimMessages: CrossChainMessage[] = [];
   const claimCallData = (
     await Promise.all(
-      claimableMessages.map(async ({ event }, i) => {
+      withdrawalRequestIds.map(async ({ requestId, txnRef, amountToReturn }, i) => {
         if (withdrawalRequestIsClaimed[i]) {
           logger.debug({
             at: "BlastFinalizer",
-            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${event.txnRef} already claimed`,
+            message: `USDB Withdrawal request ${requestId} for message ${txnRef} already claimed`,
           });
           return undefined;
         }
@@ -782,7 +800,7 @@ async function multicallOptimismFinalizations(
         if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
           logger.debug({
             at: "BlastFinalizer",
-            message: `Blast claim not ready for message ${event.txnRef} with request Id ${withdrawalRequestIds[i]}`,
+            message: `Blast USDB claim not ready for message ${txnRef} with request Id ${requestId}`,
           });
           return undefined;
         }
@@ -791,12 +809,12 @@ async function multicallOptimismFinalizations(
           // This should never happen since we filter our WithdrawalRequested query on the `recipient`
           // but in case it happens, this log should help us debug.
           const message =
-            `Withdrawal request ${withdrawalRequestIds[i]} for message ${event.txnRef}` +
+            `USDB Withdrawal request ${requestId} for message ${txnRef}` +
             ` has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`;
           logger.warn({ at: "BlastFinalizer", message, hintId: hintIds[i], recipient });
           return undefined;
         }
-        const amountFromWei = convertFromWei(event.amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        const amountFromWei = convertFromWei(amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
         claimMessages.push({
           originationChainId: chainId,
           l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
@@ -805,7 +823,7 @@ async function multicallOptimismFinalizations(
           miscReason: "claimUSDB",
           destinationChainId: hubPoolClient.chainId,
         });
-        const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
+        const claimCallData = await tokenRetriever.populateTransaction.retrieve(requestId, hintIds[i]);
         return {
           callData: claimCallData.data,
           target: claimCallData.to,
