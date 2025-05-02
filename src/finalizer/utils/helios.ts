@@ -367,9 +367,9 @@ async function processUnfinalizedHeliosMessages(
     logger.debug({ ...logContext, message: "Attempting to get proof", proofId, getProofUrl, storageSlot });
 
     let proofState: ProofStateResponse | null = null;
-    let getError: any = null;
 
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
+    let getError: any = null;
     try {
       const response = await axios.get<ProofStateResponse>(getProofUrl);
       proofState = response.data;
@@ -378,60 +378,54 @@ async function processUnfinalizedHeliosMessages(
       getError = error;
     }
 
-    // --- API Interaction Flow ---
-    // 1. Try to get proof
-    if (getError && axios.isAxiosError(getError) && getError.response?.status === 404) {
-      // 1a. NOTFOUND -> Request proof
-      logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-      await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
-      logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
-      // Exit, will check again next run
-    } else if (getError) {
-      // Other error during GET - something might be wrong with the API. Throw and let finalizer retry this next run
-      throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(getError)}`);
-    } else if (proofState) {
-      // GET successful, check status
-      if (proofState.status === "pending") {
-        // 1b. SUCCESS ("pending") -> Log and exit flow
+    // Axios error. Handle based on whether was a NOTFOUND or another error
+    if (getError) {
+      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
+      if (isNotFoundError) {
+        // NOTFOUND error -> Request proof
+        logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
+        await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
+        logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
+        continue;
+      } else {
+        // If other error is returned -- throw and alert PD; this shouldn't happen
+        throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(getError)}`);
+      }
+    }
+
+    // No axios error, process `proofState`
+    switch (proofState.status) {
+      case "pending":
+        // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
         logger.debug({ ...logContext, message: "Proof generation is pending.", proofId });
-        // Exit, will check again next run
-      } else if (proofState.status === "errored") {
-        // 1c. SUCCESS ("errored") -> Log high severity, request again, exit flow
-        // @dev API tried to generate a proof but failed. Log as error and re-request proof
+        break;
+      case "errored":
+        // Proof generation errored on the API side. This is concerning, so we log an error. But nothing to do for us other than to re-request
         logger.error({
           ...logContext,
           message: "Proof generation errored on ZK API side. Requesting again.",
           proofId,
-          errorMessage: proofState.error_message,
+          errorMessage: proofState.error_message!,
         });
 
         await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
-        // Exit, will check again next run
-      } else if (proofState.status === "success") {
-        // 1d. SUCCESS ("success") -> Collect proof data for later processing
-        if (proofState.update_calldata) {
-          logger.debug({ ...logContext, message: "Proof successfully retrieved.", proofId });
-          successfulProofs.push({
-            proofData: proofState.update_calldata,
-            sourceNonce: l1Event.nonce, // Use nonce from L1 event
-            target: l1Event.target, // Use target from L1 event
-            sourceMessageData: l1Event.data, // Use data from L1 event
-          });
-        } else {
-          // todo? Might want to log an error here
-          logger.warn({
-            ...logContext,
-            message: "Proof status is success but update_calldata is missing.",
-            proofId,
-            proofState,
-          });
-          // Exit, will check again next run
+        break;
+      case "success":
+        if (!proofState.update_calldata) {
+          throw new Error(`Proof status is success but update_calldata is missing for proofId ${proofId}`);
         }
-      } else {
-        // @dev status should always be "pending", "success" or "errored"
+        logger.debug({ ...logContext, message: "Proof successfully retrieved.", proofId });
+        successfulProofs.push({
+          // @dev `proofData` should exist if proofState.status is "success"
+          proofData: proofState.update_calldata,
+          sourceNonce: l1Event.nonce,
+          target: l1Event.target,
+          sourceMessageData: l1Event.data,
+        });
+        break;
+      default:
         throw new Error(`Received unexpected proof status for proof ${proofId}`);
-      }
     }
   } // end loop over messages
 
