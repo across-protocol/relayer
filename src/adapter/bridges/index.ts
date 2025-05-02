@@ -1,6 +1,7 @@
 export * from "./DaiOptimismBridge";
 export * from "./SnxOptimismBridge";
 export * from "./BaseBridgeAdapter";
+export * from "./BinanceCEXBridge";
 export * from "./UsdcTokenSplitterBridge";
 export * from "./OpStackWethBridge";
 export * from "./ArbitrumOrbitBridge";

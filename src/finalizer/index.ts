@@ -35,6 +35,8 @@ import {
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,
+  binanceL1ToL2Finalizer,
+  binanceL2ToL1Finalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
   heliosL1toL2Finalizer,
@@ -124,6 +126,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   [CHAIN_IDs.BLAST]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+  },
+  [CHAIN_IDs.BSC]: {
+    finalizeOnL1: [binanceL2ToL1Finalizer],
+    finalizeOnL2: [binanceL1ToL2Finalizer],
   },
   [CHAIN_IDs.SONEIUM]: {
     finalizeOnL1: [opStackFinalizer],
