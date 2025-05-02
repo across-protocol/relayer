@@ -815,13 +815,12 @@ async function generateHeliosTxns(
       }
 
       // 1. SP1Helios.update transaction
-      const updateArgs = [proofBytes, publicValuesBytes]; // Use proofBytes as intended
+      const updateArgs = [proofBytes, publicValuesBytes];
       const updateTx: AugmentedTransaction = {
         contract: sp1HeliosContract,
         chainId: l2ChainId,
         method: "update",
         args: updateArgs,
-        // gasLimit: BigNumber.from(1000000), // todo: testing
         unpermissioned: false,
         canFailInSimulation: false,
         nonMulticall: true,
@@ -848,8 +847,6 @@ async function generateHeliosTxns(
         chainId: l2ChainId,
         method: "executeMessage",
         args: executeArgs,
-        // gasLimit: BigNumber.from(1000000), // todo: testing
-        // todo: check this
         unpermissioned: true,
         // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
         canFailInSimulation: true,

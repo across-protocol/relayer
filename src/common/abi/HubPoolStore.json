@@ -1,11 +1,5 @@
 [
   {
-    "inputs": [{ "internalType": "address", "name": "_hubPool", "type": "address" }],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
-  },
-  { "inputs": [], "name": "NotHubPool", "type": "error" },
-  {
     "anonymous": false,
     "inputs": [
       { "indexed": true, "internalType": "address", "name": "target", "type": "address" },
@@ -14,30 +8,5 @@
     ],
     "name": "StoredCallData",
     "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "hubPool",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "name": "relayMessageCallData",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "target", "type": "address" },
-      { "internalType": "bytes", "name": "data", "type": "bytes" },
-      { "internalType": "bool", "name": "isAdminSender", "type": "bool" }
-    ],
-    "name": "storeRelayMessageCalldata",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
   }
 ]
