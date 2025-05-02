@@ -1,14 +1,12 @@
 import { ethers } from "ethers";
 import { BigNumber } from ".";
-import { StoredCallDataEventArgs } from "../interfaces/Universal";
 
 /**
  * Calculates the storage slot in the HubPoolStore contract for a given nonce.
  * This assumes the data is stored in a mapping at slot 0, keyed by nonce.
  * storage_slot = keccak256(h(k) . h(p)) where k = nonce, p = mapping slot position (0)
  */
-export function calculateHubPoolStoreStorageSlot(eventArgs: StoredCallDataEventArgs): string {
-  const nonce = eventArgs.nonce;
+export function calculateHubPoolStoreStorageSlot(nonce: BigNumber): string {
   const mappingSlotPosition = 0; // The relayMessageCallData mapping is at slot 0
 
   // Ensure nonce and slot position are correctly padded to 32 bytes (64 hex chars + 0x prefix)

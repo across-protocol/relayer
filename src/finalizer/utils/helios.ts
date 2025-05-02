@@ -1,18 +1,14 @@
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
 import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple, Provider } from "../../utils";
+import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { CONTRACT_ADDRESSES } from "../../common";
 import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
-import {
-  RelayedCallDataEvent,
-  RelayedCallDataEventArgs,
-  StoredCallDataEvent,
-  StoredCallDataEventArgs,
-} from "../../interfaces/Universal";
+import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
-import { StorageSlotVerifiedEvent, StorageSlotVerifiedEventArgs } from "../../interfaces/Helios";
+import { StorageSlotVerifiedEvent } from "../../interfaces/Helios";
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot } from "../../utils/UniversalUtils";
 
@@ -74,7 +70,7 @@ export async function heliosL1toL2Finalizer(
       needsProofAndExecution: needsProofAndExecution.length,
       needsExecutionOnly: needsExecutionOnly.length,
     },
-    needsExecutionNonces: needsExecutionOnly.map((m) => m.l1Event.args.nonce.toString()), // Log nonces needing only execution
+    needsExecutionNonces: needsExecutionOnly.map((m) => m.l1Event.nonce.toString()), // Log nonces needing only execution
   });
 
   // --- Step 2: Get Proofs for Messages Needing Full Finalization ---
@@ -152,8 +148,8 @@ async function identifyPendingHeliosMessages(
   // --- Determine Status for each L1 Event ---
   const pendingMessages: PendingCrosschainMessage[] = [];
   for (const l1Event of relevantStoredCallDataEvents) {
-    const expectedStorageSlot = calculateHubPoolStoreStorageSlot(l1Event.args);
-    const nonce = l1Event.args.nonce;
+    const expectedStorageSlot = calculateHubPoolStoreStorageSlot(l1Event.nonce);
+    const nonce = l1Event.nonce;
 
     const isExecuted = relayedNonces.has(nonce.toString()); // Use nonce string as key
 
@@ -164,18 +160,18 @@ async function identifyPendingHeliosMessages(
         pendingMessages.push({
           l1Event: l1Event,
           status: "NeedsExecutionOnly",
-          verifiedHead: verifiedEvent.args.head, // set verifiedHead as it's needed for execution
+          verifiedHead: verifiedEvent.head, // set verifiedHead as it's needed for execution
         });
         // Log a warning for partially finalized messages
         logger.warn({
           at: `Finalizer#identifyPendingHeliosMessages:${l2ChainId}`,
           message:
             "Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.",
-          l1TxHash: l1Event.transactionHash,
+          l1TxRef: l1Event.txnRef,
           nonce: nonce.toString(),
           storageSlot: expectedStorageSlot,
-          verifiedOnL2TxHash: verifiedEvent.transactionHash,
-          verifiedHead: verifiedEvent.args.head.toString(),
+          verifiedOnL2TxnRef: verifiedEvent.txnRef,
+          verifiedHead: verifiedEvent.head.toString(),
         });
       } else {
         // Not verified and not executed -> Needs Proof and Execution
@@ -225,16 +221,12 @@ async function getRelevantL1Events(
 
   const rawLogs = await paginatedEventQuery(hubPoolStoreContract, storedCallDataFilter, l1SearchConfig);
 
-  // Explicitly cast logs to the correct type
-  const events: StoredCallDataEvent[] = rawLogs.map((log) => ({
-    ...log,
-    args: log.args as StoredCallDataEventArgs,
-  }));
+  const events: StoredCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as StoredCallDataEvent);
 
   const relevantStoredCallDataEvents = events.filter(
     (event) =>
-      compareAddressesSimple(event.args.target, l2SpokePoolAddress) ||
-      compareAddressesSimple(event.args.target, ethers.constants.AddressZero)
+      compareAddressesSimple(event.target, l2SpokePoolAddress) ||
+      compareAddressesSimple(event.target, ethers.constants.AddressZero)
   );
 
   return relevantStoredCallDataEvents;
@@ -257,23 +249,22 @@ async function getL2VerifiedSlotsMap(
 
   const rawLogs = await paginatedEventQuery(sp1HeliosContract, storageVerifiedFilter, l2SearchConfig);
 
-  // Explicitly cast logs to the correct type
-  const events: StorageSlotVerifiedEvent[] = rawLogs.map((log) => ({
-    ...log,
-    args: log.args as StorageSlotVerifiedEventArgs,
-  }));
+  // Use spreadEventWithBlockNumber and cast to the flattened type
+  const events: StorageSlotVerifiedEvent[] = rawLogs.map(
+    (log) => spreadEventWithBlockNumber(log) as StorageSlotVerifiedEvent
+  );
 
   // Store events in a map keyed by the storage slot (key)
   const verifiedSlotsMap = new Map<string, StorageSlotVerifiedEvent>();
   events.forEach((event) => {
     // Handle potential duplicates (though unlikely with paginated query): favour latest block/logIndex
-    const existing = verifiedSlotsMap.get(event.args.key);
+    const existing = verifiedSlotsMap.get(event.key);
     if (
       !existing ||
       event.blockNumber > existing.blockNumber ||
       (event.blockNumber === existing.blockNumber && event.logIndex > existing.logIndex)
     ) {
-      verifiedSlotsMap.set(event.args.key, event);
+      verifiedSlotsMap.set(event.key, event);
     }
   });
   return verifiedSlotsMap;
@@ -294,13 +285,11 @@ async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<S
 
   const rawLogs = await paginatedEventQuery(universalSpokePoolContract, relayedCallDataFilter, l2SearchConfig);
 
-  const events: RelayedCallDataEvent[] = rawLogs.map((log) => ({
-    ...log,
-    args: log.args as RelayedCallDataEventArgs,
-  }));
+  // Use spreadEventWithBlockNumber and cast to the flattened type
+  const events: RelayedCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as RelayedCallDataEvent);
 
   // Return a Set of nonces (as strings for easy comparison)
-  return new Set<string>(events.map((event) => event.args.nonce.toString()));
+  return new Set<string>(events.map((event) => event.nonce.toString()));
 }
 
 /**
@@ -356,12 +345,12 @@ async function processUnfinalizedHeliosMessages(
     const l1Event = pendingMessage.l1Event; // Extract the L1 event
     const logContext = {
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
-      l1TxHash: l1Event.transactionHash,
-      nonce: l1Event.args.nonce.toString(),
-      target: l1Event.args.target,
+      l1TxHash: l1Event.txnRef,
+      nonce: l1Event.nonce.toString(),
+      target: l1Event.target,
     };
 
-    const storageSlot = calculateHubPoolStoreStorageSlot(l1Event.args);
+    const storageSlot = calculateHubPoolStoreStorageSlot(l1Event.nonce);
 
     const apiRequest: ApiProofRequest = {
       src_chain_contract_address: hubPoolStoreAddress,
@@ -424,9 +413,9 @@ async function processUnfinalizedHeliosMessages(
           logger.debug({ ...logContext, message: "Proof successfully retrieved.", proofId });
           successfulProofs.push({
             proofData: proofState.update_calldata,
-            sourceNonce: l1Event.args.nonce, // Use nonce from L1 event
-            target: l1Event.args.target, // Use target from L1 event
-            sourceMessageData: l1Event.args.data, // Use data from L1 event
+            sourceNonce: l1Event.nonce, // Use nonce from L1 event
+            target: l1Event.target, // Use target from L1 event
+            sourceMessageData: l1Event.data, // Use data from L1 event
           });
         } else {
           // todo? Might want to log an error here
@@ -471,9 +460,9 @@ async function generateHeliosTxns(
   // --- Process messages needing only execution ---
   for (const message of needsExecutionOnlyMessages) {
     const { l1Event, verifiedHead } = message;
-    const nonce = l1Event.args.nonce;
-    const l1Target = l1Event.args.target; // Get target from L1 event
-    const l1Data = l1Event.args.data; // Get data from L1 event
+    const nonce = l1Event.nonce;
+    const l1Target = l1Event.target; // Get target from L1 event
+    const l1Data = l1Event.data; // Get data from L1 event
 
     if (!verifiedHead) {
       // @dev This shouldn't happen. If it does, there's a bug that needs fixing.
@@ -485,7 +474,7 @@ async function generateHeliosTxns(
       at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
       message: "Generating SpokePool.executeMessage ONLY for partially finalized message.",
       nonce: nonce.toString(),
-      l1TxHash: l1Event.transactionHash,
+      l1TxHash: l1Event.txnRef,
       verifiedHead: verifiedHead.toString(),
     });
 
@@ -575,7 +564,7 @@ async function generateHeliosTxns(
     at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
     message: `Generated ${transactions.length} transactions for ${totalFinalizations} finalizations (${successfulProofs.length} full, ${needsExecutionOnlyMessages.length} exec only).`,
     proofNoncesFinalized: successfulProofs.map((p) => p.sourceNonce.toString()),
-    execOnlyNoncesFinalized: needsExecutionOnlyMessages.map((m) => m.l1Event.args.nonce.toString()),
+    execOnlyNoncesFinalized: needsExecutionOnlyMessages.map((m) => m.l1Event.nonce.toString()),
   });
 
   return { callData: transactions, crossChainMessages: crossChainMessages };

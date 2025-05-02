@@ -1,12 +1,10 @@
-import { Log } from ".";
+import { SortableEvent } from ".";
 import { BigNumber } from "../utils";
 
-export interface StorageSlotVerifiedEventArgs {
+// Event type for Sp1Helios used in v4 messaging (Flattened)
+export interface StorageSlotVerifiedEvent extends SortableEvent {
   head: BigNumber;
   key: string; // bytes32
   value: string; // bytes32
   contractAddress: string;
 }
-
-// Event type for Sp1Helios used in v4 messaging
-export type StorageSlotVerifiedEvent = Log & { args: StorageSlotVerifiedEventArgs };

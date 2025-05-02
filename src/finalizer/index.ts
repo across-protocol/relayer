@@ -32,7 +32,7 @@ import {
   Profiler,
   stringifyThrownValue,
 } from "../utils";
-import { ChainFinalizer, CrossChainMessage } from "./types";
+import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,
   cctpL1toL2Finalizer,
@@ -315,7 +315,7 @@ export async function finalize(
   // Ensure each transaction would succeed in isolation.
   const finalizations = await sdkUtils.filterAsync(finalizerResponseTxns, async ({ txn: _txn, crossChainMessage }) => {
     let simErrorReason: string;
-    if ("callData" in _txn && "target" in _txn) {
+    if (!isAugmentedTransaction(_txn)) {
       // Multicall transaction simulation flow
       const txnToSubmit: AugmentedTransaction = {
         contract: multicall2Lookup[crossChainMessage.destinationChainId],
@@ -382,7 +382,7 @@ export async function finalize(
         const multicallTxns: Multicall2Call[] = [];
 
         finalizations.forEach(({ txn }) => {
-          if ("contract" in txn) {
+          if (isAugmentedTransaction(txn)) {
             // It's an AugmentedTransaction, enqueue directly
             txn.nonMulticall = true; // cautiously enforce an invariant that should already be present
             multicallerClient.enqueueTransaction(txn);

@@ -43,3 +43,13 @@ export interface ChainFinalizer {
     l1ToL2AddressesToFinalize: string[]
   ): Promise<FinalizerPromise>;
 }
+
+/**
+ * Type guard to check if a transaction object is an AugmentedTransaction.
+ * @param txn The transaction object to check.
+ * @returns True if the object is an AugmentedTransaction, false otherwise.
+ */
+export function isAugmentedTransaction(txn: Multicall2Call | AugmentedTransaction): txn is AugmentedTransaction {
+  // Check for the presence of the 'contract' property, unique to AugmentedTransaction
+  return txn != null && typeof txn === "object" && "contract" in txn;
+}

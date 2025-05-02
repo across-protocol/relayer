@@ -1,17 +1,15 @@
-import { Log } from ".";
+import { SortableEvent } from ".";
 import { BigNumber } from "../utils";
 
-export interface StoredCallDataEventArgs {
+// Flattened HubPoolStore Event
+export interface StoredCallDataEvent extends SortableEvent {
   target: string;
   data: string;
   nonce: BigNumber;
 }
 
-export interface RelayedCallDataEventArgs {
+// Flattened Universal SpokePool Event
+export interface RelayedCallDataEvent extends SortableEvent {
   nonce: BigNumber;
   caller: string;
 }
-
-// Event types for HubPoolStore and Universal_SpokePool used in v4 messaging
-export type StoredCallDataEvent = Log & { args: StoredCallDataEventArgs };
-export type RelayedCallDataEvent = Log & { args: RelayedCallDataEventArgs };
