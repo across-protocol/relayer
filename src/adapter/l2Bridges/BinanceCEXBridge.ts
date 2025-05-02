@@ -88,7 +88,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const l2TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.fromBlock)) * 1_000;
-    const [depositHistory, withdrawHistory] = await Promise.all([
+    const [_depositHistory, _withdrawHistory] = await Promise.all([
       this.binanceApiClient.depositHistory({
         coin: this.l1TokenInfo.symbol,
         startTime: fromTimestamp,
@@ -98,6 +98,10 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
         startTime: fromTimestamp,
       }),
     ]);
+    const [depositHistory, withdrawHistory] = [
+      _depositHistory.filter((deposit) => deposit.network === "BSC"),
+      _withdrawHistory.filter((withdrawal) => withdrawal.network === "ETH"),
+    ];
 
     // Filter based on `fromAddress`.
     const depositTxReceipts = await mapAsync(
@@ -108,18 +112,14 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // FilterMap to remove all deposits originating from other EOAs.
     const depositsInitiatedForAddress = depositHistory
       .map((deposit, idx) => {
-        if (
-          deposit.network !== "BSC" ||
-          !compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toAddress())
-        ) {
+        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toAddress())) {
           return undefined;
         }
         return deposit;
       })
       .filter(isDefined);
-    const withdrawalsFinalizedForAddress = withdrawHistory.filter(
-      (withdrawal) =>
-        withdrawal.network === "ETH" && compareAddressesSimple(withdrawal.address, fromAddress.toAddress())
+    const withdrawalsFinalizedForAddress = withdrawHistory.filter((withdrawal) =>
+      compareAddressesSimple(withdrawal.address, fromAddress.toAddress())
     );
 
     const totalDepositAmountForAddress = depositsInitiatedForAddress.reduce(

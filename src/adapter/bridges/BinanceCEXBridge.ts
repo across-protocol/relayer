@@ -43,7 +43,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Token.toAddress(), ERC20_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.
-    this.tokenSymbol = getTokenInfo(l1Token.toAddress(), this.hubChainId).symbol;
+    const _tokenSymbol = getTokenInfo(l1Token.toAddress(), this.hubChainId).symbol;
+    // Handle the special case for when we are bridging WBNB to BNB on L2.
+    this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
   }
 
   async constructL1ToL2Txn(
