@@ -406,7 +406,7 @@ async function processUnfinalizedHeliosMessages(
           ...logContext,
           message: "Proof generation errored on ZK API side. Requesting again.",
           proofId,
-          errorMessage: proofState.error_message!,
+          errorMessage: proofState.error_message,
         });
 
         await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
