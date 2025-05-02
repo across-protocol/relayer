@@ -7,20 +7,19 @@ import {
   getBinanceApiClient,
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
-  filterAsync,
   formatUnits,
   floatToBN,
   bnZero,
   getTokenInfo,
 } from "../../../utils";
-import { getAccountCoins } from "./common";
+import { getAccountCoins, getBinanceDepositsByNetwork, getBinanceWithdrawalsByNetwork } from "./common";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { FinalizerPromise } from "../../types";
 
 /**
- * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
- * Since we are finalizing from L2 to L1, though, we cannot re-use L1 bridge adapters, so we must
- * manually find finalized withdrawals.
+ * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Ethereum.
+ * This means we need to be cautious on the addresses to finalize, as a "finalization" is essentially a withdrawal
+ * from a Binance hot wallet.
  */
 export async function binanceL2ToL1Finalizer(
   logger: winston.Logger,
@@ -36,48 +35,46 @@ export async function binanceL2ToL1Finalizer(
 
   const binanceApi = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
-  const _depositHistory = await binanceApi.depositHistory({ startTime: fromTimestamp });
 
-  // We must filter historical deposits and withdrawals based on the starting network. Since this is a L2 to L1 finalizer, deposits should originate on Bsc.
-  // And withdrawals should end on Ethereum.
-  const depositHistory = Object.values(_depositHistory).filter((deposit) => deposit.network === "BSC");
+  const [binanceDeposits, accountCoins] = await Promise.all([
+    getBinanceDepositsByNetwork(binanceApi, hubSigner.provider, "BSC", fromTimestamp),
+    await getAccountCoins(binanceApi),
+  ]);
+
   logger.debug({
     at: "BinanceL2ToL1Finalizer",
-    message: `Found ${depositHistory.length} historical L2 deposits on Binance.`,
+    message: `Found ${binanceDeposits.length} historical L1 deposits with status === 1 on Binance Smart Chain.`,
     fromTimestamp: fromTimestamp / 1_000,
   });
 
-  // We also need to filter out deposits which are not ready to be finalized. A deposit.status of 1 means that the deposit has been fully processed and can be withdrawn on L2.
-  const finalizableDeposits = depositHistory.filter((deposit) => deposit.status === 1);
-
-  const accountCoins = await getAccountCoins(binanceApi);
-  // The outer loop goes through the addresses we wish to finalize.
-  for (const address of senderAddresses) {
-    const depositsInScope = await filterAsync(finalizableDeposits, async (deposit) => {
-      const depositTxnReceipt = await hubSigner.provider.getTransactionReceipt(deposit.txId);
-      return compareAddressesSimple(depositTxnReceipt.from, address);
-    });
+  await mapAsync(senderAddresses, async (address) => {
+    // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+    const depositsInScope = binanceDeposits.filter((deposit) =>
+      compareAddressesSimple(deposit.externalAddress, address)
+    );
     if (depositsInScope.length === 0) {
       logger.debug({
         at: "BinanceL2ToL1Finalizer",
         message: `No finalizable deposits found for ${address}`,
-        numberOfDeposits: finalizableDeposits.length,
         fromTimestamp: fromTimestamp / 1_000,
       });
-      continue;
+      return;
     }
+
     // The inner loop finalizes all deposits for all supported tokens for the address.
     await mapAsync(SUPPORTED_TOKENS[chainId], async (symbol) => {
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       const networkLimits = coin.networkList.find((network) => network.name === "ETH");
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(l1Token, hubChainId);
+
+      // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
       const depositAmounts = depositsInScope
         .filter((deposit) => deposit.coin === symbol)
         .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
-      const withdrawals = await binanceApi.withdrawHistory({ coin: symbol, startTime: fromTimestamp });
-      const withdrawalsInScope = Object.values(withdrawals).filter(
-        (withdrawal) => compareAddressesSimple(withdrawal.address, address) && withdrawal.network === "ETH"
+      const withdrawals = await getBinanceWithdrawalsByNetwork(binanceApi, "ETH", symbol, fromTimestamp);
+      const withdrawalsInScope = withdrawals.filter((withdrawal) =>
+        compareAddressesSimple(withdrawal.externalAddress, address)
       );
       const withdrawalAmounts = withdrawalsInScope.reduce(
         (sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)),
@@ -87,22 +84,26 @@ export async function binanceL2ToL1Finalizer(
       // The amount we are able to finalize is `depositAmounts - withdrawalAmounts`. It is possible for `depositAmounts` to be less than `withdrawalAmounts` if there is a gap between
       // the lookback windows used to query deposits and withdrawals, so we require this value to be > bnZero.
       const _amountToFinalize = depositAmounts.sub(withdrawalAmounts);
-      const amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
+      let amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
 
-      // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum (which may happen if there is dust left over from precision loss), then
-      // do not attempt to withdraw anything.
-      const canWithdraw =
-        amountToFinalize >= Number(networkLimits.withdrawMin) && amountToFinalize <= Number(networkLimits.withdrawMax);
       logger.debug({
         at: "BinanceL2ToL1Finalizer",
         message: `${symbol} withdrawals for ${address}`,
         totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
-        withdrawalAmounts: formatUnits(withdrawalAmounts, l1Decimals),
+        withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
         amountToFinalize,
-        canWithdraw,
       });
-      if (canWithdraw) {
-        await binanceApi.withdraw({
+      // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
+      // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
+      if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
+        logger.warn({
+          at: "BinanceL2ToL1Finalizer",
+          message: `Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
+        });
+        amountToFinalize = Number(networkLimits.withdrawMax);
+      }
+      if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
+        const withdrawalId = await binanceApi.withdraw({
           coin: symbol,
           address,
           network: "ETH",
@@ -111,12 +112,18 @@ export async function binanceL2ToL1Finalizer(
         });
         logger.info({
           at: "BinanceL2ToL1Finalizer",
-          message: `Finalized ${symbol} deposit on ETH`,
+          message: `Finalized deposit on ETH for ${amountToFinalize} ${symbol}`,
           amount: amountToFinalize,
+          withdrawalId,
+        });
+      } else {
+        logger.debug({
+          at: "BinanceL2ToL1Finalizer",
+          message: `${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}`,
         });
       }
     });
-  }
+  });
   return Promise.resolve({
     callData: [],
     crossChainMessages: [],
