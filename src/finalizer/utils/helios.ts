@@ -10,8 +10,9 @@ import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Univ
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
 import { StorageSlotVerifiedEvent } from "../../interfaces/Helios";
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
-import { calculateHubPoolStoreStorageSlot } from "../../utils/UniversalUtils";
+import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
+import { getSp1HeliosContract } from "../../utils/HeliosUtils";
 
 type CrossChainMessageStatus = "NeedsProofAndExecution" | "NeedsExecutionOnly";
 
@@ -563,29 +564,4 @@ async function generateHeliosTxns(
   });
 
   return { callData: transactions, crossChainMessages: crossChainMessages };
-}
-
-/**
- * Retrieves an ethers.Contract instance for the SP1Helios contract on the specified chain.
- * @throws {Error} If the SP1Helios contract address or ABI is not found for the given chainId in CONTRACT_ADDRESSES.
- */
-function getSp1HeliosContract(chainId: number, signerOrProvider: Signer | Provider): ethers.Contract {
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = CONTRACT_ADDRESSES[chainId].sp1Helios;
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    throw new Error(`SP1Helios contract not found for chain ${chainId}. Cannot verify Helios messages.`);
-  }
-  return new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, signerOrProvider);
-}
-
-/**
- * Retrieves an ethers.Contract instance for the HubPoolStore contract on the specified chain.
- * @throws {Error} If the HubPoolStore contract address or ABI is not found for the given chainId in CONTRACT_ADDRESSES.
- */
-function getHubPoolStoreContract(chainId: number, signerOrProvider: Signer | Provider) {
-  const hubPoolStoreInfo = CONTRACT_ADDRESSES[chainId]?.hubPoolStore;
-  if (!hubPoolStoreInfo?.address || !hubPoolStoreInfo.abi) {
-    throw new Error(`HubPoolStore contract address or ABI not found for chain ${chainId}.`);
-  }
-
-  return new ethers.Contract(hubPoolStoreInfo.address, hubPoolStoreInfo.abi as any, signerOrProvider);
 }

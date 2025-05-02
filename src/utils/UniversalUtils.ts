@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { BigNumber } from ".";
+import { BigNumber, Signer, Provider } from ".";
+import { CONTRACT_ADDRESSES } from "../common";
 
 /**
  * Calculates the storage slot in the HubPoolStore contract for a given nonce.
@@ -21,4 +22,17 @@ export function calculateHubPoolStoreStorageSlot(nonce: BigNumber): string {
   const storageSlot = ethers.utils.keccak256(concatenated);
 
   return storageSlot;
+}
+
+/**
+ * Retrieves an ethers.Contract instance for the HubPoolStore contract on the specified chain.
+ * @throws {Error} If the HubPoolStore contract address or ABI is not found for the given chainId in CONTRACT_ADDRESSES.
+ */
+export function getHubPoolStoreContract(chainId: number, signerOrProvider: Signer | Provider): ethers.Contract {
+  const hubPoolStoreInfo = CONTRACT_ADDRESSES[chainId]?.hubPoolStore;
+  if (!hubPoolStoreInfo?.address || !hubPoolStoreInfo.abi) {
+    throw new Error(`HubPoolStore contract address or ABI not found for chain ${chainId}.`);
+  }
+
+  return new ethers.Contract(hubPoolStoreInfo.address, hubPoolStoreInfo.abi as any, signerOrProvider);
 }
