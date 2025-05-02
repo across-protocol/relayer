@@ -20,6 +20,7 @@ import {
   _buildPoolRebalanceRoot,
   ERC20,
   getL1TokenInfo,
+  getTokenInfo,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2185,7 +2186,7 @@ export class Dataworker {
 
   protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
     return chainId === this.clients.hubPoolClient.chainId
-      ? this.clients.hubPoolClient.getTokenInfoForL1Token(l2Token)
+      ? getTokenInfo(l2Token, chainId)
       : getL1TokenInfo(l2Token, chainId);
   }
 
