@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
-import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple, Provider } from "../../utils";
+import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { CONTRACT_ADDRESSES } from "../../common";
