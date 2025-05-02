@@ -37,7 +37,7 @@ export async function binanceL2ToL1Finalizer(
   const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
 
   const [binanceDeposits, accountCoins] = await Promise.all([
-    getBinanceDepositsByNetwork(binanceApi, hubSigner.provider, "BSC", fromTimestamp),
+    getBinanceDepositsByNetwork(binanceApi, l2SpokePoolClient.spokePool.provider, "BSC", fromTimestamp),
     await getAccountCoins(binanceApi),
   ]);
 
