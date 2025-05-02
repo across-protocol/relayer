@@ -38,7 +38,7 @@ export class TokenClient {
     readonly relayerAddress: string,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly additionalTokens: string[] = []
+    readonly additionalL1Tokens: string[] = []
   ) {
     this.profiler = new Profiler({ at: "TokenClient", logger });
   }
@@ -352,8 +352,10 @@ export class TokenClient {
   private _getTokenClientTokens(): L1Token[] {
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
-    const additionalTokens = this.additionalTokens.map((l1Token) => getTokenInfo(l1Token, this.hubPoolClient.chainId));
-    return dedupArray([...hubPoolTokens, ...additionalTokens]);
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
+      getTokenInfo(l1Token, this.hubPoolClient.chainId)
+    );
+    return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
   protected async getRedis(): Promise<CachingMechanismInterface | undefined> {
