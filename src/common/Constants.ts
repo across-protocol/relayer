@@ -84,11 +84,13 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   10000: {
     [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.BSC]: 3, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 18,
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
@@ -262,7 +264,6 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
-  [CHAIN_IDs.BSC]: 57600,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.INK]: 86400,
@@ -307,7 +308,6 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 export const spokesThatHoldNativeTokens = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.BLAST,
-  CHAIN_IDs.BSC,
   CHAIN_IDs.UNICHAIN,
   CHAIN_IDs.INK,
   CHAIN_IDs.LENS,
