@@ -11,15 +11,15 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants@^3.1.46":
-  version "3.1.46"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.46.tgz#9f567eecd47eaa5035460193c49307f413623167"
-  integrity sha512-EHwFVLlSfwIOOQsqnL53UUPtjw9GUN1Y7PDEXUDttPxuqcc/IRDSp7xBnYgn7OWhrEg3404SzBKmc2A1l3Sqhw==
-
 "@across-protocol/constants@^3.1.63":
   version "3.1.63"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
   integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
+
+"@across-protocol/constants@^3.1.64":
+  version "3.1.64"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.64.tgz#bff5f7b51ceac55213b3236bbacb97ed80744ae5"
+  integrity sha512-mCQUYf6+/XnZCUdsnAMPqe2kPS12+a7c5bCxr0vNywrU9n/qwAlOLgqG0Bv8LxDu4Q8nxqTBq2Vet4Phh2mI/g==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -29,36 +29,6 @@
     "@eth-optimism/contracts" "^0.5.5"
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
-
-"@across-protocol/contracts@^4.0.5":
-  version "4.0.5"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.5.tgz#9844b20214bee078049c622f896300b4c1ee4d3c"
-  integrity sha512-14eezq7ABlPYsy/sPjcMGE7L/1MRRSwvHRaBDQHiFh100EHwO07GHCgP3JjPQAh0eYuO4RkvR+IGxtn3RFLi7w==
-  dependencies:
-    "@across-protocol/constants" "^3.1.46"
-    "@coral-xyz/anchor" "^0.30.1"
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "4.9.6"
-    "@openzeppelin/contracts-upgradeable" "4.9.6"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@solana-developers/helpers" "^2.4.0"
-    "@solana-program/token" "^0.5.1"
-    "@solana/kit" "^2.1.0"
-    "@solana/spl-token" "^0.4.6"
-    "@solana/web3.js" "^1.31.0"
-    "@types/yargs" "^17.0.33"
-    "@uma/common" "^2.37.3"
-    "@uma/contracts-node" "^0.4.17"
-    "@uma/core" "^2.61.0"
-    axios "^1.7.4"
-    bs58 "^6.0.0"
-    prettier-plugin-rust "^0.1.9"
-    yargs "^17.7.2"
-    zksync-web3 "^0.14.3"
 
 "@across-protocol/contracts@^4.0.9":
   version "4.0.9"
@@ -89,14 +59,14 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.55":
-  version "4.1.55"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.55.tgz#a85215fabb7abcbaf09a0edae761c30d2d5d63fa"
-  integrity sha512-1al7NZQj07bUZL+CFV4Rm1m2difSuxoeuQ28ULNaDlJ1Q1CbCE99pf/SIu36kBoXWXwjwFTx4fEGBt+1s8SNoA==
+"@across-protocol/sdk@4.1.56":
+  version "4.1.56"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.56.tgz#bcb83f6380d50b1cafcd6b7c9d8330fbc621dea0"
+  integrity sha512-82MOqQe2UZs11bTaBTqKF3Yyzcs6k7EDFUmb5+vcYJMAydo69WFe55OeQPiW5D+L4H3hdscWDhFkTifCDNEfCQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.63"
-    "@across-protocol/contracts" "^4.0.5"
+    "@across-protocol/constants" "^3.1.64"
+    "@across-protocol/contracts" "^4.0.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -2764,17 +2734,6 @@
   resolved "https://registry.yarnpkg.com/@sinonjs/text-encoding/-/text-encoding-0.7.1.tgz#8da5c6530915653f3a1f38fd5f101d8c3f8079c5"
   integrity sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
 
-"@solana-developers/helpers@^2.4.0":
-  version "2.5.6"
-  resolved "https://registry.yarnpkg.com/@solana-developers/helpers/-/helpers-2.5.6.tgz#2af7613ea6848ce087c0dec7cf38e6f172abcbd4"
-  integrity sha512-NPWZblVMl4LuVVSJOZG0ZF0VYnrMUjCyMNTiGwNUXPK2WWYJCqpuDyzs/PMqwvM4gMTjk4pEToBX8N2UxDvZkQ==
-  dependencies:
-    "@solana/spl-token" "^0.4.8"
-    "@solana/spl-token-metadata" "^0.1.4"
-    "@solana/web3.js" "^1.95.2"
-    bs58 "^6.0.0"
-    dotenv "^16.4.5"
-
 "@solana-program/token@^0.5.1":
   version "0.5.1"
   resolved "https://registry.yarnpkg.com/@solana-program/token/-/token-0.5.1.tgz#10e327df23f05a7f892fd33a9b6418f17dd62296"
@@ -3168,14 +3127,14 @@
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token-metadata@^0.1.4", "@solana/spl-token-metadata@^0.1.6":
+"@solana/spl-token-metadata@^0.1.6":
   version "0.1.6"
   resolved "https://registry.yarnpkg.com/@solana/spl-token-metadata/-/spl-token-metadata-0.1.6.tgz#d240947aed6e7318d637238022a7b0981b32ae80"
   integrity sha512-7sMt1rsm/zQOQcUWllQX9mD2O6KhSAtY1hFR2hfFwgqfFWzSY9E9GDvFVNYUI1F0iQKcm6HmePU9QbKRXTEBiA==
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token@^0.4.6", "@solana/spl-token@^0.4.8":
+"@solana/spl-token@^0.4.6":
   version "0.4.9"
   resolved "https://registry.yarnpkg.com/@solana/spl-token/-/spl-token-0.4.9.tgz#24d032d2935f237925c3b058ba6bb1e1ece5428c"
   integrity sha512-g3wbj4F4gq82YQlwqhPB0gHFXfgsC6UmyGMxtSLf/BozT/oKd59465DbnlUK8L8EcimKMavxsVAMoLcEdeCicg==
@@ -3271,7 +3230,7 @@
     rpc-websockets "^9.0.2"
     superstruct "^2.0.2"
 
-"@solana/web3.js@^1.31.0", "@solana/web3.js@^1.32.0", "@solana/web3.js@^1.68.0", "@solana/web3.js@^1.95.2":
+"@solana/web3.js@^1.31.0", "@solana/web3.js@^1.32.0", "@solana/web3.js@^1.68.0":
   version "1.95.4"
   resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-1.95.4.tgz#771603f60d75cf7556ad867e1fd2efae32f9ad09"
   integrity sha512-sdewnNEA42ZSMxqkzdwEWi6fDgzwtJHaQa5ndUGEJYtoOnM6X5cvPmjoTUp7/k7bRrVAxfBgDnvQQHD6yhlLYw==
@@ -6868,11 +6827,6 @@ dotenv@^16.3.1:
   version "16.3.1"
   resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.3.1.tgz#369034de7d7e5b120972693352a3bf112172cc3e"
   integrity sha512-IPzF4w4/Rd94bA9imS68tZBaYyBWSCE47V1RGuMrB94iyTOIEwRmVL2x/4An+6mETpLrKJ5hQkB8W4kFAadeIQ==
-
-dotenv@^16.4.5:
-  version "16.4.5"
-  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.4.5.tgz#cdd3b3b604cb327e286b4762e13502f717cb099f"
-  integrity sha512-ZmdL2rui+eB2YwhsWzjInR8LldtZHGDoQ1ugH85ppHKwpUHL7j7rN0Ti9NCnGiQbhaZ11FpR+7ao1dNsmduNUg==
 
 dotenv@^9.0.0:
   version "9.0.2"

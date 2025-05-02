@@ -20,6 +20,7 @@ import {
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
   getRemoteTokenForL1Token,
+  getTokenInfo,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -36,7 +37,8 @@ export class TokenClient {
     readonly logger: winston.Logger,
     readonly relayerAddress: string,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly hubPoolClient: HubPoolClient
+    readonly hubPoolClient: HubPoolClient,
+    readonly additionalTokens: string[] = []
   ) {
     this.profiler = new Profiler({ at: "TokenClient", logger });
   }
@@ -244,15 +246,14 @@ export class TokenClient {
   async update(): Promise<void> {
     const mark = this.profiler.start("update");
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-    const { hubPoolClient } = this;
 
-    const hubPoolTokens = hubPoolClient.getL1Tokens();
+    const tokenClientTokens = this._getTokenClientTokens();
     const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
 
     const balanceInfo = await Promise.all(
       chainIds
         .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
-        .map((chainId) => this.updateChain(chainId, hubPoolTokens))
+        .map((chainId) => this.updateChain(chainId, tokenClientTokens))
     );
 
     balanceInfo.forEach((tokenData, idx) => {
@@ -346,6 +347,13 @@ export class TokenClient {
       this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
     }
     return hasData;
+  }
+
+  private _getTokenClientTokens(): L1Token[] {
+    // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
+    const hubPoolTokens = this.hubPoolClient.getL1Tokens();
+    const additionalTokens = this.additionalTokens.map((l1Token) => getTokenInfo(l1Token, this.hubPoolClient.chainId));
+    return dedupArray([...hubPoolTokens, ...additionalTokens]);
   }
 
   protected async getRedis(): Promise<CachingMechanismInterface | undefined> {
