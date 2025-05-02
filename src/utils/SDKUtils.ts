@@ -68,6 +68,7 @@ export const {
   toBytes32,
   validateFillForDeposit,
   toAddressType,
+  getTokenInfo,
 } = sdk.utils;
 
 export const {

@@ -28,6 +28,7 @@ import {
   getL1TokenInfo,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
+  getTokenInfo,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
@@ -133,7 +134,7 @@ export class InventoryClient {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
 
-    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
     // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
@@ -204,7 +205,7 @@ export class InventoryClient {
     }
 
     const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const shortfall = sdkUtils.ConvertDecimals(
       l2TokenDecimals,
       l1TokenDecimals
@@ -316,7 +317,7 @@ export class InventoryClient {
   // @notice Returns refunds using decimals of the l1Token.
   private async getBundleRefunds(l1Token: string): Promise<{ [chainId: string]: BigNumber }> {
     let refundsToConsider: CombinedRefunds[] = [];
-    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
     let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
@@ -389,9 +390,7 @@ export class InventoryClient {
   }
 
   getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    return chainId === this.hubPoolClient.chainId
-      ? this.hubPoolClient.getTokenInfoForL1Token(l2Token)
-      : getL1TokenInfo(l2Token, chainId);
+    return chainId === this.hubPoolClient.chainId ? getTokenInfo(l2Token, chainId) : getL1TokenInfo(l2Token, chainId);
   }
 
   /**
@@ -482,7 +481,7 @@ export class InventoryClient {
     }
 
     l1Token ??= this.getL1TokenInfo(inputToken, originChainId).address;
-    const { decimals: l1TokenDecimals } = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
@@ -685,7 +684,7 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     const mark = this.profiler.start("getLatestRunningBalances");
     const chainIds = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
-    const l1TokenDecimals = this.hubPoolClient.getTokenInfoForL1Token(l1Token).decimals;
+    const l1TokenDecimals = getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals;
     const runningBalances = Object.fromEntries(
       await sdkUtils.mapAsync(chainsToEvaluate, async (chainId) => {
         const chainIdIndex = chainIds.indexOf(chainId);
@@ -992,7 +991,7 @@ export class InventoryClient {
           }
           const { symbol, decimals } = tokenInfo;
           const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
-          const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
           const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
           mrkdwn +=
@@ -1020,7 +1019,7 @@ export class InventoryClient {
               `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
             );
           }
-          const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+          const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
           const l1Formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
           const { symbol, decimals } = tokenInfo;
@@ -1199,7 +1198,7 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
-      const l1TokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
       // We do not currently count any outstanding L2->L1 pending withdrawal balance in the cumulative balance
@@ -1387,7 +1386,7 @@ export class InventoryClient {
     } = {};
     const cumulativeBalances: { [symbol: string]: string } = {};
     Object.entries(distribution).forEach(([l1Token, distributionForToken]) => {
-      const tokenInfo = this.hubPoolClient.getTokenInfoForL1Token(l1Token);
+      const tokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       if (tokenInfo === undefined) {
         throw new Error(
           `InventoryClient::constructConsideringRebalanceDebugLog info not found for L1 token ${l1Token}`

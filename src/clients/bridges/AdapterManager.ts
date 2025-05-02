@@ -22,6 +22,7 @@ import {
   toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
   getRemoteTokenForL1Token,
+  getTokenInfo,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -134,7 +135,7 @@ export class AdapterManager {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
-      const tokenSymbol = this.hubPoolClient.getTokenInfoForL1Token(token).symbol;
+      const tokenSymbol = getTokenInfo(token, this.hubPoolClient.chainId).symbol;
       return (
         adapter.supportedTokens.includes(tokenSymbol) ||
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])

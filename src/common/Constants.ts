@@ -82,11 +82,13 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   10000: {
     [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.BSC]: 3, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 18,
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
@@ -95,6 +97,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
+    [CHAIN_IDs.BSC]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
 };
@@ -124,6 +127,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
+  [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.UNICHAIN]: 10000,
   [CHAIN_IDs.INK]: 10000,
   [CHAIN_IDs.LENS]: 10000,
@@ -164,6 +168,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
+  [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
   [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
   [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
@@ -218,6 +223,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
+  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probablistic but it takes an average of 2.5 blocks.
   [CHAIN_IDs.UNICHAIN]: 120,
   [CHAIN_IDs.INK]: 120, // Follows Optimism
   [CHAIN_IDs.LENS]: 512,

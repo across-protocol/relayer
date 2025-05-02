@@ -26,7 +26,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Sanity check to verify that the chain id & block number are positive integers
       if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
         this.logger.warn({
-          at: "ConfigStore[Relayer]#constructor",
+          at: "ConfigStoreClient#constructor",
           message: `Invalid injected chain id inclusion: ${injectedChains}`,
         });
       }
