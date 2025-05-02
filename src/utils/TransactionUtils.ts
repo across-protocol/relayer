@@ -95,12 +95,6 @@ export async function runTransaction(
     // Check if the chain requires legacy transactions
     if (LEGACY_TRANSACTION_CHAINS.has(chainId)) {
       gas = { gasPrice: gas.maxFeePerGas };
-      logger.debug({
-        at: "TxUtil#runTransaction",
-        message: `Forcing legacy gasPrice for chainId ${chainId}`,
-        chainId,
-        gasPrice: gas.gasPrice?.toString(),
-      });
     }
 
     logger.debug({

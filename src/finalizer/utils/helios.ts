@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
-import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
+import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple, Provider } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { Log } from "../../interfaces";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -294,11 +294,7 @@ async function getRelevantL1Events(
 
   const hubPoolStoreInfo = CONTRACT_ADDRESSES[l1ChainId]?.hubPoolStore;
   if (!hubPoolStoreInfo?.address || !hubPoolStoreInfo.abi) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getAndFilterL1Events:${l2ChainId}`,
-      message: `HubPoolStore contract address or ABI not found for L1 chain ${l1ChainId}.`,
-    });
-    return null;
+    throw new Error(`HubPoolStore contract address or ABI not found for L1 chain ${l1ChainId}.`);
   }
 
   const hubPoolStoreContract = new ethers.Contract(hubPoolStoreInfo.address, hubPoolStoreInfo.abi as any, l1Provider);
@@ -358,16 +354,7 @@ async function getL2VerifiedSlotsMap(
   l2ChainId: number
 ): Promise<Map<string, StorageSlotVerifiedEvent> | null> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
-
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedKeys:${l2ChainId}`,
-      message: `SP1Helios contract not found for destination chain ${l2ChainId}. Cannot verify Helios messages.`,
-    });
-    return null;
-  }
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2Provider);
+  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   const l2SearchConfig: EventSearchConfig = {
     fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
@@ -388,7 +375,7 @@ async function getL2VerifiedSlotsMap(
     logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Found ${events.length} StorageSlotVerified events on L2 (${l2ChainId})`,
-      sp1HeliosAddress,
+      sp1HeliosAddress: sp1HeliosContract.address,
       fromBlock: l2SearchConfig.fromBlock,
       toBlock: l2SearchConfig.toBlock,
     });
@@ -411,7 +398,7 @@ async function getL2VerifiedSlotsMap(
     logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:getL2VerifiedSlotsMap:${l2ChainId}`,
       message: `Failed to query StorageSlotVerified events from L2 (${l2ChainId})`,
-      sp1HeliosAddress,
+      sp1HeliosAddress: sp1HeliosContract,
       error,
     });
     return null; // Return null on error
@@ -426,18 +413,17 @@ async function getL2RelayedNonces(
 ): Promise<Set<string> | null> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
-  // Use the Universal Spoke Pool ABI for this event
-  const spokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
+  const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
 
   const l2SearchConfig: EventSearchConfig = {
     fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
     toBlock: l2SpokePoolClient.latestBlockSearched,
     maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
-  const relayedCallDataFilter = spokePoolContract.filters.RelayedCallData();
+  const relayedCallDataFilter = universalSpokePoolContract.filters.RelayedCallData();
 
   try {
-    const rawLogs = await paginatedEventQuery(spokePoolContract, relayedCallDataFilter, l2SearchConfig);
+    const rawLogs = await paginatedEventQuery(universalSpokePoolContract, relayedCallDataFilter, l2SearchConfig);
 
     const events: RelayedCallDataEvent[] = rawLogs.map((log) => ({
       ...log,
@@ -503,15 +489,7 @@ async function processUnfinalizedHeliosMessages(
     return [];
   }
   const hubPoolStoreAddress = hubPoolStoreInfo.address;
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  if (!sp1HeliosAddress || !sp1HeliosAbi) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
-      message: `SP1Helios contract not found for L2 chain ${l2ChainId}.`,
-    });
-    return [];
-  }
-  const sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2Provider);
+  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   let currentHead: number;
   let currentHeader: string;
@@ -527,12 +505,12 @@ async function processUnfinalizedHeliosMessages(
     logger.debug({
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
       message: `Using SP1Helios head ${currentHead} and header ${currentHeader} for proof requests.`,
-      sp1HeliosAddress,
+      sp1HeliosAddress: sp1HeliosContract.address,
     });
   } catch (error) {
     logger.warn({
       at: `Finalizer#heliosL1toL2Finalizer:processUnfinalizedHeliosMessages:${l2ChainId}`,
-      message: `Failed to read current head/header from SP1Helios contract ${sp1HeliosAddress}`,
+      message: `Failed to read current head/header from SP1Helios contract ${sp1HeliosContract.address}`,
       error,
     });
     return [];
@@ -694,19 +672,7 @@ async function generateHeliosTxns(
   const transactions: AugmentedTransaction[] = [];
   const crossChainMessages: CrossChainMessage[] = [];
 
-  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = getSp1Helios(l2ChainId);
-  let sp1HeliosContract: ethers.Contract | null = null;
-  if (sp1HeliosAddress && sp1HeliosAbi && successfulProofs.length > 0) {
-    sp1HeliosContract = new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, l2SpokePoolClient.spokePool.signer);
-  } else if (successfulProofs.length > 0) {
-    logger.error({
-      at: `Finalizer#heliosL1toL2Finalizer:generateHeliosTxns:${l2ChainId}`,
-      message: `SP1Helios contract missing for L2 chain ${l2ChainId}, but proofs were provided. Cannot generate 'update' txns.`,
-    });
-    // Cannot proceed with proofs without the contract
-    // We might still be able to process needsExecutionOnly, so don't return yet
-  }
-
+  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2SpokePoolClient.spokePool.signer);
   const spokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(
     spokePoolAddress,
@@ -776,13 +742,6 @@ async function generateHeliosTxns(
 
   // --- Process messages needing proof and execution ---
   for (const proof of successfulProofs) {
-    if (!sp1HeliosContract) {
-      logger.error({
-        at: `Finalizer#heliosL1toL2Finalizer:generateTxnItem:${l2ChainId}`,
-        message: `SP1Helios contract instance not available. Skipping full finalization for nonce ${proof.sourceNonce.toString()}`,
-      });
-      continue; // Skip this proof if contract is missing
-    }
     try {
       // Ensure the hex strings have the '0x' prefix, adding it only if missing.
       const proofBytes = proof.proofData.proof.startsWith("0x") ? proof.proofData.proof : "0x" + proof.proofData.proof;
@@ -919,6 +878,10 @@ function calculateProofId(request: ApiProofRequest): string {
   return ethers.utils.keccak256(encoded);
 }
 
-function getSp1Helios(dstChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[dstChainId].sp1Helios;
+function getSp1HeliosContract(dstChainId: number, signerOrProvider: Signer | Provider): ethers.Contract {
+  const { address: sp1HeliosAddress, abi: sp1HeliosAbi } = CONTRACT_ADDRESSES[dstChainId].sp1Helios;
+  if (!sp1HeliosAddress || !sp1HeliosAbi) {
+    throw new Error(`SP1Helios contract not found for destination chain ${dstChainId}. Cannot verify Helios messages.`);
+  }
+  return new ethers.Contract(sp1HeliosAddress, sp1HeliosAbi as any, signerOrProvider);
 }
