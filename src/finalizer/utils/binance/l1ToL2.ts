@@ -63,8 +63,9 @@ export async function binanceL1ToL2Finalizer(
 
     // The inner loop finalizes all deposits for all supported tokens for the address.
     await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // An exception for L1 to L2 is WBNB, which we must re-map to BNB.
-      const symbol = _symbol === "WBNB" ? "BNB" : _symbol;
+      // For the l1 to l2 finalizer, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+      const symbol = _symbol[0] === "W" ? _symbol.slice(1) : _symbol;
+
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       const networkLimits = coin.networkList.find((network) => network.name === "BSC");
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];

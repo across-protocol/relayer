@@ -20,8 +20,8 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
-  private readonly binanceApiClient;
-  private readonly tokenSymbol: string;
+  protected readonly binanceApiClient;
+  protected tokenSymbol: string;
 
   constructor(
     l2chainId: number,

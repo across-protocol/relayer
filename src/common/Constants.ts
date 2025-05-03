@@ -29,6 +29,7 @@ import {
   ZKStackBridge,
   ZKStackWethBridge,
   BinanceCEXBridge,
+  BinanceCEXNativeBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -36,6 +37,7 @@ import {
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
+  BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
@@ -329,7 +331,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
-  [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT"],
+  [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO"],
@@ -464,6 +466,9 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
+  [CHAIN_IDs.BSC]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: BinanceCEXNativeBridge,
+  },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -560,6 +565,9 @@ export const CUSTOM_L2_BRIDGE: {
     };
   };
 } = {
+  [CHAIN_IDs.BSC]: {
+    [TOKEN_SYMBOLS_MAP.BNB.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
+  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
