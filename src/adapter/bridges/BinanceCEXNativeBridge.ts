@@ -5,6 +5,7 @@ import { BinanceCEXBridge } from "./";
 
 export class BinanceCEXNativeBridge extends BinanceCEXBridge {
   protected readonly atomicDepositor: Contract;
+  protected readonly transferProxy: Contract;
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -18,6 +19,10 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
       CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, this.l1Signer);
+
+    const { address: transferProxyAddress, abi: transferProxyAbi } =
+      CONTRACT_ADDRESSES[this.hubChainId].atomicDepositorTransferProxy;
+    this.transferProxy = new Contract(transferProxyAddress, transferProxyAbi);
     // Overwrite the token symbol to ETH.
     this.tokenSymbol = "ETH";
     // Also overwrite the l1Gateway to the atomic depositor.
@@ -37,7 +42,9 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       coin: this.tokenSymbol,
       network: "ETH",
     });
-    const bridgeCalldata = "0x"; // TODO
+    // We need to call the atomic depositor, which calls the transfer proxy, which transfers raw ETH to the deposit Address.
+    const bridgeCalldata = this.transferProxy.interface.encodeFunctionData("transfer", [depositAddress.address]);
+
     // Once we have the address, create a transfer to the deposit address routed via the multicall handler. Then, call the atomic depositor.
     return {
       method: "bridgeWeth",
