@@ -3,7 +3,7 @@ import assert from "assert";
 import { Contract, ethers } from "ethers";
 import { getAddress } from "ethers/lib/utils";
 import { groupBy, uniq } from "lodash";
-import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
 import {
   CONTRACT_ADDRESSES,
   Clients,
@@ -16,7 +16,6 @@ import {
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
-  BigNumber,
   bnZero,
   Signer,
   blockExplorerLink,
@@ -305,128 +304,83 @@ export async function finalize(
       .map(([k]) => k)}`
   );
 
-  const txnClient = new TransactionClient(logger);
+  const gasEstimation = bnZero;
 
-  let gasEstimation = bnZero;
-  const batchGasLimit = BigNumber.from(10_000_000);
-  // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
-  // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
-
-  // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, crossChainMessage }) => {
-    const txnToSubmit: AugmentedTransaction = {
-      contract: multicall2Lookup[crossChainMessage.destinationChainId],
-      chainId: crossChainMessage.destinationChainId,
-      method: "aggregate",
-      // aggregate() takes an array of tuples: [calldata: bytes, target: address].
-      args: [[_txn]],
-    };
-    const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
-
-    if (succeed) {
-      // Increase running counter of estimated gas cost for batch finalization.
-      // gasLimit should be defined if succeed is True.
-      const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
-      if (updatedGasEstimation.lt(batchGasLimit)) {
-        gasEstimation = updatedGasEstimation;
-        return true;
-      } else {
-        return false;
-      }
+  // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
+  // safety features. This only works because we assume all finalizer transactions are
+  // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
+  // the TransactionClient.
+  const multicallerClient = new MultiCallerClient(logger);
+  let txnRefLookup: Record<number, string[]> = {};
+  try {
+    const finalizationsByChain = groupBy(
+      finalizationsToBatch,
+      ({ crossChainMessage }) => crossChainMessage.destinationChainId
+    );
+    for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
+      const finalizerTxns = finalizations.map(({ txn }) => txn);
+      const txnToSubmit: AugmentedTransaction = {
+        contract: multicall2Lookup[Number(chainId)],
+        chainId: Number(chainId),
+        method: "aggregate",
+        args: [finalizerTxns],
+        gasLimit: gasEstimation,
+        gasLimitMultiplier: 2,
+        unpermissioned: true,
+        message: `Batch finalized ${finalizerTxns.length} txns`,
+        mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
+      };
+      multicallerClient.enqueueTransaction(txnToSubmit);
     }
+    txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
+  } catch (_error) {
+    const error = _error as Error;
+    logger.warn({
+      at: "Finalizer",
+      message: "Error creating aggregateTx",
+      reason: error.stack || error.message || error.toString(),
+      notificationPath: "across-error",
+      finalizationsToBatch,
+    });
+    return;
+  }
 
-    // Simulation failed, log the reason and continue.
-    let message: string;
-    if (isDefined(crossChainMessage)) {
-      const { originationChainId, destinationChainId, type, l1TokenSymbol, amount } = crossChainMessage;
-      const originationNetwork = getNetworkName(originationChainId);
-      const destinationNetwork = getNetworkName(destinationChainId);
-      message = `Failed to estimate gas for ${originationNetwork} -> ${destinationNetwork} ${amount} ${l1TokenSymbol} ${type}.`;
-    } else {
-      // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
-      message = "Unknown finalizer simulation failure.";
+  const { transfers = [], misc = [] } = groupBy(
+    finalizationsToBatch.filter(({ crossChainMessage }) => isDefined(crossChainMessage)),
+    ({ crossChainMessage: { type } }) => {
+      return type === "misc" ? "misc" : "transfers";
     }
-    logger.warn({ at: "finalizer", message, reason, txn: _txn });
-    return false;
-  });
+  );
 
-  if (finalizations.length > 0) {
-    // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
-    // safety features. This only works because we assume all finalizer transactions are
-    // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
-    // the TransactionClient.
-    const multicallerClient = new MultiCallerClient(logger);
-    let txnRefLookup: Record<number, string[]> = {};
-    try {
-      const finalizationsByChain = groupBy(
-        finalizations,
-        ({ crossChainMessage }) => crossChainMessage.destinationChainId
-      );
-      for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
-        const finalizerTxns = finalizations.map(({ txn }) => txn);
-        const txnToSubmit: AugmentedTransaction = {
-          contract: multicall2Lookup[Number(chainId)],
-          chainId: Number(chainId),
-          method: "aggregate",
-          args: [finalizerTxns],
-          gasLimit: gasEstimation,
-          gasLimitMultiplier: 2,
-          unpermissioned: true,
-          message: `Batch finalized ${finalizerTxns.length} txns`,
-          mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
-        };
-        multicallerClient.enqueueTransaction(txnToSubmit);
-      }
-      txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
-    } catch (_error) {
-      const error = _error as Error;
-      logger.warn({
-        at: "Finalizer",
-        message: "Error creating aggregateTx",
-        reason: error.stack || error.message || error.toString(),
-        notificationPath: "across-error",
-        finalizations,
-      });
+  misc.forEach(({ crossChainMessage }) => {
+    const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainMessage;
+    // Required for tsc to be happy.
+    if (type !== "misc") {
       return;
     }
-
-    const { transfers = [], misc = [] } = groupBy(
-      finalizations.filter(({ crossChainMessage }) => isDefined(crossChainMessage)),
-      ({ crossChainMessage: { type } }) => {
-        return type === "misc" ? "misc" : "transfers";
-      }
-    );
-
-    misc.forEach(({ crossChainMessage }) => {
-      const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainMessage;
-      // Required for tsc to be happy.
-      if (type !== "misc") {
-        return;
-      }
-      const { miscReason } = crossChainMessage;
+    const { miscReason } = crossChainMessage;
+    const originationNetwork = getNetworkName(originationChainId);
+    const destinationNetwork = getNetworkName(destinationChainId);
+    const infoLogMessage =
+      amount && symbol ? `to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜` : "";
+    logger.info({
+      at: "Finalizer",
+      message: `Submitted ${miscReason} on ${destinationNetwork}`,
+      infoLogMessage,
+      txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
+    });
+  });
+  transfers.forEach(
+    ({ crossChainMessage: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
       const originationNetwork = getNetworkName(originationChainId);
       const destinationNetwork = getNetworkName(destinationChainId);
-      const infoLogMessage =
-        amount && symbol ? `to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜` : "";
       logger.info({
         at: "Finalizer",
-        message: `Submitted ${miscReason} on ${destinationNetwork}`,
-        infoLogMessage,
+        message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
         txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
       });
-    });
-    transfers.forEach(
-      ({ crossChainMessage: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
-        const originationNetwork = getNetworkName(originationChainId);
-        const destinationNetwork = getNetworkName(destinationChainId);
-        logger.info({
-          at: "Finalizer",
-          message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
-        });
-      }
-    );
-  }
+    }
+  );
 }
 
 export async function constructFinalizerClients(
