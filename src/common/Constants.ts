@@ -37,7 +37,6 @@ import {
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
-  BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
@@ -565,9 +564,6 @@ export const CUSTOM_L2_BRIDGE: {
     };
   };
 } = {
-  [CHAIN_IDs.BSC]: {
-    [TOKEN_SYMBOLS_MAP.BNB.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXNativeBridge,
-  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
