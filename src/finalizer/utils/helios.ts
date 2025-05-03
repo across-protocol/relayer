@@ -1,6 +1,13 @@
-import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
-import { EventSearchConfig, Signer, winston, paginatedEventQuery, compareAddressesSimple } from "../../utils";
+import {
+  EventSearchConfig,
+  Signer,
+  winston,
+  paginatedEventQuery,
+  compareAddressesSimple,
+  ethers,
+  BigNumber,
+} from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -213,9 +220,15 @@ async function getRelevantL1Events(
   const l1Provider = hubPoolClient.hubPool.provider;
   const hubPoolStoreContract = getHubPoolStoreContract(l1ChainId, l1Provider);
 
+  /**
+   * @dev We artificially shorten the lookback time peiod for L1 events by a factor of 2. We want to avoid race conditions where
+   * we see an old event on L1, but not look back far enough on L2 to see that the event has been executed successfully.
+   */
+  const toBlock = l1SpokePoolClient.latestBlockSearched;
+  const fromBlock = Math.floor((l1SpokePoolClient.eventSearchConfig.fromBlock + toBlock) / 2);
   const l1SearchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
+    fromBlock: fromBlock,
+    toBlock: toBlock,
     maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
   };
 
@@ -544,6 +557,8 @@ async function generateHeliosTxns(
       unpermissioned: true,
       // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
       canFailInSimulation: true,
+      // todo? this hardcoded gas limit of 2 mil could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
+      gasLimit: BigNumber.from(2000000),
       message: `Finalize Helios msg (HubPoolStore nonce ${proof.sourceNonce.toString()}) - Step 2: Execute on SpokePool`,
     };
     transactions.push(executeTx);
