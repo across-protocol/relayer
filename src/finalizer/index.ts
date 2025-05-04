@@ -304,8 +304,6 @@ export async function finalize(
       .map(([k]) => k)}`
   );
 
-  const gasEstimation = bnZero;
-
   // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
   // safety features. This only works because we assume all finalizer transactions are
   // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
@@ -324,7 +322,6 @@ export async function finalize(
         chainId: Number(chainId),
         method: "aggregate",
         args: [finalizerTxns],
-        gasLimit: gasEstimation,
         gasLimitMultiplier: 2,
         unpermissioned: true,
         message: `Batch finalized ${finalizerTxns.length} txns`,
