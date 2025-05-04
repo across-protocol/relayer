@@ -16,7 +16,6 @@ import {
 import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
-  bnZero,
   Signer,
   blockExplorerLink,
   config,
