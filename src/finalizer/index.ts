@@ -294,8 +294,8 @@ export async function finalize(
         hubChainId,
         ...configuredChainIds,
       ]).map(
-        async (chainId) =>
-          [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
+        (chainId) =>
+          [chainId, getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
       )
     )
   );

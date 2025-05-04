@@ -16,6 +16,7 @@ import {
   getProvider,
   Multicall2Call,
   assert,
+  getPermissionedMultisender,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
 import lodash from "lodash";
@@ -260,10 +261,21 @@ export class MultiCallerClient {
     return this.baseSigner ? getMultisender(chainId, this.baseSigner.connect(await getProvider(chainId))) : undefined;
   }
 
+  async _getPermissionedMultisender(chainId: number): Promise<Contract | undefined> {
+    return this.baseSigner
+      ? getPermissionedMultisender(chainId, this.baseSigner.connect(await getProvider(chainId)))
+      : undefined;
+  }
+
   async buildMultiSenderBundle(transactions: AugmentedTransaction[]): Promise<AugmentedTransaction> {
     // Validate all transactions have the same chainId and can be sent from multisender.
     const { chainId } = transactions[0];
-    const multisender = await this._getMultisender(chainId);
+    // If any transactions are to be sent through the permissioned multisender, then we should use that instead
+    // of the default multisender. This means that the caller must only batch transactions to this chain that can
+    // be executed from the permissioned multisender.
+    const multisender = transactions.some((t) => t.sendThroughPermissionedMulticall)
+      ? await this._getPermissionedMultisender(chainId)
+      : await this._getMultisender(chainId);
     if (!multisender) {
       throw new Error("Multisender not available for this chain");
     }
@@ -272,12 +284,17 @@ export class MultiCallerClient {
     const callData: Multicall2Call[] = [];
     let gasLimit: BigNumber | undefined = bnZero;
     transactions.forEach((txn, idx) => {
-      if (!txn.unpermissioned || txn.chainId !== chainId) {
+      if (!txn.unpermissioned || !txn.sendThroughPermissionedMulticall || txn.chainId !== chainId) {
         this.logger.error({
           at: "MultiCallerClient#buildMultiSenderBundle",
           message: "Some transactions in the queue contain different target chain or are permissioned",
           transactions: transactions.map(({ contract, chainId, unpermissioned }) => {
-            return { target: getTarget(contract.address), unpermissioned: Boolean(unpermissioned), chainId };
+            return {
+              target: getTarget(contract.address),
+              unpermissioned: Boolean(unpermissioned),
+              sendThroughPermissionedMulticall: Boolean(txn.sendThroughPermissionedMulticall),
+              chainId,
+            };
           }),
           notificationPath: "across-error",
         });
@@ -380,7 +397,7 @@ export class MultiCallerClient {
       multisenderTxns = [],
       unsendableTxns = [],
     } = lodash.groupBy(txns, (txn) => {
-      if (txn.unpermissioned) {
+      if (txn.unpermissioned || txn.sendThroughPermissionedMulticall) {
         return "multisenderTxns";
       } else if (txn.contract.multicall) {
         return "multicallerTxns";
