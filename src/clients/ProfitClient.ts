@@ -574,7 +574,9 @@ export class ProfitClient {
       tokens[symbol] ??= nativeTokenAddress;
     });
 
-    ["BNB", "CAKE"].forEach((symbol) => {
+    // Manually add additional token prices as required. This can be
+    // needed for tokens without a pool rebalance route. @todo: fix.
+    ["CAKE"].forEach((symbol) => {
       const address = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
       this.tokenSymbolMap[symbol] ??= address;
       this.tokenPrices[address] ??= bnZero;
