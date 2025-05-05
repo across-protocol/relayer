@@ -458,9 +458,10 @@ export class InventoryClient {
       return [];
     }
 
+    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [
-        depositForcesOriginChainRepayment(deposit, this.hubPoolClient) ||
+        forceOriginRepayment &&
         !this.canTakeDestinationChainRepayment(deposit)
           ? originChainId
           : destinationChainId,
@@ -478,6 +479,11 @@ export class InventoryClient {
         `Unexpected ${dstChain} output token on ${srcChain} deposit ${deposit.depositId.toString()}` +
           ` (${inputToken} != ${outputToken})`
       );
+    }
+
+    // The hub chain is magical; don't fumble repayment based on perceived over-allocation.
+    if (forceOriginRepayment && deposit.originChainId === hubChainId) {
+      return [hubChainId];
     }
 
     l1Token ??= this.getL1TokenInfo(inputToken, originChainId).address;
@@ -501,7 +507,7 @@ export class InventoryClient {
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && this.prioritizeLpUtilization) {
+    if (!forceOriginRepayment && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
         inputAmountInL1TokenDecimals,
@@ -535,7 +541,7 @@ export class InventoryClient {
       this.canTakeDestinationChainRepayment(deposit) &&
       !chainsToEvaluate.includes(destinationChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
-      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient)
+      !forceOriginRepayment
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
@@ -659,7 +665,7 @@ export class InventoryClient {
     // funds from.
     // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
     if (
-      depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
+      forceOriginRepayment &&
       (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))
     ) {
       return [];
