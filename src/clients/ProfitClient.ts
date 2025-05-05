@@ -574,6 +574,12 @@ export class ProfitClient {
       tokens[symbol] ??= nativeTokenAddress;
     });
 
+    ["BNB", "CAKE"].forEach((symbol) => {
+      const address = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+      this.tokenSymbolMap[symbol] ??= address;
+      this.tokenPrices[address] ??= bnZero;
+    });
+
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
 
     // Pre-populate any new addresses.
