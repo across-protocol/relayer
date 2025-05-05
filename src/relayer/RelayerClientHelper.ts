@@ -137,7 +137,8 @@ export async function constructRelayerClients(
     config.debugProfitability,
     config.relayerGasMultiplier,
     config.relayerMessageGasMultiplier,
-    config.relayerGasPadding
+    config.relayerGasPadding,
+    inventoryConfigTokens
   );
   await profitClient.update();
 
