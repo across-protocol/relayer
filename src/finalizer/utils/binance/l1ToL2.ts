@@ -109,7 +109,7 @@ export async function binanceL1ToL2Finalizer(
       // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
       // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
       if (amountToFinalize > Number(coin.balance)) {
-        logger.warn({
+        logger.debug({
           at: "BinanceL1ToL2Finalizer",
           message:
             "Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount",
