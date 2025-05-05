@@ -1248,7 +1248,8 @@ export class Relayer {
     if (
       !isDefined(preferredChain) &&
       !preferredChainIds.includes(destinationChainId) &&
-      !depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
+      !depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) &&
+      this.clients.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId)
     ) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
