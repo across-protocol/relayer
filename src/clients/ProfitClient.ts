@@ -180,7 +180,9 @@ export class ProfitClient {
       return token;
     }
     const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
-    const address = this.tokenSymbolMap[remappedTokenSymbol];
+    // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
+    // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
+    const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
     assert(
       isDefined(address),
       `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
