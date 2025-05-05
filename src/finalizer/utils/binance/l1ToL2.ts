@@ -33,6 +33,7 @@ export async function binanceL1ToL2Finalizer(
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
+  senderAddresses = ["0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"];
   const binanceApi = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
 
@@ -104,6 +105,18 @@ export async function binanceL1ToL2Finalizer(
           message: `Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
         });
         amountToFinalize = Number(networkLimits.withdrawMax);
+      }
+      // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
+      // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
+      if (amountToFinalize > Number(coin.balance)) {
+        logger.warn({
+          at: "BinanceL1ToL2Finalizer",
+          message:
+            "Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount",
+          amountToFinalize,
+          balance: coin.balance,
+        });
+        amountToFinalize = Number(coin.balance);
       }
       if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
         const withdrawalId = await binanceApi.withdraw({
