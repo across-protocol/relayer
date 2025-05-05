@@ -120,7 +120,7 @@ export async function constructRelayerClients(
 
   const relayerTokens = sdkUtils.dedupArray([
     ...config.relayerTokens,
-    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {})
+    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
   ]);
   const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient, relayerTokens);
 
