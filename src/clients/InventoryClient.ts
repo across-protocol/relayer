@@ -461,7 +461,7 @@ export class InventoryClient {
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [
-        forceOriginRepayment && !this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId,
+        forceOriginRepayment || !this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId,
       ];
     }
 
