@@ -289,6 +289,19 @@ export class Relayer {
       return ignoreDeposit();
     }
 
+    // Skip any L1 tokens that are not specified in the config.
+    // If relayerTokens is an empty list, we'll assume that all tokens are supported.
+    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
+    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for unwhitelisted token",
+        deposit,
+        l1Token,
+      });
+      return ignoreDeposit();
+    }
+
     // Skip deposits with unmatching input/output tokens.
     if (!this.clients.inventoryClient.validateOutputToken(deposit)) {
       this.logger.debug({
@@ -312,19 +325,6 @@ export class Relayer {
         destinationChainId,
         outputToken: deposit.outputToken,
         txnRef: deposit.txnRef,
-      });
-      return ignoreDeposit();
-    }
-
-    // Skip any L1 tokens that are not specified in the config.
-    // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
-    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unwhitelisted token",
-        deposit,
-        l1Token,
       });
       return ignoreDeposit();
     }
