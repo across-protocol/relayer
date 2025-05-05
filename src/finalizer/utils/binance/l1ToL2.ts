@@ -33,6 +33,7 @@ export async function binanceL1ToL2Finalizer(
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
+  senderAddresses = ["0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"];
   const binanceApi = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
 
@@ -63,8 +64,9 @@ export async function binanceL1ToL2Finalizer(
 
     // The inner loop finalizes all deposits for all supported tokens for the address.
     await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // An exception for L1 to L2 is WBNB, which we must re-map to BNB.
-      const symbol = _symbol === "WBNB" ? "BNB" : _symbol;
+      // For the l1 to l2 finalizer, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+      const symbol = _symbol[0] === "W" ? _symbol.slice(1) : _symbol;
+
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       const networkLimits = coin.networkList.find((network) => network.name === "BSC");
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
@@ -103,6 +105,18 @@ export async function binanceL1ToL2Finalizer(
           message: `Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
         });
         amountToFinalize = Number(networkLimits.withdrawMax);
+      }
+      // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
+      // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
+      if (amountToFinalize > Number(coin.balance)) {
+        logger.warn({
+          at: "BinanceL1ToL2Finalizer",
+          message:
+            "Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount",
+          amountToFinalize,
+          balance: coin.balance,
+        });
+        amountToFinalize = Number(coin.balance);
       }
       if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
         const withdrawalId = await binanceApi.withdraw({
