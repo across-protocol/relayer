@@ -437,19 +437,12 @@ export class InventoryClient {
     if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
       return false;
     }
-    const l1TokenCounterpart = this.hubPoolClient.getL1TokenForL2TokenAtBlock(
+    return this.hubPoolClient.areTokensEquivalent(
       deposit.inputToken,
       deposit.originChainId,
-      this.hubPoolClient.latestBlockSearched
-    );
-    if (!this.hubPoolClient.l2TokenEnabledForL1Token(l1TokenCounterpart, deposit.destinationChainId)) {
-      return false;
-    }
-    const destinationToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(
-      l1TokenCounterpart,
+      deposit.outputToken,
       deposit.destinationChainId
     );
-    return compareAddressesSimple(deposit.outputToken, destinationToken);
   }
 
   /*
