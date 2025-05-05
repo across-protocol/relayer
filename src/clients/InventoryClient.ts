@@ -461,10 +461,7 @@ export class InventoryClient {
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [
-        forceOriginRepayment &&
-        !this.canTakeDestinationChainRepayment(deposit)
-          ? originChainId
-          : destinationChainId,
+        forceOriginRepayment && !this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId,
       ];
     }
 
@@ -664,10 +661,7 @@ export class InventoryClient {
     // the filler will be forced to be over-allocated on the origin chain, which could be very difficult to withdraw
     // funds from.
     // @dev The RHS of this conditional is essentially true if eligibleRefundChains does NOT deep equal [originChainId].
-    if (
-      forceOriginRepayment &&
-      (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))
-    ) {
+    if (forceOriginRepayment && (eligibleRefundChains.length !== 1 || !eligibleRefundChains.includes(originChainId))) {
       return [];
     }
 
