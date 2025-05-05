@@ -4,6 +4,7 @@ import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
+import ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI from "./abi/AtomicDepositorTransferProxy.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
 import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
@@ -228,6 +229,10 @@ export const CONTRACT_ADDRESSES: {
     scrollGasPriceOracle: {
       address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
+    },
+    atomicDepositorTransferProxy: {
+      address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
+      abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
   },
   [CHAIN_IDs.OPTIMISM]: {
