@@ -33,7 +33,6 @@ export async function binanceL1ToL2Finalizer(
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
-  senderAddresses = ["0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"];
   const binanceApi = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
 
