@@ -579,15 +579,6 @@ export class ProfitClient {
       tokens[symbol] ??= nativeTokenAddress;
     });
 
-    // Manually add additional token prices as required. This can be
-    // needed for tokens without a pool rebalance route. @todo: fix.
-    if (this.enabledChainIds.includes(CHAIN_IDs.BSC)) {
-      ["CAKE"].forEach((symbol) => {
-        const address = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
-        tokens[symbol] ??= address;
-      });
-    }
-
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
 
     // Pre-populate any new addresses.
