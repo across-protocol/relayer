@@ -34,6 +34,8 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
+import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
+import SP1_HELIOS_ABI from "./abi/SP1Helios.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -199,6 +201,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
     },
+    hubPoolStore: {
+      address: "0x1Ace3BbD69b63063F859514Eca29C9BDd8310E61",
+      abi: HUB_POOL_STORE_ABI,
+    },
     blastBridge: {
       address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
       abi: BLAST_BRIDGE_ABI,
@@ -247,6 +253,12 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x2B4069517957735bE00ceE0fadAE88a26365528f",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+  },
+  [CHAIN_IDs.BSC]: {
+    sp1Helios: {
+      address: "0x3BED21dAe767e4Df894B31b14aD32369cE4bad8b",
+      abi: SP1_HELIOS_ABI,
     },
   },
   [CHAIN_IDs.POLYGON]: {
