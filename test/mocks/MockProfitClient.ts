@@ -1,3 +1,4 @@
+import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
@@ -41,7 +42,6 @@ export class MockProfitClient extends ProfitClient {
       const address = addresses[hubPoolClient.chainId];
       if (isDefined(address)) {
         this.mapToken(symbol, address);
-        this.setTokenPrice(symbol, bnOne);
         if (this.hubPoolClient instanceof MockHubPoolClient) {
           this.hubPoolClient.addL1Token({ symbol, decimals, address });
         }
@@ -51,6 +51,9 @@ export class MockProfitClient extends ProfitClient {
           message: `Skipping ${symbol}: not supported on ${hubPoolClient.chainId}`,
         });
       }
+    });
+    Object.entries(this.tokenSymbolMap).forEach(([symbol]) => {
+      this.setTokenPrice(symbol, bnOne);
     });
 
     // Some tests run against mocked chains, so hack in the necessary parts

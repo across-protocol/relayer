@@ -195,7 +195,12 @@ export class BaseChainAdapter {
     if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
       return [];
     }
-    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(address, l2Token, l1Token, amount);
+    const txnsToSend = await this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
+      address,
+      l2Token,
+      l1Token,
+      amount
+    );
     const multicallerClient = new MultiCallerClient(this.logger);
     txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
     const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
@@ -300,7 +305,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const expectedTokenSymbol = nativeTokenSymbol === "ETH" ? "WETH" : nativeTokenSymbol;
+      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB";
+      const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
         `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
@@ -368,7 +374,7 @@ export class BaseChainAdapter {
           const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
           assign(outstandingTransfers, [monitoredAddress.toAddress(), l1Token.toAddress(), l2Token], {
             totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
-            depositTxHashes: outstandingInitiatedEvents.map((event) => event.transactionHash),
+            depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
           });
         });
       });

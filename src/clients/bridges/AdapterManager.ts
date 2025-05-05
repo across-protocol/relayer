@@ -21,6 +21,8 @@ import {
   EvmAddress,
   toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
+  getRemoteTokenForL1Token,
+  getTokenInfo,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -133,7 +135,7 @@ export class AdapterManager {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
-      const tokenSymbol = this.hubPoolClient.getTokenInfoForL1Token(token).symbol;
+      const tokenSymbol = getTokenInfo(token, this.hubPoolClient.chainId).symbol;
       return (
         adapter.supportedTokens.includes(tokenSymbol) ||
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
@@ -239,7 +241,7 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
+      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }

@@ -1,14 +1,7 @@
 import * as contracts from "@across-protocol/contracts/dist/test-utils";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import {
-  AcrossApiClient,
-  ConfigStoreClient,
-  HubPoolClient,
-  MultiCallerClient,
-  SpokePoolClient,
-  TokenClient,
-} from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
@@ -24,6 +17,7 @@ import {
   MockConfigStoreClient,
   MockedMultiCallerClient,
   SimpleMockHubPoolClient,
+  SimpleMockTokenClient,
 } from "./mocks";
 import {
   BigNumber,
@@ -60,9 +54,10 @@ describe("Relayer: Unfilled Deposits", async function () {
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
   let spokePoolClients: Record<number, SpokePoolClient>;
-  let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, tokenClient: TokenClient;
+  let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, tokenClient: SimpleMockTokenClient;
   let profitClient: MockProfitClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+  let inventoryClient: MockInventoryClient;
 
   let relayerInstance: Relayer;
   let unfilledDeposits: RelayerUnfilledDeposit[] = [];
@@ -134,11 +129,19 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -149,7 +152,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         profitClient,
         tokenClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+        inventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         tryMulticallClient,
       },

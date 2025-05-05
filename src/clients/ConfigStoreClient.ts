@@ -26,7 +26,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Sanity check to verify that the chain id & block number are positive integers
       if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
         this.logger.warn({
-          at: "ConfigStore[Relayer]#constructor",
+          at: "ConfigStoreClient#constructor",
           message: `Invalid injected chain id inclusion: ${injectedChains}`,
         });
       }
@@ -85,9 +85,9 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Partially create the meta-data information regarding the injected chain id inclusion
       const partialChainIdIndicesUpdate = {
         blockNumber: injectedBlockNumber,
-        transactionIndex: 0,
+        txnIndex: 0,
         logIndex: 0,
-        transactionHash: "",
+        txnRef: "",
       };
 
       // We need to now resolve the last chain id indices update

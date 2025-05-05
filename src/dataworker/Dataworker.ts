@@ -19,6 +19,8 @@ import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   ERC20,
+  getL1TokenInfo,
+  getTokenInfo,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -30,6 +32,7 @@ import {
   RelayerRefundLeaf,
   SlowFillLeaf,
   FillStatus,
+  L1Token,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -248,7 +251,7 @@ export class Dataworker {
         shouldWait: true,
         poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
-        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.txnRef,
         expectedPoolRebalanceLeaves,
         executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
       };
@@ -266,7 +269,7 @@ export class Dataworker {
         poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
         minimumMainnetBundleEndBlockToPropose,
-        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.txnRef,
       };
     }
   }
@@ -1086,7 +1089,7 @@ export class Dataworker {
               message:
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               invalidBlockRanges,
-              bundleTxn: matchingRootBundle.transactionHash,
+              bundleTxn: matchingRootBundle.txnRef,
             });
             continue;
           }
@@ -1106,7 +1109,7 @@ export class Dataworker {
               chainId,
               rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
+              mainnetRootBundleTxn: matchingRootBundle.txnRef,
               publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
               constructedSlowRelayRoot: tree.getHexRoot(),
             });
@@ -2131,7 +2134,7 @@ export class Dataworker {
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
             invalidBlockRanges,
-            bundleTxn: matchingRootBundle.transactionHash,
+            bundleTxn: matchingRootBundle.txnRef,
           });
           continue;
         }
@@ -2150,7 +2153,7 @@ export class Dataworker {
             chainId,
             rootBundleRelay,
             mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-            mainnetRootBundleTxn: matchingRootBundle.transactionHash,
+            mainnetRootBundleTxn: matchingRootBundle.txnRef,
             publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
             constructedRelayerRefundRoot: tree.getHexRoot(),
           });
@@ -2179,6 +2182,12 @@ export class Dataworker {
         );
       }
     }
+  }
+
+  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+    return chainId === this.clients.hubPoolClient.chainId
+      ? getTokenInfo(l2Token, chainId)
+      : getL1TokenInfo(l2Token, chainId);
   }
 
   async _executeRelayerRefundLeaves(
@@ -2215,7 +2224,7 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
-          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2309,7 +2318,7 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach((leaf) => {
-      const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+      const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
 
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId

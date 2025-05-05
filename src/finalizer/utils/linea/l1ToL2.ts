@@ -4,7 +4,16 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
+import {
+  EventSearchConfig,
+  Signer,
+  convertFromWei,
+  winston,
+  CHAIN_IDs,
+  ethers,
+  BigNumber,
+  getTokenInfo,
+} from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -144,7 +153,7 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfoForL1Token(messageType.l1TokenAddress);
+      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(messageType.l1TokenAddress, l1ChainId);
       const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,

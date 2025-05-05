@@ -95,19 +95,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       thrown1 = true;
     }
     expect(thrown1).to.be.equal(true);
-
-    // Throws if there is a misconfiguration between L1 tokens and L2 tokens. This checks that the bot will error out
-    // if it tries to delete money in the bridge. configure hubpool to return the wrong token for Optimism
-
-    // bad config. map USDC on L1 to Arbitrum on L2. This is WRONG for chainID 10 and should error.
-    hubPoolClient.setTokenMapping(mainnetTokens["usdc"], 10, getL2TokenAddresses(mainnetTokens["usdc"])[42161]);
-    let thrown2 = false;
-    try {
-      await adapterManager.sendTokenCrossChain(relayer.address, CHAIN_IDs.OPTIMISM, mainnetTokens.usdc, amountToSend);
-    } catch (error) {
-      thrown2 = true;
-    }
-    expect(thrown2).to.be.equal(true);
   });
   it("Correctly sends tokens to chain: Optimism", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;

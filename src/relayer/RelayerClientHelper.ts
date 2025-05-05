@@ -118,7 +118,8 @@ export async function constructRelayerClients(
       : Object.values(spokePoolClients).map(({ chainId }) => chainId);
   const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
-  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
+  const inventoryConfigTokens = Object.keys(config?.inventoryConfig?.tokenConfig ?? {});
+  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient, inventoryConfigTokens);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
