@@ -1098,5 +1098,128 @@ describe("Cross Chain Adapter: zkSync", async function () {
         expect(amount.eq(depositAmount)).to.be.true;
       }
     });
+
+    it("Matches l1 deposits and l2 receipts: EOA", async function () {
+      // There should be no pre-existing outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
+      expect(transfers).to.deep.equal({
+        [monitoredEoa]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [spokePool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
+      });
+
+      // Make a single l1 -> l2 deposit.
+      await deposit(monitoredEoa, depositAmount);
+      const deposits = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
+      expect(deposits).to.exist;
+      expect(deposits[l2Token].length).to.equal(1);
+
+      let receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
+      expect(receipts).to.exist;
+      expect(receipts[l2Token].length).to.equal(0);
+
+      // There should be 1 outstanding transfer.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
+      expect(transfers).to.deep.equal({
+        [monitoredEoa]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [deposits[l2Token][0].txnRef],
+              totalAmount: deposits[l2Token][0].amount,
+            },
+          },
+        },
+        [spokePool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
+      });
+
+      // Finalise the ongoing deposit on the destination chain.
+      await l2Bridge.finalizeDeposit(MAINNET, monitoredEoa, l1Token, depositAmount);
+      receipts = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
+      expect(receipts).to.exist;
+      expect(receipts[l2Token].length).to.equal(1);
+
+      // There should be no outstanding transfers.
+      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
+      expect(transfers).to.deep.equal({
+        [monitoredEoa]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [spokePool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: BigNumber.from(0),
+            },
+          },
+        },
+        [hubPool.address]: {
+          [l1Token]: {
+            [l2Token]: {
+              depositTxHashes: [],
+              totalAmount: bnZero,
+            },
+          },
+        },
+      });
+    });
   });
 });
