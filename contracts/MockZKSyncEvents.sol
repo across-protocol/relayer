@@ -21,6 +21,12 @@ contract zkSync_L1Bridge {
         uint256 amount
     );
 
+    address l1USDC;
+
+    function setUSDC(address l1Token) external {
+        l1USDC = l1Token;
+    }
+
     struct L2TransactionRequestTwoBridgesOuter {
         uint256 chainId;
         uint256 mintValue;
@@ -86,11 +92,11 @@ contract zkSync_L1Bridge {
             (address, uint256, address)
         );
 
-        if (_request.secondBridgeAddress == address(0)) {
-            return _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
+        if (l1Token == l1USDC) {
+            return _depositUSDCFor(msg.sender, to, l1Token, amount, _request.chainId);
         }
 
-        return _depositUSDCFor(msg.sender, to, l1Token, amount, _request.chainId);
+        return _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
     }
 
     function assetId(address token) public view returns (bytes32) {

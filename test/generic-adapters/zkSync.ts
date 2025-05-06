@@ -1030,6 +1030,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     beforeEach(async function () {
       randomEoa = randomAddress();
+      await l1Bridge.setUSDC(l1Token);
       await l2Bridge.mapToken(l1Token, l2Token);
       await l2Bridge.setUSDC(l2Token);
     });
