@@ -20,8 +20,8 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
-  private readonly binanceApiClient;
-  private readonly tokenSymbol: string;
+  protected readonly binanceApiClient;
+  protected tokenSymbol: string;
 
   constructor(
     l2chainId: number,
@@ -100,7 +100,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
           txnRef: depositTxReceipts[idx].transactionHash,
           txnIndex: depositTxReceipts[idx].transactionIndex,
           // Only query the first log in the deposit event since a deposit corresponds to a single ERC20 `Transfer` event.
-          logIndex: depositTxReceipts[idx].logs[0].logIndex,
+          // Alternatively, if this was a native token transfer, then there were no logs, so just assign 0. This should not
+          // affect `sortEvents*` since the transaction index should be able to discriminate any two rebalances.
+          logIndex: depositTxReceipts[idx].logs[0]?.logIndex ?? 0,
           blockNumber: depositTxReceipts[idx].blockNumber,
         };
       })
@@ -147,7 +149,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
           txnRef: withdrawalTxReceipts[idx].transactionHash,
           txnIndex: withdrawalTxReceipts[idx].transactionIndex,
           // Same as resolving initiation events. Only query the first log since it is just an ERC20 `Transfer` call.
-          logIndex: withdrawalTxReceipts[idx].logs[0].logIndex,
+          // Alternatively, if this was a native token transfer, then there were no logs, so just assign 0. This should not
+          // affect `sortEvents*` since the transaction index should be able to discriminate any two rebalances.
+          logIndex: withdrawalTxReceipts[idx].logs[0]?.logIndex ?? 0,
           blockNumber: withdrawalTxReceipts[idx].blockNumber,
         };
       }),
