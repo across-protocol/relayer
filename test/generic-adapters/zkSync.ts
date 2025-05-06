@@ -1221,5 +1221,40 @@ describe("Cross Chain Adapter: zkSync", async function () {
         },
       });
     });
+
+    it("Get L1 deposits: HubPool", async function () {
+      await deposit(spokePool.address, depositAmount);
+      await deposit(monitoredEoa, depositAmount);
+
+      const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+        toAddress(l1Token),
+        toAddress(spokePool.address),
+        toAddress(spokePool.address),
+        searchConfig
+      );
+      expect(result).to.exist;
+      expect(result[l2Token].length).to.equal(1);
+
+      // Ensure that the recipient address filters work.
+      for (const [sender, recipient] of [
+        [hubPool.address, spokePool.address],
+        [randomEoa, monitoredEoa],
+      ]) {
+        const result = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
+          toAddress(l1Token),
+          toAddress(sender),
+          toAddress(recipient),
+          searchConfig
+        );
+        expect(result).to.exist;
+        expect(result[l2Token].length).to.equal(1);
+
+        const [deposit] = result[l2Token];
+        expect(deposit).to.exist;
+        const { to, amount } = deposit;
+        expect(to).to.equal(recipient);
+        expect(amount.eq(depositAmount)).to.be.true;
+      }
+    });
   });
 });
