@@ -20,7 +20,9 @@ import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./Bas
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
-  protected readonly binanceApiClient;
+  // Only store the promise in the constructor and evaluate the promise in async blocks.
+  protected readonly binanceApiClientPromise;
+  protected binanceApiClient;
   protected tokenSymbol: string;
 
   constructor(
@@ -53,6 +55,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     _l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    this.binanceApiClient ??= await this.binanceApiClientPromise;
     assert(l1Token.toAddress() === this.getL1Bridge().address);
     // Fetch the deposit address from the binance API.
 
@@ -74,6 +77,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     _toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    this.binanceApiClient ??= await this.binanceApiClientPromise;
     assert(l1Token.toAddress() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
 
@@ -119,6 +123,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    this.binanceApiClient ??= await this.binanceApiClientPromise;
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
     const l2Provider =
       this.l2SignerOrProvider instanceof ethers.providers.Provider

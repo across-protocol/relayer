@@ -1,6 +1,6 @@
 import Binance from "binance-api-node";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { isDefined, assert } from "./";
+import { isDefined, assert, retrieveBinanceSecretKeyFromCLIArgs } from "./";
 
 export const { getNetworkName, getNativeTokenSymbol } = sdkUtils;
 
@@ -22,9 +22,9 @@ export function getOriginFromURL(url: string): string {
  * @param url The base HTTP url to use to connect to Binance.
  * @returns A Binance client from `binance-api-node`.
  */
-export function getBinanceApiClient(url = "https://api.binance.com") {
+export async function getBinanceApiClient(url = "https://api.binance.com") {
   const apiKey = process.env["BINANCE_API_KEY"];
-  const secretKey = process.env["BINANCE_HMAC_KEY"];
+  const secretKey = (await retrieveBinanceSecretKeyFromCLIArgs()) ?? process.env["BINANCE_HMAC_KEY"];
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
   return Binance({
     apiKey,
