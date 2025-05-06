@@ -39,6 +39,7 @@ import {
   resolveTokenDecimals,
   sortEventsDescending,
   getWidestPossibleExpectedBlockRange,
+  utils,
   _buildPoolRebalanceRoot,
   getRemoteTokenForL1Token,
   getTokenInfo,
