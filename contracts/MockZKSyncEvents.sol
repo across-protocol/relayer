@@ -87,7 +87,7 @@ contract zkSync_L1Bridge {
         );
 
         if (_request.secondBridgeAddress == address(0)) {
-          return _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
+            return _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
         }
 
         return _depositUSDCFor(msg.sender, to, l1Token, amount, _request.chainId);
@@ -112,15 +112,15 @@ contract zkSync_L2Bridge {
     }
 
     function setUSDC(address l2Token) external {
-      l2USDC = l2Token;
+        l2USDC = l2Token;
     }
 
     function finalizeDeposit(uint256 _chainId, address _l2Receiver, address _l1Token, uint256 _amount) external {
         address l2Token = tokenMap[_l1Token];
         if (l2Token == l2USDC) {
-          emit FinalizeDeposit(_l2Receiver, _l2Receiver, l2Token, _amount);
+            emit FinalizeDeposit(_l2Receiver, _l2Receiver, l2Token, _amount);
         } else {
-          emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
+            emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
         }
     }
 
