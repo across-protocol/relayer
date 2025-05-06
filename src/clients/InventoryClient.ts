@@ -29,7 +29,6 @@ import {
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
   getTokenInfo,
-  compareAddressesSimple,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
@@ -475,9 +474,7 @@ export class InventoryClient {
 
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
-      return [
-        forceOriginRepayment || !this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId,
-      ];
+      return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -552,8 +549,7 @@ export class InventoryClient {
     if (
       this.canTakeDestinationChainRepayment(deposit) &&
       !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
-      !forceOriginRepayment
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
