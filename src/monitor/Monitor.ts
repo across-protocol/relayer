@@ -373,13 +373,14 @@ export class Monitor {
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
+          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddresses[i], chainId);
           const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer],
             symbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
-            tokenBalances[i]
+            decimalConverter(tokenBalances[i])
           );
         }
       }
@@ -1248,7 +1249,6 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
-        const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(token, chainId);
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         const balance =
           token === gasTokenAddressForChain
@@ -1261,15 +1261,14 @@ export class Monitor {
                 account,
                 { blockTag: this.clients.spokePoolClients[chainId].latestBlockSearched }
               );
-        const convertedBalance = decimalConverter(balance);
         if (!this.balanceCache[chainId]) {
           this.balanceCache[chainId] = {};
         }
         if (!this.balanceCache[chainId][token]) {
           this.balanceCache[chainId][token] = {};
         }
-        this.balanceCache[chainId][token][account] = convertedBalance;
-        return convertedBalance;
+        this.balanceCache[chainId][token][account] = balance;
+        return balance;
       })
     );
   }
