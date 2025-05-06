@@ -76,7 +76,6 @@ export class ZKStackUSDCBridge extends ZKStackBridge {
     to: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
     const filter = this.usdcBridge.filters.BridgehubDepositInitiated(this.l2chainId, null, null);
     const events = await paginatedEventQuery(this.usdcBridge, filter, eventConfig);
 
