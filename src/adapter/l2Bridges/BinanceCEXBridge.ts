@@ -59,9 +59,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    this.binanceApiClient ??= await this.binanceApiClientPromise;
+    const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token.toAddress(), this.l2chainId);
-    const depositAddress = await this.binanceApiClient.depositAddress({
+    const depositAddress = await binanceApiClient.depositAddress({
       coin: this.l1TokenInfo.symbol,
       network: "BSC",
     });
@@ -91,15 +91,15 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    this.binanceApiClient ??= await this.binanceApiClientPromise;
+    const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token.toAddress(), this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.fromBlock)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
-      this.binanceApiClient.depositHistory({
+      binanceApiClient.depositHistory({
         coin: this.l1TokenInfo.symbol,
         startTime: fromTimestamp,
       }),
-      this.binanceApiClient.withdrawHistory({
+      binanceApiClient.withdrawHistory({
         coin: this.l1TokenInfo.symbol,
         startTime: fromTimestamp,
       }),
@@ -138,5 +138,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     );
     const diff = totalDepositAmountForAddress.sub(totalWithdrawalAmountForAddress);
     return diff.gt(bnZero) ? diff : bnZero;
+  }
+
+  protected async getBinanceClient() {
+    return (this.binanceApiClient ??= await this.binanceApiClientPromise);
   }
 }
