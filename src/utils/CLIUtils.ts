@@ -3,7 +3,6 @@ import { Signer } from "ethers";
 import { constants as sdkConsts } from "@across-protocol/sdk";
 import { SignerOptions, getSigner } from "./SignerUtils";
 import { isDefined } from "./TypeGuards";
-import { getGckmsConfig, retrieveGckmsKeys } from "./GckmsUtils";
 
 const keyTypes = ["secret", "mnemonic", "privateKey", "gckms", "void"];
 
@@ -39,23 +38,6 @@ export function retrieveSignerFromCLIArgs(): Promise<Signer> {
 
   // Return the signer.
   return getSigner(signerOptions);
-}
-
-/**
- * Retrieves a Binance HMAC secret key based on CLI args.
- * @returns A Binance API secret key if present in the arguments, or otherwise `undefined`.
- */
-export async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined> {
-  const opts = {
-    string: ["binanceSecretKey"],
-  };
-  const args = minimist(process.argv.slice(2), opts);
-  const binanceKeys = await retrieveGckmsKeys(getGckmsConfig(args.binanceSecretKey ?? []));
-  if (binanceKeys.length === 0) {
-    return undefined;
-  }
-  const buffer = Buffer.from(binanceKeys[0].slice(2), "hex");
-  return buffer.toString("base64");
 }
 
 /**

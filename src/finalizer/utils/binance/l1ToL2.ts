@@ -139,8 +139,8 @@ export async function binanceL1ToL2Finalizer(
       }
     });
   });
-  return Promise.resolve({
+  return {
     callData: [],
     crossChainMessages: [],
-  });
+  };
 }

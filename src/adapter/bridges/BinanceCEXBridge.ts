@@ -15,6 +15,7 @@ import {
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
+  isContractDeployedToAddress,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -77,6 +78,12 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     _toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    // Since this is a CEX rebalancing adapter, it will never be used to rebalance contract funds. This means we can _always_ return an empty set
+    // of bridge events if the monitored address is a contract on L1 or L2 and avoid querying the API needlessly.
+    const isL1OrL2Contract = await this.isL1OrL2Contract(fromAddress);
+    if (isL1OrL2Contract) {
+      return {};
+    }
     this.binanceApiClient ??= await this.binanceApiClientPromise;
     assert(l1Token.toAddress() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
@@ -123,6 +130,12 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    // Since this is a CEX rebalancing adapter, it will never be used to rebalance contract funds. This means we can _always_ return an empty set
+    // of bridge events if the monitored address is a contract on L1 or L2 and avoid querying the API needlessly.
+    const isL1OrL2Contract = await this.isL1OrL2Contract(toAddress);
+    if (isL1OrL2Contract) {
+      return {};
+    }
     this.binanceApiClient ??= await this.binanceApiClientPromise;
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
     const l2Provider =
@@ -161,5 +174,17 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
         };
       }),
     };
+  }
+
+  private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
+    const l2Provider =
+      this.l2SignerOrProvider instanceof ethers.providers.Provider
+        ? (this.l2SignerOrProvider as ethers.providers.Provider)
+        : (this.l2SignerOrProvider.provider as ethers.providers.Provider);
+    const [isL1Contract, isL2Contract] = await Promise.all([
+      isContractDeployedToAddress(address.toAddress(), this.l1Signer.provider),
+      isContractDeployedToAddress(address.toAddress(), l2Provider),
+    ]);
+    return isL1Contract || isL2Contract;
   }
 }
