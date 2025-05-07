@@ -426,9 +426,8 @@ export class InventoryClient {
   }
 
   /**
-   * Returns true if the deposit input and output tokens are mapped to the same PoolRebalanceRoute mapping.
-   * @param deposit Deposit data
-   * @returns True if the input and output tokens are mapped to the same PoolRebalanceRoute mapping, or False.
+   * @notice Returns true if the deposit has an output token PoolRebalanceRoute mapping equivalent to the input token's
+   * PoolRebalanceRoute mapping.
    */
   canTakeDestinationChainRepayment(
     deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId" | "fromLiteChain">
@@ -436,12 +435,16 @@ export class InventoryClient {
     if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
       return false;
     }
-    return this.hubPoolClient.areTokensEquivalent(
+    const hubPoolBlock = this.hubPoolClient.latestBlockSearched;
+    if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId, hubPoolBlock)) {
+      return false;
+    }
+    const l1Token = this.hubPoolClient.getL1TokenForL2TokenAtBlock(
       deposit.inputToken,
       deposit.originChainId,
-      deposit.outputToken,
-      deposit.destinationChainId
+      hubPoolBlock
     );
+    return this.hubPoolClient.l2TokenEnabledForL1TokenAtBlock(l1Token, deposit.destinationChainId, hubPoolBlock);
   }
 
   /*
