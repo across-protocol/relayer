@@ -20,6 +20,7 @@ import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json"
 import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
+import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -67,6 +68,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackNativeTokenVault: {
       address: "0xbeD1EB542f9a5aA6419Ff3deb921A372681111f6",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
+    zkStackUSDCBridge_232: {
+      address: "0xf553E6D903AA43420ED7e3bc2313bE9286A8F987",
+      abi: ZKSTACK_USDC_BRIDGE_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -453,6 +458,10 @@ export const CONTRACT_ADDRESSES: {
     weth: {
       address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
       abi: WETH_ABI,
+    },
+    usdcBridge: {
+      address: "0x7188B6975EeC82ae914b6eC7AC32b3c9a18b2c81",
+      abi: ZKSTACK_USDC_BRIDGE_ABI,
     },
   },
   [CHAIN_IDs.LINEA]: {
