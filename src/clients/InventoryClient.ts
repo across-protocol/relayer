@@ -366,27 +366,26 @@ export class InventoryClient {
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
-    const chainIds = [originChainId];
+    const chainIds = new Set<number>();
+    chainIds.add(originChainId);
     if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
-      return chainIds;
+      return [...chainIds];
     }
 
     if (this.canTakeDestinationChainRepayment(deposit)) {
-      chainIds.push(destinationChainId);
+      chainIds.add(destinationChainId);
     }
 
     if (this.isInventoryManagementEnabled()) {
       const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
-      chainIds.push(
-        ...this.getSlowWithdrawalRepaymentChains(l1Token).filter((chainId) =>
-          this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
-        )
-      );
+      this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
+        if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
+          chainIds.add(chainId);
+        }
+      });
     }
-    if (![originChainId, destinationChainId].includes(this.hubPoolClient.chainId)) {
-      chainIds.push(this.hubPoolClient.chainId);
-    }
-    return chainIds;
+    chainIds.add(this.hubPoolClient.chainId);
+    return [...chainIds];
   }
 
   getL1TokenInfo(l2Token: string, chainId: number): L1Token {
@@ -426,8 +425,26 @@ export class InventoryClient {
     }
   }
 
-  private canTakeDestinationChainRepayment(deposit: Deposit): boolean {
-    return this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.outputToken, deposit.destinationChainId);
+  /**
+   * @notice Returns true if the deposit has an output token PoolRebalanceRoute mapping equivalent to the input token's
+   * PoolRebalanceRoute mapping.
+   */
+  canTakeDestinationChainRepayment(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId" | "fromLiteChain">
+  ): boolean {
+    if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
+      return false;
+    }
+    const hubPoolBlock = this.hubPoolClient.latestBlockSearched;
+    if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId, hubPoolBlock)) {
+      return false;
+    }
+    const l1Token = this.hubPoolClient.getL1TokenForL2TokenAtBlock(
+      deposit.inputToken,
+      deposit.originChainId,
+      hubPoolBlock
+    );
+    return this.hubPoolClient.l2TokenEnabledForL1TokenAtBlock(l1Token, deposit.destinationChainId, hubPoolBlock);
   }
 
   /*
@@ -460,9 +477,7 @@ export class InventoryClient {
 
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
-      return [
-        forceOriginRepayment || !this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId,
-      ];
+      return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
 
     // The InventoryClient assumes 1:1 equivalency between input and output tokens. At the moment there is no support
@@ -537,8 +552,7 @@ export class InventoryClient {
     if (
       this.canTakeDestinationChainRepayment(deposit) &&
       !chainsToEvaluate.includes(destinationChainId) &&
-      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId)) &&
-      !forceOriginRepayment
+      this._l1TokenEnabledForChain(l1Token, Number(destinationChainId))
     ) {
       chainsToEvaluate.push(destinationChainId);
     }
