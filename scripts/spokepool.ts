@@ -21,6 +21,7 @@ import {
   populateV3Relay,
   toBN,
   toBytes32,
+  ZERO_BYTES,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -302,9 +303,14 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
   const destinationChainId = Number(depositArgs.destinationChainId.toString());
   const destSpokePool = spokePools[destinationChainId] ?? (await utils.getSpokePoolContract(destinationChainId));
 
-  const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
-  const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
+  const inputToken = sdkUtils.toAddressType(depositArgs.inputToken, originChainId);
+  const { symbol } = utils.resolveToken(inputToken.toAddress(), originChainId);
+
+  // If the outputToken is 0x0, naiively infer the correct outputToken. Auto-submission is prevented in this case.
+  const autoOutputToken = depositArgs.outputToken === ZERO_BYTES;
+  const outputToken = autoOutputToken
+    ? sdkUtils.toAddressType(TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId], destinationChainId).toBytes32()
+    : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
   const relayer = await signer.getAddress();
@@ -337,6 +343,15 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
   console.groupEnd();
 
   if (execute) {
+    if (autoOutputToken && !slow) {
+      // Dangerous: outputToken 0x0 was specified. Footgun mitigation: require the operator to verify and submit manually.
+      console.log(
+        "\nCannot execute fill for deposit with outputToken 0x0." +
+        " Carefully verify the proposed calldata and submit manually."
+      );
+      return true;
+    }
+
     const question = "Are you sure you want to send this fill?";
     const questionAccepted = await utils.askYesNoQuestion(question);
     if (!questionAccepted) {
@@ -347,14 +362,16 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     const destProvider = await getProvider(destinationChainId);
     const destSigner = signer.connect(destProvider);
 
-    const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
-    const allowance = await erc20.allowance(sender, destSpokePool.address);
-    if (outputAmount.gt(allowance)) {
-      const approvalAmount = outputAmount.mul(5);
-      const approval = await erc20.approve(destSpokePool.address, approvalAmount);
-      console.log(`Approving SpokePool for ${approvalAmount} ${symbol}: ${approval.hash}.`);
-      await approval.wait();
-      console.log("Approval complete...");
+    if (!slow) {
+      const erc20 = new Contract(outputToken.toAddress(), ERC20.abi, destSigner);
+      const allowance = await erc20.allowance(sender, destSpokePool.address);
+      if (outputAmount.gt(allowance)) {
+        const approvalAmount = outputAmount.mul(5);
+        const approval = await erc20.approve(destSpokePool.address, approvalAmount);
+        console.log(`Approving SpokePool for ${approvalAmount} ${symbol}: ${approval.hash}.`);
+        await approval.wait();
+        console.log("Approval complete...");
+      }
     }
 
     const fillTxn = await destSigner.sendTransaction(fill);
