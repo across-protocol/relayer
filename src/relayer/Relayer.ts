@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
-import { FillStatus, L1Token, Deposit, DepositWithBlock } from "../interfaces";
+import { FillStatus, Deposit, DepositWithBlock } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
   averageBlockTime,
@@ -291,8 +291,8 @@ export class Relayer {
 
     // Skip any L1 tokens that are not specified in the config.
     // If relayerTokens is an empty list, we'll assume that all tokens are supported.
-    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
-    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token.address)) {
+    const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
+    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token)) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
@@ -399,13 +399,13 @@ export class Relayer {
     // queries for limits on supported tokens.
     if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient)) {
       const { inputAmount } = deposit;
-      const limit = acrossApiClient.getLimit(originChainId, l1Token.address);
+      const limit = acrossApiClient.getLimit(originChainId, l1Token);
       if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
         this.logger.warn({
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token: l1Token.address,
+          l1Token,
           depositId: depositId.toString(),
           inputToken,
           inputAmount,
@@ -726,7 +726,7 @@ export class Relayer {
       }
     }
 
-    const l1Token = this.clients.inventoryClient.getL1TokenInfo(inputToken, originChainId);
+    const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
     if (tokenClient.hasBalanceForFill(deposit)) {
       const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
         deposit,
@@ -1103,7 +1103,7 @@ export class Relayer {
    * @notice Returns repayment chain choice for deposit given repayment fees and the hubPoolToken associated with the
    * deposit inputToken.
    * @param deposit
-   * @param hubPoolToken L1 token object associated with the deposit inputToken.
+   * @param hubPoolToken L1 token associated with the deposit inputToken.
    * @param repaymentFees
    * @returns repaymentChainId is defined if and only if a profitable repayment chain is found.
    * @returns repaymentChainProfitability contains the profitability data of the repaymentChainId if it is defined
@@ -1111,7 +1111,7 @@ export class Relayer {
    */
   protected async resolveRepaymentChain(
     deposit: DepositWithBlock,
-    hubPoolToken: L1Token,
+    hubPoolToken: string,
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
@@ -1123,7 +1123,7 @@ export class Relayer {
     const destinationChain = getNetworkName(destinationChainId);
 
     const mark = this.profiler.start("resolveRepaymentChain");
-    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken.address);
+    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit, hubPoolToken);
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
@@ -1346,19 +1346,19 @@ export class Relayer {
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.inventoryClient.getL1TokenInfo(token, chainId);
+          const l1Token = this.clients.inventoryClient.getL1TokenAddress(token, chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerAddress,
               chainId,
-              l1Token.address,
+              l1Token,
               token
             );
           crossChainLog = outstandingCrossChainTransferAmount.gt(0)
             ? " There is " +
               formatter(
                 this.clients.inventoryClient.crossChainTransferClient
-                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token.address, token)
+                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token, token)
                   // TODO: Add in additional l2Token param here once we can specify it
                   .toString()
               ) +

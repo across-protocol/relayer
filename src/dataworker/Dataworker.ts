@@ -19,7 +19,6 @@ import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   ERC20,
-  getL1TokenInfo,
   getTokenInfo,
 } from "../utils";
 import {
@@ -32,7 +31,6 @@ import {
   RelayerRefundLeaf,
   SlowFillLeaf,
   FillStatus,
-  L1Token,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -2184,10 +2182,12 @@ export class Dataworker {
     }
   }
 
-  protected getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    return chainId === this.clients.hubPoolClient.chainId
-      ? getTokenInfo(l2Token, chainId)
-      : getL1TokenInfo(l2Token, chainId);
+  protected getTokenInfo(l2Token: string, chainId: number): string {
+    try {
+      return getTokenInfo(l2Token, chainId).symbol;
+    } catch (e) {
+      return "UNKNOWN";
+    }
   }
 
   async _executeRelayerRefundLeaves(
@@ -2224,7 +2224,7 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
-          const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
+          const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2245,7 +2245,7 @@ export class Dataworker {
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",
-              message: `Relayer Refund Leaf #${leaf.leafId} for ${l1TokenInfo?.symbol} on chain ${leaf.chainId} already executed`,
+              message: `Relayer Refund Leaf #${leaf.leafId} for ${symbol} on chain ${leaf.chainId} already executed`,
               duplicateEvents,
             });
             return undefined;
@@ -2279,7 +2279,7 @@ export class Dataworker {
           if (!success) {
             this.logger.warn({
               at: "Dataworker#_executeRelayerRefundLeaves",
-              message: `Not executing relayer refund leaf on chain ${leaf.chainId} due to lack of spoke or msg.sender funds for token ${l1TokenInfo?.symbol}`,
+              message: `Not executing relayer refund leaf on chain ${leaf.chainId} due to lack of spoke or msg.sender funds for token ${symbol}`,
               root: relayerRefundTree.getHexRoot(),
               bundle: rootBundleId,
               leafId: leaf.leafId,
@@ -2318,11 +2318,11 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach((leaf) => {
-      const l1TokenInfo = this.getL1TokenInfo(leaf.l2TokenAddress, chainId);
+      const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
 
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId
-      }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
+      }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
         const valueToPassViaPayable = getMsgValue(leaf);
         this.clients.multiCallerClient.enqueueTransaction({

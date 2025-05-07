@@ -1,4 +1,4 @@
-import { Deposit, InventoryConfig, L1Token } from "../../src/interfaces";
+import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { BigNumber } from "../../src/utils";
@@ -87,17 +87,13 @@ export class MockInventoryClient extends InventoryClient {
     return super.getRemoteTokenForL1Token(l1Token, chainId);
   }
 
-  override getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+  override getL1TokenAddress(l2Token: string, chainId: number): string {
     if (this.tokenMappings) {
       const tokenMapping = Object.entries(this.tokenMappings).find(([, mapping]) => mapping[chainId] === l2Token);
       if (tokenMapping) {
-        return {
-          address: tokenMapping[0],
-          symbol: "TEST",
-          decimals: 18,
-        };
+        return tokenMapping[0];
       }
     }
-    return super.getL1TokenInfo(l2Token, chainId);
+    return super.getL1TokenAddress(l2Token, chainId);
   }
 }

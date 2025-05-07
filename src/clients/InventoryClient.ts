@@ -25,13 +25,13 @@ import {
   assert,
   Profiler,
   getNativeTokenSymbol,
-  getL1TokenInfo,
+  getL1TokenAddress,
   depositForcesOriginChainRepayment,
   getRemoteTokenForL1Token,
   getTokenInfo,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
-import { Deposit, L1Token, ProposedRootBundle } from "../interfaces";
+import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
@@ -376,7 +376,7 @@ export class InventoryClient {
     }
 
     if (this.isInventoryManagementEnabled()) {
-      const l1Token = this.getL1TokenInfo(inputToken, originChainId).address;
+      const l1Token = this.getL1TokenAddress(inputToken, originChainId);
       chainIds.push(
         ...this.getSlowWithdrawalRepaymentChains(l1Token).filter((chainId) =>
           this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)
@@ -389,8 +389,8 @@ export class InventoryClient {
     return chainIds;
   }
 
-  getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    return chainId === this.hubPoolClient.chainId ? getTokenInfo(l2Token, chainId) : getL1TokenInfo(l2Token, chainId);
+  getL1TokenAddress(l2Token: string, chainId: number): string {
+    return getL1TokenAddress(l2Token, chainId);
   }
 
   /**
@@ -417,11 +417,11 @@ export class InventoryClient {
     // of equivalent tokens. This should allow relayer to define which tokens it should be able to fill despite them
     // not being linked via a PoolRebalanceRoute.
     try {
-      const l1TokenMappedToInputToken = this.getL1TokenInfo(inputToken, originChainId).address;
-      const l1TokenMappedToOutputToken = this.getL1TokenInfo(outputToken, destinationChainId).address;
+      const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
+      const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
       return l1TokenMappedToInputToken === l1TokenMappedToOutputToken;
     } catch (e) {
-      // @dev getL1TokenInfo will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
+      // @dev getL1TokenAddress will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
       return false;
     }
   }
@@ -483,7 +483,7 @@ export class InventoryClient {
       return [hubChainId];
     }
 
-    l1Token ??= this.getL1TokenInfo(inputToken, originChainId).address;
+    l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
