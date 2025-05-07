@@ -8,7 +8,7 @@ import { ApiProofRequest, PROOF_OUTPUTS_ABI_TUPLE, ProofOutputs } from "../inter
 export function calculateProofId(request: ApiProofRequest): string {
   const encoded = ethers.utils.RLP.encode([
     request.src_chain_contract_address,
-    request.src_chain_storage_slot,
+    request.src_chain_storage_slots,
     BigNumber.from(request.src_chain_block_number).toHexString(), // Ensure block number is hex encoded for RLP
     BigNumber.from(request.dst_chain_contract_from_head).toHexString(), // Ensure head is hex encoded for RLP
     request.dst_chain_contract_from_header,

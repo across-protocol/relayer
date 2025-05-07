@@ -369,7 +369,7 @@ async function processUnfinalizedHeliosMessages(
 
     const apiRequest: ApiProofRequest = {
       src_chain_contract_address: hubPoolStoreAddress,
-      src_chain_storage_slot: storageSlot,
+      src_chain_storage_slots: [storageSlot],
       src_chain_block_number: l1Event.blockNumber, // Use block number from L1 event
       dst_chain_contract_from_head: currentHead,
       dst_chain_contract_from_header: currentHeader,
