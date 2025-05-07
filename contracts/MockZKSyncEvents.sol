@@ -12,6 +12,21 @@ contract zkSync_L1Bridge {
         uint256 amount
     );
 
+    event BridgehubDepositInitiated(
+        uint256 indexed chainId,
+        bytes32 indexed txDataHash,
+        address indexed from,
+        address to,
+        address l1Token,
+        uint256 amount
+    );
+
+    address l1USDC;
+
+    function setUSDC(address l1Token) external {
+        l1USDC = l1Token;
+    }
+
     struct L2TransactionRequestTwoBridgesOuter {
         uint256 chainId;
         uint256 mintValue;
@@ -57,6 +72,18 @@ contract zkSync_L1Bridge {
         return l2TxHash;
     }
 
+    function _depositUSDCFor(
+        address from,
+        address to,
+        address l1Token,
+        uint256 amount,
+        uint256 chainId
+    ) internal returns (bytes32 txDataHash) {
+        txDataHash = "";
+        emit BridgehubDepositInitiated(chainId, txDataHash, from, to, l1Token, amount);
+        return txDataHash;
+    }
+
     function requestL2TransactionTwoBridges(
         L2TransactionRequestTwoBridgesOuter calldata _request
     ) external payable returns (bytes32 canonicalTxHash) {
@@ -64,8 +91,12 @@ contract zkSync_L1Bridge {
             _request.secondBridgeCalldata,
             (address, uint256, address)
         );
-        _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
-        return "";
+
+        if (l1Token == l1USDC) {
+            return _depositUSDCFor(msg.sender, to, l1Token, amount, _request.chainId);
+        }
+
+        return _depositFor(msg.sender, to, l1Token, amount, _request.chainId);
     }
 
     function assetId(address token) public view returns (bytes32) {
@@ -76,15 +107,27 @@ contract zkSync_L1Bridge {
 contract zkSync_L2Bridge {
     event BridgeMint(uint256 indexed chainId, bytes32 indexed assetId, address receiver, uint256 amount);
 
+    event FinalizeDeposit(address indexed from, address indexed to, address indexed l2Token, uint256 amount);
+
     mapping(address => address) tokenMap;
+
+    address l2USDC;
 
     function mapToken(address _l1Token, address _l2Token) external {
         tokenMap[_l1Token] = _l2Token;
     }
 
+    function setUSDC(address l2Token) external {
+        l2USDC = l2Token;
+    }
+
     function finalizeDeposit(uint256 _chainId, address _l2Receiver, address _l1Token, uint256 _amount) external {
         address l2Token = tokenMap[_l1Token];
-        emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
+        if (l2Token == l2USDC) {
+            emit FinalizeDeposit(_l2Receiver, _l2Receiver, l2Token, _amount);
+        } else {
+            emit BridgeMint(_chainId, assetId(l2Token), _l2Receiver, _amount);
+        }
     }
 
     function assetId(address token) public view returns (bytes32) {

@@ -45,12 +45,6 @@ class TestMonitor extends Monitor {
     return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
   }
 
-  getL1TokenInfo(l2Token: string, chainId: number): L1Token {
-    return this.overriddenTokenMap[chainId]
-      ? this.overriddenTokenMap[chainId]?.[l2Token]
-      : super.getL1TokenInfo(l2Token, chainId);
-  }
-
   getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
       const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1TokenObject.address === l1Token);
@@ -59,6 +53,10 @@ class TestMonitor extends Monitor {
       }
     });
     return super.getRemoteTokenForL1Token(l1Token, chainId);
+  }
+
+  l2TokenAmountToL1TokenAmountConverter(): (BigNumber) => BigNumber {
+    return (amount: BigNumber) => amount;
   }
 }
 

@@ -38,7 +38,8 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     assert(l1Token.toAddress() === this.getL1Bridge().address);
     // Fetch the deposit address from the binance API.
 
-    const depositAddress = await this.binanceApiClient.depositAddress({
+    const binanceApiClient = await this.getBinanceClient();
+    const depositAddress = await binanceApiClient.depositAddress({
       coin: this.tokenSymbol,
       network: "ETH",
     });
