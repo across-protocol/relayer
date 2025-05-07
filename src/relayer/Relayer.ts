@@ -1289,7 +1289,7 @@ export class Relayer {
           deposit: {
             originChain,
             destinationChain,
-            token: hubPoolToken.symbol,
+            token: hubPoolToken,
             txnRef: blockExplorerLink(txnRef, originChainId),
           },
           preferredChain: getNetworkName(preferredChain),
@@ -1314,7 +1314,7 @@ export class Relayer {
             originChain,
             destinationChain,
             txnRef,
-            token: hubPoolToken.symbol,
+            token: hubPoolToken,
             inputAmount,
             outputAmount,
           },
