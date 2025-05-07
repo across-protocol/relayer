@@ -489,9 +489,9 @@ export class FinalizerConfig extends DataworkerConfig {
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
 
-    const _finalizationStategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
-    ssAssert(_finalizationStategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
-    this.finalizationStrategy = _finalizationStategy;
+    const _finalizationStrategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
+    ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
+    this.finalizationStrategy = _finalizationStrategy;
   }
 }
 
