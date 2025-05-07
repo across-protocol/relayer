@@ -77,6 +77,24 @@ export class MockInventoryClient extends InventoryClient {
     this.tokenMappings = tokenMapping;
   }
 
+  canTakeDestinationChainRepayment(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId" | "fromLiteChain">
+  ): boolean {
+    if (deposit.fromLiteChain) {
+      return false;
+    }
+    if (this.tokenMappings) {
+      const hasOriginChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.originChainId] === deposit.inputToken
+      );
+      const hasDestinationChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken
+      );
+      return hasOriginChainMapping && hasDestinationChainMapping;
+    }
+    return super.canTakeDestinationChainRepayment(deposit);
+  }
+
   override getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     if (this.tokenMappings) {
       const tokenMapping = Object.values(this.tokenMappings).find((mapping) => mapping[l1Token]);
