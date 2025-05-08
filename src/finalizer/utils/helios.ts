@@ -22,27 +22,30 @@ import { getSp1HeliosContract } from "../../utils/HeliosUtils";
 import { getBlockFinder, getBlockForTimestamp } from "../../utils/BlockUtils";
 
 // --- Helios Action Types ---
-type HeliosActionType = "NeedsProofAndExecution" | "NeedsExecutionOnly" | "KeepSP1HeliosAlive";
+type HeliosActionType = "UpdateAndExecute" | "ExecuteOnly" | "UpdateOnly";
 
 interface BaseHeliosAction {
   type: HeliosActionType;
 }
 
+// Action required to finalize all L1 -> L2 messages
 export interface HeliosProofAndExecuteAction extends BaseHeliosAction {
-  type: "NeedsProofAndExecution";
+  type: "UpdateAndExecute";
   l1Event: StoredCallDataEvent;
   zkProofData?: SP1HeliosProofData;
 }
 
+// Message that completes a previously unfinished finalization of L1 -> L2 message. `Sp1Helios` was updated, but message wasn't executed on `Spoke`
 export interface HeliosExecuteOnlyAction extends BaseHeliosAction {
-  type: "NeedsExecutionOnly";
+  type: "ExecuteOnly";
   l1Event: StoredCallDataEvent;
   // @dev `head` from `StorageSlotVerified` event on `SP1Helios`. Required for `executeMessage` on `Universal_SpokePool`
   verifiedSlotHead: ethers.BigNumber;
 }
 
+// Special KeepAlive message to periodically update `SP1Helios` even if no L1 -> L2 messages are being sent
 export interface HeliosKeepAliveAction extends BaseHeliosAction {
-  type: "KeepSP1HeliosAlive";
+  type: "UpdateOnly";
   zkProofData?: SP1HeliosProofData;
 }
 
@@ -175,7 +178,7 @@ async function identifyRequiredActions(
     if (verifiedSlotsMap.has(expectedStorageSlot) /* isVerified */) {
       const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
       actions.push({
-        type: "NeedsExecutionOnly",
+        type: "ExecuteOnly",
         l1Event: l1Event,
         verifiedSlotHead: verifiedEvent.head,
       });
@@ -189,7 +192,7 @@ async function identifyRequiredActions(
       });
     } else {
       actions.push({
-        type: "NeedsProofAndExecution",
+        type: "UpdateAndExecute",
         l1Event: l1Event,
       });
     }
@@ -200,7 +203,7 @@ async function identifyRequiredActions(
     await shouldGenerateKeepAliveAction(logger, hubPoolClient, l2SpokePoolClient, currentL2HeliosHeadNumber, l2ChainId)
   ) {
     actions.push({
-      type: "KeepSP1HeliosAlive",
+      type: "UpdateOnly",
     });
   }
 
@@ -277,14 +280,14 @@ async function enrichHeliosActions(
     let apiRequest: ApiProofRequest;
     let logContext: any;
     switch (action.type) {
-      case "NeedsExecutionOnly":
+      case "ExecuteOnly":
         // ExecutionOnly messages can be executed right away without a proof, so we add them to `readyActions` and continue
         readyActions.push(action);
         continue;
-      case "NeedsProofAndExecution":
+      case "UpdateAndExecute":
         logContext = {
           at: `Finalizer#heliosL1toL2Finalizer:enrichHeliosActions:${l2ChainId}`,
-          messageType: "NeedsProofAndExecution",
+          messageType: "UpdateAndExecute",
           l1TxHash: action.l1Event.txnRef,
           nonce: action.l1Event.nonce.toString(),
           target: action.l1Event.target,
@@ -297,10 +300,10 @@ async function enrichHeliosActions(
           dst_chain_contract_from_header: currentL2HeliosHeader,
         };
         break;
-      case "KeepSP1HeliosAlive":
+      case "UpdateOnly":
         logContext = {
           at: `Finalizer#heliosL1toL2Finalizer:enrichHeliosActions:${l2ChainId}`,
-          messageType: "KeepSP1HeliosAlive",
+          messageType: "UpdateOnly",
         };
         apiRequest = {
           src_chain_contract_address: ethers.constants.AddressZero,
@@ -502,8 +505,8 @@ async function generateTxnsForHeliosActions(
 
   for (const action of readyActions) {
     switch (action.type) {
-      case "NeedsExecutionOnly":
-        updateTxnArraysExecutionOnly(
+      case "ExecuteOnly":
+        addExecuteOnlyTxn(
           logger,
           l1ChainId,
           l2ChainId,
@@ -514,8 +517,8 @@ async function generateTxnsForHeliosActions(
         );
         break;
 
-      case "NeedsProofAndExecution":
-        updateTxnArraysProofAndExecution(
+      case "UpdateAndExecute":
+        addUpdateAndExecuteTxns(
           l1ChainId,
           l2ChainId,
           transactions,
@@ -526,24 +529,24 @@ async function generateTxnsForHeliosActions(
         );
         break;
 
-      case "KeepSP1HeliosAlive":
-        updateTxnArraysKeepAlive(l1ChainId, l2ChainId, transactions, crossChainMessages, sp1HeliosContract, action);
+      case "UpdateOnly":
+        addUpdateOnlyTxn(l1ChainId, l2ChainId, transactions, crossChainMessages, sp1HeliosContract, action);
         break;
 
       default:
-        throw new Error("unhandled action type in generateTxnsForHeliosActions");
+        throw new Error(`[generateTxnsForHeliosActions] unhandled action type ${action}`);
     }
   }
 
   const summary = readyActions.reduce((acc, r) => {
     acc[r.type] = (acc[r.type] || 0) + 1;
-    if (r.type === "NeedsProofAndExecution") {
+    if (r.type === "UpdateAndExecute") {
       acc.proofNonces = [...(acc.proofNonces || []), r.l1Event.nonce.toString()];
     }
-    if (r.type === "NeedsExecutionOnly") {
+    if (r.type === "ExecuteOnly") {
       acc.execOnlyNonces = [...(acc.execOnlyNonces || []), r.l1Event.nonce.toString()];
     }
-    if (r.type === "KeepSP1HeliosAlive" && r.zkProofData) {
+    if (r.type === "UpdateOnly" && r.zkProofData) {
       acc.keepAliveProofs = (acc.keepAliveProofs || 0) + 1;
     }
     return acc;
@@ -558,7 +561,7 @@ async function generateTxnsForHeliosActions(
   return { callData: transactions, crossChainMessages: crossChainMessages };
 }
 
-function updateTxnArraysExecutionOnly(
+function addExecuteOnlyTxn(
   logger: winston.Logger,
   l1ChainId: number,
   l2ChainId: number,
@@ -601,7 +604,7 @@ function updateTxnArraysExecutionOnly(
   });
 }
 
-function updateTxnArraysProofAndExecution(
+function addUpdateAndExecuteTxns(
   l1ChainId: number,
   l2ChainId: number,
   transactions: AugmentedTransaction[],
@@ -671,7 +674,7 @@ function updateTxnArraysProofAndExecution(
   });
 }
 
-function updateTxnArraysKeepAlive(
+function addUpdateOnlyTxn(
   l1ChainId: number,
   l2ChainId: number,
   transactions: AugmentedTransaction[],
