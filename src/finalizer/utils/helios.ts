@@ -319,7 +319,7 @@ async function enrichHeliosActions(
     }
 
     const proofId = calculateProofId(apiRequest);
-    const getProofUrl = `${apiBaseUrl}/api/proofs/${proofId}`;
+    const getProofUrl = `${apiBaseUrl}/v1/api/proofs/${proofId}`;
 
     logger.debug({ ...logContext, message: "Attempting to get proof", proofId, getProofUrl });
 
@@ -341,7 +341,7 @@ async function enrichHeliosActions(
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
+        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -365,7 +365,7 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/api/proofs`, apiRequest);
+        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       case "success":
