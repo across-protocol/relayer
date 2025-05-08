@@ -18,6 +18,7 @@ import {
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
 
+// Alias for a Binance deposit/withdrawal status.
 enum Status {
   Confirmed = 1,
   Pending = 0,
@@ -27,12 +28,21 @@ enum Status {
   WaitingUserConfirm = 8,
 }
 
+// Alias for Binance network symbols.
+enum DepositNetwork {
+  Ethereum = "ETH",
+  BSC = "BSC",
+}
+
+// A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
+// token.
 type Coin = {
   symbol: string;
   balance: string;
   networkList: Network[];
 };
 
+// Network represents basic information corresponding to a Binance supported deposit/withdrawal network. It is always associated with a coin.
 type Network = {
   name: string;
   coin: string;
@@ -41,6 +51,7 @@ type Network = {
   contractAddress: string;
 };
 
+// A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
 type BinanceInteraction = {
   // The amount of `coin` transferred in this interaction.
   amount: number;
@@ -54,6 +65,7 @@ type BinanceInteraction = {
   status?: number;
 };
 
+// ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
 
 /**
@@ -130,8 +142,9 @@ export async function binanceFinalizer(
       const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
-      await mapAsync(["ETH", "BSC"], async (depositNetwork) => {
-        const withdrawNetwork = depositNetwork === "ETH" ? "BSC" : "ETH";
+      await mapAsync([DepositNetwork.Ethereum, DepositNetwork.BSC], async (depositNetwork) => {
+        const withdrawNetwork =
+          depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const depositAmounts = depositsInScope
@@ -219,7 +232,7 @@ async function getBinanceDeposits(
   const depositHistory = Object.values(_depositHistory);
 
   return mapAsync(depositHistory, async (deposit) => {
-    const provider = deposit.network === "ETH" ? l1Provider : l2Provider;
+    const provider = deposit.network === DepositNetwork.Ethereum ? l1Provider : l2Provider;
     const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
     return {
       amount: Number(deposit.amount),
