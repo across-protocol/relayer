@@ -267,7 +267,7 @@ export const CONTRACT_ADDRESSES: {
   },
   [CHAIN_IDs.BSC]: {
     sp1Helios: {
-      address: "0x3BED21dAe767e4Df894B31b14aD32369cE4bad8b",
+      address: "0xCdb25d0A6FfFE639BC591a565F2D99507837f2b7",
       abi: SP1_HELIOS_ABI,
     },
   },
