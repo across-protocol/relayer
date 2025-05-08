@@ -13,9 +13,19 @@ import {
   bnZero,
   getTokenInfo,
   ethers,
+  groupObjectCountsByProp,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
+
+enum Status {
+  Confirmed = 1,
+  Pending = 0,
+  Rejected = 2,
+  Credited = 6,
+  WrongDeposit = 7,
+  WaitingUserConfirm = 8,
+}
 
 type Coin = {
   symbol: string;
@@ -40,6 +50,8 @@ type BinanceInteraction = {
   coin: string;
   // The network on which this interaction took place.
   network: string;
+  // The status of the deposit/withdrawal.
+  status?: number;
 };
 
 type ParsedAccountCoins = Coin[];
@@ -61,22 +73,40 @@ export async function binanceFinalizer(
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
-  const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-  const fromTimestamp = (await getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock)) * 1_000;
+  const [binanceApi, _fromTimestamp] = await Promise.all([
+    getBinanceApiClient(process.env["BINANCE_API_BASE"]),
+    getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock),
+  ]);
+  const fromTimestamp = _fromTimestamp * 1_000;
 
-  const [binanceDeposits, accountCoins] = await Promise.all([
+  const [_binanceDeposits, accountCoins] = await Promise.all([
     getBinanceDeposits(binanceApi, hubSigner.provider, fromTimestamp),
     await getAccountCoins(binanceApi),
   ]);
 
+  const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
+    switch (deposit.status) {
+      case Status.Confirmed:
+        return "ready-to-finalize";
+      case Status.Rejected:
+        return "deposit-rejected";
+      case Status.WrongDeposit:
+        return "wrong-deposit";
+      default:
+        return "waiting-to-finalize";
+    }
+  });
   logger.debug({
     at: "BinanceFinalizer",
-    message: `Found ${binanceDeposits.length} historical deposits with status === 1.`,
-    fromTimestamp: fromTimestamp / 1_000,
+    message: `Found ${_binanceDeposits.length} historical Binance deposits.`,
+    statusesGrouped,
+    fromTimestamp: fromTimestamp,
   });
+  const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
   await mapAsync(senderAddresses, async (address) => {
     // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+    // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
     const depositsInScope = binanceDeposits.filter((deposit) =>
       compareAddressesSimple(deposit.externalAddress, address)
     );
@@ -84,14 +114,13 @@ export async function binanceFinalizer(
       logger.debug({
         at: "BinanceFinalizer",
         message: `No finalizable deposits found for ${address}`,
-        fromTimestamp: fromTimestamp / 1_000,
       });
       return;
     }
 
     // The inner loop finalizes all deposits for all supported tokens for the address.
     await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // For the l1 to l2 finalizer, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+      // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
       const symbol = _symbol[0] === "W" ? _symbol.slice(1) : _symbol;
 
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
@@ -185,9 +214,7 @@ async function getBinanceDeposits(
   startTime: number
 ): Promise<BinanceInteraction[]> {
   const _depositHistory = await binanceApi.depositHistory({ startTime });
-
-  // We need to filter out deposits which are not ready to be finalized. A deposit.status of 1 means that the deposit has been fully processed and can be withdrawn on L1/L2.
-  const depositHistory = Object.values(_depositHistory).filter((deposit) => deposit.status === 1);
+  const depositHistory = Object.values(_depositHistory);
 
   return mapAsync(depositHistory, async (deposit) => {
     const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
@@ -196,6 +223,7 @@ async function getBinanceDeposits(
       externalAddress: depositTxnReceipt.from,
       coin: deposit.coin,
       network: deposit.network,
+      status: deposit.status,
     };
   });
 }
@@ -214,6 +242,7 @@ async function getBinanceWithdrawals(
       externalAddress: withdrawal.address,
       coin,
       network: withdrawal.network,
+      status: withdrawal.status,
     };
   });
 }
