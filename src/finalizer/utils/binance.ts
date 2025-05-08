@@ -121,7 +121,8 @@ export async function binanceFinalizer(
     // The inner loop finalizes all deposits for all supported tokens for the address.
     await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
       // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-      const symbol = _symbol[0] === "W" ? _symbol.slice(1) : _symbol;
+      let symbol = _symbol === "WETH" ? "ETH" : _symbol;
+      symbol = symbol === "WBNB" ? "BNB" : symbol;
 
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
