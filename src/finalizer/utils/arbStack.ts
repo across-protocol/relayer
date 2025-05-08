@@ -16,7 +16,6 @@ import {
   getCurrentTime,
   getRedisCache,
   getBlockForTimestamp,
-  getL1TokenInfo,
   Multicall2Call,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -26,6 +25,7 @@ import {
   getNetworkName,
   getL2TokenAddresses,
   getNativeTokenSymbol,
+  getTokenInfo,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -228,11 +228,11 @@ async function multicallArbitrumFinalizations(
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
+    const { symbol, decimals } = getTokenInfo(l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
       destinationChainId: hubPoolClient.chainId,
