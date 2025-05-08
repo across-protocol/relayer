@@ -80,8 +80,8 @@ export async function binanceFinalizer(
   const fromTimestamp = _fromTimestamp * 1_000;
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
-    getBinanceDeposits(binanceApi, hubSigner.provider, fromTimestamp),
-    await getAccountCoins(binanceApi),
+    getBinanceDeposits(binanceApi, hubSigner.provider, l2SpokePoolClient.spokePool.provider, fromTimestamp),
+    getAccountCoins(binanceApi),
   ]);
 
   const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
@@ -211,13 +211,15 @@ export async function binanceFinalizer(
 // Gets all binance deposits for the Binance account starting from `startTime`-present.
 async function getBinanceDeposits(
   binanceApi: Binance,
-  provider: ethers.providers.Provider,
+  l1Provider: ethers.providers.Provider,
+  l2Provider: ethers.providers.Provider,
   startTime: number
 ): Promise<BinanceInteraction[]> {
   const _depositHistory = await binanceApi.depositHistory({ startTime });
   const depositHistory = Object.values(_depositHistory);
 
   return mapAsync(depositHistory, async (deposit) => {
+    const provider = deposit.network === "ETH" ? l1Provider : l2Provider;
     const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
     return {
       amount: Number(deposit.amount),
