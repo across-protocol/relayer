@@ -184,7 +184,7 @@ async function identifyRequiredActions(
       });
       // Warn about a half-finished finalization
       logger.warn({
-        at: `Finalizer#getHeliosActions:${l2ChainId}`,
+        at: `Finalizer#identifyRequiredActions:${l2ChainId}`,
         message:
           "Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.",
         l1TxRef: l1Event.txnRef,
@@ -208,7 +208,7 @@ async function identifyRequiredActions(
   }
 
   logger.debug({
-    at: `Finalizer#getHeliosActions:${l2ChainId}`,
+    at: `Finalizer#identifyRequiredActions:${l2ChainId}`,
     message: "Finished identifying Helios actions.",
     totalL1StoredCallData: relevantStoredCallDataEvents.length,
     totalL2VerifiedSlots: verifiedSlotsMap.size,
@@ -553,7 +553,7 @@ async function generateTxnsForHeliosActions(
   }, {} as Record<string, any>);
 
   logger.debug({
-    at: `Finalizer#generateHeliosTxns:${l2ChainId}`,
+    at: `Finalizer#generateTxnsForHeliosActions:${l2ChainId}`,
     message: `Generated ${transactions.length} transactions for ${readyActions.length} ready actions.`,
     summary,
   });
@@ -577,7 +577,7 @@ function addExecuteOnlyTxn(
   }
 
   logger.warn({
-    at: `Finalizer#generateHeliosTxns:${l2ChainId}`,
+    at: `Finalizer#addExecuteOnlyTxn:${l2ChainId}`,
     message: "Generating SpokePool.executeMessage ONLY for partially finalized message.",
     nonce: l1Event.nonce.toString(),
     l1TxHash: l1Event.txnRef,
