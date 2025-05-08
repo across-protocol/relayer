@@ -7,7 +7,6 @@ import {
   Signer,
   winston,
   convertFromWei,
-  getL1TokenInfo,
   getProvider,
   EventSearchConfig,
   ethers,
@@ -16,6 +15,7 @@ import {
   mapAsync,
   BigNumber,
   TOKEN_SYMBOLS_MAP,
+  getTokenInfo,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -267,12 +267,12 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,
       destinationChainId: l1ChainId,
-      l1TokenSymbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
     };

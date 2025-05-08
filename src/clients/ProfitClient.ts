@@ -416,13 +416,23 @@ export class ProfitClient {
     return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(decimals));
   }
 
+  protected getTokenSymbol(token: string, chainId: number): string {
+    try {
+      const { symbol } = getTokenInfo(token, chainId);
+      return symbol;
+    } catch (e) {
+      return "UNKNOWN";
+    }
+  }
+
   async getFillProfitability(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token,
+    l1Token: string,
     repaymentChainId: number
   ): Promise<FillProfit> {
-    const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
+    const symbol = this.getTokenSymbol(l1Token, this.hubPoolClient.chainId);
+    const minRelayerFeePct = this.minRelayerFeePct(symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
@@ -431,9 +441,7 @@ export class ProfitClient {
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${
-          l1Token.symbol
-        } deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${symbol} deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -463,7 +471,7 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token,
+    l1Token: string,
     repaymentChainId: number
   ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
