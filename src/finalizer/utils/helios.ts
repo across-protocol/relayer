@@ -9,6 +9,7 @@ import {
   BigNumber,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
+import { groupObjectCountsByProp } from "@across-protocol/sdk/src/utils/ObjectUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
@@ -78,10 +79,7 @@ export async function heliosL1toL2Finalizer(
   logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
     message: `Identified ${actions.length} total Helios actions.`,
-    actionCounts: actions.reduce((acc, action) => {
-      acc[action.type] = (acc[action.type] || 0) + 1;
-      return acc;
-    }, {} as Record<HeliosActionType, number>),
+    actionCounts: groupObjectCountsByProp(actions, (action) => action.type),
   });
 
   if (actions.length === 0) {
@@ -210,10 +208,7 @@ async function identifyRequiredActions(
     totalL2VerifiedSlots: verifiedSlotsMap.size,
     totalL2RelayedNonces: relayedNonces.size,
     actionsCount: actions.length,
-    actionBreakdown: actions.reduce((acc, action) => {
-      acc[action.type] = (acc[action.type] || 0) + 1;
-      return acc;
-    }, {} as Record<HeliosActionType, number>),
+    actionBreakdown: groupObjectCountsByProp(actions, (action) => action.type),
   });
 
   return actions;
