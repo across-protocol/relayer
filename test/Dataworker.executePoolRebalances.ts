@@ -68,7 +68,6 @@ describe("Dataworker: Execute pool rebalances", async function () {
       hubPoolClient.configStoreClient as unknown as ConfigStoreClient
     );
     mockHubPoolClient.chainId = hubPoolClient.chainId;
-    mockHubPoolClient.setTokenInfoToReturn({ address: l1Token_1.address, decimals: 18, symbol: "TEST" });
     mockHubPoolClient.setTokenMapping(l1Token_1.address, hubPoolClient.chainId, l1Token_1.address);
 
     // Sub in a dummy root bundle proposal for use in HubPoolClient update.

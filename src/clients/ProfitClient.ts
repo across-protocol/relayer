@@ -17,7 +17,6 @@ import {
   BigNumber,
   formatFeePct,
   getCurrentTime,
-  getNetworkName,
   isDefined,
   min,
   winston,
@@ -30,6 +29,9 @@ import {
   ZERO_ADDRESS,
   formatGwei,
   fixedPointAdjustment,
+  getRemoteTokenForL1Token,
+  getTokenInfo,
+  dedupArray,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -113,7 +115,8 @@ export class ProfitClient {
     readonly debugProfitability = false,
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
-    protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING)
+    protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
+    readonly additionalL1Tokens: string[] = []
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -180,7 +183,9 @@ export class ProfitClient {
       return token;
     }
     const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
-    const address = this.tokenSymbolMap[remappedTokenSymbol];
+    // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
+    // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
+    const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
     assert(
       isDefined(address),
       `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
@@ -331,7 +336,7 @@ export class ProfitClient {
   ): Promise<FillProfit> {
     const { hubPoolClient } = this;
 
-    const inputTokenInfo = hubPoolClient.getL1TokenInfoForL2Token(deposit.inputToken, deposit.originChainId);
+    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken, deposit.originChainId);
     const inputTokenPriceUsd = this.getPriceOfToken(inputTokenInfo.symbol);
     const inputTokenScalar = toBNWei(1, 18 - inputTokenInfo.decimals);
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
@@ -339,24 +344,10 @@ export class ProfitClient {
 
     // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
     // can be any arbitrary token.
-    let outputTokenSymbol: string, outputTokenDecimals: number;
-    // If the output token and the input token are equivalent, then we can look up the token info
-    // via the HubPoolClient since the output token is mapped via PoolRebalanceRoute to the HubPool.
-    // If not, then we should look up outputToken in the TOKEN_SYMBOLS_MAP for the destination chain.
-    const matchingTokens =
-      TOKEN_SYMBOLS_MAP[inputTokenInfo.symbol]?.addresses[deposit.destinationChainId] === deposit.outputToken;
-    if (matchingTokens) {
-      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getL1TokenInfoForL2Token(
-        deposit.outputToken,
-        deposit.destinationChainId
-      ));
-    } else {
-      // This function will throw if the token is not found in the TOKEN_SYMBOLS_MAP for the destination chain.
-      ({ symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken,
-        deposit.destinationChainId
-      ));
-    }
+    const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
+      deposit.outputToken,
+      deposit.destinationChainId
+    );
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenSymbol);
     const outputTokenScalar = toBNWei(1, 18 - outputTokenDecimals);
     const effectiveOutputAmount = min(deposit.outputAmount, deposit.updatedOutputAmount ?? deposit.outputAmount);
@@ -417,31 +408,31 @@ export class ProfitClient {
     deposit: Pick<Deposit, "destinationChainId" | "outputToken" | "outputAmount">
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
-    let l1Token: L1Token;
 
-    try {
-      l1Token = this.hubPoolClient.getL1TokenInfoForL2Token(outputToken, destinationChainId);
-    } catch {
-      this.logger.debug({
-        at: "ProfitClient#getFillAmountInUsd",
-        message: `Cannot resolve output token ${outputToken} on ${getNetworkName(destinationChainId)}.`,
-      });
-      return undefined;
-    }
-
-    const tokenPriceInUsd = this.getPriceOfToken(l1Token.symbol);
+    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+    const tokenPriceInUsd = this.getPriceOfToken(symbol);
 
     // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
-    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(l1Token.decimals));
+    return outputAmount.mul(tokenPriceInUsd).div(bn10.pow(decimals));
+  }
+
+  protected getTokenSymbol(token: string, chainId: number): string {
+    try {
+      const { symbol } = getTokenInfo(token, chainId);
+      return symbol;
+    } catch (e) {
+      return "UNKNOWN";
+    }
   }
 
   async getFillProfitability(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token,
+    l1Token: string,
     repaymentChainId: number
   ): Promise<FillProfit> {
-    const minRelayerFeePct = this.minRelayerFeePct(l1Token.symbol, deposit.originChainId, deposit.destinationChainId);
+    const symbol = this.getTokenSymbol(l1Token, this.hubPoolClient.chainId);
+    const minRelayerFeePct = this.minRelayerFeePct(symbol, deposit.originChainId, deposit.destinationChainId);
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
@@ -450,9 +441,7 @@ export class ProfitClient {
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${
-          l1Token.symbol
-        } deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${symbol} deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit,
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
@@ -482,7 +471,7 @@ export class ProfitClient {
   async isFillProfitable(
     deposit: Deposit,
     lpFeePct: BigNumber,
-    l1Token: L1Token,
+    l1Token: string,
     repaymentChainId: number
   ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
     let profitable = false;
@@ -541,11 +530,11 @@ export class ProfitClient {
   }
 
   protected async updateTokenPrices(): Promise<void> {
+    const l1Tokens = this._getL1Tokens();
     // Generate list of tokens to retrieve. Map by symbol because tokens like
     // ETH/WETH refer to the same mainnet contract address.
     const tokens: { [_symbol: string]: string } = Object.fromEntries(
-      this.hubPoolClient
-        .getL1Tokens()
+      l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
           const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
@@ -574,9 +563,9 @@ export class ProfitClient {
 
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
-    const unknownTokens = this.hubPoolClient
-      .getL1Tokens()
-      .filter(({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]));
+    const unknownTokens = l1Tokens.filter(
+      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol])
+    );
     if (unknownTokens.length > 0) {
       this.logger.debug({
         at: "ProfitClient#updateTokenPrices",
@@ -676,7 +665,7 @@ export class ProfitClient {
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
-            : hubPoolClient.getL2TokenForL1TokenAtBlock(hubToken, destinationChainId);
+            : getRemoteTokenForL1Token(hubToken, destinationChainId, this.hubPoolClient);
         assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
         const deposit = { ...sampleDeposit, destinationChainId, outputToken };
@@ -713,6 +702,15 @@ export class ProfitClient {
       enabledChainIds: this.enabledChainIds,
       totalGasCosts: totalGasCostsToLog,
     });
+  }
+
+  private _getL1Tokens(): L1Token[] {
+    // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
+    const hubPoolTokens = this.hubPoolClient.getL1Tokens();
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
+      getTokenInfo(l1Token, this.hubPoolClient.chainId)
+    );
+    return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
   private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {

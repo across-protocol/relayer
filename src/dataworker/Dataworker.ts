@@ -19,6 +19,7 @@ import {
   getEndBlockBuffers,
   _buildPoolRebalanceRoot,
   ERC20,
+  getTokenInfo,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -248,7 +249,7 @@ export class Dataworker {
         shouldWait: true,
         poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
-        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.txnRef,
         expectedPoolRebalanceLeaves,
         executedPoolRebalanceLeaves: executedPoolRebalanceLeaves.length,
       };
@@ -266,7 +267,7 @@ export class Dataworker {
         poolRebalanceLeafExecutionBlocks,
         mainnetBundleEndBlock,
         minimumMainnetBundleEndBlockToPropose,
-        mostRecentProposedRootBundle: mostRecentProposedRootBundle.transactionHash,
+        mostRecentProposedRootBundle: mostRecentProposedRootBundle.txnRef,
       };
     }
   }
@@ -1086,7 +1087,7 @@ export class Dataworker {
               message:
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               invalidBlockRanges,
-              bundleTxn: matchingRootBundle.transactionHash,
+              bundleTxn: matchingRootBundle.txnRef,
             });
             continue;
           }
@@ -1106,7 +1107,7 @@ export class Dataworker {
               chainId,
               rootBundleRelay,
               mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-              mainnetRootBundleTxn: matchingRootBundle.transactionHash,
+              mainnetRootBundleTxn: matchingRootBundle.txnRef,
               publishedSlowRelayRoot: rootBundleRelay.slowRelayRoot,
               constructedSlowRelayRoot: tree.getHexRoot(),
             });
@@ -1792,7 +1793,7 @@ export class Dataworker {
       const currentLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
       updatedLiquidReserves[l1Token] = currentLiquidReserves;
       assert(currentLiquidReserves !== undefined && currentLiquidReserves.gte(0), "Liquid reserves should be >= 0");
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // If netSendAmounts is negative, there is no need to update this exchange rate.
       if (netSendAmounts[idx].lte(0)) {
@@ -1892,7 +1893,7 @@ export class Dataworker {
         return;
       }
 
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
@@ -1964,7 +1965,7 @@ export class Dataworker {
     // multiple transactions for the same token.
     if (submitExecution) {
       for (const l1Token of updatedL1Tokens) {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(hubPoolChainId, l1Token)?.symbol;
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,
@@ -1990,7 +1991,7 @@ export class Dataworker {
         return;
       }
       seenL1Tokens.add(l1Token);
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfo(chainId, l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
       const latestFeesCompoundedTime =
@@ -2131,7 +2132,7 @@ export class Dataworker {
             at: "Dataworke#executeRelayerRefundLeaves",
             message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
             invalidBlockRanges,
-            bundleTxn: matchingRootBundle.transactionHash,
+            bundleTxn: matchingRootBundle.txnRef,
           });
           continue;
         }
@@ -2150,7 +2151,7 @@ export class Dataworker {
             chainId,
             rootBundleRelay,
             mainnetRootBundleBlock: matchingRootBundle.blockNumber,
-            mainnetRootBundleTxn: matchingRootBundle.transactionHash,
+            mainnetRootBundleTxn: matchingRootBundle.txnRef,
             publishedRelayerRefundRoot: rootBundleRelay.relayerRefundRoot,
             constructedRelayerRefundRoot: tree.getHexRoot(),
           });
@@ -2178,6 +2179,14 @@ export class Dataworker {
           rootBundleRelay.rootBundleId
         );
       }
+    }
+  }
+
+  protected getTokenInfo(l2Token: string, chainId: number): string {
+    try {
+      return getTokenInfo(l2Token, chainId).symbol;
+    } catch (e) {
+      return "UNKNOWN";
     }
   }
 
@@ -2215,7 +2224,7 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
-          const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+          const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
           // relatively infrequent, the additional RPC latency and cost is acceptable.
@@ -2236,7 +2245,7 @@ export class Dataworker {
           if (duplicateEvents.length > 0) {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeaves",
-              message: `Relayer Refund Leaf #${leaf.leafId} for ${l1TokenInfo?.symbol} on chain ${leaf.chainId} already executed`,
+              message: `Relayer Refund Leaf #${leaf.leafId} for ${symbol} on chain ${leaf.chainId} already executed`,
               duplicateEvents,
             });
             return undefined;
@@ -2270,7 +2279,7 @@ export class Dataworker {
           if (!success) {
             this.logger.warn({
               at: "Dataworker#_executeRelayerRefundLeaves",
-              message: `Not executing relayer refund leaf on chain ${leaf.chainId} due to lack of spoke or msg.sender funds for token ${l1TokenInfo?.symbol}`,
+              message: `Not executing relayer refund leaf on chain ${leaf.chainId} due to lack of spoke or msg.sender funds for token ${symbol}`,
               root: relayerRefundTree.getHexRoot(),
               bundle: rootBundleId,
               leafId: leaf.leafId,
@@ -2309,11 +2318,11 @@ export class Dataworker {
     ).filter(isDefined);
 
     fundedLeaves.forEach((leaf) => {
-      const l1TokenInfo = this.clients.hubPoolClient.getL1TokenInfoForL2Token(leaf.l2TokenAddress, chainId);
+      const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
 
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId
-      }\nchainId: ${chainId}\ntoken: ${l1TokenInfo?.symbol}\namount: ${leaf.amountToReturn.toString()}`;
+      }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
         const valueToPassViaPayable = getMsgValue(leaf);
         this.clients.multiCallerClient.enqueueTransaction({

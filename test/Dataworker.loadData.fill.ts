@@ -263,13 +263,32 @@ describe("Dataworker: Load bundle data", async function () {
       expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(0);
     });
 
+    it("Does not refund fills for zero address output token deposits", async function () {
+      generateV3Deposit({
+        outputToken: ZERO_ADDRESS,
+      });
+
+      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+      generateV3FillFromDeposit(deposits[0]);
+
+      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      expect(data1.bundleFillsV3).to.deep.equal({});
+      expect(spy.getCalls().filter((e) => e.lastArg.message.includes("invalid fills")).length).to.equal(0);
+    });
+
     describe("Duplicate deposits in same bundle as fill", function () {
       it("Sends duplicate deposit refunds for fills in bundle", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
@@ -292,8 +311,8 @@ describe("Dataworker: Load bundle data", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        const dupe1 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        const dupe2 = await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe1 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe2 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
@@ -311,10 +330,10 @@ describe("Dataworker: Load bundle data", async function () {
         expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
         expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
         expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].txnRef).to.equal(
           dupe1.transactionHash
         );
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].transactionHash).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].txnRef).to.equal(
           dupe2.transactionHash
         );
       });
@@ -904,13 +923,9 @@ describe("Dataworker: Load bundle data", async function () {
         const bundleDepositsV3 = {};
         const bundleFillsV3 = {};
         deposits.forEach((deposit) => {
-          const legacyDeposit = {
-            ...deposit,
-            messageHash: "", // Superstruct defaults to "" for undefined.
-          };
           bundleDepositsV3[deposit.originChainId] ??= {};
           bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(legacyDeposit);
+          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
         });
         fills.forEach((fill) => {
           bundleFillsV3[fill.originChainId] ??= {};
@@ -964,14 +979,10 @@ describe("Dataworker: Load bundle data", async function () {
           bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
         });
         fills.forEach((fill) => {
-          const legacyFill = {
-            ...fill,
-            messageHash: "", // Superstruct defaults to "" for undefined.
-          };
           bundleFillsV3[fill.originChainId] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
           bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
-          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(legacyFill);
+          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
         });
         const mockArweaveData = [
           {
@@ -1001,9 +1012,9 @@ describe("Dataworker: Load bundle data", async function () {
         const fillV3Events: interfaces.Log[] = [];
         const destinationChainId = mockDestinationSpokePoolClient.chainId;
         // Create three valid deposits
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+        depositV3Events.push(generateV3Deposit());
+        depositV3Events.push(generateV3Deposit());
+        depositV3Events.push(generateV3Deposit());
         await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 

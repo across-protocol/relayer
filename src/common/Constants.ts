@@ -8,6 +8,7 @@ import {
   Provider,
   ZERO_ADDRESS,
   bnUint32Max,
+  EvmAddress,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -26,14 +27,18 @@ import {
   OpStackUSDCBridge,
   UsdcCCTPBridge,
   ZKStackBridge,
+  ZKStackUSDCBridge,
   ZKStackWethBridge,
   OFTBridge,
+  BinanceCEXBridge,
+  BinanceCEXNativeBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
   OpStackWethBridge as L2OpStackWethBridge,
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
+  BinanceCEXBridge as L2BinanceCEXBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 
@@ -82,11 +87,13 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   10000: {
     [CHAIN_IDs.MAINNET]: 32,
     [CHAIN_IDs.POLYGON]: 128, // Commonly used finality level for CEX's that accept Polygon deposits
+    [CHAIN_IDs.BSC]: 3, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 18,
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
+    [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
@@ -95,6 +102,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
+    [CHAIN_IDs.BSC]: 0,
     [CHAIN_IDs.ZK_SYNC]: 0,
   },
 };
@@ -124,6 +132,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
+  [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.UNICHAIN]: 10000,
   [CHAIN_IDs.INK]: 10000,
   [CHAIN_IDs.LENS]: 10000,
@@ -164,6 +173,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
+  [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
   [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
   [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
@@ -218,6 +228,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
+  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probablistic but it takes an average of 2.5 blocks.
   [CHAIN_IDs.UNICHAIN]: 120,
   [CHAIN_IDs.INK]: 120, // Follows Optimism
   [CHAIN_IDs.LENS]: 512,
@@ -321,18 +332,19 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
+  [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
-  [CHAIN_IDs.LENS]: ["WETH", "WGHO"],
+  [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
-  [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "UMA", "ACX"],
+  [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "WLD", "UMA", "ACX"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "POOL"],
+  [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
@@ -374,7 +386,7 @@ export const CANONICAL_BRIDGE: {
       hubChainId: number,
       l1Signer: Signer,
       l2SignerOrProvider: Signer | Provider,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseBridgeAdapter;
   };
 } = {
@@ -382,6 +394,7 @@ export const CANONICAL_BRIDGE: {
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BSC]: BinanceCEXBridge,
   [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.LENS]: ZKStackBridge,
@@ -417,11 +430,12 @@ export const CANONICAL_L2_BRIDGE: {
       hubChainId: number,
       l2Signer: Signer,
       l1Provider: Provider | Signer,
-      l1Token: string
+      l1Token?: EvmAddress
     ): BaseL2BridgeAdapter;
   };
 } = {
   [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
+  [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
@@ -437,7 +451,7 @@ export const CUSTOM_BRIDGE: {
         hubChainId: number,
         l1Signer: Signer,
         l2SignerOrProvider: Signer | Provider,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseBridgeAdapter;
     };
   };
@@ -454,6 +468,9 @@ export const CUSTOM_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
+  [CHAIN_IDs.BSC]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: BinanceCEXNativeBridge,
+  },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -463,6 +480,7 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.LENS]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: ZKStackUSDCBridge,
   },
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -545,7 +563,7 @@ export const CUSTOM_L2_BRIDGE: {
         hubChainId: number,
         l2Signer: Signer,
         l1Provider: Provider | Signer,
-        l1Token: string
+        l1Token?: EvmAddress
       ): BaseL2BridgeAdapter;
     };
   };
@@ -775,6 +793,13 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.ZORA]: {
+    l1: {
+      L2OutputOracle: ZERO_ADDRESS,
+      DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
 
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -860,6 +885,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
 export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
+  [CHAIN_IDs.BSC]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,

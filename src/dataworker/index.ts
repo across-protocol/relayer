@@ -109,8 +109,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
         fromBlocks,
         toBlocks,
-        fromBundleTxn: fromBundle?.transactionHash,
-        toBundleTxn: toBundle?.transactionHash,
+        fromBundleTxn: fromBundle?.txnRef,
+        toBundleTxn: toBundle?.txnRef,
       });
       const spokePoolClients = await constructSpokePoolClientsForFastDataworker(
         logger,

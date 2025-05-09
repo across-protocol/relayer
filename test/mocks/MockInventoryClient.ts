@@ -1,13 +1,16 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber, bnZero } from "../../src/utils";
+import { BigNumber } from "../../src/utils";
 import winston from "winston";
 
+type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockInventoryClient extends InventoryClient {
   possibleRebalances: Rebalance[] = [];
-  balanceOnChain: BigNumber | undefined = bnZero;
+  balanceOnChain: BigNumber | undefined = undefined;
   excessRunningBalancePcts: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
+  l1Token: string | undefined = undefined;
+  tokenMappings: TokenMapping | undefined = undefined;
 
   constructor(
     relayer: string | null = null,
@@ -18,7 +21,9 @@ export class MockInventoryClient extends InventoryClient {
     hubPoolClient: HubPoolClient | null = null,
     bundleDataClient: BundleDataClient | null = null,
     adapterManager: AdapterManager | null = null,
-    crossChainTransferClient: CrossChainTransferClient | null = null
+    crossChainTransferClient: CrossChainTransferClient | null = null,
+    simMode = false,
+    prioritizeLpUtilization = false
   ) {
     super(
       relayer, // relayer
@@ -29,7 +34,9 @@ export class MockInventoryClient extends InventoryClient {
       hubPoolClient, // hubPoolClient
       bundleDataClient, // bundleDataClient
       adapterManager, // adapter manager
-      crossChainTransferClient
+      crossChainTransferClient,
+      simMode, // sim mode
+      prioritizeLpUtilization // prioritize lp utilization
     );
   }
 
@@ -64,5 +71,47 @@ export class MockInventoryClient extends InventoryClient {
 
   override getBalanceOnChain(chainId: number, l1Token: string, l2Token?: string): BigNumber {
     return this.balanceOnChain ?? super.getBalanceOnChain(chainId, l1Token, l2Token);
+  }
+
+  setTokenMapping(tokenMapping: TokenMapping): void {
+    this.tokenMappings = tokenMapping;
+  }
+
+  canTakeDestinationChainRepayment(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId" | "fromLiteChain">
+  ): boolean {
+    if (deposit.fromLiteChain) {
+      return false;
+    }
+    if (this.tokenMappings) {
+      const hasOriginChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.originChainId] === deposit.inputToken
+      );
+      const hasDestinationChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken
+      );
+      return hasOriginChainMapping && hasDestinationChainMapping;
+    }
+    return super.canTakeDestinationChainRepayment(deposit);
+  }
+
+  override getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    if (this.tokenMappings) {
+      const tokenMapping = Object.values(this.tokenMappings).find((mapping) => mapping[l1Token]);
+      if (tokenMapping) {
+        return tokenMapping[l1Token][chainId];
+      }
+    }
+    return super.getRemoteTokenForL1Token(l1Token, chainId);
+  }
+
+  override getL1TokenAddress(l2Token: string, chainId: number): string {
+    if (this.tokenMappings) {
+      const tokenMapping = Object.entries(this.tokenMappings).find(([, mapping]) => mapping[chainId] === l2Token);
+      if (tokenMapping) {
+        return tokenMapping[0];
+      }
+    }
+    return super.getL1TokenAddress(l2Token, chainId);
   }
 }

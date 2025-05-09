@@ -2,7 +2,16 @@ import { Signer } from "ethers";
 import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
-import { BigNumber, EventSearchConfig, Provider, TOKEN_SYMBOLS_MAP, compareAddressesSimple, assert } from "../../utils";
+import {
+  BigNumber,
+  EventSearchConfig,
+  Provider,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  assert,
+  EvmAddress,
+  Address,
+} from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   protected cctpBridge: BaseBridgeAdapter;
@@ -13,7 +22,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: string
+    l1Token: EvmAddress
   ) {
     const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](
       l2chainId,
@@ -24,7 +33,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     );
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address,
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
@@ -32,29 +41,29 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     this.canonicalBridge = canonicalBridge;
   }
 
-  private getRouteForL2Token(l2Token: string): BaseBridgeAdapter {
-    return compareAddressesSimple(l2Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
+  private getRouteForL2Token(l2Token: Address): BaseBridgeAdapter {
+    return compareAddressesSimple(l2Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
       ? this.cctpBridge
       : this.canonicalBridge;
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: Address,
+    toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
       this.cctpBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, eventConfig),
       this.canonicalBridge.queryL1BridgeInitiationEvents(l1Token, fromAddress, toAddress, eventConfig),
@@ -69,12 +78,12 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: Address,
+    toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    assert(compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const events = await Promise.all([
       this.cctpBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, eventConfig),
       this.canonicalBridge.queryL2BridgeFinalizationEvents(l1Token, fromAddress, toAddress, eventConfig),
