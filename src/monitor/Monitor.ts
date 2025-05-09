@@ -42,6 +42,9 @@ import {
   utils,
   _buildPoolRebalanceRoot,
   getRemoteTokenForL1Token,
+  getTokenInfo,
+  ConvertDecimals,
+  getL1TokenAddress,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -72,6 +75,7 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
+  private additionalL1Tokens: string[] = [];
   private balanceAllocator: BalanceAllocator;
   // Chains for each spoke pool client.
   public monitorChains: number[];
@@ -96,6 +100,7 @@ export class Monitor {
       crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
+    this.additionalL1Tokens = this.monitorConfig.additionalL1NonLpTokens;
   }
 
   public async update(): Promise<void> {
@@ -236,14 +241,27 @@ export class Monitor {
     }
   }
 
+  l2TokenAmountToL1TokenAmountConverter(l2Token: string, chainId: number): (BigNumber) => BigNumber {
+    // Step 1: Get l1 token address equivalent of L2 token
+    const l1Token = getL1TokenAddress(l2Token, chainId);
+    const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
+    const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
+    return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
+  }
+
   getL1TokensForRelayerBalancesReport(): L1Token[] {
-    const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens()].map(({ symbol, ...tokenInfo }) => {
-      return {
-        ...tokenInfo,
-        // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
-        symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
-      };
-    });
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
+      getTokenInfo(l1Token, this.clients.hubPoolClient.chainId)
+    );
+    const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens(), ...additionalL1Tokens].map(
+      ({ symbol, ...tokenInfo }) => {
+        return {
+          ...tokenInfo,
+          // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
+          symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
+        };
+      }
+    );
     // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
     // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
     const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
@@ -354,13 +372,14 @@ export class Monitor {
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
+          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddresses[i], chainId);
           const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer],
             symbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
-            tokenBalances[i]
+            decimalConverter(tokenBalances[i])
           );
         }
       }
@@ -1084,6 +1103,7 @@ export class Monitor {
       }
 
       for (const tokenAddress of Object.keys(fillsToRefund)) {
+        const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(tokenAddress, chainId);
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
         if (fillsToRefund[tokenAddress] === undefined || l2ToL1Tokens[tokenAddress] === undefined) {
@@ -1092,7 +1112,7 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
         const { symbol } = l2ToL1Tokens[tokenAddress];
-        const amount = totalRefundAmount ?? bnZero;
+        const amount = decimalConverter(totalRefundAmount ?? bnZero);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
     }

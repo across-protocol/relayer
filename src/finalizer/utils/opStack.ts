@@ -20,7 +20,6 @@ import {
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
-  getL1TokenInfo,
   getNetworkName,
   getRedisCache,
   getUniqueLogIndex,
@@ -38,6 +37,7 @@ import {
   createViemCustomTransportFromEthersProvider,
   bnZero,
   forEachAsync,
+  getTokenInfo,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -170,7 +170,7 @@ export async function opStackFinalizer(
   ).map((event) => {
     // If we're aware of this token, then save the event as one we can finalize.
     try {
-      getL1TokenInfo(event.args.localToken, chainId);
+      getTokenInfo(event.args.localToken, chainId);
       return {
         ...event,
         l2TokenAddress: event.args.localToken,
@@ -338,8 +338,8 @@ async function viem_multicallOptimismFinalizations(
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
-    const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
+    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(event.amountToReturn.toString(), decimals);
 
     const receipt = await publicClientL2.getTransactionReceipt({
       hash: event.txnRef as `0x${string}`,
@@ -375,7 +375,7 @@ async function viem_multicallOptimismFinalizations(
         });
         viemTxns.withdrawals.push({
           originationChainId: chainId,
-          l1TokenSymbol: l1TokenInfo.symbol,
+          l1TokenSymbol: symbol,
           amount: amountFromWei,
           type: "misc",
           miscReason: "proof",
@@ -390,9 +390,9 @@ async function viem_multicallOptimismFinalizations(
       });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
-        message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${
-          l1TokenInfo.symbol
-        } is in challenge period for ${(seconds / 3600).toFixed(2)} hours`,
+        message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol} is in challenge period for ${(
+          seconds / 3600
+        ).toFixed(2)} hours`,
       });
     } else if (withdrawalStatus === "ready-to-finalize") {
       // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
@@ -424,7 +424,7 @@ async function viem_multicallOptimismFinalizations(
       });
       viemTxns.withdrawals.push({
         originationChainId: chainId,
-        l1TokenSymbol: l1TokenInfo.symbol,
+        l1TokenSymbol: symbol,
         amount: amountFromWei,
         type: "withdrawal",
         destinationChainId: hubPoolClient.chainId,
@@ -674,11 +674,11 @@ async function multicallOptimismFinalizations(
     if (!isDefined(_callData)) {
       return;
     }
-    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
       destinationChainId: hubPoolClient.chainId,
@@ -866,11 +866,11 @@ async function multicallOptimismL1Proofs(
     provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
-    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const proof: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "misc",
       miscReason: "proof",

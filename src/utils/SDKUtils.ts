@@ -13,7 +13,7 @@ export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}
 export class SvmAddress extends sdk.utils.SvmAddress {}
 
-export const { fillStatusArray, populateV3Relay, relayFillStatus } = sdk.arch.evm;
+export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock } = sdk.arch.evm;
 
 export const {
   assign,
@@ -60,7 +60,7 @@ export const {
   blockExplorerLinks,
   createShortHexString: shortenHexString,
   compareAddressesSimple,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getUsdcSymbol,
   Profiler,
   getMessageHash,
@@ -68,6 +68,8 @@ export const {
   toBytes32,
   validateFillForDeposit,
   toAddressType,
+  chainIsEvm,
+  ConvertDecimals,
   getTokenInfo,
 } = sdk.utils;
 

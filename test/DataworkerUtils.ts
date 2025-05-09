@@ -1,8 +1,9 @@
+import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { _buildSlowRelayRoot, _getRefundLeaves } from "../src/dataworker/DataworkerUtils";
-import { BundleSlowFills, DepositWithBlock } from "../src/interfaces";
-import { BigNumber, bnOne, bnZero, toBNWei, ZERO_ADDRESS } from "../src/utils";
+import { BundleDepositsV3, BundleFillsV3, BundleSlowFills, DepositWithBlock } from "../src/interfaces";
+import { _buildPoolRebalanceRoot, BigNumber, bnOne, bnZero, toBNWei, toWei, winston, ZERO_ADDRESS } from "../src/utils";
 import { repaymentChainId } from "./constants";
-import { assert, expect, randomAddress } from "./utils";
+import { assert, createSpyLogger, deployConfigStore, expect, hubPoolFixture, randomAddress, ethers } from "./utils";
 
 describe("RelayerRefund utils", function () {
   it("Removes zero value refunds from relayer refund root", async function () {
@@ -151,5 +152,110 @@ describe("SlowFill utils", function () {
     expect(leaves.length).to.equal(1);
     // updatedOutputAmount should be equal to inputAmount * (1 - lpFee) so 4 * (1 - 0.25) = 3
     expect(leaves[0].updatedOutputAmount).to.equal(toBNWei("3"));
+  });
+});
+
+describe("PoolRebalanceLeaf utils", function () {
+  let mockHubPoolClient: MockHubPoolClient;
+  let mockConfigStoreClient: MockConfigStoreClient;
+  let spyLogger: winston.Logger;
+
+  const originChainId = 1;
+  const chainWithRefundsOnly = 2;
+
+  const refundToken3 = randomAddress();
+  const originToken = randomAddress();
+  const l1Token = randomAddress();
+
+  describe("_buildPoolRebalanceRoot", function () {
+    beforeEach(async function () {
+      const [owner] = await ethers.getSigners();
+
+      const { hubPool } = await hubPoolFixture();
+      const { configStore } = await deployConfigStore(owner, []);
+
+      ({ spyLogger } = createSpyLogger());
+      mockConfigStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+      mockHubPoolClient = new MockHubPoolClient(spyLogger, hubPool, mockConfigStoreClient);
+      await mockConfigStoreClient.update();
+      await mockHubPoolClient.update();
+
+      mockHubPoolClient.setTokenMapping(l1Token, originChainId, originToken);
+    });
+    it("Produces empty pool rebalance leaf for chains with only refunds and no running balances", async function () {
+      const { leaves } = _buildPoolRebalanceRoot(
+        mockHubPoolClient.latestBlockSearched,
+        mockHubPoolClient.latestBlockSearched,
+        // To make this test simpler, create the minimum object that won't break the tested function:
+        {},
+        {
+          [chainWithRefundsOnly]: {
+            [refundToken3]: {
+              totalRefundAmount: bnZero,
+              fills: [1],
+              refunds: {},
+              realizedLpFees: bnZero,
+            },
+          },
+        } as unknown as BundleFillsV3,
+        {},
+        {},
+        {},
+        {
+          hubPoolClient: mockHubPoolClient,
+          configStoreClient: mockConfigStoreClient,
+        },
+        100
+      );
+      expect(leaves.length).to.equal(1);
+      expect(leaves[0]).to.deep.equal({
+        chainId: chainWithRefundsOnly,
+        leafId: 0,
+        groupIndex: 0,
+        bundleLpFees: [],
+        runningBalances: [],
+        netSendAmounts: [],
+        l1Tokens: [],
+      });
+    });
+    it("Inserts empty pool rebalance leaf in correct order", async function () {
+      const { leaves } = _buildPoolRebalanceRoot(
+        mockHubPoolClient.latestBlockSearched,
+        mockHubPoolClient.latestBlockSearched,
+        // To make this test simpler, create the minimum object that won't break the tested function:
+        {
+          [originChainId]: {
+            [originToken]: [
+              {
+                inputAmount: toWei("1"),
+                inputToken: originToken,
+                originChainId,
+              },
+            ],
+          },
+        } as unknown as BundleDepositsV3,
+        {
+          [chainWithRefundsOnly]: {
+            [refundToken3]: {
+              totalRefundAmount: bnZero,
+              fills: [1],
+              refunds: {},
+              realizedLpFees: bnZero,
+            },
+          },
+        } as unknown as BundleFillsV3,
+        {},
+        {},
+        {},
+        {
+          hubPoolClient: mockHubPoolClient,
+          configStoreClient: mockConfigStoreClient,
+        },
+        100
+      );
+      expect(leaves.length).to.equal(2);
+      expect(leaves.map((leaf) => leaf.chainId)).to.deep.equal([originChainId, chainWithRefundsOnly]);
+      expect(leaves.map((leaf) => leaf.leafId)).to.deep.equal([0, 1]);
+    });
   });
 });

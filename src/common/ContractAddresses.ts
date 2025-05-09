@@ -4,6 +4,7 @@ import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
 import ATOMIC_DEPOSITOR_ABI from "./abi/AtomicDepositor.json";
 import WETH_ABI from "./abi/Weth.json";
+import ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI from "./abi/AtomicDepositorTransferProxy.json";
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
 import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
@@ -19,6 +20,7 @@ import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json"
 import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
+import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -34,6 +36,8 @@ import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
+import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
+import SP1_HELIOS_ABI from "./abi/SP1Helios.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -64,6 +68,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackNativeTokenVault: {
       address: "0xbeD1EB542f9a5aA6419Ff3deb921A372681111f6",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+    },
+    zkStackUSDCBridge_232: {
+      address: "0xf553E6D903AA43420ED7e3bc2313bE9286A8F987",
+      abi: ZKSTACK_USDC_BRIDGE_ABI,
     },
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
@@ -199,6 +207,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
     },
+    hubPoolStore: {
+      address: "0x1Ace3BbD69b63063F859514Eca29C9BDd8310E61",
+      abi: HUB_POOL_STORE_ABI,
+    },
     blastBridge: {
       address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
       abi: BLAST_BRIDGE_ABI,
@@ -222,6 +234,10 @@ export const CONTRACT_ADDRESSES: {
     scrollGasPriceOracle: {
       address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
       abi: SCROLL_GAS_PRICE_ORACLE_ABI,
+    },
+    atomicDepositorTransferProxy: {
+      address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
+      abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
   },
   [CHAIN_IDs.OPTIMISM]: {
@@ -247,6 +263,12 @@ export const CONTRACT_ADDRESSES: {
     cctpTokenMessenger: {
       address: "0x2B4069517957735bE00ceE0fadAE88a26365528f",
       abi: CCTP_TOKEN_MESSENGER_ABI,
+    },
+  },
+  [CHAIN_IDs.BSC]: {
+    sp1Helios: {
+      address: "0xCdb25d0A6FfFE639BC591a565F2D99507837f2b7",
+      abi: SP1_HELIOS_ABI,
     },
   },
   [CHAIN_IDs.POLYGON]: {
@@ -436,6 +458,10 @@ export const CONTRACT_ADDRESSES: {
     weth: {
       address: "0xE5ecd226b3032910CEaa43ba92EE8232f8237553",
       abi: WETH_ABI,
+    },
+    usdcBridge: {
+      address: "0x7188B6975EeC82ae914b6eC7AC32b3c9a18b2c81",
+      abi: ZKSTACK_USDC_BRIDGE_ABI,
     },
   },
   [CHAIN_IDs.LINEA]: {
