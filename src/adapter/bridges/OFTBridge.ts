@@ -9,6 +9,9 @@ import {
   paginatedEventQuery,
   isContractDeployedToAddress,
   assert,
+  EvmAddress,
+  Address,
+  resolveToken,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -20,13 +23,12 @@ import {
   SendParamStruct,
 } from "@across-protocol/contracts/dist/typechain/contracts/interfaces/IOFT";
 
-import { resolveToken } from "../../../scripts/utils";
 import { utils } from "@across-protocol/sdk";
 const { toBytes32 } = utils;
 
 type OFTRouteInfo = {
-  hubChainIOFTAddress: string;
-  dstIOFTAddress: string;
+  hubChainIOFTAddress: EvmAddress;
+  dstIOFTAddress: EvmAddress;
 };
 
 // Routes are organized by token address and destination chain ID
@@ -42,8 +44,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     // USDT supports transfers from Ethereum to Arbitrum
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
       [CHAIN_IDs.ARBITRUM]: {
-        hubChainIOFTAddress: "0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee",
-        dstIOFTAddress: "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92",
+        hubChainIOFTAddress: EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee"),
+        dstIOFTAddress: EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92"),
       },
     },
   };
@@ -72,7 +74,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     hubChainId: number,
     hubSigner: Signer,
     dstSignerOrProvider: Signer | Provider,
-    public readonly hubTokenAddress: string
+    public readonly hubTokenAddress: EvmAddress
   ) {
     // OFT bridge currently only supports Ethereum as hub chain
     assert(
@@ -81,10 +83,10 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Check if the route exists for this token and chain
-    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress]?.[dstChainId];
+    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toAddress()]?.[dstChainId];
     assert(
       isDefined(route),
-      new Error(`No route found for token ${hubTokenAddress} from chain ${hubChainId} to ${dstChainId}`)
+      new Error(`No route found for token ${hubTokenAddress.toAddress()} from chain ${hubChainId} to ${dstChainId}`)
     );
 
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
@@ -99,12 +101,12 @@ export class OFTBridge extends BaseBridgeAdapter {
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
 
     // Initialize L1 contract using the hubChainIOFTAddress from the route
-    this.l1Bridge = new Contract(route.hubChainIOFTAddress, IOFT_ABI_FULL, hubSigner);
+    this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
 
     // Initialize L2 contract using the dstIOFTAddress from the route
-    this.l2Bridge = new Contract(route.dstIOFTAddress, IOFT_ABI_FULL, dstSignerOrProvider);
+    this.l2Bridge = new Contract(route.dstIOFTAddress.toAddress(), IOFT_ABI_FULL, dstSignerOrProvider);
 
-    this.tokenDecimals = resolveToken(hubTokenAddress, hubChainId).decimals;
+    this.tokenDecimals = resolveToken(hubTokenAddress.toAddress(), hubChainId).decimals;
   }
 
   /**
@@ -116,14 +118,16 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns Transaction details for execution
    */
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    _l2Token: string,
+    toAddress: Address,
+    l1Token: EvmAddress,
+    _l2Token: Address,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     // Verify the token matches the one this bridge was constructed for
-    if (l1Token !== this.hubTokenAddress) {
-      throw new Error(`This bridge instance only supports token ${this.hubTokenAddress}, not ${l1Token}`);
+    if (!l1Token.eq(this.hubTokenAddress)) {
+      throw new Error(
+        `This bridge instance only supports token ${this.hubTokenAddress.toAddress()}, not ${l1Token.toAddress()}`
+      );
     }
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
@@ -135,7 +139,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // must be zero to prevent rounding on the contract side
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress),
+      to: oftAddressToBytes32(toAddress.toAddress()),
       amountLD: roundedAmount,
       minAmountLD: roundedAmount, // Use the same rounded amount for minimum
       extraOptions: "0x", // Empty bytes
@@ -197,20 +201,20 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns Events grouped by token address
    */
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: Address,
+    toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // If request is for a different L1 token, return an empty list
-    if (l1Token !== this.hubTokenAddress) {
+    if (!l1Token.eq(this.hubTokenAddress)) {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
-    if (isSpokePool && fromAddress != this.hubPoolAddress) {
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
       return {};
-    } else if (fromAddress != toAddress) {
+    } else if (!fromAddress.eq(toAddress)) {
       return {};
     }
 
@@ -220,7 +224,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, should be undefined
-        fromAddress // filter by `fromAddress`
+        fromAddress.toAddress() // filter by `fromAddress`
       ),
       eventConfig
     );
@@ -244,20 +248,20 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns Events grouped by token address
    */
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: Address,
+    toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // If request is for a different L1 token, return an empty list
-    if (l1Token !== this.hubTokenAddress) {
+    if (!l1Token.eq(this.hubTokenAddress)) {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress, this.l2Bridge.provider);
-    if (isSpokePool && fromAddress != this.hubPoolAddress) {
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
       return {};
-    } else if (fromAddress != toAddress) {
+    } else if (!fromAddress.eq(toAddress)) {
       return {};
     }
 
@@ -267,7 +271,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.OFTReceived(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // srcEid - not an indexed parameter, should be undefined
-        toAddress // filter by `toAddress`
+        toAddress.toAddress() // filter by `toAddress`
       ),
       eventConfig
     );

@@ -19,8 +19,10 @@ import {
   getSigner,
   isDefined,
   populateV3Relay,
+  resolveToken,
   toBN,
   toBytes32,
+  IERC20,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -124,7 +126,7 @@ async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
 async function getRelayerQuote(
   fromChainId: number,
   toChainId: number,
-  token: utils.ERC20,
+  token: IERC20,
   amount: BigNumber,
   recipient?: string,
   message?: string
@@ -217,7 +219,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     return false;
   }
 
-  const token = utils.resolveToken(args.token as string, fromChainId);
+  const token = resolveToken(args.token as string, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
   const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
@@ -302,8 +304,8 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
   const destinationChainId = Number(depositArgs.destinationChainId.toString());
   const destSpokePool = spokePools[destinationChainId] ?? (await utils.getSpokePoolContract(destinationChainId));
 
-  const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
-  const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
+  const { symbol } = resolveToken(depositArgs.inputToken, originChainId);
+  const destinationTokenInfo = resolveToken(symbol, destinationChainId);
   const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
