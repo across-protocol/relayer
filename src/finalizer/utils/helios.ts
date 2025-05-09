@@ -14,7 +14,7 @@ import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
-import { StorageSlotVerifiedEvent } from "../../interfaces/Helios";
+import { StorageSlotVerifiedEvent, HeadUpdateEvent } from "../../interfaces/Helios";
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
@@ -72,8 +72,7 @@ export async function heliosL1toL2Finalizer(
     l1SpokePoolClient,
     l2SpokePoolClient,
     l1ChainId,
-    l2ChainId,
-    sp1HeliosHead
+    l2ChainId
   );
 
   logger.debug({
@@ -143,8 +142,7 @@ async function identifyRequiredActions(
   l1SpokePoolClient: SpokePoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1ChainId: number,
-  l2ChainId: number,
-  currentL2HeliosHeadNumber: number
+  l2ChainId: number
 ): Promise<HeliosAction[]> {
   // --- Substep 1: Query and Filter L1 Events (similar to getRelevantL1Events) ---
   const relevantStoredCallDataEvents = await getRelevantL1Events(
@@ -199,9 +197,7 @@ async function identifyRequiredActions(
   }
 
   // --- Substep 4: Check if Keep-Alive action is needed and push to actions if yes ---
-  if (
-    await shouldGenerateKeepAliveAction(logger, hubPoolClient, l2SpokePoolClient, currentL2HeliosHeadNumber, l2ChainId)
-  ) {
+  if (await shouldGenerateKeepAliveAction(logger, l2SpokePoolClient, l2ChainId)) {
     actions.push({
       type: "UpdateOnly",
     });
@@ -225,30 +221,45 @@ async function identifyRequiredActions(
 
 async function shouldGenerateKeepAliveAction(
   logger: winston.Logger,
-  hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
-  currentL2HeliosHeadNumber: number,
   l2ChainId: number
 ): Promise<boolean> {
-  const twentyFourHoursInSeconds = 24 * 60 * 60;
+  const twentyFourHoursInSeconds = 24 * 60 * 60; // 24 hours
   const timestamp24hAgo = Math.floor(Date.now() / 1000) - twentyFourHoursInSeconds;
 
-  /**
-   * @dev Exact check that happens in SP1Helios that we're protecting against:
-   * require(block.timestamp - slotTimestamp(fromHead) <= MAX_SLOT_AGE, PreviousHeadTooOld(fromHead));
-   * where MAX_SLOT_AGE = 1 week.
-   */
-  const l1ChainId = hubPoolClient.chainId;
-  const l1BlockFinder = await getBlockFinder(l1ChainId);
-  const l1Block24hAgo = await getBlockForTimestamp(l1ChainId, timestamp24hAgo, l1BlockFinder);
+  const l2Provider = l2SpokePoolClient.spokePool.provider;
+  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
-  if (currentL2HeliosHeadNumber < l1Block24hAgo) {
-    // todo: perhaps change to warn? This should be a rare-ish log
+  const searchConfig: EventSearchConfig = {
+    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
+    toBlock: l2SpokePoolClient.latestBlockSearched,
+    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+  };
+
+  const headUpdateFilter = sp1HeliosContract.filters.HeadUpdate();
+  const rawHeadUpdateLogs = await paginatedEventQuery(sp1HeliosContract, headUpdateFilter, searchConfig);
+
+  const headUpdateEvents: HeadUpdateEvent[] = rawHeadUpdateLogs.map(
+    (log) => spreadEventWithBlockNumber(log) as HeadUpdateEvent
+  );
+
+  let latestHeadUpdateBlockNumber = 0;
+  for (const event of headUpdateEvents) {
+    if (latestHeadUpdateBlockNumber < event.blockNumber) {
+      latestHeadUpdateBlockNumber = event.blockNumber;
+    }
+  }
+
+  const l2BlockFinder = await getBlockFinder(l2ChainId);
+  const l2Block24hAgo = await getBlockForTimestamp(l2ChainId, timestamp24hAgo, l2BlockFinder);
+
+  if (latestHeadUpdateBlockNumber < l2Block24hAgo) {
     logger.info({
       at: "Finalizer#shouldGenerateKeepAliveAction",
-      message: "SP1Helios head is older than 24 hours (L1 block time). Should generate keep-alive.",
-      currentL2HeliosHeadNumber,
-      l1Block24hAgo,
+      message:
+        "Latest SP1Helios HeadUpdate event on L2 is older than 24 hours (L2 block time). Should generate keep-alive.",
+      latestHeadUpdateBlockNumber,
+      l2Block24hAgo,
       l2ChainId,
     });
     return true;
@@ -485,6 +496,51 @@ async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<S
   return new Set<string>(events.map((event) => event.nonce.toString()));
 }
 
+// Helper type for the summary structure
+type ActionTypeSummary = {
+  count: number;
+  nonces?: string[]; // Only for types that have nonces
+};
+
+type HeliosActionsSummary = {
+  UpdateAndExecute: Required<ActionTypeSummary>; // nonces are always present
+  ExecuteOnly: Required<ActionTypeSummary>; // nonces are always present
+  UpdateOnly: { count: number };
+};
+
+function logSummary(logger: winston.Logger, readyActions: HeliosAction[], l2ChainId: number) {
+  const initialSummary: HeliosActionsSummary = {
+    UpdateAndExecute: { count: 0, nonces: [] },
+    ExecuteOnly: { count: 0, nonces: [] },
+    UpdateOnly: { count: 0 },
+  };
+
+  const summary = readyActions.reduce((acc, action) => {
+    switch (action.type) {
+      case "UpdateAndExecute":
+        acc.UpdateAndExecute.count++;
+        acc.UpdateAndExecute.nonces.push(action.l1Event.nonce.toString());
+        break;
+      case "ExecuteOnly":
+        acc.ExecuteOnly.count++;
+        acc.ExecuteOnly.nonces.push(action.l1Event.nonce.toString());
+        break;
+      case "UpdateOnly":
+        acc.UpdateOnly.count++;
+        break;
+      default:
+        throw new Error(`[logSummary] Unknown action type ${action}`);
+    }
+    return acc;
+  }, initialSummary);
+
+  logger.debug({
+    at: `Finalizer#logSummary:${l2ChainId}`,
+    message: `Summary of ${readyActions.length} ready Helios actions.`,
+    summary,
+  });
+}
+
 /** --- Generate Multicall Data --- */
 async function generateTxnsForHeliosActions(
   logger: winston.Logger,
@@ -538,25 +594,7 @@ async function generateTxnsForHeliosActions(
     }
   }
 
-  const summary = readyActions.reduce((acc, r) => {
-    acc[r.type] = (acc[r.type] || 0) + 1;
-    if (r.type === "UpdateAndExecute") {
-      acc.proofNonces = [...(acc.proofNonces || []), r.l1Event.nonce.toString()];
-    }
-    if (r.type === "ExecuteOnly") {
-      acc.execOnlyNonces = [...(acc.execOnlyNonces || []), r.l1Event.nonce.toString()];
-    }
-    if (r.type === "UpdateOnly" && r.zkProofData) {
-      acc.keepAliveProofs = (acc.keepAliveProofs || 0) + 1;
-    }
-    return acc;
-  }, {} as Record<string, any>);
-
-  logger.debug({
-    at: `Finalizer#generateTxnsForHeliosActions:${l2ChainId}`,
-    message: `Generated ${transactions.length} transactions for ${readyActions.length} ready actions.`,
-    summary,
-  });
+  logSummary(logger, readyActions, l2ChainId);
 
   return { callData: transactions, crossChainMessages: crossChainMessages };
 }
