@@ -435,7 +435,7 @@ export class InventoryClient {
     if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
       return false;
     }
-    const hubPoolBlock = this.hubPoolClient.latestBlockSearched;
+    const hubPoolBlock = this.hubPoolClient.latestHeightSearched;
     if (!this.hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId, hubPoolBlock)) {
       return false;
     }
@@ -705,7 +705,7 @@ export class InventoryClient {
 
         // We need to find the latest validated running balance for this chain and token.
         const lastValidatedRunningBalance = this.hubPoolClient.getRunningBalanceBeforeBlockForChain(
-          this.hubPoolClient.latestBlockSearched,
+          this.hubPoolClient.latestHeightSearched,
           chainId,
           l1Token
         ).runningBalance;
@@ -714,7 +714,7 @@ export class InventoryClient {
         // - minus total deposit amount on chain since the latest validated end block
         // - plus total refund amount on chain since the latest validated end block
         const latestValidatedBundle = this.hubPoolClient.getLatestExecutedRootBundleContainingL1Token(
-          this.hubPoolClient.latestBlockSearched,
+          this.hubPoolClient.latestHeightSearched,
           chainId,
           l1Token
         );

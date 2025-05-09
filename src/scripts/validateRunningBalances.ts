@@ -138,7 +138,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockSearched;
+      clients.hubPoolClient.latestHeightSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -227,7 +227,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockSearched;
+              clients.hubPoolClient.latestHeightSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -265,9 +265,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
@@ -279,9 +279,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       l2TokenContract,
                       l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args.value.eq(previousNetSendAmount));

@@ -81,8 +81,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     const l2Provider = this.getL2Bridge().provider;
 
     const [fromBlock, toBlock] = await Promise.all([
-      l2Provider.getBlock(eventConfig.fromBlock),
-      l2Provider.getBlock(eventConfig.toBlock),
+      l2Provider.getBlock(eventConfig.from),
+      l2Provider.getBlock(eventConfig.to),
     ]);
 
     const [l1FromBlock, l1ToBlock] = [
@@ -90,8 +90,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, this.blockFinder),
     ];
     const l1SearchConfig = {
-      fromBlock: l1FromBlock,
-      toBlock: l1ToBlock,
+      from: l1FromBlock,
+      to: l1ToBlock,
     };
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),

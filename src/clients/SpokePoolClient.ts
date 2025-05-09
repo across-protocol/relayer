@@ -60,9 +60,9 @@ export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
     readonly hubPoolClient: clients.HubPoolClient | null,
     readonly chainId: number,
     public deploymentBlock: number,
-    eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = {
-      fromBlock: deploymentBlock,
-      maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
+    eventSearchConfig: MakeOptional<EventSearchConfig, "to"> = {
+      from: deploymentBlock,
+      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
     },
     readonly opts: IndexerOpts
   ) {
@@ -85,10 +85,10 @@ export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
    */
   protected startWorker(): void {
     const {
-      eventSearchConfig: { fromBlock, maxBlockLookBack: blockrange },
+      eventSearchConfig: { from, maxLookBack: blockrange },
       spokePool: { address: spokepool },
     } = this;
-    const opts = { spokepool, blockrange, lookback: `@${fromBlock}` };
+    const opts = { spokepool, blockrange, lookback: `@${from}` };
 
     const args = Object.entries(opts)
       .map(([k, v]) => [`--${k}`, `${v}`])
@@ -285,7 +285,7 @@ export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
       this.pendingEvents[eventIdx] = [];
 
       pendingEvents.forEach(({ removed }) => assert(!removed));
-      return pendingEvents;
+      return pendingEvents.map(spreadEventWithBlockNumber);
     });
 
     return {

@@ -46,7 +46,7 @@ async function indexedSpokePoolClient(
 
   const blockFinder = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
-  const [activationBlock, fromBlock] = await Promise.all([
+  const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
     getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
   ]);
@@ -57,7 +57,7 @@ async function indexedSpokePoolClient(
     hubPoolClient,
     chainId,
     activationBlock,
-    { fromBlock, maxBlockLookBack: opts.blockRange },
+    { from, maxLookBack: opts.blockRange },
     opts
   );
 

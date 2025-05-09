@@ -13,6 +13,8 @@ export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}
 export class SvmAddress extends sdk.utils.SvmAddress {}
 
+export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
+
 export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock } = sdk.arch.evm;
 
 export const {

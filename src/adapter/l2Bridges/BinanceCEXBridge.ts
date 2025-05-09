@@ -93,7 +93,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token.toAddress(), this.l2chainId);
-    const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.fromBlock)) * 1_000;
+    const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
       binanceApiClient.depositHistory({
         coin: this.l1TokenInfo.symbol,

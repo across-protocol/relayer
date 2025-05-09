@@ -14,7 +14,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "to"> = { from: 0, maxLookBack: 0 },
     readonly configStoreVersion: number = CONFIG_STORE_VERSION
   ) {
     super(logger, configStore, eventSearchConfig, configStoreVersion);
@@ -66,10 +66,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (isDefined(this.injectedChain)) {
       const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = this.injectedChain;
       // Sanity check to ensure that this event doesn't happen in the future
-      if (injectedBlockNumber > this.latestBlockSearched) {
+      if (injectedBlockNumber > this.latestHeightSearched) {
         this.logger.debug({
           at: "ConfigStore[Relayer]#update",
-          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockSearched}`,
+          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestHeightSearched}`,
         });
         return;
       }
