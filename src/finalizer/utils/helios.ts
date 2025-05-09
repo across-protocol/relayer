@@ -176,8 +176,8 @@ async function identifyRequiredActions(
         l1Event: l1Event,
         verifiedSlotHead: verifiedEvent.head,
       });
-      // Warn about a half-finished finalization
-      logger.warn({
+      // Report half-finished finalization from prev. run
+      logger.debug({
         at: `Finalizer#identifyRequiredActions:${l2ChainId}`,
         message:
           "Message requires execution only (already verified in SP1Helios). Will generate SpokePool.executeMessage tx.",
