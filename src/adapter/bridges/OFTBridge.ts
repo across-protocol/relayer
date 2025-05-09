@@ -31,7 +31,6 @@ type OFTRouteInfo = {
   dstIOFTAddress: EvmAddress;
 };
 
-// Routes are organized by token address and destination chain ID
 type OFTRoutes = {
   [tokenAddress: string]: {
     [dstChainId: number]: OFTRouteInfo;
@@ -39,7 +38,7 @@ type OFTRoutes = {
 };
 
 export class OFTBridge extends BaseBridgeAdapter {
-  // Structure: { tokenAddress: { dstChainId: OFTRouteInfo } }
+  // Routes are organized by token address and destination chain ID
   private static readonly SUPPORTED_ROUTES: OFTRoutes = {
     // USDT supports transfers from Ethereum to Arbitrum
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
@@ -76,13 +75,12 @@ export class OFTBridge extends BaseBridgeAdapter {
     dstSignerOrProvider: Signer | Provider,
     public readonly hubTokenAddress: EvmAddress
   ) {
-    // OFT bridge currently only supports Ethereum as hub chain
+    // OFT bridge currently only supports Ethereum MAINNET as hub chain
     assert(
       hubChainId == CHAIN_IDs.MAINNET,
       new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`)
     );
 
-    // Check if the route exists for this token and chain
     const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toAddress()]?.[dstChainId];
     assert(
       isDefined(route),
@@ -92,31 +90,14 @@ export class OFTBridge extends BaseBridgeAdapter {
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
 
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
-
-    // Get chain-specific EID for OFT messaging
     this.dstChainEid = getOFTEidForChainId(dstChainId);
-
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
-
-    // Initialize L1 contract using the hubChainIOFTAddress from the route
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
-
-    // Initialize L2 contract using the dstIOFTAddress from the route
     this.l2Bridge = new Contract(route.dstIOFTAddress.toAddress(), IOFT_ABI_FULL, dstSignerOrProvider);
-
     this.tokenDecimals = resolveToken(hubTokenAddress.toAddress(), hubChainId).decimals;
   }
 
-  /**
-   * Constructs a transaction to send tokens from L1 to L2 through the OFT bridge.
-   * @param toAddress - Destination address
-   * @param l1Token - Token address on L1
-   * @param _l2Token - Token address on L2 (not used, determined by bridge)
-   * @param amount - Amount to transfer
-   * @returns Transaction details for execution
-   */
   async constructL1ToL2Txn(
     toAddress: Address,
     l1Token: EvmAddress,
@@ -124,44 +105,38 @@ export class OFTBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     // Verify the token matches the one this bridge was constructed for
-    if (!l1Token.eq(this.hubTokenAddress)) {
-      throw new Error(
+    assert(
+      l1Token.eq(this.hubTokenAddress),
+      new Error(
         `This bridge instance only supports token ${this.hubTokenAddress.toAddress()}, not ${l1Token.toAddress()}`
-      );
-    }
+      )
+    );
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToOftPrecision(amount);
-
-    // Construct the send parameters for the OFT bridge
-    // @dev last `(supportedToken.decimals() - IOFT.sharedDecimals())` digits in amount
-    // must be zero to prevent rounding on the contract side
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
       to: oftAddressToBytes32(toAddress.toAddress()),
       amountLD: roundedAmount,
-      minAmountLD: roundedAmount, // Use the same rounded amount for minimum
+      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
+      minAmountLD: roundedAmount,
       extraOptions: "0x", // Empty bytes
       composeMsg: "0x", // Empty bytes
       oftCmd: "0x", // Empty bytes
     };
 
     // Get the messaging fee for this transfer
-    const l1Bridge = this.l1Bridge;
-    const feeStruct: MessagingFeeStruct = await (l1Bridge as IOFT).quoteSend(sendParamStruct, false);
-
-    // todo: instead of throwing here, log and cancel tx sending? How? Return null?
+    const feeStruct: MessagingFeeStruct = await (this.l1Bridge as IOFT).quoteSend(sendParamStruct, false);
     if (BigNumber.from(feeStruct.nativeFee).gt(OFTBridge.FEE_CAP)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${OFTBridge.FEE_CAP})`);
     }
 
-    // Set refund address to signer's address (used for dust refunds)
-    const refundAddress = await l1Bridge.signer.getAddress();
-
-    // Return transaction details
+    // Set refund address to signer's address. This should technically never be required as all of our calcs
+    // are precise, set it just in case
+    const refundAddress = await this.l1Bridge.signer.getAddress();
     return {
-      contract: l1Bridge,
+      contract: this.l1Bridge,
       method: "send",
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
@@ -175,38 +150,26 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns The amount rounded down to the correct precision
    */
   private async roundAmountToOftPrecision(amount: BigNumber): Promise<BigNumber> {
-    // Lazy-load shared decimals if not loaded yet
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
 
-    // Calculate the precision difference
     const decimalDifference = this.tokenDecimals - this.sharedDecimals;
 
     if (decimalDifference > 0) {
       const divisor = BigNumber.from(10).pow(decimalDifference);
       const remainder = amount.mod(divisor);
-      // Subtract the remainder to round down
       return amount.sub(remainder);
     }
 
-    // If no rounding is needed, return the original amount
     return amount;
   }
 
-  /**
-   * Queries events for token transfers initiated on the L1 chain.
-   * @param l1Token - Token address on L1
-   * @param fromAddress - Source address
-   * @param toAddress - Destination address (not used in query, deduced from fromAddress)
-   * @param eventConfig - Event search configuration
-   * @returns Events grouped by token address
-   */
   async queryL1BridgeInitiationEvents(
     l1Token: EvmAddress,
     fromAddress: Address,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // If request is for a different L1 token, return an empty list
+    // This shouldn't happen, but if request is for a different L1 token, return an empty list
     if (!l1Token.eq(this.hubTokenAddress)) {
       return {};
     }
@@ -223,7 +186,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
-        undefined, // dstEid - not an indexed parameter, should be undefined
+        undefined, // dstEid - not an indexed parameter, must be `undefined`
         fromAddress.toAddress() // filter by `fromAddress`
       ),
       eventConfig
@@ -239,21 +202,13 @@ export class OFTBridge extends BaseBridgeAdapter {
     };
   }
 
-  /**
-   * Queries events for token transfers finalized on the L2 chain.
-   * @param l1Token - Token address on L1 (used for validation)
-   * @param fromAddress - Source address (not used in query, deduced from toAddress)
-   * @param toAddress - Destination address
-   * @param eventConfig - Event search configuration
-   * @returns Events grouped by token address
-   */
   async queryL2BridgeFinalizationEvents(
     l1Token: EvmAddress,
     fromAddress: Address,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // If request is for a different L1 token, return an empty list
+    // This shouldn't happen, but if request is for a different L1 token, return an empty list
     if (!l1Token.eq(this.hubTokenAddress)) {
       return {};
     }
