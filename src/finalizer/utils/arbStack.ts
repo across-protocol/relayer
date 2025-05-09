@@ -82,7 +82,7 @@ export async function arbStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   recipientAddresses: string[]
 ): Promise<FinalizerPromise> {
-  LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
+  LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await averageBlockTime(hubPoolProvider)).average;
   // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
@@ -114,7 +114,7 @@ export async function arbStackFinalizer(
   logger.debug({
     at: `Finalizer#${networkName}Finalizer`,
     message: `${networkName} TokensBridged event filter`,
-    toBlock: latestBlockToFinalize,
+    to: latestBlockToFinalize,
   });
   const withdrawalEvents: TokensBridged[] = [];
 
@@ -137,7 +137,7 @@ export async function arbStackFinalizer(
     ),
     {
       ...spokePoolClient.eventSearchConfig,
-      toBlock: latestBlockToFinalize,
+      to: latestBlockToFinalize,
     }
   );
   const uniqueGateways = new Set<string>(transferRoutedEvents.map((e) => e.args.gateway));
@@ -157,7 +157,7 @@ export async function arbStackFinalizer(
         ),
         {
           ...spokePoolClient.eventSearchConfig,
-          toBlock: latestBlockToFinalize,
+          to: latestBlockToFinalize,
         }
       );
     })
@@ -170,7 +170,7 @@ export async function arbStackFinalizer(
     ),
     {
       ...spokePoolClient.eventSearchConfig,
-      toBlock: latestBlockToFinalize,
+      to: latestBlockToFinalize,
     }
   );
   const _withdrawalEvents = [

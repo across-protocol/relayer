@@ -115,9 +115,9 @@ export class Monitor {
       Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
         chainId,
         {
-          fromBlock: config.startingBlock,
-          toBlock: config.endingBlock,
-          maxBlockLookBack: 0,
+          from: config.startingBlock,
+          to: config.endingBlock,
+          maxLookBack: 0,
         },
       ])
     );
@@ -684,7 +684,7 @@ export class Monitor {
 
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.clients.bundleDataClient.chainIdListForBundleEvaluationBlockNumbers,
-      hubPoolClient.latestBlockSearched,
+      hubPoolClient.latestHeightSearched,
       hubPoolClient.chainId
     );
     const enabledChainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
@@ -701,12 +701,12 @@ export class Monitor {
       this.clients.spokePoolClients,
       getEndBlockBuffers(enabledChainIds, this.clients.bundleDataClient.blockRangeEndBlockBuffer),
       this.clients,
-      hubPoolClient.latestBlockSearched,
-      this.clients.configStoreClient.getEnabledChains(hubPoolClient.latestBlockSearched)
+      hubPoolClient.latestHeightSearched,
+      this.clients.configStoreClient.getEnabledChains(hubPoolClient.latestHeightSearched)
     );
     const blockRangeTail = bundle.bundleEvaluationBlockNumbers.map((endBlockForChain, idx) => {
       const endBlockNumber = Number(endBlockForChain);
-      const spokeLatestBlockSearched = this.clients.spokePoolClients[enabledChainIds[idx]]?.latestBlockSearched ?? 0;
+      const spokeLatestBlockSearched = this.clients.spokePoolClients[enabledChainIds[idx]]?.latestHeightSearched ?? 0;
       return spokeLatestBlockSearched === 0
         ? [endBlockNumber, endBlockNumber]
         : [endBlockNumber + 1, spokeLatestBlockSearched > endBlockNumber ? spokeLatestBlockSearched : endBlockNumber];
@@ -916,8 +916,8 @@ export class Monitor {
   // should stay unstuck for longer than one bundle.
   async checkStuckRebalances(): Promise<void> {
     const hubPoolClient = this.clients.hubPoolClient;
-    const { currentTime, latestBlockSearched } = hubPoolClient;
-    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestBlockSearched);
+    const { currentTime, latestHeightSearched } = hubPoolClient;
+    const lastFullyExecutedBundle = hubPoolClient.getLatestFullyExecutedRootBundle(latestHeightSearched);
     // This case shouldn't happen outside of tests as Across V2 has already launched.
     if (lastFullyExecutedBundle === undefined) {
       return;
@@ -927,7 +927,7 @@ export class Monitor {
     const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const poolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       lastFullyExecutedBundle,
-      latestBlockSearched
+      latestHeightSearched
     );
     for (const chainId of this.crossChainAdapterSupportedChains) {
       // Exit early if there were no pool rebalance leaves for this chain executed in the last bundle.
@@ -1258,7 +1258,7 @@ export class Monitor {
               // is now aware of those executions.
               await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
                 account,
-                { blockTag: this.clients.spokePoolClients[chainId].latestBlockSearched }
+                { blockTag: this.clients.spokePoolClients[chainId].latestHeightSearched }
               );
         if (!this.balanceCache[chainId]) {
           this.balanceCache[chainId] = {};
