@@ -122,10 +122,8 @@ async function getSp1HeliosHeadData(l2SpokePoolClient: SpokePoolClient): Promise
   const sp1HeliosHeadBn: ethers.BigNumber = await sp1HeliosL2.head();
   const sp1HeliosHead = sp1HeliosHeadBn.toNumber();
   const sp1HeliosHeader = await sp1HeliosL2.headers(sp1HeliosHeadBn);
-  if (!sp1HeliosHeader || sp1HeliosHeader === ethers.constants.HashZero) {
-    throw new Error(
-      `Invalid or zero header found for SP1Helios head ${sp1HeliosHead}. Cannot proceed with proof generation.`
-    );
+  if (sp1HeliosHeader === ethers.constants.HashZero) {
+    throw new Error(`Zero header found for SP1Helios head ${sp1HeliosHead}. Cannot proceed with proof generation.`);
   }
 
   return {
