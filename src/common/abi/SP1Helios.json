@@ -11,6 +11,25 @@
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "slot",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "root",
+        "type": "bytes32"
+      }
+    ],
+    "name": "HeadUpdate",
+    "type": "event"
+  },
+  {
     "inputs": [],
     "name": "head",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],

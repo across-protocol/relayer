@@ -3,7 +3,7 @@ import { BigNumber } from "../utils";
 // --- API Interaction Types ---
 export interface ApiProofRequest {
   src_chain_contract_address: string;
-  src_chain_storage_slot: string;
+  src_chain_storage_slots: string[];
   src_chain_block_number: number; // u64 on Rust API side
   dst_chain_contract_from_head: number; // u64 on Rust API side
   dst_chain_contract_from_header: string;
