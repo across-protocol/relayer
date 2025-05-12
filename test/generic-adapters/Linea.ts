@@ -25,8 +25,8 @@ describe("Cross Chain Adapter: Linea", async function () {
   };
   beforeEach(async function () {
     searchConfig = {
-      fromBlock: 0,
-      toBlock: 1_000_000,
+      from: 0,
+      to: 1_000_000,
     };
     const [deployer] = await ethers.getSigners();
 
@@ -45,10 +45,10 @@ describe("Cross Chain Adapter: Linea", async function () {
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
     const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, l2ChainId, 0, {
-      fromBlock: 0,
+      from: 0,
     });
     const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, hubChainId, 0, {
-      fromBlock: 0,
+      from: 0,
     });
 
     wethBridgeContract = await (await getContractFactory("LineaWethBridge", deployer)).deploy();
@@ -100,8 +100,8 @@ describe("Cross Chain Adapter: Linea", async function () {
     adapter.setTargetL2Bridge(l1Token, erc20BridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("WETH", function () {
@@ -299,7 +299,7 @@ class MockBaseChainAdapter extends BaseChainAdapter {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
     const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestBlockSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestBlockSearched = blockNumber;
+    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
+    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
   }
 }

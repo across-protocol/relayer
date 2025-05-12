@@ -161,8 +161,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
-        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.DepositWithBlock);
     }
 
@@ -183,8 +183,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.FillWithBlock);
     }
 
@@ -196,8 +196,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
       return mockDestinationSpokePoolClient.requestV3SlowFill({
         ...relayData,
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.SlowFillRequestWithBlock);
     }
 

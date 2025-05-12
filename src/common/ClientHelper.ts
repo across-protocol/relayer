@@ -331,7 +331,7 @@ export async function constructClients(
   const fromBlock = isDefined(hubPoolLookback)
     ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
     : hubPoolDeploymentBlock;
-  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
+  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, from: fromBlock };
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);

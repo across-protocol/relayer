@@ -62,7 +62,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       ZERO_ADDRESS
     );
     const { configStore } = await deployConfigStore(owner, [hubERC20, hubWeth]);
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, 0);
     await configStoreClient.update();
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);

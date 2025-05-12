@@ -182,8 +182,8 @@ describe("Dataworker: Load bundle data", async function () {
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
-        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.DepositWithBlock);
     }
 
@@ -204,8 +204,8 @@ describe("Dataworker: Load bundle data", async function () {
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.FillWithBlock);
     }
 
@@ -230,8 +230,8 @@ describe("Dataworker: Load bundle data", async function () {
           updatedOutputAmount: updatedOutputAmount,
           fillType,
         },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.FillWithBlock);
     }
 
@@ -605,8 +605,8 @@ describe("Dataworker: Load bundle data", async function () {
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
-      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(0);
@@ -652,8 +652,8 @@ describe("Dataworker: Load bundle data", async function () {
       bundleBlockRanges[originChainIndex] = [depositBlock - 2, depositBlock - 1];
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
-      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(0);
@@ -693,8 +693,8 @@ describe("Dataworker: Load bundle data", async function () {
       );
       const depositBlock = await spokePool_1.provider.getBlockNumber();
       // Construct a spoke pool client with a small search range that would not include the deposit.
-      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(0);
@@ -754,8 +754,8 @@ describe("Dataworker: Load bundle data", async function () {
       const depositBlock = await spokePool_1.provider.getBlockNumber();
 
       // Construct a spoke pool client with a small search range that would not include the deposit.
-      spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-      spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+      spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+      spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
       await spokePoolClient_1.update();
       const deposits = spokePoolClient_1.getDeposits();
       expect(deposits.length).to.equal(0);

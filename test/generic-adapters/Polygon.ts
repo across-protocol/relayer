@@ -79,12 +79,12 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
     const hubPoolClient = null;
     const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, POLYGON, deploymentBlock, {
-      fromBlock: deploymentBlock,
+      from: deploymentBlock,
     });
     const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
-      fromBlock: deploymentBlock,
+      from: deploymentBlock,
     });
-    searchConfig = { fromBlock: deploymentBlock, toBlock: 1_000_000 };
+    searchConfig = { from: deploymentBlock, to: 1_000_000 };
 
     const l1Signer = l1SpokePoolClient.spokePool.signer;
     const l2Signer = l2SpokePoolClient.spokePool.signer;
@@ -130,8 +130,8 @@ describe("Cross Chain Adapter: Polygon", async function () {
     l2Weth = adapter.bridges[l1Weth].resolveL2TokenAddress(toAddress(l1Weth));
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("WETH bridge", function () {
