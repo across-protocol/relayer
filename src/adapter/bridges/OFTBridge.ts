@@ -12,6 +12,7 @@ import {
   EvmAddress,
   Address,
   resolveToken,
+  toBytes32,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -22,9 +23,6 @@ import {
   MessagingFeeStruct,
   SendParamStruct,
 } from "@across-protocol/contracts/dist/typechain/contracts/interfaces/IOFT";
-
-import { utils } from "@across-protocol/sdk";
-const { toBytes32 } = utils;
 
 type OFTRouteInfo = {
   hubChainIOFTAddress: EvmAddress;
@@ -78,13 +76,13 @@ export class OFTBridge extends BaseBridgeAdapter {
     // OFT bridge currently only supports Ethereum MAINNET as hub chain
     assert(
       hubChainId == CHAIN_IDs.MAINNET,
-      new Error(`OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`)
+      `OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`
     );
 
     const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toAddress()]?.[dstChainId];
     assert(
       isDefined(route),
-      new Error(`No route found for token ${hubTokenAddress.toAddress()} from chain ${hubChainId} to ${dstChainId}`)
+      `No route found for token ${hubTokenAddress.toAddress()} from chain ${hubChainId} to ${dstChainId}`
     );
 
     super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
@@ -107,9 +105,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Verify the token matches the one this bridge was constructed for
     assert(
       l1Token.eq(this.hubTokenAddress),
-      new Error(
-        `This bridge instance only supports token ${this.hubTokenAddress.toAddress()}, not ${l1Token.toAddress()}`
-      )
+      `This bridge instance only supports token ${this.hubTokenAddress.toAddress()}, not ${l1Token.toAddress()}`
     );
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
