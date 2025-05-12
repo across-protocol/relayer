@@ -7,6 +7,8 @@ import {
   toBN,
   getGasPrice,
   toGWei,
+  getNativeTokenSymbol,
+  LEGACY_TRANSACTION_CHAINS,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
@@ -66,15 +68,22 @@ export async function run(): Promise<void> {
   console.log(
     `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
   );
-  // Send ETH
+  const gasParams = LEGACY_TRANSACTION_CHAINS.includes(Number(args.chainId))
+    ? { gasPrice: gas.maxFeePerGas.add(gas.maxPriorityFeePerGas) }
+    : { ...gas };
+
+  // Send native token symbol
   if (token === ZERO_ADDRESS || token === "0x") {
+    const nativeTokenSymbol = getNativeTokenSymbol(args.chainId);
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
-    console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
+    console.log(
+      `Send ${nativeTokenSymbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`
+    );
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
       return;
     }
     console.log("sending...");
-    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), nonce, ...gas });
+    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), nonce, ...gasParams });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
@@ -90,7 +99,7 @@ export async function run(): Promise<void> {
       return;
     }
     console.log("sending...");
-    const tx = await erc20.transfer(recipient, args.amount, { nonce, ...gas });
+    const tx = await erc20.transfer(recipient, args.amount, { nonce, ...gasParams });
 
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
