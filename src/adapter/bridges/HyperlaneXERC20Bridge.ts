@@ -20,7 +20,7 @@ import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID, TOKEN_SYMBOLS_MAP } from "@acr
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
 import { CONTRACT_ADDRESSES } from "../../common";
 
-const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
+export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
   [CHAIN_IDs.MAINNET]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
   },
@@ -48,8 +48,8 @@ const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string }
 };
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
-const DEFAULT_FEE_CAP = ethers.utils.parseEther("0.1");
-const FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
+export const DEFAULT_FEE_CAP = ethers.utils.parseEther("0.1");
+export const FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all chains that have non-eth for gas token should go here. Example: BSC
 };
 
