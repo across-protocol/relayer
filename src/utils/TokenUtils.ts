@@ -5,8 +5,6 @@ import { BigNumberish } from "./BNUtils";
 import { formatUnits } from "./SDKUtils";
 import { HubPoolClient } from "../clients";
 import { isDefined } from "./TypeGuards";
-import * as contracts from "@across-protocol/contracts";
-import { ethers } from ".";
 
 const { ZERO_ADDRESS } = constants;
 
@@ -51,34 +49,4 @@ export function getWrappedNativeTokenAddress(chainId: number): string {
 export function formatUnitsForToken(symbol: string, amount: BigNumberish): string {
   const decimals = (TOKEN_SYMBOLS_MAP[symbol]?.decimals as number) ?? 18;
   return formatUnits(amount, decimals);
-}
-
-export interface IERC20 {
-  address: string;
-  decimals: number;
-  symbol: string;
-}
-
-/**
- * Resolves an ERC20 type from a chain ID, and symbol or address.
- * @param token The address or symbol of the token to resolve.
- * @param chainId The chain ID to resolve the token on.
- * @returns The ERC20 attributes of the token.
- */
-export function resolveToken(token: string, chainId: number): IERC20 {
-  // `token` may be an address or a symbol. Normalise it to a symbol for easy lookup.
-  const symbol = !ethers.utils.isAddress(token)
-    ? token.toUpperCase()
-    : Object.values(contracts.TOKEN_SYMBOLS_MAP).find(({ addresses }) => addresses[chainId] === token)?.symbol;
-
-  const _token = contracts.TOKEN_SYMBOLS_MAP[symbol];
-  if (_token === undefined) {
-    throw new Error(`Token ${token} on chain ID ${chainId} unrecognised`);
-  }
-
-  return {
-    address: _token.addresses[chainId],
-    decimals: _token.decimals,
-    symbol: _token.symbol,
-  };
 }

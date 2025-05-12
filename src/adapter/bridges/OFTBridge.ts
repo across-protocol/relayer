@@ -5,13 +5,13 @@ import {
   EventSearchConfig,
   Provider,
   TOKEN_SYMBOLS_MAP,
+  fetchTokenInfo,
   isDefined,
   paginatedEventQuery,
   isContractDeployedToAddress,
   assert,
   EvmAddress,
   Address,
-  resolveToken,
   toBytes32,
 } from "../../utils";
 import { processEvent } from "../utils";
@@ -55,7 +55,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   // Bridge-specific properties
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
-  private readonly tokenDecimals: number;
+  private tokenDecimals?: number;
   private sharedDecimals?: number;
 
   /**
@@ -93,7 +93,6 @@ export class OFTBridge extends BaseBridgeAdapter {
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
     this.l2Bridge = new Contract(route.dstIOFTAddress.toAddress(), IOFT_ABI_FULL, dstSignerOrProvider);
-    this.tokenDecimals = resolveToken(hubTokenAddress.toAddress(), hubChainId).decimals;
   }
 
   async constructL1ToL2Txn(
@@ -146,7 +145,10 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns The amount rounded down to the correct precision
    */
   private async roundAmountToOftPrecision(amount: BigNumber): Promise<BigNumber> {
+    // Fetch `sharedDecimals` if not already fetched
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
+    // Same for `tokenDecimals`
+    this.tokenDecimals ??= (await fetchTokenInfo(this.hubTokenAddress.toAddress(), this.l1Bridge.signer)).decimals;
 
     const decimalDifference = this.tokenDecimals - this.sharedDecimals;
 
