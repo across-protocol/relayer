@@ -30,10 +30,11 @@ import {
   Address,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
+  stringifyThrownValue,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
-import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -245,7 +246,25 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toAddress()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    const { contract, method, args, value } = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    let bridgeTransactionDetails: BridgeTransactionDetails;
+    try {
+      bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    } catch (e) {
+      this.log(
+        "Failed to construct L1 to L2 transaction",
+        {
+          address: address.toAddress(),
+          l1Token: l1Token.toAddress(),
+          l2Token: l2Token.toAddress(),
+          amount: amount.toString(),
+          error: stringifyThrownValue(e),
+        },
+        "error",
+        "sendTokenToTargetChain"
+      );
+      return { hash: ZERO_ADDRESS } as TransactionResponse;
+    }
+    const { contract, method, args, value } = bridgeTransactionDetails;
     const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
