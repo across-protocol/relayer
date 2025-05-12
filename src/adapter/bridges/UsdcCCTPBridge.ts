@@ -87,8 +87,10 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
       : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
-    const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
-      compareAddressesSimple(event.args.mintRecipient, toAddress.toBytes32())
+    const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter(
+      (event) =>
+        compareAddressesSimple(event.args.mintRecipient, toAddress.toBytes32()) &&
+        event.args.destinationDomain === this.l2DestinationDomain
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),

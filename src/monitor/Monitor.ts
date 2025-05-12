@@ -44,7 +44,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   ConvertDecimals,
-  getL1TokenInfo,
+  getL1TokenAddress,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -243,9 +243,7 @@ export class Monitor {
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: string, chainId: number): (BigNumber) => BigNumber {
     // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = (
-      chainId === this.clients.hubPoolClient.chainId ? getTokenInfo(l2Token, chainId) : getL1TokenInfo(l2Token, chainId)
-    ).address;
+    const l1Token = getL1TokenAddress(l2Token, chainId);
     const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
     const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
     return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);

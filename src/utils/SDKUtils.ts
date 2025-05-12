@@ -60,7 +60,7 @@ export const {
   blockExplorerLinks,
   createShortHexString: shortenHexString,
   compareAddressesSimple,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getUsdcSymbol,
   Profiler,
   getMessageHash,

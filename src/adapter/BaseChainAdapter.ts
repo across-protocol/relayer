@@ -22,7 +22,7 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
@@ -190,12 +190,12 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<string[]> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
-    const l1Token = EvmAddress.from(l1TokenInfo.address);
-    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+    const _l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
+    const l1Token = EvmAddress.from(_l1Token);
+    if (!this.isSupportedL2Bridge(l1Token.toAddress())) {
       return [];
     }
-    const txnsToSend = await this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(
+    const txnsToSend = await this.l2Bridges[l1Token.toAddress()].constructWithdrawToL1Txns(
       address,
       l2Token,
       l1Token,
@@ -212,8 +212,8 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
-    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+    const l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
@@ -228,7 +228,7 @@ export class BaseChainAdapter {
       fromBlock: l2SearchFromBlock,
       toBlock: this.baseL2SearchConfig.toBlock,
     };
-    return await this.l2Bridges[l1TokenInfo.address].getL2PendingWithdrawalAmount(
+    return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
       fromAddress,
