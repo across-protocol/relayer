@@ -9,7 +9,7 @@ export class BlastBridge extends BaseBridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].blastBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].blastBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);
