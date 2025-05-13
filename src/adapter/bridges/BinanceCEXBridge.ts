@@ -50,11 +50,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
 
     // Cast the input Signer | Provider to a Provider.
-    if (l2SignerOrProvider instanceof Signer) {
-      this.l2Provider = l2SignerOrProvider.provider;
-    } else {
-      this.l2Provider = l2SignerOrProvider;
-    }
+    this.l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
   }
 
   async constructL1ToL2Txn(
