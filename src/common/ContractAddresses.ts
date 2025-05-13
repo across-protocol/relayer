@@ -91,6 +91,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x153A69e4bb6fEDBbAaF463CB982416316c84B2dB",
       abi: OP_USDC_BRIDGE_ABI,
     },
+    opUSDCBridge_1135: {
+      address: "0xE3622468Ea7dD804702B56ca2a4f88C0936995e6",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
     opUSDCBridge_1868: {
       address: "0xC67A8c5f22b40274Ca7C4A56Db89569Ee2AD3FAb",
       abi: OP_USDC_BRIDGE_ABI,
@@ -354,6 +358,10 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LISK]: {
+    opUSDCBridge: {
+      address: "0x3b1ac69368eb6447F5db2d4E1641380Fa9e40d29",
+      abi: OP_USDC_BRIDGE_ABI,
+    },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
