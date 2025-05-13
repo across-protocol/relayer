@@ -7,9 +7,9 @@ import {
   compareAddressesSimple,
   ethers,
   BigNumber,
+  groupObjectCountsByProp,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
-import { groupObjectCountsByProp } from "@across-protocol/sdk/src/utils/ObjectUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
