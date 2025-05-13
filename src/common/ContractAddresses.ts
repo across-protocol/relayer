@@ -92,7 +92,7 @@ export const CONTRACT_ADDRESSES: {
       abi: OP_USDC_BRIDGE_ABI,
     },
     opUSDCBridge_1135: {
-     address: "0xE3622468Ea7dD804702B56ca2a4f88C0936995e6",
+      address: "0xE3622468Ea7dD804702B56ca2a4f88C0936995e6",
       abi: OP_USDC_BRIDGE_ABI,
     },
     opUSDCBridge_1868: {
