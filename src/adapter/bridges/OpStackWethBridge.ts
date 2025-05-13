@@ -30,7 +30,6 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       l2chainId,
       hubChainId,
       l1Signer,
-      l2SignerOrProvider,
       // To keep existing logic, we should use atomic depositor as the l1 bridge
       [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
     );
