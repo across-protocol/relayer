@@ -41,7 +41,6 @@ import {
   BinanceCEXBridge as L2BinanceCEXBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
-import { Rpc, SolanaRpcApi } from "@solana/kit";
 
 /**
  * Note: When adding new chains, it's preferred to retain alphabetical ordering of CHAIN_IDs in Object mappings.
@@ -404,6 +403,7 @@ export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdap
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
   [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,

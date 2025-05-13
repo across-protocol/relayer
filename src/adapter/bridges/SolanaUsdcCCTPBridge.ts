@@ -1,5 +1,4 @@
 import { Contract, Signer } from "ethers";
-import { l2SignerOrProvider } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -14,13 +13,13 @@ import {
   SvmAddress,
   paginatedEventQuery,
   ZERO_BYTES,
+  SVMProvider,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { Rpc, SolanaRpcApi } from "@solana/kit";
 
 export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
@@ -32,10 +31,8 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
   private solanaEventsClient: arch.svm.SvmCpiEventsClient;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: l2SignerOrProvider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address),
-    ]);
+  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2Provider: SVMProvider) {
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
@@ -48,7 +45,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const { address: l2Address } = getCctpTokenMessenger(l2chainId, l2chainId);
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
-      l2SignerOrProvider as Rpc<SolanaRpcApi>,
+      l2Provider,
       l2Address,
       TokenMessengerMinterIdl
     );
@@ -118,14 +115,14 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     // Lazily evaluate the events client.
     this.solanaEventsClient ??= await this.solanaEventsClientPromise;
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    const l2FinalizationEvents = await this.solanaEventsClient.queryEvents(
+    const l2FinalizationEvents = await this.solanaEventsClient.queryDerivedAddressEvents(
       "mintAndWithdraw",
       this.solanaMessageTransmitter.toV2Address(),
       BigInt(eventConfig.from),
       BigInt(eventConfig.to)
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")), // TODO
+      [this.resolveL2TokenAddress(l1Token)]: [],
     };
   }
 }
