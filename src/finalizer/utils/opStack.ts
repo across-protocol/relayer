@@ -792,17 +792,18 @@ async function multicallOptimismFinalizations(
   // `getLastFinalizedRequestId` and ignore any requestIds > this value.
   const [hintIds, withdrawalClaims] = await Promise.all([
     Promise.all(
-      claimableWithdrawalRequests.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
       )
     ),
     Promise.all(
-      claimableWithdrawalRequests.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
       )
     ),
   ]);
-  const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
+
+  const withdrawalRequestIsClaimed = withdrawalClaims.map((claims) => claims.length > 0);
   assert(claimableWithdrawalRequests.length === hintIds.length);
   assert(claimableWithdrawalRequests.length === withdrawalClaims.length);
 

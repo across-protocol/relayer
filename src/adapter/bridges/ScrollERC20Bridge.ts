@@ -44,7 +44,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
     const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } =
       CONTRACT_ADDRESSES[hubChainId].scrollGasPriceOracle;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1BridgeAddress, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2BridgeAddress, l2Abi, l2SignerOrProvider);
