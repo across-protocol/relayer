@@ -354,6 +354,10 @@ export class BaseChainAdapter {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token.toAddress()];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+          // L1 -> L2
+          // L1 -> L2, Hub + Spokes: all returned events are for monitoredAddress == Spoke on L2.
+          // L1 -> L2, EOAs: all returned events are for monitoredAddress == EOA; no surprises here.
+          // L2 -> L1: todo.
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);

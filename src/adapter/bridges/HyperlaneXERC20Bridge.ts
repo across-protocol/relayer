@@ -12,14 +12,13 @@ import {
   CHAIN_IDs,
   EventSearchConfig,
   toBytes32,
-  isContractDeployedToAddress,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
-import { CONTRACT_ADDRESSES } from "../../common";
 
+// source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
 export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
   [CHAIN_IDs.MAINNET]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
@@ -50,13 +49,12 @@ export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: s
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const DEFAULT_FEE_CAP = ethers.utils.parseEther("0.1");
 export const FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
-  // all chains that have non-eth for gas token should go here. Example: BSC
+  // all supported chains that have non-eth for gas token should go here. Example: BSC
 };
 
 export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
-  readonly hubChainToken: EvmAddress;
+  readonly hubToken: EvmAddress;
   readonly dstToken: EvmAddress;
-  private readonly hubPoolAddress: string;
   private readonly hubDomainId: number;
   private readonly dstDomainId: number;
 
@@ -76,7 +74,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
 
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1RouterEvmAddress]);
 
-    this.hubChainToken = l1Token;
+    this.hubToken = l1Token;
     this.hubDomainId = PUBLIC_NETWORKS[hubChainId].hypDomainId;
     assert(
       this.hubDomainId != HYPERLANE_NO_DOMAIN_ID,
@@ -87,9 +85,6 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
       this.dstDomainId != HYPERLANE_NO_DOMAIN_ID,
       `Hyperlane domain id not set for chain ${l2chainId}. Set it first before using HyperlaneXERC20Bridge`
     );
-
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    assert(isDefined(this.hubPoolAddress), `HubPool address not found for hubChainId ${hubChainId}`);
 
     this.l1Bridge = new Contract(l1RouterAddressStr, HYPERLANE_ROUTER_ABI, l1Signer);
 
@@ -111,8 +106,8 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(
-      this.hubChainToken.eq(l1Token),
-      `this.l1Token does not match l1Token constructL1ToL2Txn was called with: ${this.hubChainToken} != ${l1Token}`
+      this.hubToken.eq(l1Token),
+      `this.l1Token does not match l1Token constructL1ToL2Txn was called with: ${this.hubToken} != ${l1Token}`
     );
 
     const fee: BigNumber = await this.l1Bridge.quoteGasPayment(this.dstDomainId);
@@ -135,35 +130,23 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
   }
 
   /*
-  This function will only return events in 2 cases:
-  1. `toAddress` is spokePool and `fromAddress` is hubpool
-  2. `toAddress` == `fromAddress`
-
-  In both these cases, there are important limitations:
-  1. We will return all initializations from `this.hubDomainId` to `this.dstDomainId` with recipient `toAddress`, regardless of the sender. There's no additional information
-     available in `ReceivedTransferRemote` for us to discern between different senders,
-  2. We will return all initializations from `this.hubDomainId` to `this.dstDomainId` with recipient `toAddress`, regardless of the sender. Same reason as above.
+  Use cases:
+  1. EOAs: all events will be returned for EOA with no surprises
+  2. Hub + Spokes: all events will be returned for the Spoke
   */
   async queryL1BridgeInitiationEvents(
     l1Token: EvmAddress,
-    fromAddress: Address,
+    _fromAddress: Address,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    if (!this.hubChainToken.eq(l1Token)) {
-      return {};
-    }
-
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
-      return {};
-    } else if (!fromAddress.eq(toAddress)) {
+    if (!this.hubToken.eq(l1Token)) {
       return {};
     }
 
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      // todo: do I need to add a 3rd arg here?
+      // TODO: do I need to add a 3rd arg here or will it just work?
       this.l1Bridge.filters.SentTransferRemote(this.dstDomainId, toBytes32(toAddress.toAddress())),
       eventConfig
     );
@@ -176,29 +159,17 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
   }
 
   /*
-  This function will only return events in 2 cases:
-  1. `toAddress` is spokePool and `fromAddress` is hubpool
-  2. `toAddress` == `fromAddress`
-
-  In both these cases, there are important limitations:
-  1. We will return all receives by spoke pool from `this.hubDomainId` to `this.dstDomainId`, regardless of the sender. There's no additional information
-     available in `ReceivedTransferRemote` for us to discern between different senders,
-  2. We will return all receives by `toAddress` from `this.hubDomainId` to `this.dstDomainId` regardless of the sender. Same reason as above.
+  Use cases:
+  1. EOAs: all events will be returned for EOA with no surprises
+  2. Hub + Spokes: all events will be returned for the Spoke
   */
   async queryL2BridgeFinalizationEvents(
     l1Token: EvmAddress,
-    fromAddress: Address,
+    _fromAddress: Address,
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    if (!this.hubChainToken.eq(l1Token)) {
-      return {};
-    }
-
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
-      return {};
-    } else if (!fromAddress.eq(toAddress)) {
+    if (!this.hubToken.eq(l1Token)) {
       return {};
     }
 
