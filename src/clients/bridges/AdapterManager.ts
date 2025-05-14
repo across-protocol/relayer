@@ -85,11 +85,10 @@ export class AdapterManager {
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
             const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-            const canonicalBridge = CANONICAL_L2_BRIDGE[chainId];
-            if (!isDefined(canonicalBridge)) {
+            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
+            if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
             const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
             return [l1Token, bridge];
           })
@@ -262,14 +261,34 @@ export class AdapterManager {
   }
 
   async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
+    this.logger.info({
+      at: "AdapterManager",
+      message: "setL1TokenApprovals: Checking token approvals for hub tokens on chain",
+      l1Tokens,
+    });
+
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens
-          .filter((token) => this.l2TokenExistForL1Token(token, chainId))
+          // TODO: this filter is incorrect because this checks SetRebalanceRoute events I think.
+          // TODO: for tokens like ezETH there will be no rebalance routes. Relayer tokens logic
+          // TODO: be separate from hubpool token logic
+          .filter(
+            (token) =>
+              // TODO: ezETH hack
+              TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET] == token ||
+              this.l2TokenExistForL1Token(token, chainId)
+          )
           .map((l1Token) => EvmAddress.from(l1Token));
+        this.logger.info({
+          at: "AdapterManager",
+          message: "Checking token approvals for hub tokens on chain",
+          chainId,
+          hubTokens: hubTokens.map((token) => token.toAddress()),
+        });
         await adapter.checkTokenApprovals(hubTokens);
       }
     }

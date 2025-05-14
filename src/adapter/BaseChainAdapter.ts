@@ -211,7 +211,7 @@ export class BaseChainAdapter {
           toAddress: address,
           l2Token: l2Token.toAddress(),
           l1Token: l1Token.toAddress(),
-          amount,
+          amount: amount.toString(),
           error: stringifyThrownValue(e),
         },
         "error",

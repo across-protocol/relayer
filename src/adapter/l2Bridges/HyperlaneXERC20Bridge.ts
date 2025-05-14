@@ -25,6 +25,7 @@ import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
 import { HYPERLANE_ROUTERS, DEFAULT_FEE_CAP, FEE_CAP_OVERRIDES } from "../bridges/HyperlaneXERC20Bridge";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CONTRACT_ADDRESSES } from "../../common";
+import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
@@ -84,6 +85,23 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token constructWithdrawToL1Txns was called with: ${this.l2Token} != ${l2Token}`
     );
 
+    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const formatter = createFormatFunction(2, 4, false, decimals);
+
+    const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
+    const approvalTxn: AugmentedTransaction = {
+      contract: erc20,
+      chainId: this.l2chainId,
+      method: "approve",
+      unpermissioned: false,
+      nonMulticall: true,
+      args: [this.l2Bridge.address, amount],
+      message: `✅ Approve Hyperlane ${symbol} for withdrawal`,
+      mrkdwn: `Approve ${formatter(amount.toString())} ${symbol} for withdrawal via Hyperlane router ${
+        this.l2Bridge.address
+      } on ${getNetworkName(this.l2chainId)}`,
+    };
+
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
     const feeCap = FEE_CAP_OVERRIDES[this.l2chainId] ?? DEFAULT_FEE_CAP;
     assert(
@@ -93,12 +111,14 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       )} ETH for L2 chain ${this.l2chainId}`
     );
 
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
-    const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "transferRemote",
+      unpermissioned: false,
+      nonMulticall: true,
+      canFailInSimulation: true, // TODO: true for now because of approval flow
+      gasLimit: BigNumber.from(600000),
       args: [this.destinationDomainId, toBytes32(toAddress.toAddress()), amount],
       value: fee,
       message: `🎰 Withdrew Hyperlane xERC20 ${symbol} to L1`,
@@ -107,7 +127,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       )} to L1 via Hyperlane`,
     };
 
-    return [withdrawTxn];
+    return [approvalTxn, withdrawTxn];
   }
 
   async getL2PendingWithdrawalAmount(
@@ -121,9 +141,8 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token getL2PendingWithdrawalAmount was called with: ${this.l2Token} != ${l2Token}`
     );
 
-    // TODO: do I even need to worry about Spoke / Hub usecase in L2 -> L1 adapter?
-    let recipientBytes32;
-    // TODO: will `this.l2Bridge.provider` be available? I create this.l2Bridge with signer.
+    // TODO: do we need to worry about Spoke / Hub use case in L2 -> L1 adapters?
+    let recipientBytes32: string;
     const isSpokePool = await isContractDeployedToAddress(fromAddress.toAddress(), this.l2Bridge.provider);
     if (isSpokePool) {
       recipientBytes32 = toBytes32(this.hubPoolAddress);
