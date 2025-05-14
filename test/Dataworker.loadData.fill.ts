@@ -174,7 +174,7 @@ describe("Dataworker: Load bundle data", async function () {
     });
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
-      return mockOriginSpokePoolClient.depositV3({
+      return mockOriginSpokePoolClient.deposit({
         inputToken: erc20_1.address,
         inputAmount: eventOverride?.inputAmount ?? undefined,
         outputToken: eventOverride?.outputToken ?? erc20_2.address,
@@ -194,7 +194,7 @@ describe("Dataworker: Load bundle data", async function () {
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
     ): interfaces.Log {
-      const method = fillEventOverride?.method ?? "fillV3Relay";
+      const method = fillEventOverride?.method ?? "fillRelay";
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient[method]({
         ...fillObject,
@@ -219,7 +219,7 @@ describe("Dataworker: Load bundle data", async function () {
       updatedOutputAmount: BigNumber = depositEvent.args.outputAmount
     ): interfaces.Log {
       const { args } = depositEvent;
-      return mockDestinationSpokePoolClient.fillV3Relay({
+      return mockDestinationSpokePoolClient.fillRelay({
         ...args,
         relayer: _relayer,
         outputAmount,
@@ -245,7 +245,7 @@ describe("Dataworker: Load bundle data", async function () {
         message: "0x",
       });
 
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
       generateV3FillFromDeposit(deposits[0]);
       generateV3FillFromDeposit({
@@ -253,7 +253,7 @@ describe("Dataworker: Load bundle data", async function () {
         messageHash: sdkConstants.ZERO_BYTES,
       });
 
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -268,11 +268,11 @@ describe("Dataworker: Load bundle data", async function () {
         outputToken: ZERO_ADDRESS,
       });
 
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
       generateV3FillFromDeposit(deposits[0]);
 
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -286,16 +286,17 @@ describe("Dataworker: Load bundle data", async function () {
       it("Sends duplicate deposit refunds for fills in bundle", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+        mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
 
         // Fill deposit.
         generateV3FillFromDeposit(deposits[0]);
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
 
         // Bundle should contain all deposits.
         // Bundle should refund fill.
@@ -310,16 +311,16 @@ describe("Dataworker: Load bundle data", async function () {
       it("Sends duplicate deposit refunds for slow fills in bundle", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        const dupe1 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        const dupe2 = mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+        const dupe1 = mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        const dupe2 = mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
 
         // Fill deposit as slow fill
         generateV3FillFromDeposit(deposits[0], {}, undefined, undefined, interfaces.FillType.SlowFill);
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
 
         // Bundle should contain all deposits.
         // Bundle should refund fill.
@@ -343,16 +344,16 @@ describe("Dataworker: Load bundle data", async function () {
           outputToken: randomAddress(),
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
         });
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        await mockOriginSpokePoolClient.depositV3({
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+        await mockOriginSpokePoolClient.deposit({
           ...mockOriginSpokePoolClient.getDeposits()[0],
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
         });
-        await mockOriginSpokePoolClient.depositV3({
+        await mockOriginSpokePoolClient.deposit({
           ...mockOriginSpokePoolClient.getDeposits()[0],
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
         });
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
 
@@ -370,7 +371,7 @@ describe("Dataworker: Load bundle data", async function () {
         bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
         const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
         bundleBlockRanges[originChainIndex] = originChainBlockRange;
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
         expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(2);
         expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
@@ -380,10 +381,10 @@ describe("Dataworker: Load bundle data", async function () {
       it("Does not send duplicate deposit refunds if relayer repayment information is invalid", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.depositV3(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+        await mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
 
@@ -423,7 +424,7 @@ describe("Dataworker: Load bundle data", async function () {
         message: "0x",
       });
 
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
       generateV3FillFromDeposit(
         {
@@ -445,7 +446,7 @@ describe("Dataworker: Load bundle data", async function () {
         interfaces.FillType.ReplacedSlowFill
       );
 
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -461,7 +462,7 @@ describe("Dataworker: Load bundle data", async function () {
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
@@ -469,7 +470,7 @@ describe("Dataworker: Load bundle data", async function () {
       fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -508,7 +509,7 @@ describe("Dataworker: Load bundle data", async function () {
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
@@ -516,7 +517,7 @@ describe("Dataworker: Load bundle data", async function () {
       fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const emptyData = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDisabledBlockRanges(),
         spokePoolClients
@@ -545,7 +546,7 @@ describe("Dataworker: Load bundle data", async function () {
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
       depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Fill deposits from different relayers
@@ -553,7 +554,7 @@ describe("Dataworker: Load bundle data", async function () {
       fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
       fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -579,7 +580,7 @@ describe("Dataworker: Load bundle data", async function () {
           .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
-        [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+        [relayer2]: fillV3Events.at(-1).args.inputAmount
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
       });
@@ -622,7 +623,7 @@ describe("Dataworker: Load bundle data", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
@@ -726,7 +727,7 @@ describe("Dataworker: Load bundle data", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+      expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
 
       // Ensure the repayment chain id is not in the bundle data.
       expect(data1.bundleFillsV3[repaymentChainId]).to.be.undefined;
@@ -788,7 +789,7 @@ describe("Dataworker: Load bundle data", async function () {
         outputToken: randomAddress(),
         blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
       });
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       const fills = [
@@ -812,7 +813,7 @@ describe("Dataworker: Load bundle data", async function () {
       bundleBlockRanges[destinationChainIndex] = destinationChainBlockRange;
       const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
       bundleBlockRanges[originChainIndex] = originChainBlockRange;
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       expect(mockDestinationSpokePoolClient.getFills().length).to.equal(fills.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
       expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
@@ -822,7 +823,7 @@ describe("Dataworker: Load bundle data", async function () {
     });
     it("Handles invalid fills", async function () {
       const depositEvent = generateV3Deposit();
-      await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       const invalidRelayData = {
         depositor: randomAddress(),
         recipient: randomAddress(),
@@ -849,7 +850,7 @@ describe("Dataworker: Load bundle data", async function () {
       }
       // Send one valid fill as a base test case.
       generateV3FillFromDepositEvent(depositEvent);
-      await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
         getDefaultBlockRange(5),
         spokePoolClients
@@ -911,13 +912,13 @@ describe("Dataworker: Load bundle data", async function () {
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[2]));
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         const fills = mockDestinationSpokePoolClient.getFills();
 
         const bundleDepositsV3 = {};
@@ -962,13 +963,13 @@ describe("Dataworker: Load bundle data", async function () {
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(generateV3FillFromDeposit(deposits[2]));
-        await mockDestinationSpokePoolClient.update(["FilledV3Relay"]);
+        await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         const fills = mockDestinationSpokePoolClient.getFills();
 
         const bundleDepositsV3 = {};
@@ -1015,7 +1016,7 @@ describe("Dataworker: Load bundle data", async function () {
         depositV3Events.push(generateV3Deposit());
         depositV3Events.push(generateV3Deposit());
         depositV3Events.push(generateV3Deposit());
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         // Fill deposits from different relayers
@@ -1068,7 +1069,7 @@ describe("Dataworker: Load bundle data", async function () {
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
         depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
-        await mockOriginSpokePoolClient.update(["V3FundsDeposited"]);
+        await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         // Fill deposits from different relayers
