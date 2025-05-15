@@ -41,7 +41,9 @@ export async function cctpL1toL2Finalizer(
     l2SpokePoolClient.chainId,
     searchConfig
   );
-  const unprocessedMessages = outstandingDeposits.filter((message) => message.status === "ready" && message.attestation !== "PENDING");
+  const unprocessedMessages = outstandingDeposits.filter(
+    (message) => message.status === "ready" && message.attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
