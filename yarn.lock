@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
   integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
 
-"@across-protocol/constants@^3.1.64":
-  version "3.1.64"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.64.tgz#bff5f7b51ceac55213b3236bbacb97ed80744ae5"
-  integrity sha512-mCQUYf6+/XnZCUdsnAMPqe2kPS12+a7c5bCxr0vNywrU9n/qwAlOLgqG0Bv8LxDu4Q8nxqTBq2Vet4Phh2mI/g==
+"@across-protocol/constants@^3.1.66":
+  version "3.1.66"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.66.tgz#952964fe1ae98ac8bd928655d81a20744da8dbe7"
+  integrity sha512-PP0445MLMnFWFzCvpXZQHD4n3DBJIQoIt3RSENNjCOJbkxDd4pqqDOAwN/BWv1jS6kLhKt6/U2poHRGJ4UPPXg==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -65,7 +65,7 @@
   integrity sha512-YVLdJ5vn+8wzL7k4k8uDt4/dWc+6PPG1KYgweoEtfSL7pnBvxjdsWF1D2/JLjyxu0YIL0LZs5/k/hCQnZXll1g==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.64"
+    "@across-protocol/constants" "^3.1.66"
     "@across-protocol/contracts" "^4.0.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
