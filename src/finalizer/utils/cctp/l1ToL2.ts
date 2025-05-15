@@ -41,7 +41,9 @@ export async function cctpL1toL2Finalizer(
     l2SpokePoolClient.chainId,
     searchConfig
   );
-  const unprocessedMessages = outstandingDeposits.filter((message) => message.status === "ready");
+  const unprocessedMessages = outstandingDeposits.filter(
+    (message) => message.status === "ready" && message.attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
@@ -75,7 +77,7 @@ async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
+  assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
