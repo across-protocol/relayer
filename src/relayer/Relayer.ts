@@ -96,11 +96,13 @@ export class Relayer {
     ]);
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
+      // TODO: does this cause L2 token approvals? Investigate.
       await tokenClient.setOriginTokenApprovals();
     }
 
     if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
       await inventoryClient.setL1TokenApprovals();
+      // TODO: add inventoryClient.setL2TokenApprovals()
     }
 
     this.logger.debug({

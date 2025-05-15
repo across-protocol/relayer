@@ -261,34 +261,21 @@ export class AdapterManager {
   }
 
   async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
-    this.logger.info({
-      at: "AdapterManager",
-      message: "setL1TokenApprovals: Checking token approvals for hub tokens on chain",
-      l1Tokens,
-    });
-
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens
-          // TODO: this filter is incorrect because this checks SetRebalanceRoute events I think.
-          // TODO: for tokens like ezETH there will be no rebalance routes. Relayer tokens logic
-          // TODO: be separate from hubpool token logic
+          // TODO: for v4 this `.filter` won't work: we won't rely on rebalance routes anymore.
+          // TODO: we might just want to use `l1Tokens` supplied to this function without filtering, or make filtering less restrictive
           .filter(
             (token) =>
-              // TODO: ezETH hack
+              // TODO: temporary ezETH hack
               TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET] == token ||
               this.l2TokenExistForL1Token(token, chainId)
           )
           .map((l1Token) => EvmAddress.from(l1Token));
-        this.logger.info({
-          at: "AdapterManager",
-          message: "Checking token approvals for hub tokens on chain",
-          chainId,
-          hubTokens: hubTokens.map((token) => token.toAddress()),
-        });
         await adapter.checkTokenApprovals(hubTokens);
       }
     }

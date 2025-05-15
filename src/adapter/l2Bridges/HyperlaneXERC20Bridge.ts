@@ -117,7 +117,8 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       method: "transferRemote",
       unpermissioned: false,
       nonMulticall: true,
-      canFailInSimulation: true, // TODO: true for now because of approval flow
+      // TODO: `canFailInSimulation` and  `gasLimit` are set for now because of current approval flow (see tx above). If we approve these contracts in advance, we'll be able to remove these constraints
+      canFailInSimulation: true,
       gasLimit: BigNumber.from(600000),
       args: [this.destinationDomainId, toBytes32(toAddress.toAddress()), amount],
       value: fee,
