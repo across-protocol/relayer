@@ -30,7 +30,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress
   ) {
-    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress().toLowerCase()];
+    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress()];
     assert(
       isDefined(l1RouterAddressStr),
       `No L1 Hyperlane router found for token ${l1Token.toAddress()} on chain ${hubChainId}`
@@ -54,7 +54,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1RouterAddressStr, HYPERLANE_ROUTER_ABI, l1Signer);
 
     const l2UnderlyingTokenAddressStr = this.resolveL2TokenAddress(l1Token);
-    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2UnderlyingTokenAddressStr.toLowerCase()];
+    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2UnderlyingTokenAddressStr];
     assert(
       isDefined(l2RouterAddressStr),
       `No L2 Hyperlane router found for token ${l2UnderlyingTokenAddressStr} on chain ${l2chainId}`

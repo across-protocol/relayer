@@ -48,13 +48,13 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     const l2TokenAddressStr = getTranslatedTokenAddress(l1Token.toAddress(), hubChainId, l2chainId);
     this.l2Token = EvmAddress.from(l2TokenAddressStr);
 
-    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2TokenAddressStr.toLowerCase()];
+    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2TokenAddressStr];
     assert(
       isDefined(l2RouterAddressStr),
       `No L2 Hyperlane router found for token ${l2TokenAddressStr} on chain ${l2chainId}`
     );
 
-    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress().toLowerCase()];
+    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress()];
     assert(
       isDefined(l1RouterAddressStr),
       `No L1 Hyperlane router found for token ${l1Token.toAddress()} on chain ${hubChainId}`

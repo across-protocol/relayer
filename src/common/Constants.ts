@@ -955,28 +955,28 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
 // source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
 export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
   [CHAIN_IDs.MAINNET]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
   },
   [CHAIN_IDs.ARBITRUM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.ARBITRUM].toLowerCase()]: "0xB26bBfC6d1F469C821Ea25099017862e7368F4E8",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.ARBITRUM]]: "0xB26bBfC6d1F469C821Ea25099017862e7368F4E8",
   },
   [CHAIN_IDs.BASE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BASE].toLowerCase()]: "0x2552516453368e42705D791F674b312b8b87CD9e",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BASE]]: "0x2552516453368e42705D791F674b312b8b87CD9e",
   },
   [CHAIN_IDs.BLAST]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BLAST].toLowerCase()]: "0x486b39378f99f073A3043C6Aabe8666876A8F3C5",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BLAST]]: "0x486b39378f99f073A3043C6Aabe8666876A8F3C5",
   },
   [CHAIN_IDs.MODE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MODE].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MODE]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
   },
   [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.LINEA].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.LINEA]]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
   },
   [CHAIN_IDs.UNICHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.UNICHAIN].toLowerCase()]: "0xFf0247f72b0d7ceD319D8457dD30622a2bed78B5",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.UNICHAIN]]: "0xFf0247f72b0d7ceD319D8457dD30622a2bed78B5",
   },
   [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.OPTIMISM].toLowerCase()]: "0xacEB607CdF59EB8022Cc0699eEF3eCF246d149e2",
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.OPTIMISM]]: "0xacEB607CdF59EB8022Cc0699eEF3eCF246d149e2",
   },
 };
 
