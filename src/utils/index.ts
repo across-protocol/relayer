@@ -7,7 +7,7 @@ import assert from "assert";
 export { winston, assert };
 
 export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES } = sdkConstants;
-export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
+export const { HashZero: ZERO_HASH, AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
 export {
   ethers,
