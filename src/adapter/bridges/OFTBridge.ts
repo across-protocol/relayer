@@ -85,7 +85,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       `No route found for token ${hubTokenAddress.toAddress()} from chain ${hubChainId} to ${dstChainId}`
     );
 
-    super(dstChainId, hubChainId, hubSigner, dstSignerOrProvider, [route.hubChainIOFTAddress]);
+    super(dstChainId, hubChainId, hubSigner, [route.hubChainIOFTAddress]);
 
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = getOFTEidForChainId(dstChainId);
