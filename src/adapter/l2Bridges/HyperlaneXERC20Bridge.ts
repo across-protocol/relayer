@@ -22,9 +22,13 @@ import {
 import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID } from "@across-protocol/constants";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
-import { HYPERLANE_ROUTERS, DEFAULT_FEE_CAP, FEE_CAP_OVERRIDES } from "../bridges/HyperlaneXERC20Bridge";
+import {
+  CONTRACT_ADDRESSES,
+  HYPERLANE_ROUTERS,
+  HYPERLANE_DEFAULT_FEE_CAP,
+  HYPERLANE_FEE_CAP_OVERRIDES,
+} from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { CONTRACT_ADDRESSES } from "../../common";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
@@ -103,7 +107,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     };
 
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
-    const feeCap = FEE_CAP_OVERRIDES[this.l2chainId] ?? DEFAULT_FEE_CAP;
+    const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     assert(
       fee.lte(feeCap),
       `Hyperlane fee ${ethers.utils.formatEther(fee)} exceeds cap ${ethers.utils.formatEther(

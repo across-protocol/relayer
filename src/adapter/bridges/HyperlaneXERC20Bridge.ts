@@ -9,48 +9,14 @@ import {
   ethers,
   paginatedEventQuery,
   Address,
-  CHAIN_IDs,
   EventSearchConfig,
   toBytes32,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
-import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID } from "@across-protocol/constants";
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
-
-// source: https://github.com/hyperlane-xyz/hyperlane-registry/blob/346b18c4314cf96b41ae2da781f58fb832dbe1f8/deployments/warp_routes/EZETH/arbitrum-base-berachain-blast-bsc-ethereum-fraxtal-linea-mode-optimism-sei-swell-taiko-unichain-worldchain-zircuit-config.yaml
-export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: string } } = {
-  [CHAIN_IDs.MAINNET]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.ARBITRUM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.ARBITRUM].toLowerCase()]: "0xB26bBfC6d1F469C821Ea25099017862e7368F4E8",
-  },
-  [CHAIN_IDs.BASE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BASE].toLowerCase()]: "0x2552516453368e42705D791F674b312b8b87CD9e",
-  },
-  [CHAIN_IDs.BLAST]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BLAST].toLowerCase()]: "0x486b39378f99f073A3043C6Aabe8666876A8F3C5",
-  },
-  [CHAIN_IDs.MODE]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MODE].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.LINEA]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.LINEA].toLowerCase()]: "0xC59336D8edDa9722B4f1Ec104007191Ec16f7087",
-  },
-  [CHAIN_IDs.UNICHAIN]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.UNICHAIN].toLowerCase()]: "0xFf0247f72b0d7ceD319D8457dD30622a2bed78B5",
-  },
-  [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.OPTIMISM].toLowerCase()]: "0xacEB607CdF59EB8022Cc0699eEF3eCF246d149e2",
-  },
-};
-
-// 0.1 ETH is a default cap for chains that use ETH as their gas token
-export const DEFAULT_FEE_CAP = ethers.utils.parseEther("0.1");
-export const FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
-  // all supported chains that have non-eth for gas token should go here. Example: BSC
-};
+import { HYPERLANE_DEFAULT_FEE_CAP, HYPERLANE_FEE_CAP_OVERRIDES, HYPERLANE_ROUTERS } from "../../common";
 
 export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
   readonly hubToken: EvmAddress;
@@ -112,7 +78,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
 
     const fee: BigNumber = await this.l1Bridge.quoteGasPayment(this.dstDomainId);
 
-    const feeCap = FEE_CAP_OVERRIDES[this.l2chainId] ?? DEFAULT_FEE_CAP;
+    const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     if (fee.gt(feeCap)) {
       throw new Error(
         `Hyperlane fee ${ethers.utils.formatEther(fee)} ETH exceeds cap ${ethers.utils.formatEther(
