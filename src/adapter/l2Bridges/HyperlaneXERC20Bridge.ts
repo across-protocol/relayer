@@ -142,7 +142,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token getL2PendingWithdrawalAmount was called with: ${this.l2Token} != ${l2Token}`
     );
 
-    // TODO: do we need to worry about Spoke / Hub use case in L2 -> L1 adapters?
     let recipientBytes32: string;
     const isSpokePool = await isContractDeployedToAddress(fromAddress.toAddress(), this.l2Bridge.provider);
     if (isSpokePool) {

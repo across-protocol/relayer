@@ -72,7 +72,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     );
     const l1RouterEvmAddress = EvmAddress.from(l1RouterAddressStr);
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1RouterEvmAddress]);
+    super(l2chainId, hubChainId, l1Signer, [l1RouterEvmAddress]);
 
     this.hubToken = l1Token;
     this.hubDomainId = PUBLIC_NETWORKS[hubChainId].hypDomainId;
@@ -146,7 +146,6 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
 
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      // TODO: do I need to add a 3rd arg here or will it just work?
       this.l1Bridge.filters.SentTransferRemote(this.dstDomainId, toBytes32(toAddress.toAddress())),
       eventConfig
     );
