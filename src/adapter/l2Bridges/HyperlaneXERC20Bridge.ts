@@ -120,7 +120,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       // TODO: `canFailInSimulation` and  `gasLimit` are set for now because of current approval flow (see tx above). If we approve these contracts in advance, we'll be able to remove these constraints
       canFailInSimulation: true,
       gasLimit: BigNumber.from(600000),
-      args: [this.destinationDomainId, toBytes32(toAddress.toAddress()), amount],
+      args: [this.destinationDomainId, toAddress.toBytes32(), amount],
       value: fee,
       message: `🎰 Withdrew Hyperlane xERC20 ${symbol} to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${symbol} from ${getNetworkName(
@@ -147,7 +147,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     if (isSpokePool) {
       recipientBytes32 = toBytes32(this.hubPoolAddress);
     } else {
-      recipientBytes32 = toBytes32(fromAddress.toAddress());
+      recipientBytes32 = fromAddress.toBytes32();
     }
 
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([

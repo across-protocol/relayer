@@ -124,7 +124,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     return {
       contract: this.l1Bridge,
       method: "transferRemote",
-      args: [this.dstDomainId, toBytes32(toAddress.toAddress()), amount],
+      args: [this.dstDomainId, toAddress.toBytes32(), amount],
       value: fee,
     };
   }
@@ -146,7 +146,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
 
     const events = await paginatedEventQuery(
       this.l1Bridge,
-      this.l1Bridge.filters.SentTransferRemote(this.dstDomainId, toBytes32(toAddress.toAddress())),
+      this.l1Bridge.filters.SentTransferRemote(this.dstDomainId, toAddress.toBytes32()),
       eventConfig
     );
 
@@ -174,7 +174,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
 
     const events = await paginatedEventQuery(
       this.l2Bridge,
-      this.l2Bridge.filters.ReceivedTransferRemote(this.hubDomainId, toBytes32(toAddress.toAddress())),
+      this.l2Bridge.filters.ReceivedTransferRemote(this.hubDomainId, toAddress.toBytes32()),
       eventConfig
     );
 
