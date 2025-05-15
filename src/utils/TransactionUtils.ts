@@ -21,7 +21,7 @@ import {
 dotenv.config();
 
 // Define chains that require legacy (type 0) transactions
-const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
+export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;

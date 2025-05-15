@@ -38,7 +38,7 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
       CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(atomicDepositorAddress)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);

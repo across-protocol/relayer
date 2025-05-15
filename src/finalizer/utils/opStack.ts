@@ -1,5 +1,5 @@
 import assert from "assert";
-import { countBy } from "lodash";
+import { countBy, groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -38,6 +38,8 @@ import {
   bnZero,
   forEachAsync,
   getTokenInfo,
+  compareAddressesSimple,
+  getCctpDomainForChainId,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -111,8 +113,25 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
-  const recentTokensBridgedEvents: TokensBridged[] = [];
-  const olderTokensBridgedEvents: TokensBridged[] = [];
+
+  // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
+  // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
+  // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
+  const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
+    spokePoolClient.getTokensBridged().filter(
+      (e) =>
+        // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
+        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
+        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
+    ),
+    (e) => {
+      if (e.blockNumber >= latestBlockToProve) {
+        return "recentTokensBridgedEvents";
+      } else {
+        return "olderTokensBridgedEvents";
+      }
+    }
+  );
 
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
@@ -141,7 +160,8 @@ export async function opStackFinalizer(
     await paginatedEventQuery(
       ovmStandardBridge,
       ovmStandardBridge.filters.ETHBridgeInitiated(
-        senderAddresses // from
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        // SpokePool as sender since we query for it previously using the TokensBridged event query.
       ),
       {
         ...spokePoolClient.eventSearchConfig,
@@ -160,7 +180,8 @@ export async function opStackFinalizer(
       ovmStandardBridge.filters.ERC20BridgeInitiated(
         null, // localToken
         null, // remoteToken
-        senderAddresses // from
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        // SpokePool as sender since we query for it previously using the TokensBridged event query.
       ),
       {
         ...spokePoolClient.eventSearchConfig,
@@ -771,17 +792,18 @@ async function multicallOptimismFinalizations(
   // `getLastFinalizedRequestId` and ignore any requestIds > this value.
   const [hintIds, withdrawalClaims] = await Promise.all([
     Promise.all(
-      claimableWithdrawalRequests.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
       )
     ),
     Promise.all(
-      claimableWithdrawalRequests.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
       )
     ),
   ]);
-  const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
+
+  const withdrawalRequestIsClaimed = withdrawalClaims.map((claims) => claims.length > 0);
   assert(claimableWithdrawalRequests.length === hintIds.length);
   assert(claimableWithdrawalRequests.length === withdrawalClaims.length);
 

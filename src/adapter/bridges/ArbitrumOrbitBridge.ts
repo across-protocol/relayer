@@ -57,7 +57,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
