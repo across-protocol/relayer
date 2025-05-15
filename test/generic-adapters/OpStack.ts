@@ -15,7 +15,7 @@ import { SpokePoolClient } from "../../src/clients";
 
 import { ZERO_ADDRESS } from "../constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger, toBN } from "../utils";
-import { getCctpDomainForChainId, EvmAddress } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
 
 const atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 const l1WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
@@ -448,7 +448,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     it("return simulated success tx if above threshold", async () => {
       const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
-      expect(tx?.hash).to.equal(ZERO_ADDRESS);
+      expect(tx?.hash).to.equal(ZERO_BYTES);
     });
   });
 });
