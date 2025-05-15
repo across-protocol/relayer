@@ -330,14 +330,14 @@ export const spokesThatHoldNativeTokens = [
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ALEPH_ZERO]: ["USDT", "WETH"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
-  [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "POOL", "VLR"],
+  [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.LISK]: ["WETH", "USDT", "LSK", "WBTC"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM]: ["DAI", "SNX", "BAL", "WETH", "USDC", "POOL", "USDT", "WBTC", "WLD", "UMA", "ACX", "VLR"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
@@ -377,19 +377,12 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
+// Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
+type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (...args: any[]) => T;
+
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
-export const CANONICAL_BRIDGE: {
-  [chainId: number]: {
-    new (
-      l2chainId: number,
-      hubChainId: number,
-      l1Signer: Signer,
-      l2SignerOrProvider: Signer | Provider,
-      l1Token?: EvmAddress
-    ): BaseBridgeAdapter;
-  };
-} = {
+export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdapter>> = {
   [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
@@ -443,19 +436,7 @@ export const CANONICAL_L2_BRIDGE: {
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
 // In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
-export const CUSTOM_BRIDGE: {
-  [chainId: number]: {
-    [tokenAddress: string]: {
-      new (
-        l2chainId: number,
-        hubChainId: number,
-        l1Signer: Signer,
-        l2SignerOrProvider: Signer | Provider,
-        l1Token?: EvmAddress
-      ): BaseBridgeAdapter;
-    };
-  };
-} = {
+export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<BaseBridgeAdapter>>> = {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
@@ -488,6 +469,7 @@ export const CUSTOM_BRIDGE: {
   },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,

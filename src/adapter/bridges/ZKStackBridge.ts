@@ -50,7 +50,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     _l1Token: EvmAddress
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;

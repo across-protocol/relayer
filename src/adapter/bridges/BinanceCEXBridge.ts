@@ -10,7 +10,6 @@ import {
   isDefined,
   getTimestampForBlock,
   mapAsync,
-  ethers,
   getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
@@ -25,6 +24,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   protected readonly binanceApiClientPromise;
   protected binanceApiClient;
   protected tokenSymbol: string;
+  protected l2Provider: Provider;
 
   constructor(
     l2chainId: number,
@@ -37,7 +37,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       throw new Error("Cannot define a binance CEX bridge on a non-production network");
     }
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, []);
+    super(l2chainId, hubChainId, l1Signer, []);
     // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 
@@ -48,6 +48,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const _tokenSymbol = getTokenInfo(l1Token.toAddress(), this.hubChainId).symbol;
     // Handle the special case for when we are bridging WBNB to BNB on L2.
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
+
+    // Cast the input Signer | Provider to a Provider.
+    this.l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
   }
 
   async constructL1ToL2Txn(
@@ -137,12 +140,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       return {};
     }
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
-    const l2Provider =
-      this.l2SignerOrProvider instanceof ethers.providers.Provider
-        ? (this.l2SignerOrProvider as ethers.providers.Provider)
-        : (this.l2SignerOrProvider as ethers.Signer).provider;
     assert(l1Token.toAddress() === this.getL1Bridge().address);
-    const fromTimestamp = (await getTimestampForBlock(l2Provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
+    const fromTimestamp = (await getTimestampForBlock(this.l2Provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
@@ -156,7 +155,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     );
     const withdrawalTxReceipts = await mapAsync(
       withdrawalHistory.map((withdrawal) => withdrawal.txId as string),
-      async (transactionHash) => l2Provider.getTransactionReceipt(transactionHash as string)
+      async (transactionHash) => this.l2Provider.getTransactionReceipt(transactionHash as string)
     );
     const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
 
@@ -177,13 +176,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   }
 
   private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
-    const l2Provider =
-      this.l2SignerOrProvider instanceof ethers.providers.Provider
-        ? (this.l2SignerOrProvider as ethers.providers.Provider)
-        : (this.l2SignerOrProvider.provider as ethers.providers.Provider);
     const [isL1Contract, isL2Contract] = await Promise.all([
       isContractDeployedToAddress(address.toAddress(), this.l1Signer.provider),
-      isContractDeployedToAddress(address.toAddress(), l2Provider),
+      isContractDeployedToAddress(address.toAddress(), this.l2Provider),
     ]);
     return isL1Contract || isL2Contract;
   }
