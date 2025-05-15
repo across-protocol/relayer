@@ -224,9 +224,9 @@ async function shouldGenerateKeepAliveAction(
   const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   const searchConfig: EventSearchConfig = {
-    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l2SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l2SpokePoolClient.eventSearchConfig.from,
+    to: l2SpokePoolClient.latestHeightSearched,
+    maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
   const headUpdateFilter = sp1HeliosContract.filters.HeadUpdate();

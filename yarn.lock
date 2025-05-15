@@ -65,7 +65,7 @@
   integrity sha512-YVLdJ5vn+8wzL7k4k8uDt4/dWc+6PPG1KYgweoEtfSL7pnBvxjdsWF1D2/JLjyxu0YIL0LZs5/k/hCQnZXll1g==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.66"
+    "@across-protocol/constants" "^3.1.64"
     "@across-protocol/contracts" "^4.0.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"

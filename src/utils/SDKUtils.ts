@@ -1,6 +1,7 @@
 import * as sdk from "@across-protocol/sdk";
 
-export class BlockFinder extends sdk.utils.BlockFinder {}
+export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
+export class SVMBlockFinder extends sdk.arch.svm.SVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 
 export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
@@ -15,6 +16,7 @@ export class SvmAddress extends sdk.utils.SvmAddress {}
 
 export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
 
+export type SVMProvider = sdk.arch.svm.SVMProvider;
 export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock } = sdk.arch.evm;
 
 export const {
@@ -24,7 +26,6 @@ export const {
   groupObjectCountsByThreeProps,
   delay,
   getCurrentTime,
-  averageBlockTime,
   bnZero,
   bnOne,
   bnUint32Max,

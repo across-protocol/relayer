@@ -1,10 +1,9 @@
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, Deposit, DepositWithBlock } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
-  averageBlockTime,
   BigNumber,
   bnZero,
   bnUint256Max,
@@ -711,7 +710,7 @@ export class Relayer {
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
       const originSpoke = spokePoolClients[originChainId];
-      const { average: avgBlockTime } = await averageBlockTime(originSpoke.spokePool.provider);
+      const { average: avgBlockTime } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
@@ -892,7 +891,7 @@ export class Relayer {
 
     // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
     this.hubPoolBlockBuffer ??= Math.ceil(
-      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average
+      HUB_SPOKE_BLOCK_LAG * (await arch.evm.averageBlockTime(hubPoolClient.hubPool.provider)).average
     );
 
     // Flush any pre-existing enqueued transactions that might not have been executed.

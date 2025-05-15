@@ -7,7 +7,7 @@ import {
   EventSearchConfig,
   Provider,
   getBlockForTimestamp,
-  BlockFinder,
+  EVMBlockFinder,
   isDefined,
   EvmAddress,
 } from "../../utils";
@@ -17,7 +17,7 @@ import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
-  protected blockFinder: BlockFinder;
+  protected blockFinder: EVMBlockFinder;
 
   // We by default do not include a fee for Linea bridges.
   protected bridgeFee = 0;
