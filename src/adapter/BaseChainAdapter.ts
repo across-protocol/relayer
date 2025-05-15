@@ -30,7 +30,7 @@ import {
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
-  ZERO_HASH,
+  ZERO_BYTES,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -283,7 +283,7 @@ export class BaseChainAdapter {
         "error",
         "sendTokenToTargetChain"
       );
-      return { hash: ZERO_HASH } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     }
     const { contract, method, args, value } = bridgeTransactionDetails;
     const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
@@ -320,7 +320,7 @@ export class BaseChainAdapter {
     );
     if (simMode) {
       this.log("Simulation result", { succeed }, "debug", "sendTokenToTargetChain");
-      return { hash: ZERO_HASH } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     }
     return (await this.transactionClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
@@ -378,7 +378,7 @@ export class BaseChainAdapter {
         "debug",
         "wrapNativeTokenIfAboveThreshold"
       );
-      return { hash: ZERO_HASH } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     } else {
       (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }
