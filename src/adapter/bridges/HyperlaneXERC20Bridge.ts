@@ -10,7 +10,6 @@ import {
   paginatedEventQuery,
   Address,
   EventSearchConfig,
-  toBytes32,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";

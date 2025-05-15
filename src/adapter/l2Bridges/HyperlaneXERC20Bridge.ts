@@ -16,7 +16,6 @@ import {
   getTokenInfo,
   getNetworkName,
   createFormatFunction,
-  toBN,
   isContractDeployedToAddress,
 } from "../../utils";
 import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID } from "@across-protocol/constants";
@@ -167,15 +166,24 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       ),
     ]);
 
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, event) => {
-      const matchingFinalizedEvent = withdrawalFinalizedEvents.find((e) =>
-        toBN(e.args.amount.toString()).eq(toBN(event.args.amount.toString()))
-      );
-      if (!isDefined(matchingFinalizedEvent)) {
-        return totalAmount.add(event.args.amount);
+    const finalizedAmountCounts = new Map<string, number>();
+    for (const event of withdrawalFinalizedEvents) {
+      const amountStr = event.args.amount.toString();
+      finalizedAmountCounts.set(amountStr, (finalizedAmountCounts.get(amountStr) || 0) + 1);
+    }
+
+    let outstandingWithdrawalAmount = bnZero;
+    for (const event of withdrawalInitiatedEvents) {
+      const amountStr = event.args.amount.toString();
+      const count = finalizedAmountCounts.get(amountStr);
+
+      if (isDefined(count) && count > 0) {
+        finalizedAmountCounts.set(amountStr, count - 1);
+      } else {
+        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(event.args.amount);
       }
-      return totalAmount;
-    }, bnZero);
-    return withdrawalAmount;
+    }
+
+    return outstandingWithdrawalAmount;
   }
 }
