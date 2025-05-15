@@ -267,14 +267,7 @@ export class AdapterManager {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
         const hubTokens = l1Tokens
-          // TODO: for v4 this `.filter` won't work: we won't rely on rebalance routes anymore.
-          // TODO: we might just want to use `l1Tokens` supplied to this function without filtering, or make filtering less restrictive
-          .filter(
-            (token) =>
-              // TODO: temporary ezETH hack
-              TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET] == token ||
-              this.l2TokenExistForL1Token(token, chainId)
-          )
+          .filter((token) => this.l2TokenExistForL1Token(token, chainId))
           .map((l1Token) => EvmAddress.from(l1Token));
         await adapter.checkTokenApprovals(hubTokens);
       }
@@ -282,7 +275,7 @@ export class AdapterManager {
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
-    return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
+    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
