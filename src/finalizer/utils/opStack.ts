@@ -59,6 +59,7 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
 }
 
 const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
+const USDCe = TOKEN_SYMBOLS_MAP["USDC.e"];
 
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
 /* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
@@ -143,10 +144,9 @@ export async function opStackFinalizer(
   const ovmFromAddresses = senderAddresses.filter((sender) => sender !== spokePool.address);
   const searchConfig = { ...spokePoolClient.eventSearchConfig, toBlock: latestBlockSearched };
   const ovmStdEvents = await getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
+  const opUSDCEvents = await getOPUSDCEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
 
-  // @todo: Query OP USDC events.
-
-  const withdrawalEvents = [...ovmStdEvents];
+  const withdrawalEvents = [...ovmStdEvents, ...opUSDCEvents];
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
   withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
@@ -254,6 +254,36 @@ async function getOVMStdEvents(
     .filter(isDefined);
 
   return [...ethEvents, ...erc20Events];
+}
+
+async function getOPUSDCEvents(
+  logger: winston.Logger,
+  provider: Provider,
+  fromAddresses: string[],
+  searchConfig: EventSearchConfig
+): Promise<(Log & { l2TokenAddress: string })[]> {
+  const { chainId } = await provider.getNetwork();
+  const chain = getNetworkName(chainId);
+  const at = `${chain}Finalizer`;
+
+  const { opUSDCBridge } = CONTRACT_ADDRESSES[chainId];
+  if (!opUSDCBridge) {
+    return []; // No need to warn; many chains do not have OP USDC.
+  }
+  const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
+  const filter = bridge.filters.MessageSent(fromAddresses);
+  const events = (await paginatedEventQuery(bridge, filter, searchConfig)).map(({ args, ...event }) => {
+    const l2TokenAddress = USDC.addresses?.[chainId] ?? USDCe.addresses?.[chainId];
+    if (!l2TokenAddress) {
+      logger.warn({ at, message: `Unrecognised USDC variant on ${chain}.`, event });
+    }
+
+    // MessageSent events aren't immediately compatible with this adapter. Finesse the event format a bit.
+    return { ...event, args: { ...args, amount: args._amount }, l2TokenAddress };
+  })
+  .filter(({ l2TokenAddress }) => isDefined(l2TokenAddress));
+
+  return events;
 }
 
 async function viem_multicallOptimismFinalizations(
