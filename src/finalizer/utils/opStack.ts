@@ -12,11 +12,12 @@ import {
   getTimeToFinalize,
 } from "viem/op-stack";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { TokensBridged } from "../../interfaces";
+import { Log, TokensBridged } from "../../interfaces";
 import {
   CHAIN_IDs,
   chainIsOPStack,
   convertFromWei,
+  EventSearchConfig,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
@@ -25,6 +26,7 @@ import {
   getUniqueLogIndex,
   groupObjectCountsByProp,
   isDefined,
+  Provider,
   Signer,
   TOKEN_SYMBOLS_MAP,
   winston,
@@ -55,6 +57,8 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   status: string;
   logIndex: number;
 }
+
+const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
 /* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
@@ -101,9 +105,10 @@ export async function opStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
-  const { chainId } = spokePoolClient;
+  const { chainId, latestBlockSearched, spokePool } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
-  const networkName = getNetworkName(chainId);
+  const chain = getNetworkName(chainId);
+  const at = `${chain}Finalizer`;
 
   // Optimism withdrawals take 7 days to finalize, while proofs are ready as soon as an L1 txn containing the L2
   // withdrawal is posted to Mainnet, so ~30 mins.
@@ -119,93 +124,29 @@ export async function opStackFinalizer(
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
-      (e) =>
+      ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
-        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
+        !compareAddressesSimple(l2TokenAddress, USDC.addresses[chainId]) || !(getCctpDomainForChainId(chainId) > 0)
     ),
-    (e) => {
-      if (e.blockNumber >= latestBlockToProve) {
-        return "recentTokensBridgedEvents";
-      } else {
-        return "olderTokensBridgedEvents";
-      }
-    }
+    (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
 
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
-  logger.debug({
-    at: `${networkName}Finalizer`,
-    message: `Latest TokensBridged block to attempt to submit proofs for ${networkName}`,
-    latestBlockToProve,
-  });
+  logger.debug({ at, message: `Latest TokensBridged block for proof submission on ${chain}.`, latestBlockToProve });
 
   // Add in all manual withdrawals from other EOA's from OPStack chain to the finalizer. This will help us
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
-    logger.warn({
-      at: `${networkName}Finalizer`,
-      message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
-    });
-  }
-  const ovmStandardBridge = new Contract(
-    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
-    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
-    spokePoolClient.spokePool.provider
-  );
-  const withdrawalEthEvents = (
-    await paginatedEventQuery(
-      ovmStandardBridge,
-      ovmStandardBridge.filters.ETHBridgeInitiated(
-        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
-        // SpokePool as sender since we query for it previously using the TokensBridged event query.
-      ),
-      {
-        ...spokePoolClient.eventSearchConfig,
-        toBlock: spokePoolClient.latestBlockSearched,
-      }
-    )
-  ).map((event) => {
-    return {
-      ...event,
-      l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
-    };
-  });
-  const withdrawalErc20Events = (
-    await paginatedEventQuery(
-      ovmStandardBridge,
-      ovmStandardBridge.filters.ERC20BridgeInitiated(
-        null, // localToken
-        null, // remoteToken
-        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
-        // SpokePool as sender since we query for it previously using the TokensBridged event query.
-      ),
-      {
-        ...spokePoolClient.eventSearchConfig,
-        toBlock: spokePoolClient.latestBlockSearched,
-      }
-    )
-  ).map((event) => {
-    // If we're aware of this token, then save the event as one we can finalize.
-    try {
-      getTokenInfo(event.args.localToken, chainId);
-      return {
-        ...event,
-        l2TokenAddress: event.args.localToken,
-      };
-    } catch (err) {
-      logger.debug({
-        at: `${networkName}Finalizer`,
-        message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
-        event: event,
-      });
-      return undefined;
-    }
-  });
-  const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter(isDefined);
+  // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
+  const ovmFromAddresses = senderAddresses.filter((sender) => sender !== spokePool.address);
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, toBlock: latestBlockSearched };
+  const ovmStdEvents = await getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
+
+  // @todo: Query OP USDC events.
+
+  const withdrawalEvents = [...ovmStdEvents];
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
   withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
@@ -252,7 +193,7 @@ export async function opStackFinalizer(
     // Next finalize withdrawals that have passed challenge period.
     // Skip events that are likely not past the seven day challenge period.
     logger.debug({
-      at: `${networkName}Finalizer`,
+      at,
       message: "Earliest TokensBridged block to attempt to finalize",
       earliestBlockToFinalize: latestBlockToProve,
     });
@@ -269,6 +210,50 @@ export async function opStackFinalizer(
   }
 
   return { callData, crossChainMessages: crossChainTransfers };
+}
+
+async function getOVMStdEvents(
+  logger: winston.Logger,
+  provider: Provider,
+  fromAddresses: string[],
+  searchConfig: EventSearchConfig
+): Promise<(Log & { l2TokenAddress: string })[]> {
+  const { chainId } = await provider.getNetwork();
+  const chain = getNetworkName(chainId);
+  const at = `${chain}Finalizer`;
+
+  // Add in all manual withdrawals from other EOA's from OPStack chain to the finalizer. This will help us
+  // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
+  // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
+  // the lite chain to Ethereum via the canonical OVM standard bridge.
+  const { ovmStandardBridge } = CONTRACT_ADDRESSES[chainId];
+  if (!ovmStandardBridge) {
+    logger.warn({ at, message: `No OVM standard bridge contract found for ${chain}.` });
+    return [];
+  }
+  const bridge = new Contract(ovmStandardBridge.address, ovmStandardBridge.abi, provider);
+
+  const ethFilter = bridge.filters.ETHBridgeInitiated(fromAddresses);
+  const ethEvents = (await paginatedEventQuery(bridge, ethFilter, searchConfig)).map((event) => ({
+    ...event,
+    l2TokenAddress: WETH.addresses[chainId],
+  }));
+
+  const erc20filter = bridge.filters.ERC20BridgeInitiated(null, null, fromAddresses);
+  const erc20Events = (await paginatedEventQuery(bridge, erc20filter, searchConfig))
+    .map((event) => {
+      // If we're aware of this token, then save the event as one we can finalize.
+      try {
+        getTokenInfo(event.args.localToken, chainId);
+        return { ...event, l2TokenAddress: event.args.localToken };
+      } catch {
+        logger.debug({ at, message: `Skipping unknown ${chain} token withdrawal: ${event.args.localToken}`, event });
+        return undefined;
+      }
+    })
+    .filter(isDefined);
+
+  return [...ethEvents, ...erc20Events];
 }
 
 async function viem_multicallOptimismFinalizations(
@@ -721,10 +706,9 @@ async function multicallOptimismFinalizations(
 
   // For each RELAYED (e.g. Finalized in the normal OPStack context) USDB message there should be
   // one WithdrawRequest with a unique requestId.
+  const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    (message) =>
-      message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
-      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
+    ({ event, status }) => status === statusRelayed && event.l2TokenAddress === USDB.addresses[chainId]
   );
   if (claimableUSDBMessages.length === 0) {
     return {
@@ -850,10 +834,10 @@ async function multicallOptimismFinalizations(
           logger.warn({ at: "BlastFinalizer", message, hintId: hintIds[i], recipient });
           return undefined;
         }
-        const amountFromWei = convertFromWei(amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        const amountFromWei = convertFromWei(amountToReturn.toString(), USDB.decimals);
         claimMessages.push({
           originationChainId: chainId,
-          l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
+          l1TokenSymbol: USDB.symbol,
           amount: amountFromWei,
           type: "misc",
           miscReason: "claimUSDB",
