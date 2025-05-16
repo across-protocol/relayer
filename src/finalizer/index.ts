@@ -481,9 +481,8 @@ export async function constructFinalizerClients(
   await updateFinalizerClients(commonClients);
 
   if (config.chainsToFinalize.length === 0) {
-    config.chainsToFinalize = commonClients.configStoreClient
-      .getChainIdIndicesForBlock()
-      .filter((chainId) => isDefined(spokePoolClients[chainId]));
+    config.chainsToFinalize = commonClients.configStoreClient.getChainIdIndicesForBlock();
+
   }
 
   config.validate(config.chainsToFinalize, _logger);
