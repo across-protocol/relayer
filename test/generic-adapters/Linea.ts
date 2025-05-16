@@ -6,7 +6,7 @@ import { ethers, getContractFactory, Contract, randomAddress, expect, createRand
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
-import { BlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
+import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
 import { getCctpDomainForChainId } from "../../src/utils";
 
 describe("Cross Chain Adapter: Linea", async function () {
@@ -144,7 +144,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       searchConfig = adapter.getUpdatedSearchConfigs().l2SearchConfig;
 
       const wethBridge = adapter.bridges[l1WETHToken];
-      wethBridge.blockFinder = new BlockFinder(wethBridgeContract.provider);
+      wethBridge.blockFinder = new EVMBlockFinder(wethBridgeContract.provider);
       const result = await wethBridge.queryL2BridgeFinalizationEvents(
         toAddress(l1WETHToken),
         undefined,
@@ -169,7 +169,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       await wethBridgeContract.emitMessageClaimed(messageHash);
       await adapter.updateSpokePoolClients();
-      adapter.bridges[l1WETHToken].blockFinder = new BlockFinder(wethBridgeContract.provider);
+      adapter.bridges[l1WETHToken].blockFinder = new EVMBlockFinder(wethBridgeContract.provider);
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1WETHToken)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one

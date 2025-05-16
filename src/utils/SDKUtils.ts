@@ -1,6 +1,8 @@
 import * as sdk from "@across-protocol/sdk";
 
-export class BlockFinder extends sdk.utils.BlockFinder {}
+// EVMBlockFinder returns _only_ EVMBlock types.
+export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
+export class SVMBlockFinder extends sdk.arch.svm.SVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 
 export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
@@ -25,7 +27,6 @@ export const {
   groupObjectCountsByThreeProps,
   delay,
   getCurrentTime,
-  averageBlockTime,
   bnZero,
   bnOne,
   bnUint32Max,

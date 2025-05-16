@@ -1,11 +1,11 @@
 import { interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
-import { BlockFinder, BlockFinderHints } from "./SDKUtils";
+import { BlockFinderHints, EVMBlockFinder } from "./SDKUtils";
 import { getProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
-const blockFinders: { [chainId: number]: BlockFinder } = {};
+const evmBlockFinders: { [chainId: number]: EVMBlockFinder } = {};
 
 /**
  * @notice Return block finder for chain. Loads from in memory blockFinder cache if this function was called before
@@ -13,12 +13,12 @@ const blockFinders: { [chainId: number]: BlockFinder } = {};
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
-  if (!isDefined(blockFinders[chainId])) {
+export async function getBlockFinder(chainId: number): Promise<EVMBlockFinder> {
+  if (!isDefined(evmBlockFinders[chainId])) {
     const providerForChain = await getProvider(chainId);
-    blockFinders[chainId] = new BlockFinder(providerForChain);
+    evmBlockFinders[chainId] = new EVMBlockFinder(providerForChain);
   }
-  return blockFinders[chainId];
+  return evmBlockFinders[chainId];
 }
 
 /**
@@ -33,7 +33,7 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder,
+  blockFinder?: EVMBlockFinder,
   redisCache?: interfaces.CachingMechanismInterface,
   hints: BlockFinderHints = {}
 ): Promise<number> {

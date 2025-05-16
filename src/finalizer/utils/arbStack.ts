@@ -20,7 +20,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   getProvider,
-  averageBlockTime,
   paginatedEventQuery,
   getNetworkName,
   getL2TokenAddresses,
@@ -31,7 +30,7 @@ import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 let LATEST_MAINNET_BLOCK: number;
@@ -84,7 +83,7 @@ export async function arbStackFinalizer(
 ): Promise<FinalizerPromise> {
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
-  MAINNET_BLOCK_TIME = (await averageBlockTime(hubPoolProvider)).average;
+  MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;
   // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
 
   ARB_ORBIT_NETWORK_CONFIGS.forEach((_networkConfig) => {

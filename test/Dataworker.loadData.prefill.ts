@@ -258,7 +258,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid
           // but the msg.sender is valid.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const validRelayerAddress = randomAddress();
           provider._setTransaction(fill.transactionHash, {
             from: validRelayerAddress,
@@ -300,7 +300,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid
           // but the msg.sender is valid.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const validRelayerAddress = randomAddress();
           provider._setTransaction(fill.transactionHash, {
             from: validRelayerAddress,
@@ -345,7 +345,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
           // set the msg.sender as an invalid address.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const spokeWrapper = new Contract(
             mockDestinationSpokePoolClient.spokePool.address,
             mockDestinationSpokePoolClient.spokePool.interface,
@@ -385,7 +385,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
           // set the msg.sender as an invalid address.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const spokeWrapper = new Contract(
             mockDestinationSpokePoolClient.spokePool.address,
             mockDestinationSpokePoolClient.spokePool.interface,
@@ -419,7 +419,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
           // set the msg.sender as an invalid address.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const spokeWrapper = new Contract(
             mockDestinationSpokePoolClient.spokePool.address,
             mockDestinationSpokePoolClient.spokePool.interface,
@@ -458,7 +458,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
           // set the msg.sender as an invalid address.
-          const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+          const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
           const spokeWrapper = new Contract(
             mockDestinationSpokePoolClient.spokePool.address,
             mockDestinationSpokePoolClient.spokePool.interface,

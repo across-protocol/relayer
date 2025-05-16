@@ -17,7 +17,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
+import { caching, clients, arch } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";
 
 export interface Clients {
@@ -327,7 +327,7 @@ export async function constructClients(
   );
 
   const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
-  const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
+  const { average: avgMainnetBlockTime } = await arch.evm.averageBlockTime(hubPoolProvider);
   const fromBlock = isDefined(hubPoolLookback)
     ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
     : hubPoolDeploymentBlock;

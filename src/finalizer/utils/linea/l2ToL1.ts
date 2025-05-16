@@ -30,7 +30,7 @@ import {
   getL2MessagingBlockAnchoredFromMessageSentEvent,
 } from "./common";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch } from "@across-protocol/sdk";
 import {
   L1ClaimingService,
   SparseMerkleTreeFactory,
@@ -280,7 +280,7 @@ export async function lineaL2ToL1Finalizer(
     return transfer;
   });
 
-  const averageBlockTimeSeconds = await sdkUtils.averageBlockTime(spokePoolClient.spokePool.provider);
+  const averageBlockTimeSeconds = await arch.evm.averageBlockTime(spokePoolClient.spokePool.provider);
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
     message: "Linea L2->L1 message statuses",
