@@ -84,7 +84,7 @@ describe("TokenClient: Origin token approval", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, 0);
     await configStoreClient.update();
     hubPoolClient = new MockHubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
 

@@ -57,8 +57,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
       destinationChainId,
-      blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.DepositWithBlock);
   }
 
@@ -79,8 +79,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
       },
-      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.FillWithBlock);
   }
 
@@ -92,8 +92,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
     return mockDestinationSpokePoolClient.requestV3SlowFill({
       ...relayData,
-      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.SlowFillRequestWithBlock);
   }
 
@@ -234,8 +234,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     await fillV3Relay(spokePool_2, deposits[2], relayer, repaymentChainId);
 
     // Construct a spoke pool client with a small search range that would not include the first fill.
-    spokePoolClient_2.firstBlockToSearch = missingSlowFillRequestBlock + 1;
-    spokePoolClient_2.eventSearchConfig.fromBlock = spokePoolClient_2.firstBlockToSearch;
+    spokePoolClient_2.firstHeightToSearch = missingSlowFillRequestBlock + 1;
+    spokePoolClient_2.eventSearchConfig.from = spokePoolClient_2.firstHeightToSearch;
 
     // There should be one "missing" slow fill request.
     await spokePoolClient_2.update();
@@ -304,7 +304,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
     // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
     // set the msg.sender as an invalid address.
-    const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+    const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
     const spokeWrapper = new Contract(
       mockDestinationSpokePoolClient.spokePool.address,
       mockDestinationSpokePoolClient.spokePool.interface,
