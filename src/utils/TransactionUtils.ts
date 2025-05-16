@@ -53,8 +53,12 @@ export function getNetworkError(err: unknown): string {
   return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
 }
 
-export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
+export function getMultisender(chainId: number, baseSigner: Signer): Contract | undefined {
   return sdkUtils.getMulticall3(chainId, baseSigner);
+}
+
+export function getPermissionedMultisender(chainId: number, baseSigner: Signer): Contract | undefined {
+  return sdkUtils.getPermissionedMulticall3(chainId, baseSigner);
 }
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
