@@ -1,4 +1,4 @@
-import { Contract, Signer } from "ethers";
+import { BigNumberish, BytesLike, Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -19,11 +19,20 @@ import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
 
-import {
-  IOFT,
-  MessagingFeeStruct,
-  SendParamStruct,
-} from "@across-protocol/contracts/dist/typechain/contracts/interfaces/IOFT";
+export type SendParamStruct = {
+  dstEid: BigNumberish;
+  to: BytesLike;
+  amountLD: BigNumberish;
+  minAmountLD: BigNumberish;
+  extraOptions: BytesLike;
+  composeMsg: BytesLike;
+  oftCmd: BytesLike;
+};
+
+export type MessagingFeeStruct = {
+  nativeFee: BigNumberish;
+  lzTokenFee: BigNumberish;
+};
 
 type OFTRouteInfo = {
   hubChainIOFTAddress: EvmAddress;
@@ -113,7 +122,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     };
 
     // Get the messaging fee for this transfer
-    const feeStruct: MessagingFeeStruct = await (this.l1Bridge as IOFT).quoteSend(sendParamStruct, false);
+    const feeStruct: MessagingFeeStruct = await this.getL1Bridge().quoteSend(sendParamStruct, false);
     if (BigNumber.from(feeStruct.nativeFee).gt(OFTBridge.FEE_CAP)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${OFTBridge.FEE_CAP})`);
     }
