@@ -5,7 +5,7 @@ import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { getCctpDomainForChainId, EvmAddress } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
@@ -156,7 +156,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     it("return simulated success tx if above threshold", async () => {
       const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
-      expect(tx?.hash).to.equal(ZERO_ADDRESS);
+      expect(tx?.hash).to.equal(ZERO_BYTES);
     });
   });
 
