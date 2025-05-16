@@ -333,7 +333,7 @@ export async function depositV3(
     txnRef,
     txnIndex,
     logIndex,
-    ...spreadEvent(args) as Deposit,
+    ...(spreadEvent(args) as Deposit),
     originChainId: Number(originChainId),
     quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),

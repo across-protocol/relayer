@@ -580,9 +580,7 @@ describe("Dataworker: Load bundle data", async function () {
           .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
-        [relayer2]: fillV3Events.at(-1).args.inputAmount
-          .mul(refundAmountPct)
-          .div(fixedPointAdjustment),
+        [relayer2]: fillV3Events.at(-1).args.inputAmount.mul(refundAmountPct).div(fixedPointAdjustment),
       });
     });
 
