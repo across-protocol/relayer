@@ -9,7 +9,6 @@ import {
   MakeOptional,
   Signer,
   TransactionResponse,
-  ZERO_ADDRESS,
   assert,
   assign,
   createFormatFunction,
@@ -31,6 +30,7 @@ import {
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
+  ZERO_BYTES,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -196,12 +196,31 @@ export class BaseChainAdapter {
     if (!this.isSupportedL2Bridge(l1Token.toAddress())) {
       return [];
     }
-    const txnsToSend = await this.l2Bridges[l1Token.toAddress()].constructWithdrawToL1Txns(
-      address,
-      l2Token,
-      l1Token,
-      amount
-    );
+    let txnsToSend: AugmentedTransaction[];
+    try {
+      txnsToSend = await this.l2Bridges[l1Token.toAddress()].constructWithdrawToL1Txns(
+        address,
+        l2Token,
+        l1Token,
+        amount
+      );
+    } catch (e) {
+      this.log(
+        "Failed to constructWithdrawToL1Txns",
+        {
+          toAddress: address,
+          l2Token: l2Token.toAddress(),
+          l1Token: l1Token.toAddress(),
+          amount: amount.toString(),
+          srcChainId: this.chainId,
+          dstChainId: this.hubChainId,
+          error: stringifyThrownValue(e),
+        },
+        "error",
+        "withdrawTokenFromL2"
+      );
+      return [];
+    }
     const multicallerClient = new MultiCallerClient(this.logger);
     txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
     const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
@@ -257,12 +276,14 @@ export class BaseChainAdapter {
           l1Token: l1Token.toAddress(),
           l2Token: l2Token.toAddress(),
           amount: amount.toString(),
+          srcChainId: this.hubChainId,
+          dstChainId: this.chainId,
           error: stringifyThrownValue(e),
         },
         "error",
         "sendTokenToTargetChain"
       );
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     }
     const { contract, method, args, value } = bridgeTransactionDetails;
     const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
@@ -299,7 +320,7 @@ export class BaseChainAdapter {
     );
     if (simMode) {
       this.log("Simulation result", { succeed }, "debug", "sendTokenToTargetChain");
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     }
     return (await this.transactionClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
@@ -357,7 +378,7 @@ export class BaseChainAdapter {
         "debug",
         "wrapNativeTokenIfAboveThreshold"
       );
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     } else {
       (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }
