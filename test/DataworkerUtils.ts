@@ -184,8 +184,8 @@ describe("PoolRebalanceLeaf utils", function () {
     });
     it("Produces empty pool rebalance leaf for chains with only refunds and no running balances", async function () {
       const { leaves } = _buildPoolRebalanceRoot(
-        mockHubPoolClient.latestBlockSearched,
-        mockHubPoolClient.latestBlockSearched,
+        mockHubPoolClient.latestHeightSearched,
+        mockHubPoolClient.latestHeightSearched,
         // To make this test simpler, create the minimum object that won't break the tested function:
         {},
         {
@@ -220,8 +220,8 @@ describe("PoolRebalanceLeaf utils", function () {
     });
     it("Inserts empty pool rebalance leaf in correct order", async function () {
       const { leaves } = _buildPoolRebalanceRoot(
-        mockHubPoolClient.latestBlockSearched,
-        mockHubPoolClient.latestBlockSearched,
+        mockHubPoolClient.latestHeightSearched,
+        mockHubPoolClient.latestHeightSearched,
         // To make this test simpler, create the minimum object that won't break the tested function:
         {
           [originChainId]: {

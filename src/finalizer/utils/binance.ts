@@ -87,7 +87,7 @@ export async function binanceFinalizer(
 
   const [binanceApi, _fromTimestamp] = await Promise.all([
     getBinanceApiClient(process.env["BINANCE_API_BASE"]),
-    getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.fromBlock),
+    getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.from),
   ]);
   const fromTimestamp = _fromTimestamp * 1_000;
 

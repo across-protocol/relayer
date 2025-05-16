@@ -134,7 +134,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     postEvents(blockNumber, currentTime, events);
     await spokePoolClient.update();
 
-    expect(spokePoolClient.latestBlockSearched).to.equal(blockNumber);
+    expect(spokePoolClient.latestHeightSearched).to.equal(blockNumber);
 
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);

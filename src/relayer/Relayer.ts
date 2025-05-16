@@ -1,10 +1,9 @@
 import assert from "assert";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, Deposit, DepositWithBlock } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
-  averageBlockTime,
   BigNumber,
   bnZero,
   bnUint256Max,
@@ -132,7 +131,7 @@ export class Relayer {
       tokenClient.clearTokenData();
 
       await configStoreClient.update();
-      if (configStoreClient.latestBlockSearched > hubPoolClient.latestBlockSearched) {
+      if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
         await hubPoolClient.update();
       }
     }
@@ -362,14 +361,14 @@ export class Relayer {
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     ) ?? { minConfirmations: 100_000 };
-    const { latestBlockSearched } = spokePoolClients[originChainId];
-    if (latestBlockSearched - blockNumber < minConfirmations) {
+    const { latestHeightSearched } = spokePoolClients[originChainId];
+    if (latestHeightSearched - blockNumber < minConfirmations) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
         depositId: depositId.toString(),
         blockNumber,
-        confirmations: latestBlockSearched - blockNumber,
+        confirmations: latestHeightSearched - blockNumber,
         minConfirmations,
         txnRef: deposit.txnRef,
       });
@@ -545,7 +544,7 @@ export class Relayer {
     const originSpoke = this.clients.spokePoolClients[chainId];
 
     let totalCommitment = bnZero;
-    let toBlock = originSpoke.latestBlockSearched;
+    let toBlock = originSpoke.latestHeightSearched;
 
     // For each deposit confirmation tier (lookback), sum all outstanding commitments back to head.
     const limits = mdcs.map(({ usdThreshold, minConfirmations }) => {
@@ -571,7 +570,7 @@ export class Relayer {
           overCommitment: limit.abs(),
           usdThreshold: mdcs[i].usdThreshold,
           fromBlock,
-          toBlock: originSpoke.latestBlockSearched,
+          toBlock: originSpoke.latestHeightSearched,
         });
         break;
       }
@@ -711,8 +710,8 @@ export class Relayer {
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
       const originSpoke = spokePoolClients[originChainId];
-      const { average: avgBlockTime } = await averageBlockTime(originSpoke.spokePool.provider);
-      const depositAge = Math.floor(avgBlockTime * (originSpoke.latestBlockSearched - deposit.blockNumber));
+      const { average: avgBlockTime } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
+      const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
         this.logger.debug({
@@ -892,7 +891,7 @@ export class Relayer {
 
     // Fetch the average block time for mainnet, for later use in evaluating quoteTimestamps.
     this.hubPoolBlockBuffer ??= Math.ceil(
-      HUB_SPOKE_BLOCK_LAG * (await sdkUtils.averageBlockTime(hubPoolClient.hubPool.provider)).average
+      HUB_SPOKE_BLOCK_LAG * (await arch.evm.averageBlockTime(hubPoolClient.hubPool.provider)).average
     );
 
     // Flush any pre-existing enqueued transactions that might not have been executed.
@@ -945,9 +944,9 @@ export class Relayer {
 
       const mdcPerChain = this.computeRequiredDepositConfirmations(unfilledDeposits, destinationChainId);
       const maxBlockNumbers = Object.fromEntries(
-        Object.values(spokePoolClients).map(({ chainId, latestBlockSearched }) => [
+        Object.values(spokePoolClients).map(({ chainId, latestHeightSearched }) => [
           chainId,
-          latestBlockSearched - mdcPerChain[chainId],
+          latestHeightSearched - mdcPerChain[chainId],
         ])
       );
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
