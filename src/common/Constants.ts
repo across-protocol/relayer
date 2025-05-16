@@ -36,6 +36,7 @@ import {
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
+  OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
@@ -574,6 +575,7 @@ export const CUSTOM_L2_BRIDGE: {
   };
 } = {
   [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
   [CHAIN_IDs.REDSTONE]: {

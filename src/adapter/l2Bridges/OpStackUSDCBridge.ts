@@ -1,0 +1,114 @@
+import { CONTRACT_ADDRESSES } from "../../common";
+import { AugmentedTransaction } from "../../clients/TransactionClient";
+import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import {
+  BigNumber,
+  bnZero,
+  Contract,
+  createFormatFunction,
+  EventSearchConfig,
+  getNetworkName,
+  isDefined,
+  paginatedEventQuery,
+  Provider,
+  Signer,
+  EvmAddress,
+  getTokenInfo,
+} from "../../utils";
+import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
+
+export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
+  readonly minGasLimit = 200_000;
+
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+
+    const { address: l2Address, abi: l2ABI } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
+    this.l2Bridge = new Contract(l2Address, l2ABI, l2Signer);
+
+    const { address: l1Address, abi: l1ABI } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
+    this.l1Bridge = new Contract(l1Address, l1ABI, l1Provider);
+  }
+
+  constructWithdrawToL1Txns(
+    to: EvmAddress,
+    l2Token: EvmAddress,
+    _l1Token: EvmAddress,
+    amount: BigNumber
+  ): Promise<AugmentedTransaction[]> {
+    const { l2chainId: chainId, l2Bridge } = this;
+
+    const txns: AugmentedTransaction[] = [];
+    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const formatter = createFormatFunction(2, 4, false, decimals);
+
+    const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
+    const formattedAmount = formatter(amount.toString());
+    const chain = getNetworkName(chainId);
+    const nonMulticall = true;
+    const unpermissioned = false;
+
+    txns.push({
+      chainId,
+      contract: erc20,
+      method: "approve",
+      args: [l2Bridge.address, amount],
+      nonMulticall,
+      unpermissioned,
+      message: `✅ Approved ${formattedAmount} Circle Bridged (upgradable) ${symbol} for withdrawal from ${chain}.`,
+    });
+
+    txns.push({
+      chainId,
+      contract: l2Bridge,
+      method: "sendMessage",
+      args: [to.toAddress(), amount.toString(), this.minGasLimit],
+      nonMulticall,
+      unpermissioned,
+      canFailInSimulation: true, // approval has not been confirmed at the time of simulation.
+      message: `🎰 Withdrew ${formattedAmount} Circle Bridged (upgradable) ${symbol} from ${chain} to L1`,
+    });
+
+    return Promise.resolve(txns);
+  }
+
+  async getL2PendingWithdrawalAmount(
+    l2EventConfig: EventSearchConfig,
+    l1EventConfig: EventSearchConfig,
+    from: EvmAddress,
+    _l2Token: EvmAddress
+  ): Promise<BigNumber> {
+    _l2Token; // unused
+
+    const sentFilter = this.l2Bridge.filters.MessageSent(from.toAddress());
+    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toAddress());
+
+    const [l2Events, l1Events] = await Promise.all([
+      paginatedEventQuery(this.l2Bridge, sentFilter, l2EventConfig),
+      paginatedEventQuery(this.l1Bridge, receiveFilter, l1EventConfig),
+    ]);
+
+    const counted = new Set<number>();
+    const withdrawalAmount = l2Events.reduce((totalAmount, { args: l2Args }) => {
+      const received = l1Events.find(({ args: l1Args }, idx) => {
+        // Protect against double-counting the same l1 withdrawal events.
+        if (counted.has(idx) || l1Args._amount.ne(l2Args._amount)) {
+          return false;
+        }
+
+        counted.add(idx);
+        return true;
+      });
+
+      return isDefined(received) ? totalAmount : totalAmount.add(l2Args._amount);
+    }, bnZero);
+
+    return withdrawalAmount;
+  }
+}
