@@ -13,10 +13,11 @@ import {
   Address,
   toBytes32,
   toWei,
+  isContractDeployedToAddress,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { IOFT_ABI_FULL } from "../../common";
+import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
 
 import {
   IOFT,
@@ -50,8 +51,8 @@ export class OFTBridge extends BaseBridgeAdapter {
   // Cap the messaging fee to prevent excessive costs
   private static readonly FEE_CAP = toWei("0.1"); // 0.1 ether
 
+  private readonly hubPoolAddress: string;
   public readonly dstTokenAddress: string;
-
   private readonly dstChainEid: number;
   private tokenDecimals?: number;
   private sharedDecimals?: number;
@@ -77,6 +78,8 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     super(dstChainId, hubChainId, hubSigner, [route.hubChainIOFTAddress]);
 
+    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
+    assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = getOFTEidForChainId(dstChainId);
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
@@ -155,24 +158,30 @@ export class OFTBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This shouldn't happen, but if request is for a different L1 token, return an empty list
+    // Return no events if the query is for a different l1 token
     if (!l1Token.eq(this.hubTokenAddress)) {
       return {};
     }
 
-    // Get `OFTSent` events for [fromAddress -> dst chain]
-    const allEvents = await paginatedEventQuery(
+    // Return no events if the query is for hubPool
+    if (fromAddress.eq(EvmAddress.from(this.hubPoolAddress))) {
+      return {};
+    }
+
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    const fromHubEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
-        fromAddress.toAddress() // filter by `fromAddress`
+        // If the request is for a spoke pool, return `OFTSent` events from hubPool
+        isSpokePool ? this.hubPoolAddress : fromAddress.toAddress()
       ),
       eventConfig
     );
 
-    // Filter events by destination eid
-    const events = allEvents.filter(({ args }) => args.dstEid === this.dstChainEid);
+    // Filter events by destination eid. This gives us [hubPool -> dst_chain] events, which are [hubPool -> dst_spoke] events we were looking for
+    const events = fromHubEvents.filter(({ args }) => args.dstEid === this.dstChainEid);
 
     return {
       [this.dstTokenAddress]: events.map((event) => {
@@ -187,8 +196,13 @@ export class OFTBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // This shouldn't happen, but if request is for a different L1 token, return an empty list
+    // Return no events if the query is for a different l1 token
     if (!l1Token.eq(this.hubTokenAddress)) {
+      return {};
+    }
+
+    // Return no events if the query is for hubPool
+    if (fromAddress.eq(EvmAddress.from(this.hubPoolAddress))) {
       return {};
     }
 
