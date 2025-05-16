@@ -1,7 +1,6 @@
 import * as sdk from "@across-protocol/sdk";
 
 export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
-export class SVMBlockFinder extends sdk.arch.svm.SVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 
 export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}

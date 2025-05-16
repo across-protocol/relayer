@@ -59,13 +59,13 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.63-beta.0":
-  version "4.1.63-beta.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.63-beta.0.tgz#434a10705976b9fc5fd5758c55512ae7e246f3c3"
-  integrity sha512-YVLdJ5vn+8wzL7k4k8uDt4/dWc+6PPG1KYgweoEtfSL7pnBvxjdsWF1D2/JLjyxu0YIL0LZs5/k/hCQnZXll1g==
+"@across-protocol/sdk@4.1.63-beta.3":
+  version "4.1.63-beta.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.63-beta.3.tgz#2b11e055122d4ab014c42edc7981ba3200bcbdbc"
+  integrity sha512-VHPL4bP9eIg2G4kB58pQbZ7jNXgVHrFDG9TK97gke4MmBCIZftRBcV7jA8fB2mPim3YKgEe3/nPxC54TtQIgNw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.64"
+    "@across-protocol/constants" "^3.1.66"
     "@across-protocol/contracts" "^4.0.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
