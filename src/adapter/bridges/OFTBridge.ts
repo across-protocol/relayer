@@ -128,7 +128,7 @@ export class OFTBridge extends BaseBridgeAdapter {
 
   /**
    * Rounds the token amount down to the correct precision for OFT transfer.
-   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent constract-side rounding.
+   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent contract-side rounding.
    * @param amount - Amount to round
    * @returns The amount rounded down to the correct precision
    */
