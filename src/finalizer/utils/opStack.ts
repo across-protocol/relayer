@@ -706,10 +706,9 @@ async function multicallOptimismFinalizations(
 
   // For each RELAYED (e.g. Finalized in the normal OPStack context) USDB message there should be
   // one WithdrawRequest with a unique requestId.
+  const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    (message) =>
-      message.event.l2TokenAddress === USDB.addresses[chainId] &&
-      message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
+    ({ event, status }) => status === statusRelayed && event.l2TokenAddress === USDB.addresses[chainId]
   );
   if (claimableUSDBMessages.length === 0) {
     return {
