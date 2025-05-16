@@ -9,8 +9,8 @@ import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
-  fromBlock: 1,
-  toBlock: 1_000_000,
+  from: 1,
+  to: 1_000_000,
 };
 
 const monitoredEoa = randomAddress();
@@ -55,10 +55,10 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
 
     const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
-      fromBlock: 0,
+      from: 0,
     });
     const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
-      fromBlock: 0,
+      from: 0,
     });
 
     const l1Signer = l1SpokePoolClient.spokePool.signer;
@@ -95,8 +95,8 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     adapter.setCCTPL2Bridge(l1UsdcAddress, cctpBridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("ERC20", () => {

@@ -103,7 +103,7 @@ export class AdapterManager {
         spokePoolClients,
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId).map((address) => toAddressType(address, chainId)),
+        filterMonitoredAddresses(chainId).map((address) => toAddressType(address)),
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
@@ -162,9 +162,9 @@ export class AdapterManager {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
     return this.adapters[chainId].sendTokenToTargetChain(
-      toAddressType(address, chainId),
+      toAddressType(address),
       EvmAddress.from(l1Token),
-      toAddressType(l2Token, chainId),
+      toAddressType(l2Token),
       amount,
       simMode
     );
@@ -187,7 +187,7 @@ export class AdapterManager {
     });
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(
       EvmAddress.from(address),
-      toAddressType(l2Token, chainId),
+      toAddressType(l2Token),
       amount,
       simMode
     );
@@ -203,8 +203,8 @@ export class AdapterManager {
     chainId = Number(chainId);
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(
       lookbackPeriodSeconds,
-      toAddressType(fromAddress, chainId),
-      toAddressType(l2Token, chainId)
+      toAddressType(fromAddress),
+      toAddressType(l2Token)
     );
   }
 
