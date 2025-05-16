@@ -30,9 +30,9 @@ export async function cctpL2toL1Finalizer(
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const searchConfig: EventSearchConfig = {
-    fromBlock: spokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: spokePoolClient.latestBlockSearched,
-    maxBlockLookBack: spokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: spokePoolClient.eventSearchConfig.from,
+    to: spokePoolClient.latestHeightSearched,
+    maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
   const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
     senderAddresses,

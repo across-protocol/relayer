@@ -6,7 +6,7 @@ import { ethers, getContractFactory, Contract, randomAddress, expect, createRand
 import { utils } from "@across-protocol/sdk";
 import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
-import { BlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
+import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
 import { getCctpDomainForChainId } from "../../src/utils";
 
 describe("Cross Chain Adapter: Linea", async function () {
@@ -25,8 +25,8 @@ describe("Cross Chain Adapter: Linea", async function () {
   };
   beforeEach(async function () {
     searchConfig = {
-      fromBlock: 0,
-      toBlock: 1_000_000,
+      from: 0,
+      to: 1_000_000,
     };
     const [deployer] = await ethers.getSigners();
 
@@ -45,10 +45,10 @@ describe("Cross Chain Adapter: Linea", async function () {
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
     const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, l2ChainId, 0, {
-      fromBlock: 0,
+      from: 0,
     });
     const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, hubChainId, 0, {
-      fromBlock: 0,
+      from: 0,
     });
 
     wethBridgeContract = await (await getContractFactory("LineaWethBridge", deployer)).deploy();
@@ -100,8 +100,8 @@ describe("Cross Chain Adapter: Linea", async function () {
     adapter.setTargetL2Bridge(l1Token, erc20BridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("WETH", function () {
@@ -144,7 +144,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       searchConfig = adapter.getUpdatedSearchConfigs().l2SearchConfig;
 
       const wethBridge = adapter.bridges[l1WETHToken];
-      wethBridge.blockFinder = new BlockFinder(wethBridgeContract.provider);
+      wethBridge.blockFinder = new EVMBlockFinder(wethBridgeContract.provider);
       const result = await wethBridge.queryL2BridgeFinalizationEvents(
         toAddress(l1WETHToken),
         undefined,
@@ -169,7 +169,7 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       await wethBridgeContract.emitMessageClaimed(messageHash);
       await adapter.updateSpokePoolClients();
-      adapter.bridges[l1WETHToken].blockFinder = new BlockFinder(wethBridgeContract.provider);
+      adapter.bridges[l1WETHToken].blockFinder = new EVMBlockFinder(wethBridgeContract.provider);
       const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1WETHToken)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
@@ -299,7 +299,7 @@ class MockBaseChainAdapter extends BaseChainAdapter {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
     const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestBlockSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestBlockSearched = blockNumber;
+    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
+    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
   }
 }

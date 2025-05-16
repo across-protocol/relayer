@@ -135,12 +135,12 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     const hubPoolClient = null;
     const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, ZK_SYNC, deploymentBlock, {
-      fromBlock: deploymentBlock,
+      from: deploymentBlock,
     });
     const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
-      fromBlock: deploymentBlock,
+      from: deploymentBlock,
     });
-    searchConfig = { fromBlock: deploymentBlock, toBlock: 1_000_000 };
+    searchConfig = { from: deploymentBlock, to: 1_000_000 };
 
     const l1Signer = l1SpokePoolClient.spokePool.signer;
     const l2Signer = l2SpokePoolClient.spokePool.signer;
@@ -1034,7 +1034,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
       const hubPoolClient = null;
       const deploymentBlock = spokePool.deployTransaction.blockNumber!;
       const lensSpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, LENS, deploymentBlock, {
-        fromBlock: deploymentBlock,
+        from: deploymentBlock,
       });
 
       const l1Signer = adapter.spokePoolClients[MAINNET].spokePool.signer;
