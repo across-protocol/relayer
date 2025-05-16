@@ -182,14 +182,14 @@ export async function finalize(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
-  config: FinalizerConfig,
+  config: FinalizerConfig
 ): Promise<void> {
   const hubChainId = hubPoolClient.chainId;
 
   const {
     chainsToFinalize: configuredChainIds,
     finalizationStrategy,
-    sendingTransactionsEnabled: submitFinalizationTransactions
+    sendingTransactionsEnabled: submitFinalizationTransactions,
   } = config;
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
@@ -482,7 +482,6 @@ export async function constructFinalizerClients(
 
   if (config.chainsToFinalize.length === 0) {
     config.chainsToFinalize = commonClients.configStoreClient.getChainIdIndicesForBlock();
-
   }
 
   config.validate(config.chainsToFinalize, _logger);
@@ -564,13 +563,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       profiler.mark("loopStartPostSpokePoolUpdates");
 
       if (config.finalizerEnabled) {
-        await finalize(
-          logger,
-          commonClients.hubSigner,
-          commonClients.hubPoolClient,
-          spokePoolClients,
-          config,
-        );
+        await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }
