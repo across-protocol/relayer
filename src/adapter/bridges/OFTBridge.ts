@@ -1,4 +1,4 @@
-import { Contract, ethers, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -8,11 +8,11 @@ import {
   fetchTokenInfo,
   isDefined,
   paginatedEventQuery,
-  isContractDeployedToAddress,
   assert,
   EvmAddress,
   Address,
   toBytes32,
+  toWei,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -36,9 +36,9 @@ type OFTRoutes = {
 };
 
 export class OFTBridge extends BaseBridgeAdapter {
-  // Routes are organized by token address and destination chain ID
+  // Routes from Ethereum MAINNET per token and per destination chain
   private static readonly SUPPORTED_ROUTES: OFTRoutes = {
-    // USDT supports transfers from Ethereum to Arbitrum
+    // USDT must be transferred via OFT from Ethereum to Arbitrum
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
       [CHAIN_IDs.ARBITRUM]: {
         hubChainIOFTAddress: EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee"),
@@ -48,24 +48,15 @@ export class OFTBridge extends BaseBridgeAdapter {
   };
 
   // Cap the messaging fee to prevent excessive costs
-  private static readonly FEE_CAP = ethers.utils.parseEther("0.1"); // 0.1 ether
+  private static readonly FEE_CAP = toWei("0.1"); // 0.1 ether
 
   public readonly dstTokenAddress: string;
 
-  // Bridge-specific properties
   private readonly dstChainEid: number;
   private readonly hubPoolAddress: string;
   private tokenDecimals?: number;
   private sharedDecimals?: number;
 
-  /**
-   * Creates an OFT bridge adapter for transfers between hub and destination chains.
-   * @param dstChainId - Destination chain ID
-   * @param hubChainId - Hub chain ID (must be Ethereum mainnet, 1)
-   * @param hubSigner - Signer for the hub chain
-   * @param dstSignerOrProvider - Signer or provider for the destination chain
-   * @param hubTokenAddress - Token address on the hub chain
-   */
   constructor(
     dstChainId: number,
     hubChainId: number,
@@ -116,9 +107,9 @@ export class OFTBridge extends BaseBridgeAdapter {
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
-      extraOptions: "0x", // Empty bytes
-      composeMsg: "0x", // Empty bytes
-      oftCmd: "0x", // Empty bytes
+      extraOptions: "0x",
+      composeMsg: "0x",
+      oftCmd: "0x",
     };
 
     // Get the messaging fee for this transfer
@@ -140,7 +131,7 @@ export class OFTBridge extends BaseBridgeAdapter {
 
   /**
    * Rounds the token amount down to the correct precision for OFT transfer.
-   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent rounding.
+   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent constract-side rounding.
    * @param amount - Amount to round
    * @returns The amount rounded down to the correct precision
    */
@@ -172,14 +163,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
-      return {};
-    } else if (!fromAddress.eq(toAddress)) {
-      return {};
-    }
-
-    // Get all OFTSent events for the fromAddress
+    // Get all OFTSent events *from* `fromAddress` to dst chain
     const allEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
@@ -211,14 +195,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
-    if (isSpokePool && fromAddress.toAddress() != this.hubPoolAddress) {
-      return {};
-    } else if (!fromAddress.eq(toAddress)) {
-      return {};
-    }
-
-    // Get all OFTReceived events for the toAddress
+    // Get all OFTReceived events to *toAddress* from hub chain
     const allEvents = await paginatedEventQuery(
       this.l2Bridge,
       this.l2Bridge.filters.OFTReceived(
@@ -241,11 +218,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   }
 }
 
-/**
- * Retrieves the OFT EID for a given chainId.
- * @param chainId - The chainId to get the OFT EID for
- * @returns The OFT EID for the given chainId
- */
+// Retrieves the OFT EID for a given chainId.
 export function getOFTEidForChainId(chainId: number): number {
   const eid = PUBLIC_NETWORKS[chainId].oftEid;
   if (!isDefined(eid)) {
@@ -254,11 +227,7 @@ export function getOFTEidForChainId(chainId: number): number {
   return eid;
 }
 
-/**
- * Converts an Ethereum address to bytes32 format for OFT bridge. Zero-pads from the left.
- * @param address - The Ethereum address to convert
- * @returns The bytes32 representation of the address
- */
+// Converts an Ethereum address to bytes32 format for OFT bridge. Zero-pads from the left.
 export function oftAddressToBytes32(address: string): string {
   return toBytes32(address);
 }
