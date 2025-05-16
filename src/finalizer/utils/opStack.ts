@@ -58,6 +58,8 @@ interface CrossChainMessageWithStatus extends CrossChainMessageWithEvent {
   logIndex: number;
 }
 
+const { USDB, USDC, WETH } = TOKEN_SYMBOLS_MAP;
+
 const OP_STACK_CHAINS = Object.values(CHAIN_IDs).filter((chainId) => chainIsOPStack(chainId));
 /* OP_STACK_CHAINS should contain all chains which satisfy chainIsOPStack().
  * (typeof OP_STACK_CHAINS)[number] then takes all elements in this array and "unions" their type (i.e. 10 | 8453 | 3443 | ... ).
@@ -122,10 +124,9 @@ export async function opStackFinalizer(
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
-      (e) =>
+      ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]) ||
-        !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
+        !compareAddressesSimple(l2TokenAddress, USDC.addresses[chainId]) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
@@ -235,7 +236,7 @@ async function getOVMStdEvents(
   const ethFilter = bridge.filters.ETHBridgeInitiated(fromAddresses);
   const ethEvents = (await paginatedEventQuery(bridge, ethFilter, searchConfig)).map((event) => ({
     ...event,
-    l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+    l2TokenAddress: WETH.addresses[chainId],
   }));
 
   const erc20filter = bridge.filters.ERC20BridgeInitiated(null, null, fromAddresses);
@@ -707,7 +708,7 @@ async function multicallOptimismFinalizations(
   // one WithdrawRequest with a unique requestId.
   const claimableUSDBMessages = allMessages.filter(
     (message) =>
-      message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
+      message.event.l2TokenAddress === USDB.addresses[chainId] &&
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
   );
   if (claimableUSDBMessages.length === 0) {
@@ -834,10 +835,10 @@ async function multicallOptimismFinalizations(
           logger.warn({ at: "BlastFinalizer", message, hintId: hintIds[i], recipient });
           return undefined;
         }
-        const amountFromWei = convertFromWei(amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        const amountFromWei = convertFromWei(amountToReturn.toString(), USDB.decimals);
         claimMessages.push({
           originationChainId: chainId,
-          l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
+          l1TokenSymbol: USDB.symbol,
           amount: amountFromWei,
           type: "misc",
           miscReason: "claimUSDB",
