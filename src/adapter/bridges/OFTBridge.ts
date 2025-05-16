@@ -160,7 +160,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       return {};
     }
 
-    // Get OFTReceived events for [fromAddress -> dst chain]
+    // Get `OFTSent` events for [fromAddress -> dst chain]
     const allEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
@@ -192,7 +192,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       return {};
     }
 
-    // Get OFTReceived events for [hub chain -> toAddress]
+    // Get `OFTReceived` events for [hub chain -> toAddress]
     const allEvents = await paginatedEventQuery(
       this.l2Bridge,
       this.l2Bridge.filters.OFTReceived(
