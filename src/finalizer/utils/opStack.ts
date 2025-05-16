@@ -165,7 +165,7 @@ export async function opStackFinalizer(
       ),
       {
         ...spokePoolClient.eventSearchConfig,
-        toBlock: spokePoolClient.latestBlockSearched,
+        to: spokePoolClient.latestHeightSearched,
       }
     )
   ).map((event) => {
@@ -185,7 +185,7 @@ export async function opStackFinalizer(
       ),
       {
         ...spokePoolClient.eventSearchConfig,
-        toBlock: spokePoolClient.latestBlockSearched,
+        to: spokePoolClient.latestHeightSearched,
       }
     )
   ).map((event) => {

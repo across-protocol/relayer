@@ -7,7 +7,7 @@ import {
   EventSearchConfig,
   Provider,
   getBlockForTimestamp,
-  BlockFinder,
+  EVMBlockFinder,
   isDefined,
   EvmAddress,
 } from "../../utils";
@@ -17,7 +17,7 @@ import { processEvent } from "../utils";
 
 export class LineaWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
-  protected blockFinder: BlockFinder;
+  protected blockFinder: EVMBlockFinder;
 
   // We by default do not include a fee for Linea bridges.
   protected bridgeFee = 0;
@@ -81,8 +81,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     const l2Provider = this.getL2Bridge().provider;
 
     const [fromBlock, toBlock] = await Promise.all([
-      l2Provider.getBlock(eventConfig.fromBlock),
-      l2Provider.getBlock(eventConfig.toBlock),
+      l2Provider.getBlock(eventConfig.from),
+      l2Provider.getBlock(eventConfig.to),
     ]);
 
     const [l1FromBlock, l1ToBlock] = [
@@ -90,8 +90,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
       await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, this.blockFinder),
     ];
     const l1SearchConfig = {
-      fromBlock: l1FromBlock,
-      toBlock: l1ToBlock,
+      from: l1FromBlock,
+      to: l1ToBlock,
     };
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
