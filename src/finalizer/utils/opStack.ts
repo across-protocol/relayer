@@ -26,6 +26,7 @@ import {
   getUniqueLogIndex,
   groupObjectCountsByProp,
   isDefined,
+  Provider,
   Signer,
   TOKEN_SYMBOLS_MAP,
   winston,
@@ -212,7 +213,7 @@ export async function opStackFinalizer(
 
 async function getOVMStdEvents(
   logger: winston.Logger,
-  provider: any,
+  provider: Provider,
   fromAddresses: string[],
   searchConfig: EventSearchConfig
 ): Promise<(Log & { l2TokenAddress: string })[]> {
