@@ -16,7 +16,7 @@ import {
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
+import { IOFT_ABI_FULL } from "../../common";
 
 import {
   IOFT,
@@ -53,7 +53,6 @@ export class OFTBridge extends BaseBridgeAdapter {
   public readonly dstTokenAddress: string;
 
   private readonly dstChainEid: number;
-  private readonly hubPoolAddress: string;
   private tokenDecimals?: number;
   private sharedDecimals?: number;
 
@@ -80,8 +79,6 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = getOFTEidForChainId(dstChainId);
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
     this.l2Bridge = new Contract(route.dstIOFTAddress.toAddress(), IOFT_ABI_FULL, dstSignerOrProvider);
   }
