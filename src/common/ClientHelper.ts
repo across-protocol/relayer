@@ -13,6 +13,7 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
+  getBlockFinder,
 } from "../utils";
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
@@ -128,6 +129,7 @@ export async function constructSpokePoolClientsWithLookback(
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
         } else {
+          const blockFinder = await getBlockFinder(chainId);
           return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
         }
       })
