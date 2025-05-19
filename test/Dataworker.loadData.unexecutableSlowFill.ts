@@ -26,9 +26,11 @@ import {
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
+import { constants as sdkConstants, interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
 
 describe("Dataworker: Load bundle data: Computing unexecutable slow fills", async function () {
+  const { EMPTY_MESSAGE } = sdkConstants;
+
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
   let l1Token_1: Contract;
   let depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -69,19 +71,23 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     _repaymentChainId = repaymentChainId,
     fillType = interfaces.FillType.FastFill
   ): interfaces.Log {
-    const method = fillEventOverride?.method ?? "fillV3Relay";
     const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
-    return mockDestinationSpokePoolClient[method]({
+    const message = EMPTY_MESSAGE;
+
+    const fill = {
       ...fillObject,
+      message,
       relayExecutionInfo: {
         updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
-        updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
+        updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
       },
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
-    } as interfaces.FillWithBlock);
+    };
+
+    return mockDestinationSpokePoolClient.fillRelay(fill);
   }
 
   function generateSlowFillRequestFromDeposit(
@@ -90,7 +96,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
   ): interfaces.Log {
     const fillObject = V3FillFromDeposit(deposit, ZERO_ADDRESS);
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
-    return mockDestinationSpokePoolClient.requestV3SlowFill({
+    return mockDestinationSpokePoolClient.requestSlowFill({
       ...relayData,
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.

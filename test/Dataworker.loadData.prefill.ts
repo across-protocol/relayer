@@ -28,8 +28,6 @@ import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./
 import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
-const { EMPTY_MESSAGE } = sdkConstants;
-
 let erc20_1: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
 let relayer: SignerWithAddress, depositor: SignerWithAddress;
@@ -44,6 +42,8 @@ let spy: sinon.SinonSpy;
 let updateAllClients: () => Promise<void>;
 
 describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
+  const { EMPTY_MESSAGE } = sdkConstants;
+
   beforeEach(async function () {
     ({
       erc20_1,
