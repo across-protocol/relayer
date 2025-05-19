@@ -100,7 +100,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
   ): interfaces.Log {
     const fillObject = V3FillFromDeposit(deposit, ZERO_ADDRESS);
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
-    return mockDestinationSpokePoolClient.requestV3SlowFill({
+    return mockDestinationSpokePoolClient.requestSlowFill({
       ...relayData,
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
@@ -337,7 +337,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
     expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
