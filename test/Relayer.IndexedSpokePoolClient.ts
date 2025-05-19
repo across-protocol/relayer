@@ -199,6 +199,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     expect(droppedDeposit).to.not.exist;
   });
 
+
   it("Throws on post-ingested dropped EnabledDepositRoute events", async function () {
     const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
