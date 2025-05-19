@@ -14,8 +14,13 @@ import {
   getRedisCache,
   getArweaveJWKSigner,
   getBlockFinder,
+  chainIsEvm,
+  SvmAddress,
+  getSvmProvider,
+  getDeployedAddress,
+  forEachAsync,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
+import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient, SvmSpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, arch } from "@across-protocol/sdk";
@@ -206,16 +211,23 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      // TODO: initialize using typechain factory after V3.5 migration.
-      // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
-      const spokePoolContract = new ethers.Contract(
-        spokePoolAddr,
-        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
-        spokePoolSigners[chainId]
-      );
       const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
-      return { chainId, contract: spokePoolContract, registrationBlock };
+      if (chainIsEvm(chainId)) {
+        const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+        // TODO: initialize using typechain factory after V3.5 migration.
+        // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+        const spokePoolContract = new ethers.Contract(
+          spokePoolAddr,
+          [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
+          spokePoolSigners[chainId]
+        );
+        return { chainId, contract: spokePoolContract, registrationBlock };
+      } else {
+        // The hub pool client can only return the truncated address of the SVM spoke pool, so if the chain is non-evm, then fallback
+        // to the definitions in the contracts repository.
+        const spokePoolAddr = getDeployedAddress("SpokePool", chainId);
+        return { chainId, contract: SvmAddress.from(spokePoolAddr), registrationBlock };
+      }
     })
   );
 
@@ -249,7 +261,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
  * @param toBlocks Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
  * @returns Mapping of chainId to SpokePoolClient
  */
-export function getSpokePoolClientsForContract(
+export async function getSpokePoolClientsForContract(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
@@ -265,7 +277,9 @@ export function getSpokePoolClientsForContract(
   });
 
   const spokePoolClients: SpokePoolClientsByChain = {};
-  spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+  forEachAsync(
+    spokePools,
+    async ({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
       logger.debug({
         at: "ClientHelper#getSpokePoolClientsForContract",
@@ -284,14 +298,25 @@ export function getSpokePoolClientsForContract(
       to: toBlocks[chainId],
       maxLookBack: config.maxBlockLookBack[chainId],
     };
-    spokePoolClients[chainId] = new SpokePoolClient(
-      logger,
-      contract,
-      hubPoolClient,
-      chainId,
-      registrationBlock,
-      spokePoolClientSearchSettings
-    );
+    if (chainIsEvm(chainId)) {
+      spokePoolClients[chainId] = new SpokePoolClient(
+        logger,
+        contract as Contract,
+        hubPoolClient,
+        chainId,
+        registrationBlock,
+        spokePoolClientSearchSettings
+      );
+    } else {
+      spokePoolClients[chainId] = await SvmSpokePoolClient.create(
+        logger,
+        hubPoolClient,
+        chainId,
+        BigInt(registrationBlock),
+        spokePoolClientSearchSettings,
+        getSvmProvider()
+      );
+    }
   });
 
   return spokePoolClients;
