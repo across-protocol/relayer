@@ -175,23 +175,23 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
     ): interfaces.Log {
-    const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
-    const message = EMPTY_MESSAGE;
+      const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
+      const message = EMPTY_MESSAGE;
 
-    const fill = {
-      ...fillObject,
-      message,
-      relayExecutionInfo: {
-        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
-        updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
-        updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
-        fillType,
-      },
-      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestHeightSearched gets set to the same value.
-    };
+      const fill = {
+        ...fillObject,
+        message,
+        relayExecutionInfo: {
+          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
+          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
+          fillType,
+        },
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
+      };
 
-    return mockDestinationSpokePoolClient.fillRelay(fill);
+      return mockDestinationSpokePoolClient.fillRelay(fill);
     }
 
     function generateSlowFillRequestFromDeposit(
