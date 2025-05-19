@@ -533,7 +533,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     expect(
       spy
         .getCalls()
-        .find((e) => e.lastArg.message.includes("Located V3 deposit outside of SpokePoolClient's search range"))
+        .find((e) => e.lastArg.message.includes("Located deposit outside of SpokePoolClient's search range"))
     ).to.not.be.undefined;
 
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
@@ -690,7 +690,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
@@ -738,7 +738,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       [originChainId]: spokePoolClient_1,
       [destinationChainId]: spokePoolClient_2,
     });
-    expect(spyLogIncludes(spy, -4, "Located V3 deposit outside of SpokePoolClient's search range")).is.true;
+    expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
   });
