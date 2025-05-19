@@ -25,8 +25,10 @@ import {
   spreadEventWithBlockNumber,
 } from "../src/utils";
 import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
+import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
+
+const { EMPTY_MESSAGE } = sdkConstants;
 
 let erc20_1: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -173,19 +175,23 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
     ): interfaces.Log {
-      const method = fillEventOverride?.method ?? "fillV3Relay";
-      const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
-      return mockDestinationSpokePoolClient[method]({
-        ...fillObject,
-        relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
-          updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
-          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
-          fillType,
-        },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestHeightSearched gets set to the same value.
-      } as interfaces.FillWithBlock);
+    const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
+    const message = EMPTY_MESSAGE;
+
+    const fill = {
+      ...fillObject,
+      message,
+      relayExecutionInfo: {
+        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+        updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
+        updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
+        fillType,
+      },
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
+    };
+
+    return mockDestinationSpokePoolClient.fillRelay(fill);
     }
 
     function generateSlowFillRequestFromDeposit(
@@ -194,7 +200,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
     ): interfaces.Log {
       const fillObject = V3FillFromDeposit(deposit, ZERO_ADDRESS);
       const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
-      return mockDestinationSpokePoolClient.requestV3SlowFill({
+      return mockDestinationSpokePoolClient.requestSlowFill({
         ...relayData,
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestHeightSearched gets set to the same value.
