@@ -35,10 +35,12 @@ import {
   MockSpokePoolClient,
   MockArweaveClient,
 } from "./mocks";
-import { interfaces, constants as sdkConstants, providers } from "@across-protocol/sdk";
+import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
+
+const { EMPTY_MESSAGE } = sdkConstants;
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -194,19 +196,23 @@ describe("Dataworker: Load bundle data", async function () {
       _repaymentChainId = repaymentChainId,
       fillType = interfaces.FillType.FastFill
     ): interfaces.Log {
-      const method = fillEventOverride?.method ?? "fillRelay";
-      const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
-      return mockDestinationSpokePoolClient[method]({
-        ...fillObject,
-        relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
-          updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
-          updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
-          fillType,
-        },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestHeightSearched gets set to the same value.
-      } as interfaces.FillWithBlock);
+    const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
+    const message = EMPTY_MESSAGE;
+
+    const fill = {
+      ...fillObject,
+      message,
+      relayExecutionInfo: {
+        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+        updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
+        updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
+        fillType,
+      },
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
+    };
+
+    return mockDestinationSpokePoolClient.fillRelay(fill);
     }
 
     function generateV3FillFromDepositEvent(
