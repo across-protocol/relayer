@@ -4,7 +4,16 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
+import {
+  EventSearchConfig,
+  Signer,
+  convertFromWei,
+  winston,
+  CHAIN_IDs,
+  ethers,
+  BigNumber,
+  getTokenInfo,
+} from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
@@ -39,7 +48,7 @@ export async function lineaL1ToL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
@@ -55,18 +64,18 @@ export async function lineaL1ToL2Finalizer(
     hubPoolClient.hubPool.provider
   );
   const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
   const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
     findMessageSentEvents(
       getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
-      l1ToL2AddressesToFinalize,
+      senderAddresses,
       searchConfig
     ),
-    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, senderAddresses, searchConfig),
   ]);
 
   const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents];
@@ -144,7 +153,7 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, messageType.l1TokenAddress);
+      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(messageType.l1TokenAddress, l1ChainId);
       const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,

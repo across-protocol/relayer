@@ -104,7 +104,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       CHAIN_ID_TEST_LIST
     ));
 
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -146,7 +146,12 @@ describe("Relayer: Initiates slow fill requests", async function () {
       null,
       mockCrossChainTransferClient
     );
-
+    mockInventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,

@@ -12,6 +12,7 @@ import {
   Multicall2Call,
   winston,
   convertFromWei,
+  getTokenInfo,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -172,7 +173,7 @@ function populateClaimWithdrawal(
   l2ChainId: number,
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
-  const l1Token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, claim.l1Token);
+  const l1Token = getTokenInfo(claim.l1Token, hubPoolClient.chainId);
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,

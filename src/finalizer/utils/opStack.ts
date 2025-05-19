@@ -1,5 +1,5 @@
 import assert from "assert";
-import { groupBy, countBy } from "lodash";
+import { countBy, groupBy } from "lodash";
 import * as optimismSDK from "@eth-optimism/sdk";
 import * as viem from "viem";
 import * as viemChains from "viem/chains";
@@ -16,16 +16,15 @@ import { TokensBridged } from "../../interfaces";
 import {
   CHAIN_IDs,
   chainIsOPStack,
-  compareAddressesSimple,
   convertFromWei,
   getBlockForTimestamp,
   getCachedProvider,
   getCurrentTime,
-  getL1TokenInfo,
   getNetworkName,
   getRedisCache,
   getUniqueLogIndex,
   groupObjectCountsByProp,
+  isDefined,
   Signer,
   TOKEN_SYMBOLS_MAP,
   winston,
@@ -35,8 +34,12 @@ import {
   Multicall2Call,
   mapAsync,
   paginatedEventQuery,
-  getCctpDomainForChainId,
   createViemCustomTransportFromEthersProvider,
+  bnZero,
+  forEachAsync,
+  getTokenInfo,
+  compareAddressesSimple,
+  getCctpDomainForChainId,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -94,7 +97,9 @@ export async function opStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
   const { chainId } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
@@ -108,10 +113,14 @@ export async function opStackFinalizer(
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
+
+  // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
+  // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
+  // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
       (e) =>
-        // USDC withdrawals for Base and Optimism should be finalized via the CCTP Finalizer.
+        // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
         !compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP["USDC"].addresses[chainId]) ||
         !(getCctpDomainForChainId(chainId) > 0) // Cannot be -1 and cannot be 0.
     ),
@@ -123,6 +132,7 @@ export async function opStackFinalizer(
       }
     }
   );
+
   // First submit proofs for any newly withdrawn tokens. You can submit proofs for any withdrawals that have been
   // snapshotted on L1, so it takes roughly 1 hour from the withdrawal time
   logger.debug({
@@ -135,86 +145,85 @@ export async function opStackFinalizer(
   // automate token withdrawals from Lite chains, which can build up ETH and ERC20 balances over time
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
-  const withdrawalToAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-    ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-    : [];
   if (!CONTRACT_ADDRESSES[chainId].ovmStandardBridge) {
     logger.warn({
       at: `${networkName}Finalizer`,
       message: `No OVM standard bridge contract found for chain ${networkName} in CONTRACT_ADDRESSES`,
     });
-  } else if (withdrawalToAddresses.length > 0) {
-    const ovmStandardBridge = new Contract(
-      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
-      CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
-      spokePoolClient.spokePool.provider
-    );
-    const withdrawalEthEvents = (
-      await paginatedEventQuery(
-        ovmStandardBridge,
-        ovmStandardBridge.filters.ETHBridgeInitiated(
-          null, // from
-          withdrawalToAddresses // to
-        ),
-        {
-          ...spokePoolClient.eventSearchConfig,
-          toBlock: spokePoolClient.latestBlockSearched,
-        }
-      )
-    ).map((event) => {
+  }
+  const ovmStandardBridge = new Contract(
+    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.address,
+    CONTRACT_ADDRESSES[chainId].ovmStandardBridge.abi,
+    spokePoolClient.spokePool.provider
+  );
+  const withdrawalEthEvents = (
+    await paginatedEventQuery(
+      ovmStandardBridge,
+      ovmStandardBridge.filters.ETHBridgeInitiated(
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        // SpokePool as sender since we query for it previously using the TokensBridged event query.
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        to: spokePoolClient.latestHeightSearched,
+      }
+    )
+  ).map((event) => {
+    return {
+      ...event,
+      l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+    };
+  });
+  const withdrawalErc20Events = (
+    await paginatedEventQuery(
+      ovmStandardBridge,
+      ovmStandardBridge.filters.ERC20BridgeInitiated(
+        null, // localToken
+        null, // remoteToken
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        // SpokePool as sender since we query for it previously using the TokensBridged event query.
+      ),
+      {
+        ...spokePoolClient.eventSearchConfig,
+        to: spokePoolClient.latestHeightSearched,
+      }
+    )
+  ).map((event) => {
+    // If we're aware of this token, then save the event as one we can finalize.
+    try {
+      getTokenInfo(event.args.localToken, chainId);
       return {
         ...event,
-        l2TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+        l2TokenAddress: event.args.localToken,
       };
-    });
-    const withdrawalErc20Events = (
-      await paginatedEventQuery(
-        ovmStandardBridge,
-        ovmStandardBridge.filters.ERC20BridgeInitiated(
-          null, // localToken
-          null, // remoteToken
-          withdrawalToAddresses // from
-        ),
-        {
-          ...spokePoolClient.eventSearchConfig,
-          toBlock: spokePoolClient.latestBlockSearched,
-        }
-      )
-    ).map((event) => {
-      // If we're aware of this token, then save the event as one we can finalize.
-      try {
-        getL1TokenInfo(event.args.localToken, chainId);
-        return {
-          ...event,
-          l2TokenAddress: event.args.localToken,
-        };
-      } catch (err) {
-        logger.debug({
-          at: `${networkName}Finalizer`,
-          message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
-          event: event,
-        });
-        return undefined;
-      }
-    });
-    const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter((event) => event !== undefined);
-    // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
-    // submit proofs and finalizations for.
-    withdrawalEvents.forEach((event) => {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.args.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-      };
-      if (event.blockNumber >= latestBlockToProve) {
-        recentTokensBridgedEvents.push(tokenBridgedEvent);
-      } else {
-        olderTokensBridgedEvents.push(tokenBridgedEvent);
-      }
-    });
-  }
+    } catch (err) {
+      logger.debug({
+        at: `${networkName}Finalizer`,
+        message: `Skipping ERC20 withdrawal event for unknown token ${event.args.localToken} on chain ${networkName}`,
+        event: event,
+      });
+      return undefined;
+    }
+  });
+  const withdrawalEvents = [...withdrawalEthEvents, ...withdrawalErc20Events].filter(isDefined);
+  // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
+  // submit proofs and finalizations for.
+  withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
+    const tokenBridgedEvent: TokensBridged = {
+      ...event,
+      amountToReturn: event.args.amount,
+      chainId,
+      leafId: 0,
+      l2TokenAddress: event.l2TokenAddress,
+      txnRef: transactionHash,
+      txnIndex: transactionIndex,
+    };
+    if (event.blockNumber >= latestBlockToProve) {
+      recentTokensBridgedEvents.push(tokenBridgedEvent);
+    } else {
+      olderTokensBridgedEvents.push(tokenBridgedEvent);
+    }
+  });
 
   let callData: Multicall2Call[];
   let crossChainTransfers: CrossChainMessage[];
@@ -299,10 +308,10 @@ async function viem_multicallOptimismFinalizations(
   const logIndexesForMessage = [];
   const events = [...olderTokensBridgedEvents, ...recentTokensBridgedEvents];
   for (const event of events) {
-    uniqueTokenhashes[event.transactionHash] ??= 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
+    uniqueTokenhashes[event.txnRef] ??= 0;
+    const logIndex = uniqueTokenhashes[event.txnRef];
     logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
+    uniqueTokenhashes[event.txnRef] += 1;
   }
 
   const crossChainMessenger = new Contract(
@@ -329,10 +338,20 @@ async function viem_multicallOptimismFinalizations(
         },
       },
       l2OutputOracle: {
-        [sourceId]: { address: contracts.l2OutputOracle?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.l2OutputOracle?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.L2OutputOracle ??
+            viem.zeroAddress,
+        },
       },
       disputeGameFactory: {
-        [sourceId]: { address: contracts.disputeGameFactory?.[sourceId]?.address ?? viem.zeroAddress },
+        [sourceId]: {
+          address:
+            contracts.disputeGameFactory?.[sourceId]?.address ??
+            OPSTACK_CONTRACT_OVERRIDES[chainId]?.l1?.DisputeGameFactory ??
+            viem.zeroAddress,
+        },
       },
     },
   };
@@ -340,11 +359,11 @@ async function viem_multicallOptimismFinalizations(
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
-    const l1TokenInfo = getL1TokenInfo(event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(event.amountToReturn.toString(), l1TokenInfo.decimals);
+    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(event.amountToReturn.toString(), decimals);
 
     const receipt = await publicClientL2.getTransactionReceipt({
-      hash: event.transactionHash as `0x${string}`,
+      hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
     const withdrawalStatus: GetWithdrawalStatusReturnType = await getWithdrawalStatus(publicClientL1 as viem.Client, {
@@ -377,7 +396,7 @@ async function viem_multicallOptimismFinalizations(
         });
         viemTxns.withdrawals.push({
           originationChainId: chainId,
-          l1TokenSymbol: l1TokenInfo.symbol,
+          l1TokenSymbol: symbol,
           amount: amountFromWei,
           type: "misc",
           miscReason: "proof",
@@ -392,9 +411,9 @@ async function viem_multicallOptimismFinalizations(
       });
       logger.debug({
         at: `${getNetworkName(chainId)}Finalizer`,
-        message: `Withdrawal ${event.transactionHash} for ${amountFromWei} of ${
-          l1TokenInfo.symbol
-        } is in challenge period for ${(seconds / 3600).toFixed(2)} hours`,
+        message: `Withdrawal ${event.txnRef} for ${amountFromWei} of ${symbol} is in challenge period for ${(
+          seconds / 3600
+        ).toFixed(2)} hours`,
       });
     } else if (withdrawalStatus === "ready-to-finalize") {
       // @dev Some OpStack chains use OptimismPortal instead of the newer OptimismPortal2, the latter of which
@@ -426,7 +445,7 @@ async function viem_multicallOptimismFinalizations(
       });
       viemTxns.withdrawals.push({
         originationChainId: chainId,
-        l1TokenSymbol: l1TokenInfo.symbol,
+        l1TokenSymbol: symbol,
         amount: amountFromWei,
         type: "withdrawal",
         destinationChainId: hubPoolClient.chainId,
@@ -466,7 +485,7 @@ async function getCrossChainMessages(
   return (
     await Promise.all(
       tokensBridged.map(async (l2Event, i) => {
-        const withdrawals = await crossChainMessenger.getMessagesByTransaction(l2Event.transactionHash, {
+        const withdrawals = await crossChainMessenger.getMessagesByTransaction(l2Event.txnRef, {
           direction: optimismSDK.MessageDirection.L2_TO_L1,
         });
         const logIndexOfEvent = logIndexesForMessage[i];
@@ -492,10 +511,10 @@ async function getMessageStatuses(
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   for (const event of crossChainMessages.map((m) => m.event)) {
-    uniqueTokenhashes[event.transactionHash] = uniqueTokenhashes[event.transactionHash] ?? 0;
-    const logIndex = uniqueTokenhashes[event.transactionHash];
+    uniqueTokenhashes[event.txnRef] = uniqueTokenhashes[event.txnRef] ?? 0;
+    const logIndex = uniqueTokenhashes[event.txnRef];
     logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] += 1;
+    uniqueTokenhashes[event.txnRef] += 1;
   }
 
   const statuses = await Promise.all(
@@ -538,11 +557,12 @@ async function getOptimismFinalizableMessages(
 }
 
 async function finalizeOptimismMessage(
+  logger: winston.Logger,
   _chainId: OVM_CHAIN_ID,
   crossChainMessenger: OVM_CROSS_CHAIN_MESSENGER,
   message: CrossChainMessageWithStatus,
   logIndex = 0
-): Promise<Multicall2Call> {
+): Promise<Multicall2Call | undefined> {
   if (!chainIsBlast(_chainId)) {
     const callData = await (crossChainMessenger as optimismSDK.CrossChainMessenger).populateTransaction.finalizeMessage(
       message.message as optimismSDK.MessageLike,
@@ -581,7 +601,9 @@ async function finalizeOptimismMessage(
     withdrawalStruct.message,
   ];
 
-  let hintId = 0;
+  let hintId = bnZero;
+
+  // Handle ETH withdrawal case specially:
   if (withdrawalStruct.value.gt(0)) {
     const withdrawalHash = utils.keccak256(
       utils.defaultAbiCoder.encode(["uint256", "address", "address", "uint256", "uint256", "bytes"], l2WithdrawalParams)
@@ -594,16 +616,24 @@ async function finalizeOptimismMessage(
 
     // @dev The withdrawal hash should be unique for the L2 withdrawal so there should be exactly 1 event for this query.
     // If the withdrawal hasn't been proven yet then this will error.
-    const [proofReceipt, latestCheckpointId] = await Promise.all([
+    const [proofReceipt, latestCheckpointId, lastFinalizedRequestId] = await Promise.all([
       blastPortal.queryFilter(blastPortal.filters.WithdrawalProven(withdrawalHash)),
       blastEthYield.getLastCheckpointId(),
+      blastEthYield.getLastFinalizedRequestId(),
     ]);
     if (proofReceipt.length !== 1) {
-      throw new Error(`Failed to find Proof receipt matching Blast withdrawal ${message.event.transactionHash}`);
+      throw new Error(`Failed to find Proof receipt matching Blast ETH withdrawal ${message.event.txnRef}`);
     }
     const requestId = proofReceipt[0].args?.requestId;
     if (requestId === undefined || requestId === 0) {
-      throw new Error(`Found invalid requestId ${requestId} for Blast withdrawal ${message.event.transactionHash}`);
+      throw new Error(`Found invalid requestId ${requestId} for Blast ETH withdrawal ${message.event.txnRef}`);
+    }
+    if (requestId.gt(lastFinalizedRequestId)) {
+      logger.debug({
+        at: "BlastFinalizer",
+        message: `Blast ETH claim for message ${message.event.txnRef} with request Id ${requestId} is > lastFinalizedRequestId ${lastFinalizedRequestId}`,
+      });
+      return undefined;
     }
     // @dev The hintId parameter plays a role in our insurance mechanism that kicks in the rare event that
     // ETH yield goes negative. The `findCheckpointHint` function runs a binary search in solidity to find the
@@ -614,6 +644,13 @@ async function finalizeOptimismMessage(
       BLAST_YIELD_MANAGER_STARTING_REQUEST_ID,
       latestCheckpointId
     );
+    if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
+      logger.debug({
+        at: "BlastFinalizer",
+        message: `Blast ETH claim not ready for message ${message.event.txnRef} with request Id ${requestId}`,
+      });
+      return undefined;
+    }
   }
   const callData = await blastPortal.populateTransaction.finalizeWithdrawalTransaction(hintId, l2WithdrawalParams);
   return {
@@ -650,22 +687,26 @@ async function multicallOptimismFinalizations(
   const finalizableMessages = allMessages.filter(
     (message) => message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.READY_FOR_RELAY]
   );
-  const callData = await Promise.all(
-    finalizableMessages.map((message) =>
-      finalizeOptimismMessage(chainId, crossChainMessenger, message, message.logIndex)
-    )
-  );
-  const withdrawals = finalizableMessages.map((message) => {
-    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+  const callData: Multicall2Call[] = [];
+  const withdrawals: CrossChainMessage[] = [];
+
+  await forEachAsync(finalizableMessages, async (message) => {
+    const _callData = await finalizeOptimismMessage(logger, chainId, crossChainMessenger, message, message.logIndex);
+    if (!isDefined(_callData)) {
+      return;
+    }
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
       destinationChainId: hubPoolClient.chainId,
     };
-    return withdrawal;
+
+    callData.push(_callData);
+    withdrawals.push(withdrawal);
   });
 
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim that can be made
@@ -680,12 +721,12 @@ async function multicallOptimismFinalizations(
 
   // For each RELAYED (e.g. Finalized in the normal OPStack context) USDB message there should be
   // one WithdrawRequest with a unique requestId.
-  const claimableMessages = allMessages.filter(
+  const claimableUSDBMessages = allMessages.filter(
     (message) =>
       message.event.l2TokenAddress === TOKEN_SYMBOLS_MAP.USDB.addresses[chainId] &&
       message.status === optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED]
   );
-  if (claimableMessages.length === 0) {
+  if (claimableUSDBMessages.length === 0) {
     return {
       callData,
       withdrawals,
@@ -726,9 +767,24 @@ async function multicallOptimismFinalizations(
   // The claimableMessages (i.e. the TokensBridged events) should fall out of the lookback window sooner than
   // the WithdrawalRequested events will, but we want a 1:1 mapping between them. Therefore, if we have N
   // WithdrawalRequested events, we should keep the last N claimableMessages.
-  const withdrawalRequests = [..._withdrawalRequests].slice(-claimableMessages.length);
-  const withdrawalRequestIds = withdrawalRequests.map((request) => request.args.requestId);
-  assert(withdrawalRequestIds.length === claimableMessages.length);
+  const withdrawalRequests = [..._withdrawalRequests].slice(-claimableUSDBMessages.length);
+  const claimableWithdrawalRequests = withdrawalRequests
+    .map((request, i) => {
+      return {
+        requestId: request.args.requestId,
+        event: claimableUSDBMessages[i].event,
+      };
+    })
+    .filter(({ requestId, event }) => {
+      if (requestId.gt(lastFinalizedRequestId)) {
+        logger.debug({
+          at: "BlastFinalizer",
+          message: `Blast USDB claim not ready for message ${event.txnRef} with request Id ${requestId}`,
+        });
+        return false;
+      }
+      return true;
+    });
 
   // @dev If a hint for requestId is zero, then the claim is not ready yet (i.e. the Blast admin has not moved to
   // finalize the withdrawal yet) so we should not try to claim it from the Blast Yield Manager.
@@ -736,27 +792,28 @@ async function multicallOptimismFinalizations(
   // `getLastFinalizedRequestId` and ignore any requestIds > this value.
   const [hintIds, withdrawalClaims] = await Promise.all([
     Promise.all(
-      withdrawalRequestIds.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.findCheckpointHint(requestId, BLAST_YIELD_MANAGER_STARTING_REQUEST_ID, lastCheckpointId)
       )
     ),
     Promise.all(
-      withdrawalRequestIds.map((requestId) =>
+      claimableWithdrawalRequests.map(({ requestId }) =>
         usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
       )
     ),
   ]);
-  const withdrawalRequestIsClaimed = withdrawalClaims.map((_id, i) => withdrawalClaims[i].length > 0);
-  assert(withdrawalRequestIds.length === hintIds.length);
-  assert(withdrawalClaims.length === claimableMessages.length);
+
+  const withdrawalRequestIsClaimed = withdrawalClaims.map((claims) => claims.length > 0);
+  assert(claimableWithdrawalRequests.length === hintIds.length);
+  assert(claimableWithdrawalRequests.length === withdrawalClaims.length);
 
   logger.debug({
     at: "BlastFinalizer",
     message: "Blast USDB claimable message statuses",
-    claims: claimableMessages.map((message, i) => {
+    claims: claimableWithdrawalRequests.map(({ requestId, event: { txnRef } }, i) => {
       return {
-        withdrawalHash: message.event.transactionHash,
-        withdrawRequestId: withdrawalRequestIds[i],
+        withdrawalHash: txnRef,
+        withdrawRequestId: requestId,
         usdYieldManagerHintId: hintIds[i],
         isClaimed: withdrawalRequestIsClaimed[i],
       };
@@ -767,11 +824,11 @@ async function multicallOptimismFinalizations(
   const claimMessages: CrossChainMessage[] = [];
   const claimCallData = (
     await Promise.all(
-      claimableMessages.map(async (message, i) => {
+      claimableWithdrawalRequests.map(async ({ requestId, event: { txnRef, amountToReturn } }, i) => {
         if (withdrawalRequestIsClaimed[i]) {
           logger.debug({
             at: "BlastFinalizer",
-            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} already claimed`,
+            message: `USDB Withdrawal request ${requestId} for message ${txnRef} already claimed`,
           });
           return undefined;
         }
@@ -779,8 +836,7 @@ async function multicallOptimismFinalizations(
         if (hintId.eq(BLAST_CLAIM_NOT_READY)) {
           logger.debug({
             at: "BlastFinalizer",
-            message: `Blast claim not ready for message ${message.event.transactionHash} with request Id ${withdrawalRequestIds[i]}`,
-            lastFinalizedRequestId,
+            message: `Blast USDB claim not ready for message ${txnRef} with request Id ${requestId}`,
           });
           return undefined;
         }
@@ -788,15 +844,13 @@ async function multicallOptimismFinalizations(
         if (recipient !== tokenRetriever.address) {
           // This should never happen since we filter our WithdrawalRequested query on the `recipient`
           // but in case it happens, this log should help us debug.
-          logger.warn({
-            at: "BlastFinalizer",
-            message: `Withdrawal request ${withdrawalRequestIds[i]} for message ${message.event.transactionHash} has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`,
-            hintId: hintIds[i],
-            recipient,
-          });
+          const message =
+            `USDB Withdrawal request ${requestId} for message ${txnRef}` +
+            ` has set its recipient to ${recipient} and can't be finalized by the Blast_DaiRetriever`;
+          logger.warn({ at: "BlastFinalizer", message, hintId: hintIds[i], recipient });
           return undefined;
         }
-        const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
+        const amountFromWei = convertFromWei(amountToReturn.toString(), TOKEN_SYMBOLS_MAP.USDB.decimals);
         claimMessages.push({
           originationChainId: chainId,
           l1TokenSymbol: TOKEN_SYMBOLS_MAP.USDB.symbol,
@@ -805,7 +859,7 @@ async function multicallOptimismFinalizations(
           miscReason: "claimUSDB",
           destinationChainId: hubPoolClient.chainId,
         });
-        const claimCallData = await tokenRetriever.populateTransaction.retrieve(withdrawalRequestIds[i], hintIds[i]);
+        const claimCallData = await tokenRetriever.populateTransaction.retrieve(requestId, hintIds[i]);
         return {
           callData: claimCallData.data,
           target: claimCallData.to,
@@ -834,11 +888,11 @@ async function multicallOptimismL1Proofs(
     provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
-    const l1TokenInfo = getL1TokenInfo(message.event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), l1TokenInfo.decimals);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const proof: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "misc",
       miscReason: "proof",

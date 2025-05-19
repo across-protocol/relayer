@@ -91,7 +91,7 @@ export async function blockRangesAreInvalidForSpokeClients(
         };
       }
 
-      const clientLastBlockQueried = spokePoolClient.latestBlockSearched;
+      const clientLastBlockQueried = spokePoolClient.latestHeightSearched;
 
       const earliestValidBundleStartBlockForChain =
         earliestValidBundleStartBlock?.[chainId] ?? spokePoolClient.deploymentBlock;
@@ -125,19 +125,19 @@ export async function blockRangesAreInvalidForSpokeClients(
         const conservativeBundleFrequencySeconds = Number(
           process.env.CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS ?? CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS
         );
-        if (spokePoolClient.eventSearchConfig.fromBlock > spokePoolClient.deploymentBlock) {
+        if (spokePoolClient.eventSearchConfig.from > spokePoolClient.deploymentBlock) {
           // @dev The maximum lookback window we need to evaluate expired deposits is the max fill deadline buffer,
           // which captures all deposits that newly expired, plus the bundle time (e.g. 1 hour) to account for the
           // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
           // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
           // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
           // is sent pretty late into the deposit's expiry period.
-          const oldestTime = await spokePoolClient.getTimeAt(spokePoolClient.eventSearchConfig.fromBlock);
+          const oldestTime = await spokePoolClient.getTimeAt(spokePoolClient.eventSearchConfig.from);
           const expiryWindow = endBlockTimestamps[chainId] - oldestTime;
           const safeExpiryWindow = maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds;
           if (expiryWindow < safeExpiryWindow) {
             return {
-              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${endBlockTimestamps[chainId]} - spokePoolClient.eventSearchConfig.fromBlock timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
+              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${endBlockTimestamps[chainId]} - spokePoolClient.eventSearchConfig.from timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
               chainId,
             };
           }
@@ -237,6 +237,16 @@ export function _buildRelayerRefundRoot(
   Object.entries(combinedRefunds).forEach(([_repaymentChainId, refundsForChain]) => {
     const repaymentChainId = Number(_repaymentChainId);
     Object.entries(refundsForChain).forEach(([l2TokenAddress, refunds]) => {
+      // If the token cannot be mapped to any PoolRebalanceRoute, then the amount to return must be 0 since there
+      // is no way to send the token back to the HubPool.
+      if (!clients.hubPoolClient.l2TokenHasPoolRebalanceRoute(l2TokenAddress, repaymentChainId, endBlockForMainnet)) {
+        relayerRefundLeaves.push(
+          ..._getRefundLeaves(refunds, bnZero, repaymentChainId, l2TokenAddress, maxRefundCount)
+        );
+        return;
+      }
+      // If the token can be mapped to a PoolRebalanceRoute, then we need to calculate the amount to return based
+      // on its running balances.
       const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
         l2TokenAddress,
         repaymentChainId,
@@ -255,8 +265,9 @@ export function _buildRelayerRefundRoot(
         runningBalances[repaymentChainId][l1TokenCounterpart]
       );
 
-      const _refundLeaves = _getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount);
-      relayerRefundLeaves.push(..._refundLeaves);
+      relayerRefundLeaves.push(
+        ..._getRefundLeaves(refunds, amountToReturn, repaymentChainId, l2TokenAddress, maxRefundCount)
+      );
     });
   });
 

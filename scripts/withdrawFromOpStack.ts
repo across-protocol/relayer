@@ -9,12 +9,13 @@ import {
   WETH9,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getL1TokenInfo,
+  getL1TokenAddress,
   Contract,
   fromWei,
   blockExplorerLink,
   CHAIN_IDs,
   ZERO_ADDRESS,
+  getTokenInfo,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { askYesNoQuestion, getOvmSpokePoolContract } from "./utils";
@@ -45,25 +46,20 @@ export async function run(): Promise<void> {
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
   const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
   assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
-  const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
-  console.log("Fetched L1 token info:", l1TokenInfo);
+  const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
+  const { symbol, decimals } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
-  const amountFromWei = ethers.utils.formatUnits(amount, l1TokenInfo.decimals);
+  const amountFromWei = ethers.utils.formatUnits(amount, decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
   const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
   const currentEthBalance = await connectedSigner.getBalance();
-  console.log(
-    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(
-      currentBalance,
-      l1TokenInfo.decimals
-    )} ${l2Token}`
-  );
+  console.log(`Current ${symbol} balance for account ${signerAddr}: ${fromWei(currentBalance, decimals)} ${l2Token}`);
   console.log(`Current ETH balance for account ${signerAddr}: ${fromWei(currentEthBalance)}`);
 
   // First offer user option to unwrap WETH into ETH
-  if (l1TokenInfo.symbol === "ETH") {
+  if (symbol === "ETH") {
     const weth = new Contract(l2Token, WETH9.abi, connectedSigner);
     if (await askYesNoQuestion(`\nUnwrap ${amount} of WETH @ ${weth.address}?`)) {
       const unwrap = await weth.withdraw(amount);
@@ -78,7 +74,7 @@ export async function run(): Promise<void> {
   assert(CONTRACT_ADDRESSES[chainId].ovmStandardBridge, "ovmStandardBridge for chain not found in CONTRACT_ADDRESSES");
   const ovmStandardBridge = new Contract(ovmStandardBridgeObj.address, ovmStandardBridgeObj.abi, connectedSigner);
   const bridgeArgs =
-    l1TokenInfo.symbol === "ETH"
+    symbol === "ETH"
       ? [
           signerAddr, // to
           200_000, // minGasLimit
@@ -87,7 +83,7 @@ export async function run(): Promise<void> {
         ]
       : [
           l2Token, // _localToken
-          TOKEN_SYMBOLS_MAP[args.token]?.addresses[CHAIN_IDs.MAINNET], // Remote token to be received on L1 side. If the
+          l1TokenAddress, // Remote token to be received on L1 side. If the
           // remoteL1Token on the other chain does not recognize the local token as the correct
           // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
           // this chain.
@@ -97,7 +93,7 @@ export async function run(): Promise<void> {
           "0x", // _data
         ];
 
-  const functionNameToCall = l1TokenInfo.symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
+  const functionNameToCall = symbol === "ETH" ? "bridgeETHTo" : "bridgeERC20To";
   console.log(
     `Submitting ${functionNameToCall} on the OVM standard bridge @ ${ovmStandardBridge.address} with the following args: `,
     ...bridgeArgs

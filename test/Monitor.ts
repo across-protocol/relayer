@@ -44,6 +44,20 @@ class TestMonitor extends Monitor {
   protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId): TokenMap {
     return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
   }
+
+  getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
+      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1TokenObject.address === l1Token);
+      if (matchedToken) {
+        return matchedToken[0];
+      }
+    });
+    return super.getRemoteTokenForL1Token(l1Token, chainId);
+  }
+
+  l2TokenAmountToL1TokenAmountConverter(): (BigNumber) => BigNumber {
+    return (amount: BigNumber) => amount;
+  }
 }
 
 describe("Monitor", async function () {
@@ -335,7 +349,7 @@ describe("Monitor", async function () {
     crossChainTransferClient.increaseOutstandingTransfer(
       relayer.address,
       l1Token.address,
-      l2Token.address,
+      erc20_2.address,
       toBN(5),
       destinationChainId
     );

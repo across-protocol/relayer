@@ -124,7 +124,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
   logger[startupLogLevel(config)]({
     at: "RootBundleValidator",
     message: "Found preceding root bundle",
-    transactionHash: precedingProposeRootBundleEvent.transactionHash,
+    txnRef: precedingProposeRootBundleEvent.txnRef,
   });
 
   // Calculate the latest blocks we should query in the spoke pool client so we can efficiently reconstruct
@@ -154,8 +154,8 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     dataworkerFastLookbackCount: config.dataworkerFastLookbackCount,
     fromBlocks,
     toBlocks,
-    fromBundleTxn: fromBundle?.transactionHash,
-    toBundleTxn: toBundle?.transactionHash,
+    fromBundleTxn: fromBundle?.txnRef,
+    toBundleTxn: toBundle?.txnRef,
   });
 
   const spokePoolClients = await constructSpokePoolClientsForFastDataworker(

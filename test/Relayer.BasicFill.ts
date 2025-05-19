@@ -1,17 +1,9 @@
-import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
+import { clients, constants, utils as sdkUtils, arch } from "@across-protocol/sdk";
 import hre from "hardhat";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import {
-  averageBlockTime,
-  bnZero,
-  bnOne,
-  bnUint256Max,
-  getNetworkName,
-  getAllUnfilledDeposits,
-  getMessageHash,
-} from "../src/utils";
+import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits, getMessageHash } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -23,7 +15,13 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockConfigStoreClient, MockInventoryClient, MockProfitClient, SimpleMockHubPoolClient } from "./mocks";
+import {
+  MockConfigStoreClient,
+  MockInventoryClient,
+  MockProfitClient,
+  SimpleMockTokenClient,
+  SimpleMockHubPoolClient,
+} from "./mocks";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
   BigNumber,
@@ -63,9 +61,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: clients.EVMSpokePoolClient;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
-  let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: TokenClient;
+  let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: SimpleMockTokenClient;
   let relayerInstance: Relayer;
   let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
+  let inventoryClient: MockInventoryClient;
   let tryMulticallClient: MultiCallerClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
@@ -113,7 +112,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     configStoreClient = new MockConfigStoreClient(
       spyLogger,
       configStore,
-      { fromBlock: 0 },
+      { from: 0 },
       CONFIG_STORE_VERSION,
       [originChainId, destinationChainId],
       originChainId,
@@ -152,13 +151,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);
     }
 
     chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -169,7 +170,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+        inventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         tryMulticallClient,
       },
@@ -181,6 +182,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
+    inventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
 
     const weth = undefined;
     await setupTokensForWallet(spokePool_1, owner, [l1Token], weth, 100); // Seed owner to LP.
@@ -471,7 +478,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           profitClient,
           multiCallerClient,
           tryMulticallClient,
-          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+          inventoryClient,
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         },
         {
@@ -494,7 +501,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Correctly defers destination chain fills", async function () {
-      const { average: avgBlockTime } = await averageBlockTime(spokePool_2.provider);
+      const { average: avgBlockTime } = await arch.evm.averageBlockTime(spokePool_2.provider);
       const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
       const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
@@ -508,7 +515,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           tokenClient,
           profitClient,
           multiCallerClient,
-          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+          inventoryClient,
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
           tryMulticallClient,
         },
@@ -579,7 +586,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           tokenClient,
           profitClient,
           multiCallerClient,
-          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+          inventoryClient,
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
           tryMulticallClient,
         },
@@ -704,7 +711,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           tokenClient,
           profitClient,
           multiCallerClient,
-          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+          inventoryClient,
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
           tryMulticallClient,
         },
@@ -750,7 +757,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the initial deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit1.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit1.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,
@@ -780,7 +787,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the 2nd deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit2.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit2.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,

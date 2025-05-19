@@ -1,6 +1,6 @@
 import { clients } from "@across-protocol/sdk";
 import { Contract, winston, BigNumber } from "../utils";
-import { ConfigStoreClient, HubPoolClient } from "../../src/clients";
+import { ConfigStoreClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
 import { L1Token } from "../../src/interfaces";
 
@@ -65,9 +65,16 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     }
     return this.enableAllL2Tokens;
   }
+
+  l2TokenHasPoolRebalanceRoute(l2Token: string, l2ChainId: number, hubPoolBlock: number): boolean {
+    if (this.enableAllL2Tokens === undefined) {
+      return super.l2TokenHasPoolRebalanceRoute(l2Token, l2ChainId, hubPoolBlock);
+    }
+    return this.enableAllL2Tokens;
+  }
 }
 
-export class SimpleMockHubPoolClient extends HubPoolClient {
+export class SimpleMockHubPoolClient extends clients.HubPoolClient {
   private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
 
   mapTokenInfo(token: string, symbol: string, decimals = 18): void {
@@ -85,5 +92,12 @@ export class SimpleMockHubPoolClient extends HubPoolClient {
       return this.tokenInfoMap[token];
     }
     return super.getTokenInfoForAddress(token, chainId);
+  }
+
+  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
+    if (this.tokenInfoMap[l1Token]) {
+      return this.tokenInfoMap[l1Token];
+    }
+    return super.getTokenInfoForL1Token(l1Token);
   }
 }

@@ -1,16 +1,23 @@
+import assert from "assert";
 import { Contract, bnZero, spreadEvent, toBytes32 } from "../../src/utils";
-import { interfaces } from "@across-protocol/sdk";
-import { SlowFillRequestWithBlock } from "../../src/interfaces";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  FillType,
+  SlowFillRequest,
+  SlowFillRequestWithBlock,
+} from "../../src/interfaces";
 import { SignerWithAddress } from "./utils";
 
 export function V3FillFromDeposit(
-  deposit: interfaces.DepositWithBlock,
+  deposit: DepositWithBlock,
   relayer: string,
   repaymentChainId?: number,
-  fillType = interfaces.FillType.FastFill
-): interfaces.Fill {
-  const { blockNumber, transactionHash, logIndex, transactionIndex, quoteTimestamp, ...relayData } = deposit;
-  const fill: interfaces.Fill = {
+  fillType = FillType.FastFill
+): Fill {
+  const { blockNumber, txnRef, logIndex, txnIndex, quoteTimestamp, ...relayData } = deposit;
+  const fill: Fill = {
     ...relayData,
     relayer,
     realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
@@ -28,7 +35,7 @@ export function V3FillFromDeposit(
 export async function requestSlowFill(
   spokePool: Contract,
   relayer: SignerWithAddress,
-  deposit?: interfaces.Deposit
+  deposit: Deposit
 ): Promise<SlowFillRequestWithBlock> {
   await spokePool
     .connect(relayer)
@@ -50,14 +57,15 @@ export async function requestSlowFill(
     spokePool.queryFilter(spokePool.filters.RequestedSlowFill()),
     spokePool.chainId(),
   ]);
-  const lastEvent = events[events.length - 1];
-  const requestObject: interfaces.SlowFillRequestWithBlock = {
+  const lastEvent = events.at(-1);
+  assert(lastEvent);
+  const requestObject: SlowFillRequestWithBlock = {
+    ...(spreadEvent(lastEvent.args!) as SlowFillRequest),
     destinationChainId,
     blockNumber: lastEvent.blockNumber,
-    transactionHash: lastEvent.transactionHash,
+    txnRef: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
-    transactionIndex: lastEvent.transactionIndex,
-    ...spreadEvent(lastEvent.args!),
+    txnIndex: lastEvent.transactionIndex,
   };
   return requestObject;
 }
