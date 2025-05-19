@@ -22,7 +22,7 @@ export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder
     }
     return evmBlockFinders[chainId];
   }
-  const provider = await getSvmProvider();
+  const provider = getSvmProvider();
   if (!isDefined(svmBlockFinder)) {
     svmBlockFinder = new SVMBlockFinder(provider);
   }

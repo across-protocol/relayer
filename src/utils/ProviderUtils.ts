@@ -225,13 +225,12 @@ export async function getProvider(
 /**
  * @notice Returns a cached SVMProvider.
  */
-export async function getSvmProvider(): Promise<SVMProvider> {
+export function getSvmProvider(): SVMProvider {
   const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
-  const redis = await getRedisCache();
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
-    redis,
+    undefined,
     10,
     0,
     undefined,
