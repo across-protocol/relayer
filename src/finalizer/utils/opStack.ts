@@ -273,16 +273,17 @@ async function getOPUSDCEvents(
   }
   const bridge = new Contract(opUSDCBridge.address, opUSDCBridge.abi, provider);
   const filter = bridge.filters.MessageSent(fromAddresses);
-  const events = (await paginatedEventQuery(bridge, filter, searchConfig)).map(({ args, ...event }) => {
-    const l2TokenAddress = USDC.addresses?.[chainId] ?? USDCe.addresses?.[chainId];
-    if (!l2TokenAddress) {
-      logger.warn({ at, message: `Unrecognised USDC variant on ${chain}.`, event });
-    }
+  const events = (await paginatedEventQuery(bridge, filter, searchConfig))
+    .map(({ args, ...event }) => {
+      const l2TokenAddress = USDC.addresses?.[chainId] ?? USDCe.addresses?.[chainId];
+      if (!l2TokenAddress) {
+        logger.warn({ at, message: `Unrecognised USDC variant on ${chain}.`, event });
+      }
 
-    // MessageSent events aren't immediately compatible with this adapter. Finesse the event format a bit.
-    return { ...event, args: { ...args, amount: args._amount }, l2TokenAddress };
-  })
-  .filter(({ l2TokenAddress }) => isDefined(l2TokenAddress));
+      // MessageSent events aren't immediately compatible with this adapter. Finesse the event format a bit.
+      return { ...event, args: { ...args, amount: args._amount }, l2TokenAddress };
+    })
+    .filter(({ l2TokenAddress }) => isDefined(l2TokenAddress));
 
   return events;
 }
