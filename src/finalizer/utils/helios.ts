@@ -1,4 +1,4 @@
-import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
+import { HubPoolClient, SpokePoolClient, AugmentedTransaction, EVMSpokePoolClient } from "../../clients";
 import {
   EventSearchConfig,
   Signer,
@@ -8,6 +8,8 @@ import {
   ethers,
   BigNumber,
   groupObjectCountsByProp,
+  isEVMSpokePoolClient,
+  assert,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -62,6 +64,10 @@ export async function heliosL1toL2Finalizer(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(
+    isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
+    "Cannot use helios finalizer on non-evm chains"
+  );
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(l2SpokePoolClient);
@@ -117,7 +123,7 @@ interface Sp1HeliosHeadData {
   sp1HeliosHeader: string;
 }
 
-async function getSp1HeliosHeadData(l2SpokePoolClient: SpokePoolClient): Promise<Sp1HeliosHeadData> {
+async function getSp1HeliosHeadData(l2SpokePoolClient: EVMSpokePoolClient): Promise<Sp1HeliosHeadData> {
   const sp1HeliosL2 = getSp1HeliosContract(l2SpokePoolClient.chainId, l2SpokePoolClient.spokePool.provider);
   const sp1HeliosHeadBn: ethers.BigNumber = await sp1HeliosL2.head();
   const sp1HeliosHead = sp1HeliosHeadBn.toNumber();
@@ -135,8 +141,8 @@ async function getSp1HeliosHeadData(l2SpokePoolClient: SpokePoolClient): Promise
 async function identifyRequiredActions(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
-  l1SpokePoolClient: SpokePoolClient,
-  l2SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
   l2ChainId: number
 ): Promise<HeliosAction[]> {
@@ -214,7 +220,7 @@ async function identifyRequiredActions(
 
 async function shouldGenerateKeepAliveAction(
   logger: winston.Logger,
-  l2SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l2ChainId: number
 ): Promise<boolean> {
   const twentyFourHoursInSeconds = 24 * 60 * 60; // 24 hours
@@ -264,8 +270,8 @@ async function shouldGenerateKeepAliveAction(
 async function enrichHeliosActions(
   logger: winston.Logger,
   actions: HeliosAction[],
-  l2SpokePoolClient: SpokePoolClient,
-  l1SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
   currentL2HeliosHeader: string
 ): Promise<HeliosAction[]> {
@@ -394,7 +400,7 @@ async function enrichHeliosActions(
 async function getRelevantL1Events(
   _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
-  l1SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
   _l2ChainId: number,
   l2SpokePoolAddress: string
@@ -431,7 +437,7 @@ async function getRelevantL1Events(
 
 /** Query L2 Verification Events and return verified slots map */
 async function getL2VerifiedSlotsMap(
-  l2SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l2ChainId: number
 ): Promise<Map<string, StorageSlotVerifiedEvent>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
@@ -468,7 +474,7 @@ async function getL2VerifiedSlotsMap(
 }
 
 /** --- Query L2 Execution Events (RelayedCallData) */
-async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<Set<string>> {
+async function getL2RelayedNonces(l2SpokePoolClient: EVMSpokePoolClient): Promise<Set<string>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
@@ -540,7 +546,7 @@ async function generateTxnsForHeliosActions(
   readyActions: HeliosAction[],
   l1ChainId: number,
   l2ChainId: number,
-  l2SpokePoolClient: SpokePoolClient
+  l2SpokePoolClient: EVMSpokePoolClient
 ): Promise<FinalizerPromise> {
   const transactions: AugmentedTransaction[] = [];
   const crossChainMessages: CrossChainMessage[] = [];

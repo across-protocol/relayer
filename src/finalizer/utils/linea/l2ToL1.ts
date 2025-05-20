@@ -16,6 +16,8 @@ import {
   BigNumber,
   TOKEN_SYMBOLS_MAP,
   getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -162,6 +164,7 @@ export async function lineaL2ToL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
   const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
   const l2Contract = lineaSdk.getL2Contract();

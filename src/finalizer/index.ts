@@ -31,6 +31,7 @@ import {
   CHAIN_IDs,
   Profiler,
   stringifyThrownValue,
+  isEVMSpokePoolClient,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
@@ -240,7 +241,7 @@ export async function finalize(
       : [];
     const addressesToFinalize = [
       hubPoolClient.hubPool.address,
-      spokePoolClients[chainId].spokePool.address,
+      spokePoolClients[chainId].spokePoolAddress.toEvmAddress(),
       CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
       ...userSpecifiedAddresses,
     ].map(getAddress);
@@ -292,10 +293,11 @@ export async function finalize(
         // since any L2 -> L1 transfers will be finalized on the hub chain.
         hubChainId,
         ...configuredChainIds,
-      ]).map(
-        async (chainId) =>
-          [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
-      )
+      ]).map(async (chainId) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        assert(isEVMSpokePoolClient(spokePoolClient));
+        return [chainId, await getMultisender(chainId, spokePoolClient.spokePool.signer)] as [number, Contract];
+      })
     )
   );
   // Assert that no multicall2Lookup is undefined

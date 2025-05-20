@@ -31,6 +31,7 @@ import {
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
   ZERO_BYTES,
+  isEVMSpokePoolClient,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
@@ -77,7 +78,9 @@ export class BaseChainAdapter {
   }
 
   protected getSigner(chainId: number): Signer {
-    return this.spokePoolClients[chainId].spokePool.signer;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    return spokePoolClient.spokePool.signer;
   }
 
   // Note: this must be called after the SpokePoolClients are updated.

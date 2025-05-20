@@ -40,6 +40,7 @@ import {
   getTokenInfo,
   compareAddressesSimple,
   getCctpDomainForChainId,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -101,6 +102,7 @@ export async function opStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
   const networkName = getNetworkName(chainId);
@@ -160,7 +162,7 @@ export async function opStackFinalizer(
     await paginatedEventQuery(
       ovmStandardBridge,
       ovmStandardBridge.filters.ETHBridgeInitiated(
-        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePoolAddress.toEvmAddress()) // from, filter out
         // SpokePool as sender since we query for it previously using the TokensBridged event query.
       ),
       {
@@ -180,7 +182,7 @@ export async function opStackFinalizer(
       ovmStandardBridge.filters.ERC20BridgeInitiated(
         null, // localToken
         null, // remoteToken
-        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePool.address) // from, filter out
+        senderAddresses.filter((sender) => sender !== spokePoolClient.spokePoolAddress.toEvmAddress()) // from, filter out
         // SpokePool as sender since we query for it previously using the TokensBridged event query.
       ),
       {
