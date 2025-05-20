@@ -31,7 +31,7 @@ export async function getDisputeForTimestamp(
       ? disputeRequestBlock
       : await getBlockForTimestamp(hubPoolClient.chainId, disputeRequestTimestamp);
 
-  const eventSearchConfig = { fromBlock: priceRequestBlock, toBlock: priceRequestBlock };
+  const eventSearchConfig = { from: priceRequestBlock, to: priceRequestBlock };
   const disputes = await paginatedEventQuery(dvm, filter, eventSearchConfig);
   const dispute = disputes.find(({ args }) => args.time.toString() === disputeRequestTimestamp.toString());
   return dispute ? spreadEventWithBlockNumber(dispute) : undefined;

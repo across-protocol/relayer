@@ -123,7 +123,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
-      { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
+      { from: 0, to: undefined, maxLookBack: 0 }
     );
 
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };

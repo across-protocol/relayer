@@ -224,9 +224,9 @@ async function shouldGenerateKeepAliveAction(
   const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   const searchConfig: EventSearchConfig = {
-    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l2SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l2SpokePoolClient.eventSearchConfig.from,
+    to: l2SpokePoolClient.latestHeightSearched,
+    maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
   const headUpdateFilter = sp1HeliosContract.filters.HeadUpdate();
@@ -406,12 +406,12 @@ async function getRelevantL1Events(
    * @dev We artificially shorten the lookback time peiod for L1 events by a factor of 2. We want to avoid race conditions where
    * we see an old event on L1, but not look back far enough on L2 to see that the event has been executed successfully.
    */
-  const toBlock = l1SpokePoolClient.latestBlockSearched;
-  const fromBlock = Math.floor((l1SpokePoolClient.eventSearchConfig.fromBlock + toBlock) / 2);
+  const toBlock = l1SpokePoolClient.latestHeightSearched;
+  const fromBlock = Math.floor((l1SpokePoolClient.eventSearchConfig.from + toBlock) / 2);
   const l1SearchConfig: EventSearchConfig = {
-    fromBlock: fromBlock,
-    toBlock: toBlock,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: fromBlock,
+    to: toBlock,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
   const storedCallDataFilter = hubPoolStoreContract.filters.StoredCallData();
@@ -438,9 +438,9 @@ async function getL2VerifiedSlotsMap(
   const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   const l2SearchConfig: EventSearchConfig = {
-    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l2SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l2SpokePoolClient.eventSearchConfig.from,
+    to: l2SpokePoolClient.latestHeightSearched,
+    maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
   const storageVerifiedFilter = sp1HeliosContract.filters.StorageSlotVerified();
 
@@ -474,9 +474,9 @@ async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<S
   const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
 
   const l2SearchConfig: EventSearchConfig = {
-    fromBlock: l2SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l2SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l2SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l2SpokePoolClient.eventSearchConfig.from,
+    to: l2SpokePoolClient.latestHeightSearched,
+    maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
   const relayedCallDataFilter = universalSpokePoolContract.filters.RelayedCallData();
 

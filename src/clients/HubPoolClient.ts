@@ -23,7 +23,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     configStoreClient: clients.AcrossConfigStoreClient,
     deploymentBlock?: number,
     chainId = CHAIN_IDs.MAINNET,
-    eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    eventSearchConfig: MakeOptional<EventSearchConfig, "to"> = { from: 0, maxLookBack: 0 },
     cachingMechanism?: interfaces.CachingMechanismInterface,
     timeToCache?: number
   ) {

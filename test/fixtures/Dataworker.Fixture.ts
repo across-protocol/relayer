@@ -52,7 +52,7 @@ async function _constructSpokePoolClientsWithLookback(
       hubPoolClient,
       spokePoolChains[i],
       deploymentBlocks?.[spokePoolChains[i]] ?? 0,
-      lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
+      lookbackForAllChains === undefined ? undefined : { from: latestBlocks[i] - lookbackForAllChains }
     );
   });
 }
