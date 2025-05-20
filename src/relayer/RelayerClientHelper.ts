@@ -1,8 +1,10 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
   BundleDataClient,
+  EVMSpokePoolClient,
+  SVMSpokePoolClient,
   HubPoolClient,
   InventoryClient,
   ProfitClient,
@@ -10,7 +12,7 @@ import {
   MultiCallerClient,
   TryMulticallClient,
 } from "../clients";
-import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
+import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
   Clients,
   constructClients,
@@ -19,7 +21,16 @@ import {
   updateClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
+import {
+  chainIsEvm,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getProvider,
+  getRedisCache,
+  getSvmProvider,
+  Signer,
+  SpokePool,
+} from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
@@ -37,7 +48,7 @@ async function indexedSpokePoolClient(
   hubPoolClient: HubPoolClient,
   chainId: number,
   opts: IndexerOpts & { lookback: number; blockRange: number }
-): Promise<IndexedSpokePoolClient> {
+): Promise<SpokePoolClient> {
   const { logger } = hubPoolClient;
 
   // Set up Spoke signers and connect them to spoke pool contract objects.
@@ -50,18 +61,40 @@ async function indexedSpokePoolClient(
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
     getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
   ]);
+  const searchConfig = { from, maxLookBack: opts.blockRange };
 
-  const spokePoolClient = new IndexedSpokePoolClient(
-    logger,
-    SpokePool.connect(spokePoolAddr, signer),
-    hubPoolClient,
-    chainId,
-    activationBlock,
-    { from, maxLookBack: opts.blockRange },
-    opts
-  );
-
-  return spokePoolClient;
+  if (chainIsEvm(chainId)) {
+    const SpokePoolClient = SpokeListener(EVMSpokePoolClient);
+    const contract = SpokePool.connect(spokePoolAddr, signer);
+    const spokePoolClient = new SpokePoolClient(
+      logger,
+      contract,
+      hubPoolClient,
+      chainId,
+      activationBlock,
+      searchConfig
+    );
+    spokePoolClient.init(opts);
+    return spokePoolClient;
+  } else {
+    const SpokePoolClient = SpokeListener(SVMSpokePoolClient);
+    const provider = getSvmProvider();
+    const svmEventsClient = await arch.svm.SvmCpiEventsClient.create(provider);
+    const programId = svmEventsClient.getProgramAddress();
+    const statePda = await arch.svm.getStatePda(programId);
+    const spokePoolClient = new SpokePoolClient(
+      logger,
+      hubPoolClient,
+      chainId,
+      BigInt(activationBlock),
+      searchConfig,
+      svmEventsClient,
+      programId,
+      statePda
+    );
+    spokePoolClient.init(opts);
+    return spokePoolClient;
+  }
 }
 
 export async function constructRelayerClients(

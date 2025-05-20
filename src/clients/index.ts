@@ -5,7 +5,7 @@ export type EVMSpokePoolClient = clients.EVMSpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;
 export const { EVMSpokePoolClient, SpokePoolClient, SVMSpokePoolClient } = clients;
 
-export { IndexedSpokePoolClient, SpokePoolClientMessage } from "./SpokePoolClient";
+export { SpokeListener, SpokePoolClientMessage } from "./SpokePoolClient";
 export class BundleDataClient extends clients.BundleDataClient.BundleDataClient {}
 
 export * from "./BalanceAllocator";
