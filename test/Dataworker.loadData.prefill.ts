@@ -28,21 +28,21 @@ import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./
 import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
-let erc20_1: Contract, erc20_2: Contract;
-let l1Token_1: Contract;
-let relayer: SignerWithAddress, depositor: SignerWithAddress;
-
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
-let dataworkerInstance: Dataworker;
-let spokePoolClients: { [chainId: number]: SpokePoolClient };
-
-let spy: sinon.SinonSpy;
-
-let updateAllClients: () => Promise<void>;
-
 describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
   const { EMPTY_MESSAGE } = sdkConstants;
+
+  let erc20_1: Contract, erc20_2: Contract;
+  let l1Token_1: Contract;
+  let relayer: SignerWithAddress, depositor: SignerWithAddress;
+
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
+  let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+  let dataworkerInstance: Dataworker;
+  let spokePoolClients: { [chainId: number]: SpokePoolClient };
+
+  let spy: sinon.SinonSpy;
+
+  let updateAllClients: () => Promise<void>;
 
   beforeEach(async function () {
     ({
@@ -243,7 +243,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Submit fill that we won't include in the bundle block range. Make sure its relayer address is invalid
           // so that the bundle data client is forced to overwrite the refund recipient.
-          const fill = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, createRandomBytes32());
+          const fill = generateV3FillFromDeposit(deposits[0], {}, createRandomBytes32());
           const fillWithBlock = {
             ...spreadEventWithBlockNumber(fill),
             destinationChainId,
@@ -299,7 +299,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Submit fill with invalid relayer address so that the bundle data client is forced to
           // overwrite the refund recipient.
-          const fill = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, createRandomBytes32());
+          const fill = generateV3FillFromDeposit(deposits[0], {}, createRandomBytes32());
           await mockDestinationSpokePoolClient.update(["FilledRelay"]);
           expect(mockDestinationSpokePoolClient.getFills().length).to.equal(1);
 
@@ -341,7 +341,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Send fill with invalid repayment address
           const invalidRelayer = ethers.utils.randomBytes(32);
-          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
             destinationChainId,
@@ -385,7 +385,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Send fill with invalid repayment address
           const invalidRelayer = ethers.utils.randomBytes(32);
-          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           await mockDestinationSpokePoolClient.update(["FilledRelay"]);
 
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
@@ -416,7 +416,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Fill deposits from different relayers
           const invalidRelayer = ethers.utils.randomBytes(32);
-          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
             destinationChainId,
@@ -459,7 +459,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
           // Fill deposits from different relayers
           const invalidRelayer = ethers.utils.randomBytes(32);
-          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+          const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           await mockDestinationSpokePoolClient.update(["FilledRelay"]);
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
           // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
@@ -489,13 +489,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         const deposits = mockOriginSpokePoolClient.getDeposits();
 
         // Submit fill that we won't include in the bundle block range.
-        const fill = generateV3FillFromDeposit(
-          deposits[0],
-          { method: "fillRelay" },
-          undefined,
-          undefined,
-          interfaces.FillType.SlowFill
-        );
+        const fill = generateV3FillFromDeposit(deposits[0], {}, undefined, undefined, interfaces.FillType.SlowFill);
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
           destinationChainId,
@@ -536,7 +530,6 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
         // Submit fill that we won't include in the bundle block range.
         const fill = generateV3FillFromDeposit(deposits[0], {
-          method: "fillRelay",
           blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber,
         });
         // Substitute bundle block ranges.
@@ -566,7 +559,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(deposits.length).to.equal(3);
 
         // Submit fill that we won't include in the bundle block range
-        const fill = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" });
+        const fill = generateV3FillFromDeposit(deposits[0], {});
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
           destinationChainId,
@@ -602,7 +595,6 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
         // Submit fill that we won't include in the bundle block range but is in a future bundle
         const futureFill = generateV3FillFromDeposit(deposits[0], {
-          method: "fillRelay",
           blockNumber: mockDestinationSpokePoolClient.eventManager.blockNumber + 11,
         });
 

@@ -40,22 +40,22 @@ import { cloneDeep } from "lodash";
 import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
-const { EMPTY_MESSAGE } = sdkConstants;
-
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
-let l1Token_1: Contract;
-let depositor: SignerWithAddress, relayer: SignerWithAddress;
-
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
-let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
-let dataworkerInstance: Dataworker;
-let spokePoolClients: { [chainId: number]: SpokePoolClient };
-
-let spy: sinon.SinonSpy;
-
-let updateAllClients: () => Promise<void>;
-
 describe("Dataworker: Load bundle data", async function () {
+  const { EMPTY_MESSAGE } = sdkConstants;
+
+  let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+  let l1Token_1: Contract;
+  let depositor: SignerWithAddress, relayer: SignerWithAddress;
+
+  let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
+  let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
+  let dataworkerInstance: Dataworker;
+  let spokePoolClients: { [chainId: number]: SpokePoolClient };
+
+  let spy: sinon.SinonSpy;
+
+  let updateAllClients: () => Promise<void>;
+
   beforeEach(async function () {
     ({
       spokePool_1,
@@ -351,11 +351,11 @@ describe("Dataworker: Load bundle data", async function () {
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1,
         });
         await mockOriginSpokePoolClient.update(["FundsDeposited"]);
-        await mockOriginSpokePoolClient.deposit({
+        mockOriginSpokePoolClient.deposit({
           ...mockOriginSpokePoolClient.getDeposits()[0],
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 11,
         });
-        await mockOriginSpokePoolClient.deposit({
+        mockOriginSpokePoolClient.deposit({
           ...mockOriginSpokePoolClient.getDeposits()[0],
           blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 21,
         });
@@ -388,15 +388,15 @@ describe("Dataworker: Load bundle data", async function () {
         // Send duplicate deposits.
         generateV3Deposit({ outputToken: randomAddress() });
         await mockOriginSpokePoolClient.update(["FundsDeposited"]);
-        await mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
-        await mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
+        mockOriginSpokePoolClient.deposit(mockOriginSpokePoolClient.getDeposits()[0]); // Duplicate deposit
         await mockOriginSpokePoolClient.update(["FundsDeposited"]);
         const deposits = mockOriginSpokePoolClient.getDepositsForDestinationChainWithDuplicates(destinationChainId);
         expect(deposits.length).to.equal(3);
 
         // Fill deposit with invalid repayment information.
         const invalidRelayer = ethers.utils.randomBytes(32);
-        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }, invalidRelayer);
+        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
         await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
@@ -1025,14 +1025,10 @@ describe("Dataworker: Load bundle data", async function () {
 
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1], { method: "fillRelay" }));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
         fillV3Events.push(
-          generateV3FillFromDeposit(
-            deposits[2],
-            { method: "fillRelay" },
-            ethers.utils.hexlify(ethers.utils.randomBytes(32))
-          )
+          generateV3FillFromDeposit(deposits[2], {}, ethers.utils.hexlify(ethers.utils.randomBytes(32)))
         );
         await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
@@ -1079,9 +1075,9 @@ describe("Dataworker: Load bundle data", async function () {
         // Fill deposits from different relayers
         const relayer2 = randomAddress();
         const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[0], { method: "fillRelay" }));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[1], { method: "fillRelay" }));
-        fillV3Events.push(generateV3FillFromDeposit(deposits[2], { method: "fillRelay" }, invalidRelayer));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+        fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, invalidRelayer));
         await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid.

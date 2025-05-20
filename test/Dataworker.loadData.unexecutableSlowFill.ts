@@ -301,7 +301,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     const invalidRelayer = ethers.utils.randomBytes(32);
     const invalidFillEvent = generateV3FillFromDeposit(
       deposits[0],
-      { method: "fillRelay" },
+      {},
       invalidRelayer,
       undefined,
       interfaces.FillType.ReplacedSlowFill
