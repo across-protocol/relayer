@@ -150,7 +150,7 @@ export class ProfitClient {
       if (isEVMSpokePoolClient(spokePoolClient)) {
         provider = spokePoolClient.spokePool.provider;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
-        provider = spokePoolClient.svmEventsClient.rpc;
+        provider = spokePoolClient.svmEventsClient.getRpc();
       }
       this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId, provider);
     }

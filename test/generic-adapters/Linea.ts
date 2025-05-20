@@ -1,5 +1,5 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32 } from "../utils";
@@ -44,10 +44,10 @@ describe("Cross Chain Adapter: Linea", async function () {
 
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
-    const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, l2ChainId, 0, {
+    const l2SpokePoolClient = new EVMSpokePoolClient(null, spokePool, null, l2ChainId, 0, {
       from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, hubChainId, 0, {
+    const l1SpokePoolClient = new EVMSpokePoolClient(null, spokePool, null, hubChainId, 0, {
       from: 0,
     });
 

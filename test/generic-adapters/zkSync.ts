@@ -1,6 +1,6 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { ZKStackUSDCBridge, ZKStackWethBridge, ZKStackBridge } from "../../src/adapter/bridges";
 import { bnZero, EvmAddress } from "../../src/utils";
@@ -134,10 +134,10 @@ describe("Cross Chain Adapter: zkSync", async function () {
     const deploymentBlock = spokePool.deployTransaction.blockNumber!;
 
     const hubPoolClient = null;
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, ZK_SYNC, deploymentBlock, {
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, ZK_SYNC, deploymentBlock, {
       from: deploymentBlock,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
       from: deploymentBlock,
     });
     searchConfig = { from: deploymentBlock, to: 1_000_000 };
@@ -1033,7 +1033,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
       const hubPoolClient = null;
       const deploymentBlock = spokePool.deployTransaction.blockNumber!;
-      const lensSpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, LENS, deploymentBlock, {
+      const lensSpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, LENS, deploymentBlock, {
         from: deploymentBlock,
       });
 

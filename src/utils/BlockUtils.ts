@@ -58,7 +58,10 @@ export async function getTimestampsForBundleEndBlocks(
         if (isEVMSpokePoolClient(spokePoolClient)) {
           return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
-          return [chainId, Number(await spokePoolClient.svmEventsClient.rpc.getBlockTime(BigInt(endBlock)).send())];
+          return [
+            chainId,
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(endBlock)).send()),
+          ];
         }
       })
     ).filter(isDefined)
