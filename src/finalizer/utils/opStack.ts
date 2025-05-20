@@ -106,7 +106,7 @@ export async function opStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
-  const { chainId, latestBlockSearched, spokePool } = spokePoolClient;
+  const { chainId, latestHeightSearched: to, spokePool } = spokePoolClient;
   assert(chainIsOPStack(chainId), `Unsupported OP Stack chain ID: ${chainId}`);
   const chain = getNetworkName(chainId);
   const at = `${chain}Finalizer`;
@@ -142,11 +142,12 @@ export async function opStackFinalizer(
   // the lite chain to Ethereum via the canonical OVM standard bridge.
   // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
   const ovmFromAddresses = senderAddresses.filter((sender) => sender !== spokePool.address);
-  const searchConfig = { ...spokePoolClient.eventSearchConfig, toBlock: latestBlockSearched };
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, to };
   const ovmStdEvents = await getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
   const opUSDCEvents = await getOPUSDCEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
 
   const withdrawalEvents = [...ovmStdEvents, ...opUSDCEvents];
+
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
   withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {

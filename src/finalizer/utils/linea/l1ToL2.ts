@@ -64,9 +64,9 @@ export async function lineaL1ToL2Finalizer(
     hubPoolClient.hubPool.provider
   );
   const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
   const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([

@@ -43,8 +43,8 @@ export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
 
 export class BaseChainAdapter {
-  protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
+  protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "to">;
+  protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "to">;
   private transactionClient: TransactionClient;
 
   constructor(
@@ -72,7 +72,7 @@ export class BaseChainAdapter {
     this.logger[level]({ at: name, message, ...data });
   }
 
-  protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
+  protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "to"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
@@ -82,19 +82,19 @@ export class BaseChainAdapter {
 
   // Note: this must be called after the SpokePoolClients are updated.
   public getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestHeightSearched;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestHeightSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,
-        toBlock: this.baseL1SearchConfig?.toBlock ?? l1LatestBlock,
+        to: this.baseL1SearchConfig?.to ?? l1LatestBlock,
       },
       l2SearchConfig: {
         ...this.baseL2SearchConfig,
-        toBlock: this.baseL2SearchConfig?.toBlock ?? l2LatestBlock,
+        to: this.baseL2SearchConfig?.to ?? l2LatestBlock,
       },
     };
   }
@@ -241,12 +241,12 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
     const l1EventSearchConfig: EventSearchConfig = {
-      fromBlock: l1SearchFromBlock,
-      toBlock: this.baseL1SearchConfig.toBlock,
+      from: l1SearchFromBlock,
+      to: this.baseL1SearchConfig.to,
     };
     const l2EventSearchConfig: EventSearchConfig = {
-      fromBlock: l2SearchFromBlock,
-      toBlock: this.baseL2SearchConfig.toBlock,
+      from: l2SearchFromBlock,
+      to: this.baseL2SearchConfig.to,
     };
     return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,

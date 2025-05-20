@@ -88,7 +88,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       return {};
     }
     assert(l1Token.toAddress() === this.getL1Bridge().address);
-    const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
+    const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
@@ -141,7 +141,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     }
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
     assert(l1Token.toAddress() === this.getL1Bridge().address);
-    const fromTimestamp = (await getTimestampForBlock(this.l2Provider, eventConfig.fromBlock)) * 1_000; // Convert timestamp to ms.
+    const fromTimestamp = (await getTimestampForBlock(this.l2Provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
