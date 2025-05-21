@@ -4,7 +4,7 @@ import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
-import { bnZero, compareAddressesSimple, chainIsEvm } from "./SDKUtils";
+import { bnZero, compareAddressesSimple, chainIsSvm } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
@@ -126,6 +126,15 @@ async function getCCTPDepositEvents(
   // Step 1: Get all DepositForBurn events matching the senderAddress and source chain.
   const srcProvider = getCachedProvider(sourceChainId);
   const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  if (chainIsSvm(sourceChainId) || chainIsSvm(destinationChainId)) {
+    return _getCCTPDepositEventsSvm(
+      senderAddresses,
+      sourceChainId,
+      destinationChainId,
+      l2ChainId,
+      sourceEventSearchConfig
+    );
+  }
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
   const eventFilterParams = isCctpV2
     ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
@@ -217,7 +226,7 @@ async function getCCTPDepositEventsWithStatus(
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  const messageTransmitterContract = chainIsSvm(l2ChainId) ? undefined : new Contract(address, abi, dstProvider);
   return await Promise.all(
     deposits.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
@@ -229,7 +238,9 @@ async function getCCTPDepositEventsWithStatus(
           status: "pending",
         };
       }
-      const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, destinationMessageTransmitter);
+      const processed = chainIsSvm(l2ChainId)
+        ? await _hasCCTPMessageBeenProcessedSvm(deposit.nonceHash)
+        : await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
           ...deposit,
@@ -276,7 +287,9 @@ export async function getAttestationsForCCTPDepositEvents(
   const txnReceiptHashCount: { [hash: string]: number } = {};
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  const destinationMessageTransmitter = chainIsSvm(destinationChainId)
+    ? undefined
+    : new ethers.Contract(address, abi, dstProvider);
 
   const attestedDeposits = await Promise.all(
     depositsWithStatus.map(async (deposit) => {
@@ -298,9 +311,9 @@ export async function getAttestationsForCCTPDepositEvents(
       // deposits in getCCTPDepositEventsWithStatus().
       if (isCctpV2ApiResponse(attestation)) {
         const attestationForDeposit = attestation.messages[count];
-        const processed = chainIsEvm(l2ChainId)
-          ? await _hasCCTPMessageBeenProcessed(attestationForDeposit.eventNonce, destinationMessageTransmitter)
-          : await _hasCCTPMessageBeenProcessedSvm(attestationForDeposit.eventNonce);
+        const processed = chainIsSvm(destinationChainId)
+          ? await _hasCCTPMessageBeenProcessedSvm(attestationForDeposit.eventNonce)
+          : await _hasCCTPMessageBeenProcessed(attestationForDeposit.eventNonce, destinationMessageTransmitter);
         if (processed) {
           return {
             ...deposit,
@@ -347,6 +360,16 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
 async function _hasCCTPMessageBeenProcessedSvm(nonceHash: string): Promise<boolean> {
   const messageProcessedResult = await Promise.resolve(1);
   return messageProcessedResult === 1;
+}
+
+async function _getCCTPDepositEventsSvm(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<CCTPDepositEvent[]> {
+  return [];
 }
 
 function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {

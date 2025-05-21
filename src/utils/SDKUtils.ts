@@ -74,6 +74,7 @@ export const {
   validateFillForDeposit,
   toAddressType,
   chainIsEvm,
+  chainIsSvm,
   ConvertDecimals,
   getTokenInfo,
 } = sdk.utils;
