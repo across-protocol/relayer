@@ -223,24 +223,6 @@ export async function getProvider(
 }
 
 /**
- * @notice Returns a cached SVMProvider.
- */
-export function getSvmProvider(): SVMProvider {
-  const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
-  const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
-  const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
-    namespace,
-    undefined,
-    10,
-    0,
-    undefined,
-    Object.values(nodeUrlList)[0],
-    MAINNET_CHAIN_IDs.SOLANA
-  );
-  return providerFactory.createRpcClient();
-}
-
-/**
  * @notice Returns a Viem custom transport that can be used to create a Viem client from our customized Ethers
  * provider. This allows us to send requests through our RetryProvider that need to be handled by Viem SDK's.
  */
@@ -275,6 +257,24 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
   quorum ??= getChainQuorum(chainId);
   const urls = getNodeUrlList(chainId, quorum, "wss");
   return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
+}
+
+/**
+ * @notice Returns a cached SVMProvider.
+ */
+export function getSvmProvider(): SVMProvider {
+  const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
+  const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
+  const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
+    namespace,
+    undefined,
+    10,
+    0,
+    undefined,
+    Object.values(nodeUrlList)[0],
+    MAINNET_CHAIN_IDs.SOLANA
+  );
+  return providerFactory.createRpcClient();
 }
 
 export function getNodeUrlList(

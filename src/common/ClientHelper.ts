@@ -13,14 +13,20 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
-  getBlockFinder,
   chainIsEvm,
-  SvmAddress,
-  getSvmProvider,
-  getDeployedAddress,
   forEachAsync,
+  isEVMSpokePoolClient,
+  getSvmProvider,
+  getBlockFinder,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient, SvmSpokePoolClient } from "../clients";
+import {
+  HubPoolClient,
+  MultiCallerClient,
+  ConfigStoreClient,
+  EVMSpokePoolClient,
+  SVMSpokePoolClient,
+  SpokePoolClient,
+} from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, arch } from "@across-protocol/sdk";
@@ -225,8 +231,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
       } else {
         // The hub pool client can only return the truncated address of the SVM spoke pool, so if the chain is non-evm, then fallback
         // to the definitions in the contracts repository.
-        const spokePoolAddr = getDeployedAddress("SpokePool", chainId);
-        return { chainId, contract: SvmAddress.from(spokePoolAddr), registrationBlock };
+        return { chainId, contract: undefined, registrationBlock };
       }
     })
   );
@@ -268,7 +273,7 @@ export async function getSpokePoolClientsForContract(
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
   toBlocks: { [chainId: number]: number }
-): SpokePoolClientsByChain {
+): Promise<SpokePoolClientsByChain> {
   logger.debug({
     at: "ClientHelper#getSpokePoolClientsForContract",
     message: "Constructing SpokePoolClients",
@@ -277,9 +282,7 @@ export async function getSpokePoolClientsForContract(
   });
 
   const spokePoolClients: SpokePoolClientsByChain = {};
-  forEachAsync(
-    spokePools,
-    async ({ chainId, contract, registrationBlock }) => {
+  await forEachAsync(spokePools, async ({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
       logger.debug({
         at: "ClientHelper#getSpokePoolClientsForContract",
@@ -299,16 +302,16 @@ export async function getSpokePoolClientsForContract(
       maxLookBack: config.maxBlockLookBack[chainId],
     };
     if (chainIsEvm(chainId)) {
-      spokePoolClients[chainId] = new SpokePoolClient(
+      spokePoolClients[chainId] = new EVMSpokePoolClient(
         logger,
-        contract as Contract,
+        contract,
         hubPoolClient,
         chainId,
         registrationBlock,
         spokePoolClientSearchSettings
       );
     } else {
-      spokePoolClients[chainId] = await SvmSpokePoolClient.create(
+      spokePoolClients[chainId] = await SVMSpokePoolClient.create(
         logger,
         hubPoolClient,
         chainId,
@@ -401,10 +404,12 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
 } {
   return Object.fromEntries(
     Object.entries(spokePoolClients)
-      .map(([chainId, client]): [number, ethers.providers.Provider] => [
-        Number(chainId),
-        client.spokePool.signer.provider,
-      ])
+      .map(([chainId, client]): [number, ethers.providers.Provider] => {
+        if (isEVMSpokePoolClient(client)) {
+          return [Number(chainId), client.spokePool.signer.provider];
+        }
+        return [Number(chainId), undefined];
+      })
       .filter(([, provider]) => !!provider)
   );
 }

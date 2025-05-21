@@ -14,6 +14,8 @@ import {
   Multicall2Call,
   winston,
   zkSync as zkSyncUtils,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -36,6 +38,7 @@ export async function zkSyncFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
 

@@ -1,6 +1,13 @@
 import { interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
-import { BlockFinderHints, EVMBlockFinder, SVMBlockFinder, chainIsEvm } from "./SDKUtils";
+import {
+  BlockFinderHints,
+  EVMBlockFinder,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
+  SVMBlockFinder,
+  chainIsEvm,
+} from "./SDKUtils";
 import { getProvider, getSvmProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
@@ -63,7 +70,14 @@ export async function getTimestampsForBundleEndBlocks(
         if (spokePoolClient === undefined) {
           return;
         }
-        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+        } else if (isSVMSpokePoolClient(spokePoolClient)) {
+          return [
+            chainId,
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(endBlock)).send()),
+          ];
+        }
       })
     ).filter(isDefined)
   );

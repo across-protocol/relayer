@@ -14,6 +14,8 @@ import {
   getTokenInfo,
   ethers,
   groupObjectCountsByProp,
+  isEVMSpokePoolClient,
+  assert,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -81,6 +83,7 @@ export async function binanceFinalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
   const chainId = l2SpokePoolClient.chainId;
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
