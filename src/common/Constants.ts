@@ -936,6 +936,9 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.SONEIUM]: 1.5,
   [CHAIN_IDs.WORLD_CHAIN]: 1.5,
   [CHAIN_IDs.ZORA]: 1.5,
+  [CHAIN_IDs.ARBITRUM]: 1.25,
+  [CHAIN_IDs.BLAST]: 1.25,
+  [CHAIN_IDs.LINEA]: 1.25,
 };
 
 export const CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS = 3 * 60 * 60; // 3 hours is a safe assumption for the time
