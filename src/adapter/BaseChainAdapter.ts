@@ -124,13 +124,6 @@ export class BaseChainAdapter {
     await Promise.all([this.checkL1TokenApprovals(l1Tokens), this.checkL2TokenApprovals(l1Tokens)]);
   }
 
-  /*
-  TODO:
-  I am a bit confused at how token configs are set up. This `BaseChainAdapter` is created with some L1 / L2 bridges already.
-  Now we're passing in a new set of `l1Tokens` that we want to approve. What if some L2 bridge doesn't get approved here because
-  we haven't passed in the token as part of `l1Tokens`? Then it would revert on any `constructWithdrawToL1Txns` interaction. Why
-  not just rely on `this.l2Bridges` mapping here? I relied on `l1Tokens` here following the example of `checkL1TokenApprovals`
-  */
   async checkL2TokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
     const tokensToApprove: { token: ExpandedERC20; bridges: Address[] }[] = [];
     const unavailableTokens: EvmAddress[] = [];

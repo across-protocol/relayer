@@ -90,20 +90,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    // const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
-    // const approvalTxn: AugmentedTransaction = {
-    //   contract: erc20,
-    //   chainId: this.l2chainId,
-    //   method: "approve",
-    //   unpermissioned: false,
-    //   nonMulticall: true,
-    //   args: [this.l2Bridge.address, amount],
-    //   message: `✅ Approve Hyperlane ${symbol} for withdrawal`,
-    //   mrkdwn: `Approve ${formatter(amount.toString())} ${symbol} for withdrawal via Hyperlane router ${
-    //     this.l2Bridge.address
-    //   } on ${getNetworkName(this.l2chainId)}`,
-    // };
-
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
     const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     assert(
@@ -128,7 +114,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     };
 
     return [withdrawTxn];
-    // return [approvalTxn, withdrawTxn];
   }
 
   async getL2PendingWithdrawalAmount(
