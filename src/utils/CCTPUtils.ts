@@ -4,7 +4,7 @@ import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
-import { bnZero, compareAddressesSimple } from "./SDKUtils";
+import { bnZero, compareAddressesSimple, chainIsEvm } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
@@ -298,10 +298,9 @@ export async function getAttestationsForCCTPDepositEvents(
       // deposits in getCCTPDepositEventsWithStatus().
       if (isCctpV2ApiResponse(attestation)) {
         const attestationForDeposit = attestation.messages[count];
-        const processed = await _hasCCTPMessageBeenProcessed(
-          attestationForDeposit.eventNonce,
-          destinationMessageTransmitter
-        );
+        const processed = chainIsEvm(l2ChainId)
+          ? await _hasCCTPMessageBeenProcessed(attestationForDeposit.eventNonce, destinationMessageTransmitter)
+          : await _hasCCTPMessageBeenProcessedSvm(attestationForDeposit.eventNonce);
         if (processed) {
           return {
             ...deposit,
@@ -343,6 +342,11 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
   const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
+}
+
+async function _hasCCTPMessageBeenProcessedSvm(nonceHash: string): Promise<boolean> {
+  const messageProcessedResult = await Promise.resolve(1);
+  return messageProcessedResult === 1;
 }
 
 function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {

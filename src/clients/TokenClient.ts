@@ -23,6 +23,7 @@ import {
   getTokenInfo,
   isEVMSpokePoolClient,
   assert,
+  isSVMSpokePoolClient,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -224,35 +225,47 @@ export class TokenClient {
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolClients[chainId];
 
-    assert(isEVMSpokePoolClient(spokePoolClient));
-    const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
-    if (!isDefined(multicall3)) {
-      return this.fetchTokenData(chainId, hubPoolTokens);
-    }
+    if (isEVMSpokePoolClient(spokePoolClient)) {
+      const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
+      if (!isDefined(multicall3)) {
+        return this.fetchTokenData(chainId, hubPoolTokens);
+      }
 
-    const { relayerAddress } = this;
-    const balances: sdkUtils.Call3[] = [];
-    const allowances: sdkUtils.Call3[] = [];
-    this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-      balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
-      allowances.push({
-        contract: token,
-        method: "allowance",
-        args: [relayerAddress, spokePoolClient.spokePoolAddress.toEvmAddress()],
+      const { relayerAddress } = this;
+      const balances: sdkUtils.Call3[] = [];
+      const allowances: sdkUtils.Call3[] = [];
+      this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
+        balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
+        allowances.push({
+          contract: token,
+          method: "allowance",
+          args: [relayerAddress, spokePoolClient.spokePoolAddress.toEvmAddress()],
+        });
       });
-    });
 
-    const calls = [...balances, ...allowances];
-    const results = await sdkUtils.aggregate(multicall3, calls);
+      const calls = [...balances, ...allowances];
+      const results = await sdkUtils.aggregate(multicall3, calls);
 
-    const allowanceOffset = balances.length;
-    const balanceInfo = Object.fromEntries(
-      balances.map(({ contract: { address } }, idx) => {
-        return [address, { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] }];
-      })
-    );
+      const allowanceOffset = balances.length;
+      const balanceInfo = Object.fromEntries(
+        balances.map(({ contract: { address } }, idx) => {
+          return [address, { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] }];
+        })
+      );
 
-    return balanceInfo;
+      return balanceInfo;
+    } else if (isSVMSpokePoolClient(spokePoolClient)) {
+      return Object.fromEntries(
+        hubPoolTokens
+          .map((token) => {
+            const remoteToken = getRemoteTokenForL1Token(token.address, chainId, {
+              chainId: this.hubPoolClient.chainId,
+            });
+            return isDefined(remoteToken) ? [remoteToken, { balance: toBN(0), allowance: toBN(0) }] : undefined;
+          })
+          .filter(isDefined)
+      );
+    }
   }
 
   async update(): Promise<void> {

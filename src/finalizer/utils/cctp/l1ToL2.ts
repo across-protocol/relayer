@@ -30,7 +30,6 @@ export async function cctpL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
-  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
   const searchConfig: EventSearchConfig = {
     from: l1SpokePoolClient.eventSearchConfig.from,
     to: l1SpokePoolClient.latestHeightSearched,
@@ -57,16 +56,22 @@ export async function cctpL1toL2Finalizer(
   });
 
   const { address, abi } = getCctpMessageTransmitter(l2SpokePoolClient.chainId, l2SpokePoolClient.chainId);
-  const l2MessengerContract = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
-
-  return {
-    crossChainMessages: await generateDepositData(
-      unprocessedMessages,
-      hubPoolClient.chainId,
-      l2SpokePoolClient.chainId
-    ),
-    callData: await generateMultiCallData(l2MessengerContract, unprocessedMessages),
-  };
+  if (isEVMSpokePoolClient(l2SpokePoolClient)) {
+    const l2Messenger = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
+    return {
+      crossChainMessages: await generateDepositData(
+        unprocessedMessages,
+        hubPoolClient.chainId,
+        l2SpokePoolClient.chainId
+      ),
+      callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
+    };
+  } else {
+    return {
+      crossChainMessages: [],
+      callData: [],
+    };
+  }
 }
 
 /**
