@@ -31,6 +31,7 @@ import {
   ZKStackBridge,
   ZKStackUSDCBridge,
   ZKStackWethBridge,
+  OFTBridge,
   BinanceCEXBridge,
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
@@ -464,6 +465,7 @@ export const CANONICAL_L2_BRIDGE: {
 export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<BaseBridgeAdapter>>> = {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.BASE]: {
