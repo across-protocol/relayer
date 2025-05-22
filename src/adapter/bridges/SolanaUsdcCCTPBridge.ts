@@ -14,12 +14,18 @@ import {
   paginatedEventQuery,
   ZERO_BYTES,
   SVMProvider,
+  isDefined,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+
+type MintAndWithdrawData = {
+  mintRecipient: string;
+  amount: bigint;
+};
 
 export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
@@ -116,13 +122,28 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     this.solanaEventsClient ??= await this.solanaEventsClientPromise;
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const l2FinalizationEvents = await this.solanaEventsClient.queryDerivedAddressEvents(
-      "mintAndWithdraw",
+      "MintAndWithdraw",
       this.solanaMessageTransmitter.toV2Address(),
       BigInt(eventConfig.from),
       BigInt(eventConfig.to)
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: [],
+      [this.resolveL2TokenAddress(l1Token)]: l2FinalizationEvents
+        .map((event) => {
+          const data = event.data as MintAndWithdrawData;
+          if (String(data.mintRecipient) !== toAddress.toBase58()) {
+            return undefined;
+          }
+          return {
+            amount: toBN(data.amount),
+            blockNumber: Number(event.slot),
+            txnRef: event.signature,
+            // There is no log/transaction index on Solana.
+            txnIndex: 0,
+            logIndex: 0,
+          };
+        })
+        .filter(isDefined),
     };
   }
 }

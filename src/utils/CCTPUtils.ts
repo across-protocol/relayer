@@ -1,12 +1,21 @@
 import { utils } from "@across-protocol/sdk";
+import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
-import { bnZero, compareAddressesSimple, chainIsSvm } from "./SDKUtils";
+import {
+  bnZero,
+  compareAddressesSimple,
+  chainIsSvm,
+  SvmCpiEventsClient,
+  SvmAddress,
+  mapAsync,
+  chainIsProd,
+} from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { getCachedProvider } from "./ProviderUtils";
+import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
@@ -21,6 +30,7 @@ type CCTPDeposit = {
   messageHash: string;
   messageBytes: string;
 };
+
 type CCTPDepositEvent = CCTPDeposit & { log: Log };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
@@ -30,6 +40,13 @@ type CCTPV2APIAttestation = {
   eventNonce: string;
   cctpVersion: number;
 };
+type CCTPSvmAPIAttestation = {
+  attestation: string;
+  message: string;
+  eventNonce: string;
+};
+
+type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
 type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
 function isCctpV2ApiResponse(
   obj: CCTPAPIGetAttestationResponse | CCTPV2APIGetAttestationResponse
@@ -126,15 +143,6 @@ async function getCCTPDepositEvents(
   // Step 1: Get all DepositForBurn events matching the senderAddress and source chain.
   const srcProvider = getCachedProvider(sourceChainId);
   const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  if (chainIsSvm(sourceChainId) || chainIsSvm(destinationChainId)) {
-    return _getCCTPDepositEventsSvm(
-      senderAddresses,
-      sourceChainId,
-      destinationChainId,
-      l2ChainId,
-      sourceEventSearchConfig
-    );
-  }
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
   const eventFilterParams = isCctpV2
     ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
@@ -226,7 +234,9 @@ async function getCCTPDepositEventsWithStatus(
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const messageTransmitterContract = chainIsSvm(l2ChainId) ? undefined : new Contract(address, abi, dstProvider);
+  const messageTransmitterContract = chainIsSvm(destinationChainId)
+    ? undefined
+    : new Contract(address, abi, dstProvider);
   return await Promise.all(
     deposits.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
@@ -238,7 +248,7 @@ async function getCCTPDepositEventsWithStatus(
           status: "pending",
         };
       }
-      const processed = chainIsSvm(l2ChainId)
+      const processed = chainIsSvm(destinationChainId)
         ? await _hasCCTPMessageBeenProcessedSvm(deposit.nonceHash)
         : await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
@@ -275,6 +285,16 @@ export async function getAttestationsForCCTPDepositEvents(
 ): Promise<AttestedCCTPDepositEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
+  // Reading Solana deposits/attestations follows a different flow from EVM networks, so divert to this flow if the source chain is Solana.
+  if (chainIsSvm(sourceChainId)) {
+    return _getCCTPDepositEventsSvm(
+      senderAddresses,
+      sourceChainId,
+      destinationChainId,
+      l2ChainId,
+      sourceEventSearchConfig
+    );
+  }
   const depositsWithStatus = await getCCTPDepositEventsWithStatus(
     senderAddresses,
     sourceChainId,
@@ -287,10 +307,6 @@ export async function getAttestationsForCCTPDepositEvents(
   const txnReceiptHashCount: { [hash: string]: number } = {};
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = chainIsSvm(destinationChainId)
-    ? undefined
-    : new ethers.Contract(address, abi, dstProvider);
-
   const attestedDeposits = await Promise.all(
     depositsWithStatus.map(async (deposit) => {
       // If deposit is already finalized, we won't change its attestation status:
@@ -311,9 +327,11 @@ export async function getAttestationsForCCTPDepositEvents(
       // deposits in getCCTPDepositEventsWithStatus().
       if (isCctpV2ApiResponse(attestation)) {
         const attestationForDeposit = attestation.messages[count];
-        const processed = chainIsSvm(destinationChainId)
-          ? await _hasCCTPMessageBeenProcessedSvm(attestationForDeposit.eventNonce)
-          : await _hasCCTPMessageBeenProcessed(attestationForDeposit.eventNonce, destinationMessageTransmitter);
+        const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+        const processed = await _hasCCTPMessageBeenProcessed(
+          attestationForDeposit.eventNonce,
+          destinationMessageTransmitter
+        );
         if (processed) {
           return {
             ...deposit,
@@ -357,7 +375,11 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
+// A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
 async function _hasCCTPMessageBeenProcessedSvm(nonceHash: string): Promise<boolean> {
+  // const provider = getSvmProvider();
+  // const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  // @todo
   const messageProcessedResult = await Promise.resolve(1);
   return messageProcessedResult === 1;
 }
@@ -368,22 +390,58 @@ async function _getCCTPDepositEventsSvm(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPDepositEvent[]> {
-  return [];
+): Promise<AttestedCCTPDepositEvent[]> {
+  // Get the `DepositForBurn` events on Solana.
+  const provider = getSvmProvider();
+  const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
+  const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
+    "DepositForBurn",
+    SvmAddress.from(address).toV2Address(),
+    BigInt(sourceEventSearchConfig.from),
+    BigInt(sourceEventSearchConfig.to)
+  );
+
+  // Query the CCTP API to get the encoded message bytes/attestation.
+  // Return undefined if we need to filter out the deposit event.
+  const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
+    const attestation = await _generateCCTPSvmAttestationProof(event.signature);
+    return await mapAsync(attestation.messages, async (data) => {
+      const decodedMessage = _decodeCCTPV1Message({ data: data.message }, true);
+      if (
+        !senderAddresses.includes(cctpBytes32ToAddress(decodedMessage.sender)) ||
+        getCctpDomainForChainId(destinationChainId) !== decodedMessage.destinationDomain
+      ) {
+        return undefined;
+      }
+      // The destination network cannot be Solana since the origin network is Solana.
+      const attestationStatusObject = await _generateCCTPAttestationProof(
+        decodedMessage.messageHash,
+        chainIsProd(l2ChainId)
+      );
+      return {
+        ...decodedMessage,
+        attestation: data.attestation,
+        status: _getPendingAttestationStatus(attestationStatusObject.status),
+        log: undefined,
+      };
+    });
+  });
+  return _depositsWithAttestations.flat().filter(isDefined);
 }
 
-function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {
+function _decodeCCTPV1Message(message: { data: string }, isSvm = false): CCTPDeposit {
   // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
   const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
   // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
   const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce])); //
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // recipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
+  const recipient = ethers.utils.hexlify(messageBytesArray.slice(152, 184)); // recipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
 
   return {
     nonceHash,
@@ -435,6 +493,14 @@ async function _generateCCTPAttestationProof(
 ): Promise<CCTPAPIGetAttestationResponse> {
   const httpResponse = await axios.get<CCTPAPIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
+  );
+  const attestationResponse = httpResponse.data;
+  return attestationResponse;
+}
+
+async function _generateCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPSvmAPIGetAttestationResponse> {
+  const httpResponse = await axios.get<CCTPSvmAPIGetAttestationResponse>(
+    `https://iris-api.circle.com/messages/5/${transactionHash}`
   );
   const attestationResponse = httpResponse.data;
   return attestationResponse;

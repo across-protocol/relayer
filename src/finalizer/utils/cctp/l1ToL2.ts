@@ -67,6 +67,7 @@ export async function cctpL1toL2Finalizer(
       callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
     };
   } else {
+    // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
     return {
       crossChainMessages: [],
       callData: [],

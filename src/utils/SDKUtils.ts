@@ -8,6 +8,8 @@ export type BlockFinderHints = sdk.utils.BlockFinderHints;
 export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
 export const addressAdapters = sdk.addressAggregator.adapters;
 
+export class SvmCpiEventsClient extends sdk.arch.svm.SvmCpiEventsClient {}
+
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
 export const { isEVMSpokePoolClient, isSVMSpokePoolClient } = sdk.clients;
