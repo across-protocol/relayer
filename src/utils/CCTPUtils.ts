@@ -427,7 +427,6 @@ async function _generateCCTPV2AttestationProof(
   // Only leave v2 attestations in the response
   const filteredMessages = httpResponse.data.messages.filter((message) => message.cctpVersion === 2);
   return {
-    ...httpResponse.data,
     messages: filteredMessages,
   };
 }
