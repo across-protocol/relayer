@@ -1,5 +1,5 @@
 import { utils } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
@@ -17,8 +17,11 @@ import {
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
+import { getAnchorProgram } from "./AnchorUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
+
+import { BN } from "@coral-xyz/anchor";
 
 type CCTPDeposit = {
   nonceHash: string;
@@ -249,7 +252,7 @@ async function getCCTPDepositEventsWithStatus(
         };
       }
       const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(deposit.nonceHash)
+        ? await _hasCCTPMessageBeenProcessedSvm(0, 0)
         : await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
@@ -376,12 +379,25 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
 }
 
 // A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
-async function _hasCCTPMessageBeenProcessedSvm(nonceHash: string): Promise<boolean> {
-  // const provider = getSvmProvider();
-  // const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  // @todo
-  const messageProcessedResult = await Promise.resolve(1);
-  return messageProcessedResult === 1;
+async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
+  // Specifically retrieve the Solana MessageTransmitter contract.
+  const program = getAnchorProgram(MessageTransmitterIdl);
+  const noncePda = await program.methods
+    .getNoncePda({
+      nonce: new BN(nonce),
+      sourceDomain,
+    })
+    .accounts({
+      messageTransmitter: MessageTransmitterIdl.address,
+    })
+    .view();
+  const nonceUsed = await program.methods
+    .isNonceUsed(1)
+    .accounts({
+      usedNonces: noncePda,
+    })
+    .view();
+  return nonceUsed;
 }
 
 async function _getCCTPDepositEventsSvm(
@@ -394,6 +410,7 @@ async function _getCCTPDepositEventsSvm(
   // Get the `DepositForBurn` events on Solana.
   const provider = getSvmProvider();
   const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
     "DepositForBurn",
