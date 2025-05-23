@@ -12,8 +12,41 @@ import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
 
-// common header between v1 and v2 that is actually used in upstream finalizers
-type MinimalCCTPHeader = {};
+// common header between v1 and v2 that is actually used in upstream finalizers.
+// Source https://developers.circle.com/stablecoins/message-format
+type MinimalCCTPHeader = {
+  version: number;
+  sourceDomain: number;
+  destinationDomain: number;
+  sender: string;
+  recipient: string;
+  messageBody: string;
+};
+
+// common data between v1 and v2 BurnMessage data
+// Source https://developers.circle.com/stablecoins/message-format
+type AuxiliaryBurnMessageData = {
+  amount: string;
+  mintRecipient: string;
+};
+
+type CCTPRawMessageData = MinimalCCTPHeader;
+type CCTPBurnMessageData = MinimalCCTPHeader & AuxiliaryBurnMessageData;
+
+type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log };
+type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log };
+
+type AuxiliaryCCTPData = {
+  nonceHash: string;
+  messageBodyHash: string;
+};
+
+type CCTPRawMessage = CCTPRawMessageEvent & AuxiliaryCCTPData;
+type CCTPBurnMessage = CCTPBurnMessageEvent & AuxiliaryCCTPData;
+type CCTPMessage = CCTPRawMessage | CCTPBurnMessage;
+
+type AttestedCCTPMessage = CCTPMessage & { status: CCTPMessageStatus; attestation?: string };
+type AttestedCCTPBurnMessage = CCTPBurnMessage & { status: CCTPMessageStatus; attestation?: string };
 
 type CCTPDeposit = {
   nonceHash: string;
