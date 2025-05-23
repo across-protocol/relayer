@@ -424,5 +424,10 @@ async function _generateCCTPV2AttestationProof(
       isMainnet ? "" : "-sandbox"
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
-  return httpResponse.data;
+  // Only leave v2 attestations in the response
+  const filteredMessages = httpResponse.data.messages.filter((message) => message.cctpVersion === 2);
+  return {
+    ...httpResponse.data,
+    messages: filteredMessages,
+  };
 }
