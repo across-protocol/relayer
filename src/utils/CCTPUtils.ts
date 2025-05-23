@@ -12,6 +12,9 @@ import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
 
+// common header between v1 and v2 that is actually used in upstream finalizers
+type MinimalCCTPHeader = {};
+
 type CCTPDeposit = {
   nonceHash: string;
   amount: string;
@@ -471,51 +474,6 @@ export async function getCCTPDepositEvents(
   });
 
   return decodedMessages;
-}
-
-async function getCCTPDepositEventsWithStatus(
-  senderAddresses: string[],
-  sourceChainId: number,
-  destinationChainId: number,
-  l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const deposits = await getCCTPDepositEvents(
-    senderAddresses,
-    sourceChainId,
-    destinationChainId,
-    l2ChainId,
-    sourceEventSearchConfig
-  );
-  const dstProvider = getCachedProvider(destinationChainId);
-  const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
-  return await Promise.all(
-    deposits.map(async (deposit) => {
-      // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
-      // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
-      // query the Attestation API service.
-      if (isCctpV2) {
-        return {
-          ...deposit,
-          status: "pending",
-        };
-      }
-      const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, destinationMessageTransmitter);
-      if (!processed) {
-        return {
-          ...deposit,
-          status: "pending", // We'll flip to ready once we get the attestation.
-        };
-      } else {
-        return {
-          ...deposit,
-          status: "finalized",
-        };
-      }
-    })
-  );
 }
 
 /**

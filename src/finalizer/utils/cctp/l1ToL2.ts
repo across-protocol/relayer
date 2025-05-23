@@ -15,11 +15,10 @@ import {
   isEVMSpokePoolClient,
 } from "../../../utils";
 import {
-  AttestedCCTPEvent,
+  AttestedCCTPDepositEvent,
   CCTPMessageStatus,
   getAttestationsForCCTPDepositEvents,
   getCctpMessageTransmitter,
-  isDepositEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -37,6 +36,8 @@ export async function cctpL1toL2Finalizer(
     to: l1SpokePoolClient.latestHeightSearched,
     maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
+
+  // TODO: here, we should get all CCTP events, not only deposit ones. This is here for backwards compatibility
   const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
     senderAddresses,
     hubPoolClient.chainId,
@@ -45,10 +46,7 @@ export async function cctpL1toL2Finalizer(
     searchConfig
   );
 
-  // Filter to only deposit events (should already be filtered by getAttestationsForCCTPDepositEvents, but be safe)
-  const depositEvents = outstandingDeposits.filter(isDepositEvent);
-
-  const unprocessedMessages = depositEvents.filter(
+  const unprocessedMessages = outstandingDeposits.filter(
     (message) => message.status === "ready" && message.attestation !== "PENDING"
   );
   const statusesGrouped = groupObjectCountsByProp(
@@ -82,7 +80,7 @@ export async function cctpL1toL2Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
@@ -107,22 +105,15 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP deposit messages.
  */
 async function generateDepositData(
-  messages: AttestedCCTPEvent[],
+  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
-  return messages.map((message) => {
-    // At this point we know these are deposit events because we filtered earlier
-    if (!isDepositEvent(message)) {
-      throw new Error("Expected deposit event but received message event");
-    }
-
-    return {
-      l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-      amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
-      type: "deposit",
-      originationChainId,
-      destinationChainId,
-    };
-  });
+  return messages.map((message) => ({
+    l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
+    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
+    type: "deposit",
+    originationChainId,
+    destinationChainId,
+  }));
 }
