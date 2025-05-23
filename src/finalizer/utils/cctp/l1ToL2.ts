@@ -15,9 +15,9 @@ import {
   isEVMSpokePoolClient,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPBurnMessage,
   CCTPMessageStatus,
-  getAttestationsForCCTPDepositEvents,
+  getAttestationsForCCTPDepositEvents as getAttestedCCTPBurnMessages,
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
@@ -38,7 +38,7 @@ export async function cctpL1toL2Finalizer(
   };
 
   // TODO: here, we should get all CCTP events, not only deposit ones. This is here for backwards compatibility
-  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
+  const outstandingDeposits = await getAttestedCCTPBurnMessages(
     senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
@@ -80,7 +80,7 @@ export async function cctpL1toL2Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPBurnMessage, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
@@ -105,7 +105,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP deposit messages.
  */
 async function generateDepositData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: Pick<AttestedCCTPBurnMessage, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {

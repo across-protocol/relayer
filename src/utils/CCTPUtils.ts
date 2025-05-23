@@ -14,7 +14,7 @@ import { Log } from "../interfaces";
 
 // common message data between v1 and v2 that is actually used in upstream finalizers that can be decoded from `SentMessage` event.
 // Source https://developers.circle.com/stablecoins/message-format
-type CommonCCTPMessageData = {
+type CommonMessageData = {
   version: number; // CCTP message version (0 for V1, 1 for V2 from header)
   sourceDomain: number;
   destinationDomain: number;
@@ -37,20 +37,20 @@ type AuxiliaryBurnMessageData = {
   messageSender: string; // Original user/contract that initiated the burn (from burn message body)
 };
 
-type CCTPRawMessageData = CommonCCTPMessageData;
-type CCTPBurnMessageData = CommonCCTPMessageData & AuxiliaryBurnMessageData;
+type RawMessageData = CommonMessageData;
+type BurnMessageData = CommonMessageData & AuxiliaryBurnMessageData;
 
-type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log }; // For generic CCTP messages
-type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log }; // For CCTP messages that include a burn/mint operation
+type RawMessageEvent = RawMessageData & { log: Log }; // For generic CCTP messages
+type BurnMessageEvent = BurnMessageData & { log: Log }; // For CCTP messages that include a burn/mint operation
 
-type CCTPMessage = CCTPRawMessageEvent | CCTPBurnMessageEvent;
+type MessageEvent = RawMessageEvent | BurnMessageEvent;
 
-export function isBurnMessageEvent(message: CCTPMessage): message is CCTPBurnMessageEvent {
-  return (message as CCTPBurnMessageEvent).amount !== undefined;
+export function isBurnMessageEvent(message: MessageEvent): message is BurnMessageEvent {
+  return (message as BurnMessageEvent).amount !== undefined;
 }
 
-type AttestedCCTPMessage = CCTPMessage & { status: CCTPMessageStatus; attestation?: string };
-type AttestedCCTPBurnMessage = CCTPBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPMessage = MessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPBurnMessage = BurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
 
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
@@ -161,7 +161,7 @@ export async function getCCTPEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPMessage[]> {
+): Promise<MessageEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const srcProvider = getCachedProvider(sourceChainId);
 
@@ -194,7 +194,7 @@ export async function getCCTPEvents(
   // Step 3: Get receipts for all transactions
   const receipts = await Promise.all(Array.from(uniqueTxHashes).map((hash) => srcProvider.getTransactionReceipt(hash)));
 
-  const cctpEvents: CCTPMessage[] = [];
+  const cctpEvents: MessageEvent[] = [];
 
   // Step 4: Process each receipt to identify CCTP events
   for (const receipt of receipts) {
@@ -271,7 +271,7 @@ function _processBurnMessageEvent(
   isCctpV2: boolean,
   sourceChainId: number,
   destinationChainId: number
-): CCTPBurnMessageEvent | null {
+): BurnMessageEvent | null {
   try {
     const commonData = isCctpV2
       ? _decodeCommonCCTPMessageV2(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0])
@@ -334,7 +334,7 @@ function _processRawMessageEvent(
   isCctpV2: boolean,
   sourceChainId: number,
   destinationChainId: number
-): CCTPRawMessageEvent | null {
+): RawMessageEvent | null {
   try {
     const commonData = isCctpV2
       ? _decodeCommonCCTPMessageV2(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0])
@@ -481,7 +481,7 @@ export async function getAttestationsForCCTPEvents(
  * @returns Messages with status information added
  */
 async function _addStatusToCCTPMessages(
-  messages: CCTPMessage[],
+  messages: MessageEvent[],
   l2ChainId: number,
   destinationChainId: number
 ): Promise<AttestedCCTPMessage[]> {
@@ -541,7 +541,7 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
  * @param rawMessageDataBytes Hex string of the message data from MessageSent event.
  * @returns CommonCCTPMessageData object.
  */
-function _decodeCommonCCTPMessageV1(rawMessageDataBytes: string): CommonCCTPMessageData {
+function _decodeCommonCCTPMessageV1(rawMessageDataBytes: string): CommonMessageData {
   const messageBytesArray = ethers.utils.arrayify(rawMessageDataBytes);
 
   // CCTP V1 Header (116 bytes total)
@@ -576,7 +576,7 @@ function _decodeCommonCCTPMessageV1(rawMessageDataBytes: string): CommonCCTPMess
  * @param rawMessageDataBytes Hex string of the message data from MessageSent event.
  * @returns CommonCCTPMessageData object.
  */
-function _decodeCommonCCTPMessageV2(rawMessageDataBytes: string): CommonCCTPMessageData {
+function _decodeCommonCCTPMessageV2(rawMessageDataBytes: string): CommonMessageData {
   const messageBytesArray = ethers.utils.arrayify(rawMessageDataBytes);
 
   // CCTP V2 Header (140 bytes total)
