@@ -15,66 +15,42 @@ import { Log } from "../interfaces";
 // common message data between v1 and v2 that is actually used in upstream finalizers that can be decoded from `SentMessage` event.
 // Source https://developers.circle.com/stablecoins/message-format
 type CommonCCTPMessageData = {
-  version: number;
+  version: number; // CCTP message version (0 for V1, 1 for V2 from header)
   sourceDomain: number;
   destinationDomain: number;
-  sender: string;
-  recipient: string;
-  messageBody: string;
+  sender: string; // CCTP message sender (from header)
+  recipient: string; // CCTP message recipient (from header)
+  messageBody: string; // Raw message body hex string
 
   messageHash: string; // keccak of `messageBytes`
   messageBytes: string; // bytes emitted with `SentMessage` event. Marshalled version of all the data above and maybe more
   // For V1, const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
-  // For V2, we don't know how to derive and will get from API
+  // For V2, this will be the eventNonce from Circle API, initially might be zero.
   nonceHash: string;
 };
 
-// common data between v1 and v2 BurnMessage data
+// common data between v1 and v2 BurnMessage data, parsed from messageBody
 // Source https://developers.circle.com/stablecoins/message-format
 type AuxiliaryBurnMessageData = {
   amount: string;
-  mintRecipient: string;
+  mintRecipient: string; // User's address on destination chain
+  messageSender: string; // Original user/contract that initiated the burn (from burn message body)
 };
 
 type CCTPRawMessageData = CommonCCTPMessageData;
 type CCTPBurnMessageData = CommonCCTPMessageData & AuxiliaryBurnMessageData;
 
-type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log };
-type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log };
+type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log }; // For generic CCTP messages
+type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log }; // For CCTP messages that include a burn/mint operation
 
 type CCTPMessage = CCTPRawMessageEvent | CCTPBurnMessageEvent;
 
+export function isBurnMessageEvent(message: CCTPMessage): message is CCTPBurnMessageEvent {
+  return (message as CCTPBurnMessageEvent).amount !== undefined;
+}
+
 type AttestedCCTPMessage = CCTPMessage & { status: CCTPMessageStatus; attestation?: string };
 type AttestedCCTPBurnMessage = CCTPBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
-
-type CCTPDeposit = {
-  nonceHash: string;
-  amount: string;
-  sourceDomain: number;
-  destinationDomain: number;
-  sender: string;
-  recipient: string;
-  messageHash: string; // keccak of `messageBytes`
-  messageBytes: string;
-};
-export type CCTPDepositEvent = CCTPDeposit & { log: Log };
-
-// TODO: adjust this mb.
-type CCTPMessageSent = {
-  nonceHash: string;
-  sourceDomain: number;
-  destinationDomain: number;
-  sender: string;
-  recipient: string;
-  messageHash: string; // keccak of `messageBytes`
-  messageBytes: string;
-};
-// TODO: Not sure we need this type, idk
-type CCTPMessageSentEvent = CCTPMessageSent & { log: Log };
-type CCTPEvent = CCTPDepositEvent | CCTPMessageSentEvent;
-export function isDepositEvent(event: CCTPEvent): event is CCTPDepositEvent {
-  return "amount" in event;
-}
 
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
@@ -91,8 +67,6 @@ function isCctpV2ApiResponse(
   return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export type AttestedCCTPEvent = CCTPEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
-export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
@@ -187,7 +161,7 @@ export async function getCCTPEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPEvent[]> {
+): Promise<CCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const srcProvider = getCachedProvider(sourceChainId);
 
@@ -220,7 +194,7 @@ export async function getCCTPEvents(
   // Step 3: Get receipts for all transactions
   const receipts = await Promise.all(Array.from(uniqueTxHashes).map((hash) => srcProvider.getTransactionReceipt(hash)));
 
-  const cctpEvents: CCTPEvent[] = [];
+  const cctpEvents: CCTPMessage[] = [];
 
   // Step 4: Process each receipt to identify CCTP events
   for (const receipt of receipts) {
@@ -236,21 +210,21 @@ export async function getCCTPEvents(
 
       if (depositForBurnEvent) {
         // This is a token deposit event - process like existing DepositForBurn events
-        const depositEvent = _processDepositEvent(
+        const burnMessage = _processBurnMessageEvent(
           messageSentEvent,
           depositForBurnEvent,
           isCctpV2,
           sourceChainId,
           destinationChainId
         );
-        if (depositEvent) {
-          cctpEvents.push(depositEvent);
+        if (burnMessage) {
+          cctpEvents.push(burnMessage);
         }
       } else {
         // This is a pure message event
-        const messageEvent = _processMessageEvent(messageSentEvent, isCctpV2, sourceChainId, destinationChainId);
-        if (messageEvent) {
-          cctpEvents.push(messageEvent);
+        const rawMessage = _processRawMessageEvent(messageSentEvent, isCctpV2, sourceChainId, destinationChainId);
+        if (rawMessage) {
+          cctpEvents.push(rawMessage);
         }
       }
     }
@@ -289,26 +263,21 @@ function _isDepositForBurnEvent(log: ethers.providers.Log, isCctpV2: boolean, ch
  * @param isCctpV2 Whether this is CCTP V2
  * @param sourceChainId Source chain ID
  * @param destinationChainId Destination chain ID
- * @returns CCTPDepositEvent or null if invalid
+ * @returns CCTPBurnMessageEvent or null if invalid
  */
-function _processDepositEvent(
+function _processBurnMessageEvent(
   messageSentEvent: ethers.providers.Log,
   depositForBurnEvent: ethers.providers.Log,
   isCctpV2: boolean,
   sourceChainId: number,
   destinationChainId: number
-): CCTPDepositEvent | null {
+): CCTPBurnMessageEvent | null {
   try {
-    const {
-      sender: decodedSender,
-      nonceHash,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
-    } = isCctpV2 ? _decodeCCTPV2Message(messageSentEvent) : _decodeCCTPV1Message(messageSentEvent);
+    const commonData = isCctpV2
+      ? _decodeCommonCCTPMessageV2(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0])
+      : _decodeCommonCCTPMessageV1(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0]);
+
+    const auxData = _decodeAuxiliaryBurnMessageData(commonData.messageBody, isCctpV2);
 
     const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpTokenMessenger(
       isCctpV2 ? CHAIN_IDs.LINEA : sourceChainId,
@@ -329,27 +298,25 @@ function _processDepositEvent(
     };
 
     if (
-      !compareAddressesSimple(decodedSender, parsedDepositForBurnLog.args.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(parsedDepositForBurnLog.args.mintRecipient)) ||
-      !BigNumber.from(decodedAmount).eq(parsedDepositForBurnLog.args.amount) ||
-      decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
-      decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
+      !compareAddressesSimple(auxData.messageSender, parsedDepositForBurnLog.args.depositor) ||
+      !compareAddressesSimple(
+        auxData.mintRecipient,
+        cctpBytes32ToAddress(parsedDepositForBurnLog.args.mintRecipient)
+      ) ||
+      !BigNumber.from(auxData.amount).eq(parsedDepositForBurnLog.args.amount) ||
+      commonData.sourceDomain !== getCctpDomainForChainId(sourceChainId) ||
+      commonData.destinationDomain !== getCctpDomainForChainId(destinationChainId)
     ) {
       return null;
     }
 
     return {
-      nonceHash,
-      sender: decodedSender,
-      recipient: decodedRecipient,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      messageHash,
-      messageBytes,
+      ...commonData,
+      ...auxData,
       log: parsedDepositForBurnLog,
     };
   } catch (error) {
+    console.error("Error processing CCTP burn message event:", error);
     return null;
   }
 }
@@ -360,38 +327,29 @@ function _processDepositEvent(
  * @param isCctpV2 Whether this is CCTP V2
  * @param sourceChainId Source chain ID
  * @param destinationChainId Destination chain ID
- * @returns CCTPMessageSentEvent or null if invalid
+ * @returns CCTPRawMessageEvent or null if invalid
  */
-function _processMessageEvent(
+function _processRawMessageEvent(
   messageSentEvent: ethers.providers.Log,
   isCctpV2: boolean,
-  sourceChainId: number, // This is the chain where the MessageSent event originated
+  sourceChainId: number,
   destinationChainId: number
-): CCTPMessageSentEvent | null {
+): CCTPRawMessageEvent | null {
   try {
-    const {
-      sender: decodedSender,
-      nonceHash,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
-    } = isCctpV2 ? _decodeCCTPV2Message(messageSentEvent) : _decodeCCTPV1Message(messageSentEvent);
+    const commonData = isCctpV2
+      ? _decodeCommonCCTPMessageV2(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0])
+      : _decodeCommonCCTPMessageV1(ethers.utils.defaultAbiCoder.decode(["bytes"], messageSentEvent.data)[0]);
 
     if (
-      decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
-      decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
+      commonData.sourceDomain !== getCctpDomainForChainId(sourceChainId) ||
+      commonData.destinationDomain !== getCctpDomainForChainId(destinationChainId)
     ) {
       return null;
     }
 
-    // The MessageTransmitter contract and its ABI (for parsing MessageSent) should correspond to the sourceChainId.
-    // The l2ChainId parameter was used in getCctpMessageTransmitter to decide between V1 and V2 ABI *versions*,
-    // but for MessageSent, the ABI is consistent. The address of the MessageTransmitter is on sourceChainId.
     const { abi: messageTransmitterAbi } = getCctpMessageTransmitter(
-      sourceChainId, // Use sourceChainId to determine which chain's MessageTransmitter we are dealing with
-      sourceChainId // And again for the ABI (though version difference is not an issue for MessageSent ABI itself)
+      isCctpV2 ? CHAIN_IDs.LINEA : sourceChainId,
+      sourceChainId
     );
 
     if (!messageTransmitterAbi) {
@@ -408,109 +366,18 @@ function _processMessageEvent(
     };
 
     return {
-      nonceHash,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      sender: decodedSender,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
+      ...commonData,
       log: parsedMessageSentLog,
     };
   } catch (error) {
+    console.error("Error processing raw CCTP message event:", error);
     return null;
   }
 }
 
-export async function getCCTPDepositEvents(
-  senderAddresses: string[],
-  sourceChainId: number,
-  destinationChainId: number,
-  l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPDepositEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-
-  // Step 1: Get all DepositForBurn events matching the senderAddress and source chain.
-  const srcProvider = getCachedProvider(sourceChainId);
-  const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  const srcTokenMessenger = new Contract(address, abi, srcProvider);
-  const eventFilterParams = isCctpV2
-    ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
-    : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
-  const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
-  const depositForBurnEvents = (
-    await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
-  ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
-
-  // Step 2: Get TransactionReceipt for all these events, which we'll use to find the accompanying MessageSent events.
-  const receipts = await Promise.all(
-    depositForBurnEvents.map((event) => srcProvider.getTransactionReceipt(event.transactionHash))
-  );
-  const messageSentEvents = depositForBurnEvents.map(({ transactionHash: txnHash, logIndex }, i) => {
-    // The MessageSent event should always precede the DepositForBurn event in the same transaction. We should
-    // search from right to left so we find the nearest preceding MessageSent event.
-    const _messageSentEvent = findLast(
-      receipts[i].logs,
-      (l) => l.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH && l.logIndex < logIndex
-    );
-    if (!isDefined(_messageSentEvent)) {
-      throw new Error(
-        `Could not find MessageSent event for DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return _messageSentEvent;
-  });
-
-  // Step 3. Decode the MessageSent events to find the message nonce, which we can use to query the deposit status,
-  // get the attestation, and further filter the events.
-  const decodedMessages = messageSentEvents.map((_messageSentEvent, i) => {
-    const {
-      sender: decodedSender,
-      nonceHash,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
-    } = isCctpV2 ? _decodeCCTPV2Message(_messageSentEvent) : _decodeCCTPV1Message(_messageSentEvent);
-    const _depositEvent = depositForBurnEvents[i];
-
-    // Step 4. [Optional] Verify that decoded message matches the DepositForBurn event. We can skip this step
-    // if we find this reduces performance.
-    if (
-      !compareAddressesSimple(decodedSender, _depositEvent.args.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(_depositEvent.args.mintRecipient)) ||
-      !BigNumber.from(decodedAmount).eq(_depositEvent.args.amount) ||
-      decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
-      decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
-    ) {
-      const { transactionHash: txnHash, logIndex } = _depositEvent;
-      throw new Error(
-        `Decoded message at log index ${_messageSentEvent.logIndex}` +
-          ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return {
-      nonceHash,
-      sender: decodedSender,
-      recipient: decodedRecipient,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      messageHash,
-      messageBytes,
-      log: _depositEvent,
-    };
-  });
-
-  return decodedMessages;
-}
-
 /**
- * @notice Return all CCTP events (both deposit and message events) with their attestations attached.
- * Attestations will be undefined if the attestation "status" is not "ready".
+ * @notice Return all CCTP messages (both burn and raw) with their attestations attached.
+ * Attestations will be undefined if the attestation "status" is not "ready" or "finalized".
  * @param senderAddresses List of sender addresses to filter events
  * @param sourceChainId Chain ID where the events were created.
  * @param destinationChainId Chain ID where the events are being sent to.
@@ -523,10 +390,10 @@ export async function getAttestationsForCCTPEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPEvent[]> {
+): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
-  const allEvents = await getCCTPEvents(
+  const allMessages = await getCCTPEvents(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -534,7 +401,7 @@ export async function getAttestationsForCCTPEvents(
     sourceEventSearchConfig
   );
 
-  const eventsWithStatus = await _addStatusToCCTPEvents(allEvents, l2ChainId, destinationChainId);
+  const messagesWithInitialStatus = await _addStatusToCCTPMessages(allMessages, l2ChainId, destinationChainId);
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
   const txnReceiptHashCount: { [hash: string]: number } = {};
@@ -542,106 +409,112 @@ export async function getAttestationsForCCTPEvents(
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
 
-  const attestedEvents = await Promise.all(
-    eventsWithStatus.map(async (event) => {
+  const attestedMessages = await Promise.all(
+    messagesWithInitialStatus.map(async (message) => {
       // If event is already finalized, we won't change its attestation status:
-      if (event.status === "finalized") {
-        return event;
+      if (message.status === "finalized") {
+        return message;
       }
       // Otherwise, update the event's status after loading its attestation.
-      const { transactionHash } = event.log;
+      const { transactionHash } = message.log;
       const count = (txnReceiptHashCount[transactionHash] ??= 0);
       ++txnReceiptHashCount[transactionHash];
 
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(event.sourceDomain, transactionHash, isMainnet)
-        : await _generateCCTPAttestationProof(event.messageHash, isMainnet);
+        ? await _generateCCTPV2AttestationProof(message.sourceDomain, transactionHash, isMainnet)
+        : await _generateCCTPAttestationProof(message.messageHash, isMainnet);
 
       // For V2 we now have the nonceHash and we can query whether the message has been processed.
       if (isCctpV2ApiResponse(attestation)) {
         const attestationForEvent = attestation.messages[count];
+        // If no specific attestation found for this message in the bundle (e.g. API error or unexpected structure)
+        if (!attestationForEvent) {
+          return {
+            ...message,
+            status: "pending" as CCTPMessageStatus, // Keep status as pending if attestation is missing
+          };
+        }
         const processed = await _hasCCTPMessageBeenProcessed(
           attestationForEvent.eventNonce,
           destinationMessageTransmitter
         );
         if (processed) {
           return {
-            ...event,
+            ...message,
+            nonceHash: attestationForEvent.eventNonce,
             status: "finalized" as CCTPMessageStatus,
           };
         } else {
           return {
-            ...event,
+            ...message,
             // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
             // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
             // because its not needed for V2
             nonceHash: attestationForEvent.eventNonce,
             messageBytes: attestationForEvent.message,
-            attestation: attestationForEvent?.attestation, // Will be undefined if status is "pending"
+            attestation: attestationForEvent?.attestation,
             status: _getPendingV2AttestationStatus(attestationForEvent.status),
           };
         }
       } else {
+        // For V1, check if already processed using existing nonceHash
+        const processed = await _hasCCTPMessageBeenProcessed(message.nonceHash, destinationMessageTransmitter);
+        if (processed) {
+          return { ...message, status: "finalized" as CCTPMessageStatus };
+        }
         return {
-          ...event,
-          attestation: attestation?.attestation, // Will be undefined if status is "pending"
+          ...message,
+          attestation: attestation?.attestation,
           status: _getPendingAttestationStatus(attestation.status),
         };
       }
     })
   );
-  return attestedEvents;
+  return attestedMessages;
 }
 
 /**
- * @notice Adds status information to CCTP events
- * @param events The CCTP events to add status to
- * @param l2ChainId L2 chain ID to determine V1 vs V2
- * @param destinationChainId Destination chain ID
- * @returns Events with status information added
+ * @notice Adds status information to CCTP messages
+ * @param messages The CCTP messages to add status to
+ * @param l2ChainId L2 chain ID to determine V1 vs V2 aspects (e.g. for transmitter contract version)
+ * @param destinationChainId Destination chain ID for contract interactions
+ * @returns Messages with status information added
  */
-async function _addStatusToCCTPEvents(
-  events: CCTPEvent[],
+async function _addStatusToCCTPMessages(
+  messages: CCTPMessage[],
   l2ChainId: number,
   destinationChainId: number
-): Promise<AttestedCCTPEvent[]> {
+): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
 
   return await Promise.all(
-    events.map(async (event) => {
-      // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
-      // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
-      // query the Attestation API service.
+    messages.map(async (message) => {
+      // For V2 messages, the nonceHash from decoding is initially zero.
+      // The actual nonce (eventNonce) comes from the Circle API.
+      // The check for `usedNonces` must use that API-provided nonce.
+      // So, we defer the "finalized" check for V2 until after API call in getAttestationsForCCTPEvents.
+      // The initial status for V2 messages will be 'pending'.
       if (isCctpV2) {
         return {
-          ...event,
+          ...message,
           status: "pending" as CCTPMessageStatus,
         };
       }
 
-      // For deposit events, we already have the nonceHash from decoding
-      // For message events in V1, we need to extract it from the decoded message
-      let nonceHash: string;
-      if (isDepositEvent(event)) {
-        nonceHash = event.nonceHash;
-      } else {
-        // For V1 message events, we need to decode the message to get the nonce
-        const decodedMessage = _decodeCCTPV1Message(event.log);
-        nonceHash = decodedMessage.nonceHash;
-      }
-
-      const processed = await _hasCCTPMessageBeenProcessed(nonceHash, destinationMessageTransmitter);
+      // For V1 messages, message.nonceHash is derived during decoding.
+      // We can check if it's already finalized.
+      const processed = await _hasCCTPMessageBeenProcessed(message.nonceHash, destinationMessageTransmitter);
       if (!processed) {
         return {
-          ...event,
-          status: "pending" as CCTPMessageStatus, // We'll flip to ready once we get the attestation
+          ...message,
+          status: "pending" as CCTPMessageStatus, // We'll update to ready/finalized once we get/check attestation
         };
       } else {
         return {
-          ...event,
+          ...message,
           status: "finalized" as CCTPMessageStatus,
         };
       }
@@ -649,12 +522,12 @@ async function _addStatusToCCTPEvents(
   );
 }
 
-function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
-  return attestation === "pending_confirmation" ? "pending" : "ready";
+function _getPendingV2AttestationStatus(attestationStatusFromApi: string): CCTPMessageStatus {
+  return attestationStatusFromApi === "pending_confirmation" ? "pending" : "ready";
 }
 
-function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
-  return attestation === "pending_confirmations" ? "pending" : "ready";
+function _getPendingAttestationStatus(attestationStatusFromApi: string): CCTPMessageStatus {
+  return attestationStatusFromApi === "pending_confirmations" ? "pending" : "ready";
 }
 
 async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
@@ -663,52 +536,102 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
-function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {
-  // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
-  const messageBytesArray = ethers.utils.arrayify(messageBytes);
-  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
-  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
-  // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
-  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce])); //
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // recipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+/**
+ * @notice Decodes CCTP V1 message header and raw message body.
+ * @param rawMessageDataBytes Hex string of the message data from MessageSent event.
+ * @returns CommonCCTPMessageData object.
+ */
+function _decodeCommonCCTPMessageV1(rawMessageDataBytes: string): CommonCCTPMessageData {
+  const messageBytesArray = ethers.utils.arrayify(rawMessageDataBytes);
+
+  // CCTP V1 Header (116 bytes total)
+  // https://developers.circle.com/stablecoins/message-format (select CCTP V1 for Message Header)
+  const version = Number(ethers.utils.hexlify(messageBytesArray.slice(0, 4))); // uint32, expected to be 0 for CCTP V1 msg
+  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // uint32
+  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // uint32
+  const nonceV1 = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // uint64
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(20, 52))); // bytes32
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(52, 84))); // bytes32
+  // destinationCaller (bytes32) from 84 to 116 is not used in CommonCCTPMessageData
+
+  const messageBody = ethers.utils.hexlify(messageBytesArray.slice(116));
+
+  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonceV1]));
 
   return {
-    nonceHash,
-    amount: BigNumber.from(amount).toString(),
+    version,
     sourceDomain,
     destinationDomain,
     sender,
     recipient,
-    messageHash: ethers.utils.keccak256(messageBytes),
-    messageBytes,
+    messageBody,
+    messageHash: ethers.utils.keccak256(rawMessageDataBytes),
+    messageBytes: rawMessageDataBytes,
+    nonceHash,
   };
 }
 
-function _decodeCCTPV2Message(message: { data: string; transactionHash: string; logIndex: number }): CCTPDeposit {
-  // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
-  const messageBytesArray = ethers.utils.arrayify(messageBytes);
-  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
-  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+/**
+ * @notice Decodes CCTP V2 message header and raw message body.
+ * @param rawMessageDataBytes Hex string of the message data from MessageSent event.
+ * @returns CommonCCTPMessageData object.
+ */
+function _decodeCommonCCTPMessageV2(rawMessageDataBytes: string): CommonCCTPMessageData {
+  const messageBytesArray = ethers.utils.arrayify(rawMessageDataBytes);
+
+  // CCTP V2 Header (140 bytes total)
+  // https://developers.circle.com/stablecoins/message-format (select CCTP V2 for Message Header)
+  const version = Number(ethers.utils.hexlify(messageBytesArray.slice(0, 4))); // uint32, expected to be 1 for CCTP V2 msg
+  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // uint32
+  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // uint32
+  // V2 nonce (bytes32) from 12 to 44. This is the message's unique identifier.
+  // The `nonceHash` field in CommonCCTPMessageData will be populated with the `eventNonce`
+  // from Circle's API response, so we initialize it to zero here.
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(44, 76))); // bytes32
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // bytes32
+  // destinationCaller (bytes32) from 108 to 140 is not used in CommonCCTPMessageData
+
+  const messageBody = ethers.utils.hexlify(messageBytesArray.slice(140));
 
   return {
-    // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
-    // the API service. For now, we cannot compute it here as Circle will not disclose the hashing algorithm.
-    nonceHash: ethers.constants.HashZero,
-    amount: BigNumber.from(amount).toString(),
+    version,
     sourceDomain,
     destinationDomain,
     sender,
     recipient,
-    messageHash: ethers.utils.keccak256(messageBytes),
-    messageBytes,
+    messageBody,
+    messageHash: ethers.utils.keccak256(rawMessageDataBytes),
+    messageBytes: rawMessageDataBytes,
+    nonceHash: ethers.constants.HashZero, // V2 nonceHash (eventNonce) comes from API
+  };
+}
+
+/**
+ * @notice Decodes auxiliary data (amount, mintRecipient, messageSender) from a CCTP BurnMessage body.
+ * @param messageBodyHex Hex string of the CCTP messageBody.
+ * @param _isCctpV2BurnMessageBody This parameter indicates if the burn message body conforms to V2 spec (e.g. for future fields).
+ *                                For current fields (amount, mintRecipient, messageSender), V1 and V2 are similar.
+ * @returns AuxiliaryBurnMessageData object.
+ */
+function _decodeAuxiliaryBurnMessageData(
+  messageBodyHex: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _isCctpV2BurnMessageBody: boolean // Currently unused as relevant fields have same offsets
+): AuxiliaryBurnMessageData {
+  const messageBodyArray = ethers.utils.arrayify(messageBodyHex);
+
+  // BurnMessage format (inside CCTP messageBody)
+  // Common for V1 and V2 regarding these fields:
+  // version (uint32) at offset 0 (4 bytes) - burn message format version
+  // burnToken (bytes32) at offset 4 (32 bytes)
+  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBodyArray.slice(36, 68))); // offset 36, length 32
+  const amount = BigNumber.from(ethers.utils.hexlify(messageBodyArray.slice(68, 100))).toString(); // offset 68, length 32
+  const messageSender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBodyArray.slice(100, 132))); // offset 100, length 32
+
+  return {
+    mintRecipient,
+    amount,
+    messageSender,
   };
 }
 
@@ -765,8 +688,8 @@ export async function getAttestationsForCCTPDepositEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
-  const allEvents = await getAttestationsForCCTPEvents(
+): Promise<AttestedCCTPBurnMessage[]> {
+  const allMessages = await getAttestationsForCCTPEvents(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -774,7 +697,9 @@ export async function getAttestationsForCCTPDepositEvents(
     sourceEventSearchConfig
   );
 
-  // Filter to only return deposit events for backward compatibility.
+  // Filter to only return burn messages (those with amount/mintRecipient) for backward compatibility for this specific function.
   // The explicit type predicate in the lambda helps TypeScript correctly infer the narrowed type.
-  return allEvents.filter((event: AttestedCCTPEvent): event is AttestedCCTPDepositEvent => isDepositEvent(event));
+  return allMessages.filter((message: AttestedCCTPMessage): message is AttestedCCTPBurnMessage =>
+    isBurnMessageEvent(message)
+  );
 }
