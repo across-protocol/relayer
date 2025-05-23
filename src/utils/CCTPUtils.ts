@@ -473,6 +473,51 @@ export async function getCCTPDepositEvents(
   return decodedMessages;
 }
 
+async function getCCTPDepositEventsWithStatus(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<AttestedCCTPDepositEvent[]> {
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const deposits = await getCCTPDepositEvents(
+    senderAddresses,
+    sourceChainId,
+    destinationChainId,
+    l2ChainId,
+    sourceEventSearchConfig
+  );
+  const dstProvider = getCachedProvider(destinationChainId);
+  const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
+  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  return await Promise.all(
+    deposits.map(async (deposit) => {
+      // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
+      // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
+      // query the Attestation API service.
+      if (isCctpV2) {
+        return {
+          ...deposit,
+          status: "pending",
+        };
+      }
+      const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, destinationMessageTransmitter);
+      if (!processed) {
+        return {
+          ...deposit,
+          status: "pending", // We'll flip to ready once we get the attestation.
+        };
+      } else {
+        return {
+          ...deposit,
+          status: "finalized",
+        };
+      }
+    })
+  );
+}
+
 /**
  * @notice Return all CCTP events (both deposit and message events) with their attestations attached.
  * Attestations will be undefined if the attestation "status" is not "ready".
@@ -707,7 +752,11 @@ async function _generateCCTPV2AttestationProof(
       isMainnet ? "" : "-sandbox"
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
-  return httpResponse.data;
+  // Only leave v2 attestations in the response
+  const filteredMessages = httpResponse.data.messages.filter((message) => message.cctpVersion === 2);
+  return {
+    messages: filteredMessages,
+  };
 }
 
 /**

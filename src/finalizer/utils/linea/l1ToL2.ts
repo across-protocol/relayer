@@ -13,6 +13,8 @@ import {
   ethers,
   BigNumber,
   getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
@@ -50,6 +52,7 @@ export async function lineaL1ToL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");

@@ -22,6 +22,8 @@ import {
   formatGwei,
   toBytes32,
   depositForcesOriginChainRepayment,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -710,7 +712,14 @@ export class Relayer {
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
     if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
       const originSpoke = spokePoolClients[originChainId];
-      const { average: avgBlockTime } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
+      let avgBlockTime;
+      if (isEVMSpokePoolClient(originSpoke)) {
+        const { average } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider);
+        avgBlockTime = average;
+      } else if (isSVMSpokePoolClient(originSpoke)) {
+        const { average } = await arch.svm.averageBlockTime();
+        avgBlockTime = average;
+      }
       const depositAge = Math.floor(avgBlockTime * (originSpoke.latestHeightSearched - deposit.blockNumber));
 
       if (minFillTime > depositAge) {
@@ -1029,15 +1038,16 @@ export class Relayer {
     };
 
     this.logger.debug({ at: "Relayer::requestSlowFill", message: "Enqueuing slow fill request.", deposit });
-    multiCallerClient.enqueueTransaction({
-      chainId: destinationChainId,
-      contract: spokePoolClient.spokePool,
-      method: "requestSlowFill",
-      args: [convertRelayDataParamsToBytes32(deposit)],
-      message: "Requested slow fill for deposit.",
-      mrkdwn: formatSlowFillRequestMarkdown(),
-    });
-
+    if (isEVMSpokePoolClient(spokePoolClient)) {
+      multiCallerClient.enqueueTransaction({
+        chainId: destinationChainId,
+        contract: spokePoolClient.spokePool,
+        method: "requestSlowFill",
+        args: [convertRelayDataParamsToBytes32(deposit)],
+        message: "Requested slow fill for deposit.",
+        mrkdwn: formatSlowFillRequestMarkdown(),
+      });
+    }
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
 
@@ -1072,28 +1082,36 @@ export class Relayer {
       realizedLpFeePct,
     });
 
-    const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-      ? ["fillRelay", "", [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)]]
-      : [
-          "fillRelayWithUpdatedDeposit",
-          " with updated parameters ",
-          [
-            convertRelayDataParamsToBytes32(deposit),
-            repaymentChainId,
-            toBytes32(this.relayerAddress),
-            deposit.updatedOutputAmount,
-            toBytes32(deposit.updatedRecipient),
-            deposit.updatedMessage,
-            deposit.speedUpSignature,
-          ],
-        ];
+    const spokePoolClient = spokePoolClients[deposit.destinationChainId];
+    if (isEVMSpokePoolClient(spokePoolClient)) {
+      const [method, messageModifier, args] = !isDepositSpedUp(deposit)
+        ? [
+            "fillRelay",
+            "",
+            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)],
+          ]
+        : [
+            "fillRelayWithUpdatedDeposit",
+            " with updated parameters ",
+            [
+              convertRelayDataParamsToBytes32(deposit),
+              repaymentChainId,
+              toBytes32(this.relayerAddress),
+              deposit.updatedOutputAmount,
+              toBytes32(deposit.updatedRecipient),
+              deposit.updatedMessage,
+              deposit.speedUpSignature,
+            ],
+          ];
 
-    const message = `Filled v3 deposit ${messageModifier}🚀`;
-    const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
-    const contract = spokePoolClients[deposit.destinationChainId].spokePool;
-    const chainId = deposit.destinationChainId;
-    const multiCallerClient = this.getMulticaller(chainId);
-    multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+      const message = `Filled v3 deposit ${messageModifier}🚀`;
+      const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
+
+      const contract = spokePoolClient.spokePool;
+      const chainId = deposit.destinationChainId;
+      const multiCallerClient = this.getMulticaller(chainId);
+      multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+    }
 
     this.setFillStatus(deposit, FillStatus.Filled);
   }

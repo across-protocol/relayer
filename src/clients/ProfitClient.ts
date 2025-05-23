@@ -32,6 +32,9 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   dedupArray,
+  SVMProvider,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -142,10 +145,14 @@ export class ProfitClient {
     ]);
 
     for (const chainId of this.enabledChainIds) {
-      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
-        chainId,
-        spokePoolClients[chainId].spokePool.provider
-      );
+      const spokePoolClient = spokePoolClients[chainId];
+      let provider;
+      if (isEVMSpokePoolClient(spokePoolClient)) {
+        provider = spokePoolClient.spokePool.provider;
+      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+        provider = spokePoolClient.svmEventsClient.getRpc();
+      }
+      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId, provider);
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
@@ -713,7 +720,10 @@ export class ProfitClient {
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
-  private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
+  private constructRelayerFeeQuery(
+    chainId: number,
+    provider: Provider | SVMProvider
+  ): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;

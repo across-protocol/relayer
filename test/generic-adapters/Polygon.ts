@@ -1,6 +1,6 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { PolygonWethBridge, PolygonERC20Bridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import {
@@ -78,10 +78,10 @@ describe("Cross Chain Adapter: Polygon", async function () {
     const deploymentBlock = spokePool.deployTransaction.blockNumber!;
 
     const hubPoolClient = null;
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, POLYGON, deploymentBlock, {
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, POLYGON, deploymentBlock, {
       from: deploymentBlock,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
       from: deploymentBlock,
     });
     searchConfig = { from: deploymentBlock, to: 1_000_000 };

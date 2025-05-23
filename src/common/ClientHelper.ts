@@ -13,8 +13,19 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
+  chainIsEvm,
+  forEachAsync,
+  isEVMSpokePoolClient,
+  getSvmProvider,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
+import {
+  HubPoolClient,
+  MultiCallerClient,
+  ConfigStoreClient,
+  EVMSpokePoolClient,
+  SVMSpokePoolClient,
+  SpokePoolClient,
+} from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { caching, clients, arch } from "@across-protocol/sdk";
@@ -247,14 +258,14 @@ export async function constructSpokePoolClientsWithStartBlocks(
  * @param toBlocks Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
  * @returns Mapping of chainId to SpokePoolClient
  */
-export function getSpokePoolClientsForContract(
+export async function getSpokePoolClientsForContract(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
   toBlocks: { [chainId: number]: number }
-): SpokePoolClientsByChain {
+): Promise<SpokePoolClientsByChain> {
   logger.debug({
     at: "ClientHelper#getSpokePoolClientsForContract",
     message: "Constructing SpokePoolClients",
@@ -263,7 +274,7 @@ export function getSpokePoolClientsForContract(
   });
 
   const spokePoolClients: SpokePoolClientsByChain = {};
-  spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+  await forEachAsync(spokePools, async ({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
       logger.debug({
         at: "ClientHelper#getSpokePoolClientsForContract",
@@ -282,14 +293,25 @@ export function getSpokePoolClientsForContract(
       to: toBlocks[chainId],
       maxLookBack: config.maxBlockLookBack[chainId],
     };
-    spokePoolClients[chainId] = new SpokePoolClient(
-      logger,
-      contract,
-      hubPoolClient,
-      chainId,
-      registrationBlock,
-      spokePoolClientSearchSettings
-    );
+    if (chainIsEvm(chainId)) {
+      spokePoolClients[chainId] = new EVMSpokePoolClient(
+        logger,
+        contract,
+        hubPoolClient,
+        chainId,
+        registrationBlock,
+        spokePoolClientSearchSettings
+      );
+    } else {
+      spokePoolClients[chainId] = await SVMSpokePoolClient.create(
+        logger,
+        hubPoolClient,
+        chainId,
+        BigInt(registrationBlock),
+        spokePoolClientSearchSettings,
+        getSvmProvider()
+      );
+    }
   });
 
   return spokePoolClients;
@@ -374,10 +396,12 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
 } {
   return Object.fromEntries(
     Object.entries(spokePoolClients)
-      .map(([chainId, client]): [number, ethers.providers.Provider] => [
-        Number(chainId),
-        client.spokePool.signer.provider,
-      ])
+      .map(([chainId, client]): [number, ethers.providers.Provider] => {
+        if (isEVMSpokePoolClient(client)) {
+          return [Number(chainId), client.spokePool.signer.provider];
+        }
+        return [Number(chainId), undefined];
+      })
       .filter(([, provider]) => !!provider)
   );
 }

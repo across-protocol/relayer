@@ -1,4 +1,4 @@
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { AdapterManager } from "../../src/clients/bridges";
 import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
@@ -10,6 +10,7 @@ import {
   bnZero,
   getCctpDomainForChainId,
   EvmAddress,
+  ZERO_ADDRESS,
 } from "../../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient } from "../mocks";
 import {
@@ -28,8 +29,9 @@ import {
 
 let hubPoolClient: MockHubPoolClient;
 const mockSpokePoolClients: {
-  [chainId: number]: SpokePoolClient;
+  [chainId: number]: EVMSpokePoolClient;
 } = {};
+let logger;
 let relayer: SignerWithAddress, owner: SignerWithAddress, spyLogger: winston.Logger, amountToSend: BigNumber;
 let adapterManager: AdapterManager;
 
@@ -69,6 +71,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   beforeEach(async function () {
     [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
+    logger = spyLogger;
 
     const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
@@ -418,15 +421,16 @@ async function seedMocks() {
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {
     if (!mockSpokePoolClients[chainId]) {
-      mockSpokePoolClients[chainId] = {} as unknown as SpokePoolClient;
+      mockSpokePoolClients[chainId] = {} as unknown as EVMSpokePoolClient;
     }
-    mockSpokePoolClients[chainId] = {
+    mockSpokePoolClients[chainId] = new EVMSpokePoolClient(
+      logger,
+      { address: ZERO_ADDRESS, provider: ethers.provider, signer: (await ethers.getSigners())[0] } as Contract,
+      undefined,
       chainId,
-      spokePool: {
-        provider: ethers.provider,
-        signer: (await ethers.getSigners())[0],
-      },
-    } as unknown as SpokePoolClient;
+      0,
+      {}
+    );
   }
 }
 

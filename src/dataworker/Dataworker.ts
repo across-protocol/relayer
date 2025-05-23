@@ -20,6 +20,8 @@ import {
   _buildPoolRebalanceRoot,
   ERC20,
   getTokenInfo,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -1254,7 +1256,7 @@ export class Dataworker {
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
-            client.spokePool.address,
+            client.spokePoolAddress.toEvmAddress(),
             amountRequired
           );
 
@@ -1273,7 +1275,7 @@ export class Dataworker {
                 balanceAllocator,
                 destinationChainId,
                 outputToken,
-                client.spokePool.address
+                client.spokePoolAddress.toEvmAddress()
               ),
             });
           }
@@ -1300,6 +1302,7 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
+        assert(isEVMSpokePoolClient(client));
         const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
         this.clients.multiCallerClient.enqueueTransaction({
@@ -1742,7 +1745,7 @@ export class Dataworker {
             balanceAllocator.addUsed(
               leaf.chainId,
               leaf.l1Tokens[i],
-              spokePoolClients[leaf.chainId].spokePool.address,
+              spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
               amount.mul(-1)
             );
           }
@@ -2224,6 +2227,9 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
+          if (!isEVMSpokePoolClient(client)) {
+            throw new Error("Dataworker does not support non-evm chains");
+          }
           const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
           // @dev check if there's been a duplicate leaf execution and if so, then exit early.
           // Since this function is happening near the end of the dataworker run and leaf executions are
@@ -2256,7 +2262,7 @@ export class Dataworker {
             {
               chainId: leaf.chainId,
               tokens: l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
-              holder: client.spokePool.address,
+              holder: client.spokePoolAddress.toEvmAddress(),
               amount: totalSent,
             },
           ];
@@ -2265,7 +2271,7 @@ export class Dataworker {
           // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens
-          if (isDefined(valueToPassViaPayable)) {
+          if (isDefined(valueToPassViaPayable) && isEVMSpokePoolClient(client)) {
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
               tokens: [ZERO_ADDRESS], // ZERO_ADDRESS is used to represent ETH.
@@ -2289,16 +2295,9 @@ export class Dataworker {
                 balanceAllocator,
                 leaf.chainId,
                 leaf.l2TokenAddress,
-                client.spokePool.address
+                client.spokePoolAddress.toEvmAddress()
               ),
               requiredEthValue: valueToPassViaPayable,
-              senderEthValue:
-                valueToPassViaPayable &&
-                (await balanceAllocator.getBalanceSubUsed(
-                  leaf.chainId,
-                  ZERO_ADDRESS,
-                  await client.spokePool.signer.getAddress()
-                )),
             });
           } else {
             // If mainnet leaf, then allocate balance to the HubPool since it will be atomically transferred.
@@ -2324,22 +2323,26 @@ export class Dataworker {
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
-        const valueToPassViaPayable = getMsgValue(leaf);
-        this.clients.multiCallerClient.enqueueTransaction({
-          value: valueToPassViaPayable,
-          contract: client.spokePool,
-          chainId: Number(chainId),
-          method: "executeRelayerRefundLeaf",
-          args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
-          message: "Executed RelayerRefundLeaf 🌿!",
-          mrkdwn,
-          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
-          // SpokePool.multicall() is fine.
-          unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
-          // If simulating mainnet execution, can fail as it may require funds to be sent from
-          // pool rebalance leaf.
-          canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
-        });
+        if (isEVMSpokePoolClient(client)) {
+          const valueToPassViaPayable = getMsgValue(leaf);
+          this.clients.multiCallerClient.enqueueTransaction({
+            value: valueToPassViaPayable,
+            contract: client.spokePool,
+            chainId: Number(chainId),
+            method: "executeRelayerRefundLeaf",
+            args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
+            message: "Executed RelayerRefundLeaf 🌿!",
+            mrkdwn,
+            // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+            // SpokePool.multicall() is fine.
+            unpermissioned: Number(chainId) === this.clients.hubPoolClient.chainId,
+            // If simulating mainnet execution, can fail as it may require funds to be sent from
+            // pool rebalance leaf.
+            canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
+          });
+        } else if (isSVMSpokePoolClient(client)) {
+          throw new Error("Not implemented");
+        }
       } else {
         this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
       }
@@ -2521,7 +2524,10 @@ export class Dataworker {
    */
   _getRequiredEthForLineaRelayLeafExecution(client: SpokePoolClient): Promise<BigNumber> {
     // You should *only* call this method on Linea chains.
-    assert(sdkUtils.chainIsLinea(client.chainId), "This method should only be called on Linea chains!");
+    assert(
+      sdkUtils.chainIsLinea(client.chainId) && isEVMSpokePoolClient(client),
+      "This method should only be called on Linea chains!"
+    );
     // Resolve and sanitize the L2MessageService contract ABI and address.
     const l2MessageABI = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.abi;
     const l2MessageAddress = CONTRACT_ADDRESSES[client.chainId]?.l2MessageService?.address;
