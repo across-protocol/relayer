@@ -1271,12 +1271,8 @@ export class Monitor {
                 await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(account, {
                   blockTag: spokePoolClient.latestHeightSearched,
                 });
-          if (!this.balanceCache[chainId]) {
-            this.balanceCache[chainId] = {};
-          }
-          if (!this.balanceCache[chainId][token]) {
-            this.balanceCache[chainId][token] = {};
-          }
+          this.balanceCache[chainId] ??= {};
+          this.balanceCache[chainId][token] ??= {};
           this.balanceCache[chainId][token][account] = balance;
           return balance;
         }
