@@ -233,7 +233,7 @@ async function getCCTPDepositEventsWithStatus(
       if (!processed) {
         return {
           ...deposit,
-          status: "pending", // We'll flip to ready once we get the attestation
+          status: "pending", // We'll flip to ready once we get the attestation.
         };
       } else {
         return {
