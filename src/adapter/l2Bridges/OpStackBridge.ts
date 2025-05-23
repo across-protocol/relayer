@@ -5,7 +5,6 @@ import {
   Contract,
   createFormatFunction,
   EventSearchConfig,
-  getL1TokenInfo,
   getNetworkName,
   isDefined,
   paginatedEventQuery,
@@ -13,6 +12,7 @@ import {
   Signer,
   toBN,
   EvmAddress,
+  getTokenInfo,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -39,8 +39,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
-    const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
@@ -58,7 +58,7 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
       ],
       nonMulticall: true,
       message: "🎰 Withdrew OpStack ERC20 to L1",
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l1TokenInfo.symbol} ${getNetworkName(this.l2chainId)} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${symbol} ${getNetworkName(this.l2chainId)} to L1`,
     };
     return Promise.resolve([withdrawTxn]);
   }

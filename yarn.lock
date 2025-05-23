@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
   integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
 
-"@across-protocol/constants@^3.1.64":
-  version "3.1.64"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.64.tgz#bff5f7b51ceac55213b3236bbacb97ed80744ae5"
-  integrity sha512-mCQUYf6+/XnZCUdsnAMPqe2kPS12+a7c5bCxr0vNywrU9n/qwAlOLgqG0Bv8LxDu4Q8nxqTBq2Vet4Phh2mI/g==
+"@across-protocol/constants@^3.1.67":
+  version "3.1.67"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.67.tgz#10e37b48792e839a94e4841cd6f31b8980969147"
+  integrity sha512-5XJcHU0I8UksYHCHO394uiAAAKkmlNs49dWBSgD5UZwslo/U7HTiQY6MfO24f/Q8rgSabBsSt9jdquyeba7VxA==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -59,18 +59,20 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.1.56":
-  version "4.1.56"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.1.56.tgz#bcb83f6380d50b1cafcd6b7c9d8330fbc621dea0"
-  integrity sha512-82MOqQe2UZs11bTaBTqKF3Yyzcs6k7EDFUmb5+vcYJMAydo69WFe55OeQPiW5D+L4H3hdscWDhFkTifCDNEfCQ==
+"@across-protocol/sdk@4.2.5":
+  version "4.2.5"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.5.tgz#9d99c9d712cce2e74d2db7feeafd225df0784319"
+  integrity sha512-8/Lb/0bm94HZPUJtng+tmbU6IJr3hFCEtmsB2Tek0KRu6itny+KbaYzzHatUoWZFGjwyzVMxo/u2r/lSDUaPyA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.64"
+    "@across-protocol/constants" "^3.1.67"
     "@across-protocol/contracts" "^4.0.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
+    "@solana-program/system" "^0.7.0"
+    "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.1.0"
     "@solana/web3.js" "^1.31.0"
     "@types/mocha" "^10.0.1"
@@ -2733,6 +2735,16 @@
   version "0.7.1"
   resolved "https://registry.yarnpkg.com/@sinonjs/text-encoding/-/text-encoding-0.7.1.tgz#8da5c6530915653f3a1f38fd5f101d8c3f8079c5"
   integrity sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
+
+"@solana-program/system@^0.7.0":
+  version "0.7.0"
+  resolved "https://registry.yarnpkg.com/@solana-program/system/-/system-0.7.0.tgz#3e21c9fb31d3795eb65ba5cb663947c19b305bad"
+  integrity sha512-FKTBsKHpvHHNc1ATRm7SlC5nF/VdJtOSjldhcyfMN9R7xo712Mo2jHIzvBgn8zQO5Kg0DcWuKB7268Kv1ocicw==
+
+"@solana-program/token-2022@^0.4.0":
+  version "0.4.1"
+  resolved "https://registry.yarnpkg.com/@solana-program/token-2022/-/token-2022-0.4.1.tgz#4060407f68db7dda7cd919d7c867cfd72b172145"
+  integrity sha512-zIjdwUwirmvvF1nb95I/88+76d9HPCmAIcjjM4NpznDFjZpPItpfKIbTyp/uxeVOzi7d5LmvuvXRr373gpdGCg==
 
 "@solana-program/token@^0.5.1":
   version "0.5.1"

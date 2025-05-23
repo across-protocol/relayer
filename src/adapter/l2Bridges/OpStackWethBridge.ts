@@ -5,7 +5,6 @@ import {
   Contract,
   createFormatFunction,
   EventSearchConfig,
-  getL1TokenInfo,
   getNetworkName,
   isDefined,
   paginatedEventQuery,
@@ -13,6 +12,7 @@ import {
   Signer,
   toBN,
   EvmAddress,
+  getTokenInfo,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -41,8 +41,8 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
     const weth = new Contract(l2Token.toAddress(), WETH_ABI, this.l2Signer);
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
-    const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const formatter = createFormatFunction(2, 4, false, decimals);
     const unwrapTxn: AugmentedTransaction = {
       contract: weth,
       chainId: this.l2chainId,
@@ -68,9 +68,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       // to the relayer.
       value: amount,
       message: "🎰 Withdrew OpStack WETH to L1",
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l1TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${symbol} from ${getNetworkName(this.l2chainId)} to L1`,
     };
     return Promise.resolve([unwrapTxn, withdrawTxn]);
   }

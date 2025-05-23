@@ -6,11 +6,18 @@ import { ApiProofRequest, PROOF_OUTPUTS_ABI_TUPLE, ProofOutputs } from "../inter
  * Matches the Rust implementation using RLP encoding and Keccak256.
  */
 export function calculateProofId(request: ApiProofRequest): string {
+  // RLP spec: integer values should be minimal big-endian; zero is empty string
+  const blockNumberHex = BigNumber.from(request.src_chain_block_number).isZero()
+    ? "0x"
+    : BigNumber.from(request.src_chain_block_number).toHexString();
+  const headHex = BigNumber.from(request.dst_chain_contract_from_head).isZero()
+    ? "0x"
+    : BigNumber.from(request.dst_chain_contract_from_head).toHexString();
   const encoded = ethers.utils.RLP.encode([
     request.src_chain_contract_address,
-    request.src_chain_storage_slot,
-    BigNumber.from(request.src_chain_block_number).toHexString(), // Ensure block number is hex encoded for RLP
-    BigNumber.from(request.dst_chain_contract_from_head).toHexString(), // Ensure head is hex encoded for RLP
+    request.src_chain_storage_slots,
+    blockNumberHex,
+    headHex,
     request.dst_chain_contract_from_header,
   ]);
   return ethers.utils.keccak256(encoded);

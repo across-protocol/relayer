@@ -57,7 +57,7 @@ export async function scrapeEvents(
 
   const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
-  const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
+  const searchConfig = { from: fromBlock, to: toBlock, maxLookBack: maxBlockRange };
 
   const mark = profiler.start("paginatedEventQuery");
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);

@@ -16,22 +16,21 @@ import {
   getCurrentTime,
   getRedisCache,
   getBlockForTimestamp,
-  getL1TokenInfo,
   Multicall2Call,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   getProvider,
-  averageBlockTime,
   paginatedEventQuery,
   getNetworkName,
   getL2TokenAddresses,
   getNativeTokenSymbol,
+  getTokenInfo,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 let LATEST_MAINNET_BLOCK: number;
@@ -82,9 +81,9 @@ export async function arbStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   recipientAddresses: string[]
 ): Promise<FinalizerPromise> {
-  LATEST_MAINNET_BLOCK = hubPoolClient.latestBlockSearched;
+  LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
-  MAINNET_BLOCK_TIME = (await averageBlockTime(hubPoolProvider)).average;
+  MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;
   // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
 
   ARB_ORBIT_NETWORK_CONFIGS.forEach((_networkConfig) => {
@@ -114,7 +113,7 @@ export async function arbStackFinalizer(
   logger.debug({
     at: `Finalizer#${networkName}Finalizer`,
     message: `${networkName} TokensBridged event filter`,
-    toBlock: latestBlockToFinalize,
+    to: latestBlockToFinalize,
   });
   const withdrawalEvents: TokensBridged[] = [];
 
@@ -137,7 +136,7 @@ export async function arbStackFinalizer(
     ),
     {
       ...spokePoolClient.eventSearchConfig,
-      toBlock: latestBlockToFinalize,
+      to: latestBlockToFinalize,
     }
   );
   const uniqueGateways = new Set<string>(transferRoutedEvents.map((e) => e.args.gateway));
@@ -157,7 +156,7 @@ export async function arbStackFinalizer(
         ),
         {
           ...spokePoolClient.eventSearchConfig,
-          toBlock: latestBlockToFinalize,
+          to: latestBlockToFinalize,
         }
       );
     })
@@ -170,7 +169,7 @@ export async function arbStackFinalizer(
     ),
     {
       ...spokePoolClient.eventSearchConfig,
-      toBlock: latestBlockToFinalize,
+      to: latestBlockToFinalize,
     }
   );
   const _withdrawalEvents = [
@@ -228,11 +227,11 @@ async function multicallArbitrumFinalizations(
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const l1TokenInfo = getL1TokenInfo(l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(amountToReturn.toString(), l1TokenInfo.decimals);
+    const { symbol, decimals } = getTokenInfo(l2TokenAddress, chainId);
+    const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
-      l1TokenSymbol: l1TokenInfo.symbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
       destinationChainId: hubPoolClient.chainId,

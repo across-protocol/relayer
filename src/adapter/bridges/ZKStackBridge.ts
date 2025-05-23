@@ -13,6 +13,7 @@ import {
   isDefined,
   bnZero,
   ZERO_BYTES,
+  EvmGasPriceEstimate,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -50,7 +51,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     _l1Token: EvmAddress
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
@@ -255,7 +256,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async _txBaseCost(): Promise<BigNumber> {
-    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(this.getL1Bridge().provider!);
+    const l1GasPriceData = (await gasPriceOracle.getGasPriceEstimate(
+      this.getL1Bridge().provider!
+    )) as EvmGasPriceEstimate;
 
     // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying a system contract. In this case,
     // the system contract to query is the bridge hub contract.
