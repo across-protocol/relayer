@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient, TokenDataType } from "../src/clients"; // Tested
+import { ConfigStoreClient, SpokePoolClient, TokenDataType, EVMSpokePoolClient } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 import {
@@ -84,14 +84,14 @@ describe("TokenClient: Balance and Allowance", async function () {
     const l1Tokens = hubPoolClient.getL1Tokens();
     expect(l1Tokens.length).to.equal(2);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,

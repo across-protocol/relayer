@@ -1,6 +1,12 @@
 import { clients, constants, utils as sdkUtils, arch } from "@across-protocol/sdk";
 import hre from "hardhat";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  EVMSpokePoolClient,
+} from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits, getMessageHash } from "../src/utils";
@@ -126,14 +132,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,

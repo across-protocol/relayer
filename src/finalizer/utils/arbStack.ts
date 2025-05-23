@@ -25,6 +25,8 @@ import {
   getL2TokenAddresses,
   getNativeTokenSymbol,
   getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -81,6 +83,7 @@ export async function arbStackFinalizer(
   _l1SpokePoolClient: SpokePoolClient,
   recipientAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;

@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Signer, winston } from "../utils";
+import { Signer, winston, assert, isEVMSpokePoolClient } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import {
   Clients,
@@ -50,7 +50,7 @@ export async function constructMonitorClients(
   );
 
   // Need to update HubPoolClient to get latest tokens.
-  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress.toEvmAddress());
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
@@ -61,7 +61,11 @@ export async function constructMonitorClients(
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
-    spokePoolChains.map((chainId) => [chainId, spokePoolClients[chainId].spokePool.provider])
+    spokePoolChains.map((chainId) => {
+      const spokePoolClient = spokePoolClients[chainId];
+      assert(isEVMSpokePoolClient(spokePoolClient));
+      return [chainId, spokePoolClient.spokePool.provider];
+    })
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
