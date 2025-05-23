@@ -30,6 +30,7 @@ export async function cctpL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
   const searchConfig: EventSearchConfig = {
     from: l1SpokePoolClient.eventSearchConfig.from,
     to: l1SpokePoolClient.latestHeightSearched,
