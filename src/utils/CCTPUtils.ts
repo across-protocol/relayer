@@ -2,6 +2,7 @@ import { utils } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
+import { LogDescription } from "ethers/lib/utils";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
@@ -21,7 +22,7 @@ type CCTPDeposit = {
   messageHash: string; // keccak of `messageBytes`
   messageBytes: string;
 };
-type CCTPDepositEvent = CCTPDeposit & { log: Log };
+export type CCTPDepositEvent = CCTPDeposit & { log: Log };
 
 // TODO: adjust this mb.
 type CCTPMessageSent = {
@@ -56,6 +57,7 @@ function isCctpV2ApiResponse(
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type AttestedCCTPEvent = CCTPEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
@@ -229,36 +231,34 @@ export async function getCCTPEvents(
  * @param chainId The chain ID for contract address lookup
  * @returns True if the log is a DepositForBurn event
  */
-function _isDepositForBurnEvent(log: Log, isCctpV2: boolean, chainId: number): boolean {
-  const { address: tokenMessengerAddress } = getCctpTokenMessenger(isCctpV2 ? CHAIN_IDs.LINEA : chainId, chainId);
+function _isDepositForBurnEvent(log: ethers.providers.Log, isCctpV2: boolean, chainId: number): boolean {
+  const { address: tokenMessengerAddress, abi } = getCctpTokenMessenger(isCctpV2 ? CHAIN_IDs.LINEA : chainId, chainId);
 
-  if (!tokenMessengerAddress || log.address.toLowerCase() !== tokenMessengerAddress.toLowerCase()) {
+  if (!tokenMessengerAddress || !abi || log.address.toLowerCase() !== tokenMessengerAddress.toLowerCase()) {
     return false;
   }
 
-  // DepositForBurn event signature is the same for V1 and V2, just different parameter positions
-  const depositForBurnV1TopicHash = ethers.utils.id(
-    "DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)"
-  );
-  const depositForBurnV2TopicHash = ethers.utils.id(
-    "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
-  );
-
-  return log.topics[0] === (isCctpV2 ? depositForBurnV2TopicHash : depositForBurnV1TopicHash);
+  try {
+    const iface = new ethers.utils.Interface(abi as ReadonlyArray<string | ethers.utils.Fragment>);
+    const parsedLog = iface.parseLog(log);
+    return parsedLog.name === "DepositForBurn";
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
  * @notice Processes a MessageSent event that has an accompanying DepositForBurn event
- * @param messageSentEvent The MessageSent event log
- * @param depositForBurnEvent The DepositForBurn event log
+ * @param messageSentEvent The MessageSent event log (raw Ethers log)
+ * @param depositForBurnEvent The DepositForBurn event log (raw Ethers log)
  * @param isCctpV2 Whether this is CCTP V2
  * @param sourceChainId Source chain ID
  * @param destinationChainId Destination chain ID
  * @returns CCTPDepositEvent or null if invalid
  */
 function _processDepositEvent(
-  messageSentEvent: Log,
-  depositForBurnEvent: Log,
+  messageSentEvent: ethers.providers.Log,
+  depositForBurnEvent: ethers.providers.Log,
   isCctpV2: boolean,
   sourceChainId: number,
   destinationChainId: number
@@ -275,26 +275,32 @@ function _processDepositEvent(
       messageBytes,
     } = isCctpV2 ? _decodeCCTPV2Message(messageSentEvent) : _decodeCCTPV1Message(messageSentEvent);
 
-    // Decode the DepositForBurn event to validate consistency
-    const { address: tokenMessengerAddress, abi } = getCctpTokenMessenger(
+    const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpTokenMessenger(
       isCctpV2 ? CHAIN_IDs.LINEA : sourceChainId,
       sourceChainId
     );
-    const tokenMessenger = new Contract(tokenMessengerAddress, abi);
-    const depositArgs = tokenMessenger.interface.parseLog(depositForBurnEvent).args;
 
-    // Validate that decoded message matches the DepositForBurn event
+    if (!tokenMessengerAddress || !tokenMessengerAbi) {
+      return null;
+    }
+    const tokenMessengerInterface = new ethers.utils.Interface(
+      tokenMessengerAbi as ReadonlyArray<string | ethers.utils.Fragment>
+    );
+    const parsedLogDescription: LogDescription = tokenMessengerInterface.parseLog(depositForBurnEvent);
+    const parsedDepositForBurnLog: Log = {
+      ...depositForBurnEvent,
+      event: parsedLogDescription.name,
+      args: parsedLogDescription.args,
+    };
+
     if (
-      !compareAddressesSimple(decodedSender, depositArgs.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(depositArgs.mintRecipient)) ||
-      !BigNumber.from(decodedAmount).eq(depositArgs.amount) ||
+      !compareAddressesSimple(decodedSender, parsedDepositForBurnLog.args.depositor) ||
+      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(parsedDepositForBurnLog.args.mintRecipient)) ||
+      !BigNumber.from(decodedAmount).eq(parsedDepositForBurnLog.args.amount) ||
       decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
       decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
     ) {
-      throw new Error(
-        `Decoded message at log index ${messageSentEvent.logIndex}` +
-          ` does not match the DepositForBurn event in ${depositForBurnEvent.transactionHash} at log index ${depositForBurnEvent.logIndex}`
-      );
+      return null;
     }
 
     return {
@@ -306,26 +312,25 @@ function _processDepositEvent(
       destinationDomain: decodedDestinationDomain,
       messageHash,
       messageBytes,
-      log: depositForBurnEvent,
+      log: parsedDepositForBurnLog,
     };
   } catch (error) {
-    // Return null to skip invalid events rather than crashing the whole process
     return null;
   }
 }
 
 /**
  * @notice Processes a MessageSent event that does not have an accompanying DepositForBurn event
- * @param messageSentEvent The MessageSent event log
+ * @param messageSentEvent The MessageSent event log (raw Ethers log)
  * @param isCctpV2 Whether this is CCTP V2
  * @param sourceChainId Source chain ID
  * @param destinationChainId Destination chain ID
  * @returns CCTPMessageSentEvent or null if invalid
  */
 function _processMessageEvent(
-  messageSentEvent: Log,
+  messageSentEvent: ethers.providers.Log,
   isCctpV2: boolean,
-  sourceChainId: number,
+  sourceChainId: number, // This is the chain where the MessageSent event originated
   destinationChainId: number
 ): CCTPMessageSentEvent | null {
   try {
@@ -339,13 +344,33 @@ function _processMessageEvent(
       messageBytes,
     } = isCctpV2 ? _decodeCCTPV2Message(messageSentEvent) : _decodeCCTPV1Message(messageSentEvent);
 
-    // Validate domains match expected values
     if (
       decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
       decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
     ) {
       return null;
     }
+
+    // The MessageTransmitter contract and its ABI (for parsing MessageSent) should correspond to the sourceChainId.
+    // The l2ChainId parameter was used in getCctpMessageTransmitter to decide between V1 and V2 ABI *versions*,
+    // but for MessageSent, the ABI is consistent. The address of the MessageTransmitter is on sourceChainId.
+    const { abi: messageTransmitterAbi } = getCctpMessageTransmitter(
+      sourceChainId, // Use sourceChainId to determine which chain's MessageTransmitter we are dealing with
+      sourceChainId // And again for the ABI (though version difference is not an issue for MessageSent ABI itself)
+    );
+
+    if (!messageTransmitterAbi) {
+      return null;
+    }
+    const messageTransmitterInterface = new ethers.utils.Interface(
+      messageTransmitterAbi as ReadonlyArray<string | ethers.utils.Fragment>
+    );
+    const parsedLogDescription: LogDescription = messageTransmitterInterface.parseLog(messageSentEvent);
+    const parsedMessageSentLog: Log = {
+      ...messageSentEvent,
+      event: parsedLogDescription.name,
+      args: parsedLogDescription.args,
+    };
 
     return {
       nonceHash,
@@ -355,10 +380,9 @@ function _processMessageEvent(
       recipient: decodedRecipient,
       messageHash,
       messageBytes,
-      log: messageSentEvent,
+      log: parsedMessageSentLog,
     };
   } catch (error) {
-    // Return null to skip invalid events rather than crashing the whole process
     return null;
   }
 }
@@ -702,7 +726,7 @@ export async function getAttestationsForCCTPDepositEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPEvent[]> {
+): Promise<AttestedCCTPDepositEvent[]> {
   const allEvents = await getAttestationsForCCTPEvents(
     senderAddresses,
     sourceChainId,
@@ -711,6 +735,7 @@ export async function getAttestationsForCCTPDepositEvents(
     sourceEventSearchConfig
   );
 
-  // Filter to only return deposit events for backward compatibility
-  return allEvents.filter(isDepositEvent);
+  // Filter to only return deposit events for backward compatibility.
+  // The explicit type predicate in the lambda helps TypeScript correctly infer the narrowed type.
+  return allEvents.filter((event: AttestedCCTPEvent): event is AttestedCCTPDepositEvent => isDepositEvent(event));
 }
