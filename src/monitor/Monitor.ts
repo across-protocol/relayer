@@ -459,8 +459,17 @@ export class Monitor {
             }
             if (trippedThreshold !== null) {
               const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-              const symbol =
-                token === gasTokenAddressForChain ? getNativeTokenSymbol(chainId) : getTokenInfo(token, chainId).symbol;
+              let symbol;
+              if (gasTokenAddressForChain) {
+                symbol = getNativeTokenSymbol(chainId);
+              } else {
+                const spokePoolClient = this.clients.spokePoolClients[chainId];
+                if (isEVMSpokePoolClient(spokePoolClient)) {
+                  symbol = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).symbol();
+                } else {
+                  symbol = getTokenInfo(token, chainId).symbol;
+                }
+              }
               return {
                 level: trippedThreshold.level,
                 text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
@@ -1292,7 +1301,13 @@ export class Monitor {
         if (this.decimals[chainId]?.[token]) {
           return this.decimals[chainId][token];
         }
-        const { decimals } = getTokenInfo(token, chainId);
+        let decimals: number;
+        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          decimals = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).decimals();
+        } else {
+          decimals = getTokenInfo(token, chainId).decimals;
+        }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};
         }
