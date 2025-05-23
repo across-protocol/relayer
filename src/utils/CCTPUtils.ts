@@ -18,10 +18,27 @@ type CCTPDeposit = {
   destinationDomain: number;
   sender: string;
   recipient: string;
-  messageHash: string;
+  messageHash: string; // keccak of `messageBytes`
   messageBytes: string;
 };
 type CCTPDepositEvent = CCTPDeposit & { log: Log };
+
+// TODO: adjust this mb.
+type CCTPMessageSent = {
+  sourceDomain: number;
+  destinationDomain: number;
+  sender: string;
+  recipient: string;
+  messageHash: string; // keccak of `messageBytes`
+  messageBytes: string;
+};
+// TODO: Not sure we need this type, idk
+type CCTPMessageSentEvent = CCTPMessageSent & { log: Log };
+type CCTPEvent = CCTPDepositEvent | CCTPMessageSentEvent;
+export function isDepositEvent(event: CCTPEvent): event is CCTPDepositEvent {
+  return "amount" in event;
+}
+
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
   status: string;
@@ -37,7 +54,7 @@ function isCctpV2ApiResponse(
   return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPEvent = CCTPEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
@@ -112,6 +129,126 @@ export function getCctpDomainForChainId(chainId: number): number {
     throw new Error(`No CCTP domain found for chainId: ${chainId}`);
   }
   return cctpDomain;
+}
+
+async function getCCTPEvents(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<CCTPEvent> {
+  /*
+  Plan:
+  - Get all HubPool `event MessageRelayed(address target, bytes message);` events (they're emmited whenever we're sending a message to some chain)
+  - Get all HubPool `event TokensRelayed(address l1Token, address l2Token, uint256 amount, address to);` events (they're emmited whenever we're sending tokens to some chain)
+  - Gather all unique tx hashes from those events
+  - For each tx hash, grab a receipt
+  - For every receipt, identify all relevant CCTP events. They can be of either one of two types:
+    1. pure `event MessageSent(bytes message);` => no tokens sent
+    2. `event MessageSent(bytes message);`, followed immediately by a `DepositForBurn` event. Notice, there are two different types of `DepositForBurn` events:
+      2.1 CCTP v1:     ```event DepositForBurn(
+        uint64 indexed nonce,
+        address indexed burnToken,
+        uint256 amount,
+        address indexed depositor,
+        bytes32 mintRecipient,
+        uint32 destinationDomain,
+        bytes32 destinationTokenMessenger,
+        bytes32 destinationCaller
+    );```
+      2.2 CCTP v2:     ```event DepositForBurn(
+        address indexed burnToken,
+        uint256 amount,
+        address indexed depositor,
+        bytes32 mintRecipient,
+        uint32 destinationDomain,
+        bytes32 destinationTokenMessenger,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 indexed minFinalityThreshold,
+        bytes hookData
+    );```
+    Notice also that `MessageSent` contains bytes. They're a marshalled message, also different for v1 vs v2:
+    v1: ```        // serialize message
+        bytes memory _message = Message._formatMessage(
+            version,
+            localDomain,
+            _destinationDomain,
+            _nonce,
+            _sender,
+            _recipient,
+            _destinationCaller,
+            _messageBody
+        );
+
+        // Emit MessageSent event
+        emit MessageSent(_message);
+        ...
+      function _formatMessage(
+        uint32 _msgVersion,
+        uint32 _msgSourceDomain,
+        uint32 _msgDestinationDomain,
+        uint64 _msgNonce,
+        bytes32 _msgSender,
+        bytes32 _msgRecipient,
+        bytes32 _msgDestinationCaller,
+        bytes memory _msgRawBody
+    ) internal pure returns (bytes memory) {
+        return
+            abi.encodePacked(
+                _msgVersion,
+                _msgSourceDomain,
+                _msgDestinationDomain,
+                _msgNonce,
+                _msgSender,
+                _msgRecipient,
+                _msgDestinationCaller,
+                _msgRawBody
+            );
+    }```
+    v2: ```        // serialize message
+        bytes memory _message = MessageV2._formatMessageForRelay(
+            version,
+            localDomain,
+            destinationDomain,
+            _messageSender,
+            recipient,
+            destinationCaller,
+            minFinalityThreshold,
+            messageBody
+        );
+
+        // Emit MessageSent event
+        emit MessageSent(_message);
+        ...
+      function _formatMessageForRelay(
+        uint32 _version,
+        uint32 _sourceDomain,
+        uint32 _destinationDomain,
+        bytes32 _sender,
+        bytes32 _recipient,
+        bytes32 _destinationCaller,
+        uint32 _minFinalityThreshold,
+        bytes calldata _messageBody
+    ) internal pure returns (bytes memory) {
+        return
+            abi.encodePacked(
+                _version,
+                _sourceDomain,
+                _destinationDomain,
+                EMPTY_NONCE,
+                _sender,
+                _recipient,
+                _destinationCaller,
+                _minFinalityThreshold,
+                EMPTY_FINALITY_THRESHOLD_EXECUTED,
+                _messageBody
+            );
+    }```
+  - Once identified, we should follow the exact steps like currently implemented for DepositForBurn events, e.g. ~~ identify nonce and query attestation
+  - Return all AttestedEvents
+  */
 }
 
 async function getCCTPDepositEvents(
@@ -206,7 +343,7 @@ async function getCCTPDepositEventsWithStatus(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
+): Promise<AttestedCCTPEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const deposits = await getCCTPDepositEvents(
     senderAddresses,
@@ -261,7 +398,7 @@ export async function getAttestationsForCCTPDepositEvents(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
+): Promise<AttestedCCTPEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
   const depositsWithStatus = await getCCTPDepositEventsWithStatus(

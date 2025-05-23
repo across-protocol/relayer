@@ -14,7 +14,7 @@ import {
   EventSearchConfig,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPEvent,
   CCTPMessageStatus,
   getAttestationsForCCTPDepositEvents,
   getCctpMessageTransmitter,
@@ -76,7 +76,7 @@ export async function cctpL2toL1Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -101,7 +101,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateWithdrawalData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: Pick<AttestedCCTPEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {

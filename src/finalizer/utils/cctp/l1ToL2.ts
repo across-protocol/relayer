@@ -14,7 +14,7 @@ import {
   convertFromWei,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPEvent,
   CCTPMessageStatus,
   getAttestationsForCCTPDepositEvents,
   getCctpMessageTransmitter,
@@ -75,7 +75,7 @@ export async function cctpL1toL2Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
@@ -100,7 +100,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateDepositData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: Pick<AttestedCCTPEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
