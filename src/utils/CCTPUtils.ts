@@ -24,6 +24,9 @@ type CommonCCTPMessageData = {
 
   messageHash: string; // keccak of `messageBytes`
   messageBytes: string; // bytes emitted with `SentMessage` event. Marshalled version of all the data above and maybe more
+  // For V1, const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
+  // For V2, we don't know how to derive and will get from API
+  nonceHash: string;
 };
 
 // common data between v1 and v2 BurnMessage data
@@ -39,12 +42,10 @@ type CCTPBurnMessageData = CommonCCTPMessageData & AuxiliaryBurnMessageData;
 type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log };
 type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log };
 
-type CCTPRawMessage = CCTPRawMessageEvent & { nonceHash: string };
-type CCTPBurnMessage = CCTPBurnMessageEvent & { nonceHash: string };
-type CCTPMessage = CCTPRawMessage | CCTPBurnMessage;
+type CCTPMessage = CCTPRawMessageEvent | CCTPBurnMessageEvent;
 
 type AttestedCCTPMessage = CCTPMessage & { status: CCTPMessageStatus; attestation?: string };
-type AttestedCCTPBurnMessage = CCTPBurnMessage & { status: CCTPMessageStatus; attestation?: string };
+type AttestedCCTPBurnMessage = CCTPBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
 
 type CCTPDeposit = {
   nonceHash: string;
