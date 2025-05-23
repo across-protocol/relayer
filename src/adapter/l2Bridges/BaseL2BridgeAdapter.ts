@@ -26,4 +26,13 @@ export abstract class BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber>;
+
+  /*
+  TODO:
+  Returning `EvmAddress`es for now, as upstream BaseChainAdapter impl. will only try to do evm-style approvals
+  */
+  // Bridges that require specific approvals should override this method.
+  public requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
+    return [];
+  }
 }
