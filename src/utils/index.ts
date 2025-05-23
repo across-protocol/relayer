@@ -49,6 +49,7 @@ export {
 } from "@across-protocol/contracts";
 
 // Utils specifically for this bot.
+export * from "./AnchorUtils";
 export * from "./SDKUtils";
 export * from "./chains";
 export * from "./fsUtils";

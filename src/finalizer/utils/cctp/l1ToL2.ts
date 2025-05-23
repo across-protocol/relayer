@@ -57,16 +57,23 @@ export async function cctpL1toL2Finalizer(
   });
 
   const { address, abi } = getCctpMessageTransmitter(l2SpokePoolClient.chainId, l2SpokePoolClient.chainId);
-  const l2MessengerContract = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
-
-  return {
-    crossChainMessages: await generateDepositData(
-      unprocessedMessages,
-      hubPoolClient.chainId,
-      l2SpokePoolClient.chainId
-    ),
-    callData: await generateMultiCallData(l2MessengerContract, unprocessedMessages),
-  };
+  if (isEVMSpokePoolClient(l2SpokePoolClient)) {
+    const l2Messenger = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
+    return {
+      crossChainMessages: await generateDepositData(
+        unprocessedMessages,
+        hubPoolClient.chainId,
+        l2SpokePoolClient.chainId
+      ),
+      callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
+    };
+  } else {
+    // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
+    return {
+      crossChainMessages: [],
+      callData: [],
+    };
+  }
 }
 
 /**

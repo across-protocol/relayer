@@ -15,6 +15,7 @@
     "@across-protocol/sdk": "4.2.5",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
+    "@coral-xyz/anchor": "^0.31.1",
     "@defi-wonderland/smock": "^2.3.5",
     "@eth-optimism/sdk": "^3.3.2",
     "@ethersproject/abi": "^5.7.0",
