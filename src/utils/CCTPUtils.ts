@@ -14,13 +14,16 @@ import { Log } from "../interfaces";
 
 // common header between v1 and v2 that is actually used in upstream finalizers.
 // Source https://developers.circle.com/stablecoins/message-format
-type MinimalCCTPHeader = {
+type MinmalCCTPHeaderData = {
   version: number;
   sourceDomain: number;
   destinationDomain: number;
   sender: string;
   recipient: string;
   messageBody: string;
+
+  messageHash: string; // keccak of `messageBytes`
+  messageBytes: string; // bytes emitted with `SentMessage` event. Marshalled version of all the data above and maybe more
 };
 
 // common data between v1 and v2 BurnMessage data
@@ -30,19 +33,14 @@ type AuxiliaryBurnMessageData = {
   mintRecipient: string;
 };
 
-type CCTPRawMessageData = MinimalCCTPHeader;
-type CCTPBurnMessageData = MinimalCCTPHeader & AuxiliaryBurnMessageData;
+type CCTPRawMessageData = MinmalCCTPHeaderData;
+type CCTPBurnMessageData = MinmalCCTPHeaderData & AuxiliaryBurnMessageData;
 
 type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log };
 type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log };
 
-type AuxiliaryCCTPData = {
-  nonceHash: string;
-  messageBodyHash: string;
-};
-
-type CCTPRawMessage = CCTPRawMessageEvent & AuxiliaryCCTPData;
-type CCTPBurnMessage = CCTPBurnMessageEvent & AuxiliaryCCTPData;
+type CCTPRawMessage = CCTPRawMessageEvent & { nonceHash: string };
+type CCTPBurnMessage = CCTPBurnMessageEvent & { nonceHash: string };
 type CCTPMessage = CCTPRawMessage | CCTPBurnMessage;
 
 type AttestedCCTPMessage = CCTPMessage & { status: CCTPMessageStatus; attestation?: string };
