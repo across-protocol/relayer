@@ -12,9 +12,9 @@ import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
 
-// common header between v1 and v2 that is actually used in upstream finalizers.
+// common message data between v1 and v2 that is actually used in upstream finalizers that can be decoded from `SentMessage` event.
 // Source https://developers.circle.com/stablecoins/message-format
-type MinmalCCTPHeaderData = {
+type CommonCCTPMessageData = {
   version: number;
   sourceDomain: number;
   destinationDomain: number;
@@ -33,8 +33,8 @@ type AuxiliaryBurnMessageData = {
   mintRecipient: string;
 };
 
-type CCTPRawMessageData = MinmalCCTPHeaderData;
-type CCTPBurnMessageData = MinmalCCTPHeaderData & AuxiliaryBurnMessageData;
+type CCTPRawMessageData = CommonCCTPMessageData;
+type CCTPBurnMessageData = CommonCCTPMessageData & AuxiliaryBurnMessageData;
 
 type CCTPRawMessageEvent = CCTPRawMessageData & { log: Log };
 type CCTPBurnMessageEvent = CCTPBurnMessageData & { log: Log };
