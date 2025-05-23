@@ -1,5 +1,5 @@
 import { utils } from "@across-protocol/sdk";
-import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
+import { PUBLIC_NETWORKS, CHAIN_IDs, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { LogDescription } from "ethers/lib/utils";
@@ -173,15 +173,12 @@ export async function getCCTPEvents(
 
   const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
 
-  // Get MessageRelayed events (pure messages)
   const messageRelayedFilter = hubPool.filters.MessageRelayed();
   const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
 
-  // Get TokensRelayed events (token transfers)
   const tokensRelayedFilter = hubPool.filters.TokensRelayed();
   const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
 
-  // Step 2: Get unique transaction hashes
   const uniqueTxHashes = new Set([
     ...messageRelayedEvents.map((e) => e.transactionHash),
     ...tokensRelayedEvents.map((e) => e.transactionHash),
@@ -191,38 +188,53 @@ export async function getCCTPEvents(
     return [];
   }
 
-  // Step 3: Get receipts for all transactions
   const receipts = await Promise.all(Array.from(uniqueTxHashes).map((hash) => srcProvider.getTransactionReceipt(hash)));
 
   const cctpEvents: MessageEvent[] = [];
+  const pairedMessageSentIndices = new Set<string>(); // To track MessageSent log indices that are paired
 
   // Step 4: Process each receipt to identify CCTP events
   for (const receipt of receipts) {
-    // Find all MessageSent events in this transaction
-    const messageSentEvents = receipt.logs.filter((log) => log.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH);
+    const allLogsInReceipt = receipt.logs;
 
-    for (const messageSentEvent of messageSentEvents) {
-      // Check if this MessageSent event is followed by a DepositForBurn event in the same transaction
-      const depositForBurnEvent = findLast(
-        receipt.logs,
-        (l) => _isDepositForBurnEvent(l, isCctpV2, sourceChainId) && l.logIndex > messageSentEvent.logIndex
+    // Get all DepositForBurn events in this transaction
+    const depositForBurnEventsInTx = allLogsInReceipt.filter((log) =>
+      _isDepositForBurnEvent(log, isCctpV2, sourceChainId)
+    );
+
+    // Get all MessageSent events in this transaction
+    const messageSentEventsInTx = allLogsInReceipt.filter((log) => log.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH);
+
+    // Pair DepositForBurn events with their preceding MessageSent events
+    for (const dfbEvent of depositForBurnEventsInTx) {
+      // Find the closest preceding MessageSent event in the same transaction
+      // that has not already been paired.
+      const precedingMessageSentEvent = findLast(
+        messageSentEventsInTx,
+        (msEvent) =>
+          msEvent.logIndex < dfbEvent.logIndex &&
+          !pairedMessageSentIndices.has(`${receipt.transactionHash}-${msEvent.logIndex}`)
       );
 
-      if (depositForBurnEvent) {
-        // This is a token deposit event - process like existing DepositForBurn events
+      if (precedingMessageSentEvent) {
         const burnMessage = _processBurnMessageEvent(
-          messageSentEvent,
-          depositForBurnEvent,
+          precedingMessageSentEvent,
+          dfbEvent,
           isCctpV2,
           sourceChainId,
           destinationChainId
         );
         if (burnMessage) {
           cctpEvents.push(burnMessage);
+          pairedMessageSentIndices.add(`${receipt.transactionHash}-${precedingMessageSentEvent.logIndex}`);
         }
-      } else {
-        // This is a pure message event
-        const rawMessage = _processRawMessageEvent(messageSentEvent, isCctpV2, sourceChainId, destinationChainId);
+      }
+    }
+
+    // Process remaining MessageSent events as raw messages
+    for (const msEvent of messageSentEventsInTx) {
+      if (!pairedMessageSentIndices.has(`${receipt.transactionHash}-${msEvent.logIndex}`)) {
+        const rawMessage = _processRawMessageEvent(msEvent, isCctpV2, sourceChainId, destinationChainId);
         if (rawMessage) {
           cctpEvents.push(rawMessage);
         }
@@ -316,7 +328,6 @@ function _processBurnMessageEvent(
       log: parsedDepositForBurnLog,
     };
   } catch (error) {
-    console.error("Error processing CCTP burn message event:", error);
     return null;
   }
 }
@@ -370,7 +381,6 @@ function _processRawMessageEvent(
       log: parsedMessageSentLog,
     };
   } catch (error) {
-    console.error("Error processing raw CCTP message event:", error);
     return null;
   }
 }
