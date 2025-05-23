@@ -127,8 +127,8 @@ describe("Dataworker: Load bundle data", async function () {
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
-        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.DepositWithBlock);
     }
 
@@ -148,8 +148,8 @@ describe("Dataworker: Load bundle data", async function () {
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
         },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.FillWithBlock);
     }
 
@@ -174,8 +174,8 @@ describe("Dataworker: Load bundle data", async function () {
           updatedOutputAmount: updatedOutputAmount,
           fillType,
         },
-        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-        // so that mocked client's latestBlockSearched gets set to the same value.
+        blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+        // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.FillWithBlock);
     }
 
@@ -327,11 +327,9 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
       expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].transactionHash).to.equal(
-        deposit.transactionHash
-      );
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][1].transactionHash).to.equal(dupe1.transactionHash);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][2].transactionHash).to.equal(dupe2.transactionHash);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].txnRef).to.equal(deposit.transactionHash);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][1].txnRef).to.equal(dupe1.transactionHash);
+      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][2].txnRef).to.equal(dupe2.transactionHash);
     });
     it("Filters duplicate deposits out of block range", async function () {
       const deposit = generateV3Deposit({ blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1 });
@@ -549,7 +547,7 @@ describe("Dataworker: Load bundle data", async function () {
         await bundleDataClient.getUpcomingDepositAmount(
           originChainId,
           erc20_1.address,
-          spokePoolClient_1.latestBlockSearched // block higher than the deposit
+          spokePoolClient_1.latestHeightSearched // block higher than the deposit
         )
       ).to.equal(0);
       expect(

@@ -14,9 +14,7 @@ import { processEvent } from "../utils";
 
 export class SnxOptimismBridge extends BaseBridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address),
-    ]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address)]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);

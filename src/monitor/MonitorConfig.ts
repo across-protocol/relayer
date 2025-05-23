@@ -1,6 +1,6 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getNativeTokenAddressForChain, isDefined } from "../utils";
+import { CHAIN_IDs, ethers, getNativeTokenAddressForChain, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -43,6 +43,7 @@ export class MonitorConfig extends CommonConfig {
     account: string;
     token: string;
   }[] = [];
+  readonly additionalL1NonLpTokens: string[] = [];
 
   // TODO: Remove this config once we fully migrate to generic adapters.
   readonly useGenericAdapter: boolean;
@@ -69,6 +70,7 @@ export class MonitorConfig extends CommonConfig {
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
+      MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
     } = env;
 
@@ -92,6 +94,11 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
     this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
+    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
+      if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
+        return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
+      }
+    });
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {

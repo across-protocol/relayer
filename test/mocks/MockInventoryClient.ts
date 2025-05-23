@@ -1,4 +1,4 @@
-import { Deposit, InventoryConfig, L1Token } from "../../src/interfaces";
+import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
 import { BigNumber } from "../../src/utils";
@@ -77,6 +77,24 @@ export class MockInventoryClient extends InventoryClient {
     this.tokenMappings = tokenMapping;
   }
 
+  canTakeDestinationChainRepayment(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId" | "fromLiteChain">
+  ): boolean {
+    if (deposit.fromLiteChain) {
+      return false;
+    }
+    if (this.tokenMappings) {
+      const hasOriginChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.originChainId] === deposit.inputToken
+      );
+      const hasDestinationChainMapping = Object.values(this.tokenMappings).some(
+        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken
+      );
+      return hasOriginChainMapping && hasDestinationChainMapping;
+    }
+    return super.canTakeDestinationChainRepayment(deposit);
+  }
+
   override getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     if (this.tokenMappings) {
       const tokenMapping = Object.values(this.tokenMappings).find((mapping) => mapping[l1Token]);
@@ -87,17 +105,13 @@ export class MockInventoryClient extends InventoryClient {
     return super.getRemoteTokenForL1Token(l1Token, chainId);
   }
 
-  override getL1TokenInfo(l2Token: string, chainId: number): L1Token {
+  override getL1TokenAddress(l2Token: string, chainId: number): string {
     if (this.tokenMappings) {
       const tokenMapping = Object.entries(this.tokenMappings).find(([, mapping]) => mapping[chainId] === l2Token);
       if (tokenMapping) {
-        return {
-          address: tokenMapping[0],
-          symbol: "TEST",
-          decimals: 18,
-        };
+        return tokenMapping[0];
       }
     }
-    return super.getL1TokenInfo(l2Token, chainId);
+    return super.getL1TokenAddress(l2Token, chainId);
   }
 }

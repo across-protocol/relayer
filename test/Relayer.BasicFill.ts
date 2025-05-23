@@ -1,17 +1,9 @@
-import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
+import { clients, constants, utils as sdkUtils, arch } from "@across-protocol/sdk";
 import hre from "hardhat";
 import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import {
-  averageBlockTime,
-  bnZero,
-  bnOne,
-  bnUint256Max,
-  getNetworkName,
-  getAllUnfilledDeposits,
-  getMessageHash,
-} from "../src/utils";
+import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits, getMessageHash } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -120,7 +112,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     configStoreClient = new MockConfigStoreClient(
       spyLogger,
       configStore,
-      { fromBlock: 0 },
+      { from: 0 },
       CONFIG_STORE_VERSION,
       [originChainId, destinationChainId],
       originChainId,
@@ -509,7 +501,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Correctly defers destination chain fills", async function () {
-      const { average: avgBlockTime } = await averageBlockTime(spokePool_2.provider);
+      const { average: avgBlockTime } = await arch.evm.averageBlockTime(spokePool_2.provider);
       const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
       const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
@@ -765,7 +757,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the initial deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit1.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit1.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,
@@ -795,7 +787,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the 2nd deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit2.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit2.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,

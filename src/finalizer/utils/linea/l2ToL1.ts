@@ -7,7 +7,6 @@ import {
   Signer,
   winston,
   convertFromWei,
-  getL1TokenInfo,
   getProvider,
   EventSearchConfig,
   ethers,
@@ -16,6 +15,7 @@ import {
   mapAsync,
   BigNumber,
   TOKEN_SYMBOLS_MAP,
+  getTokenInfo,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -30,7 +30,7 @@ import {
   getL2MessagingBlockAnchoredFromMessageSentEvent,
 } from "./common";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch } from "@across-protocol/sdk";
 import {
   L1ClaimingService,
   SparseMerkleTreeFactory,
@@ -72,9 +72,9 @@ async function getMessageProof(
     l2MessagingBlockAnchoredEvent.transactionHash
   );
   const l2MessageHashesInBlockRange = await getL2MessageHashesInBlockRange(l2Contract, {
-    fromBlock: finalizationInfo.l2MessagingBlocksRange.startingBlock,
-    toBlock: finalizationInfo.l2MessagingBlocksRange.endBlock,
-    maxBlockLookBack: l2SearchConfig.maxBlockLookBack,
+    from: finalizationInfo.l2MessagingBlocksRange.startingBlock,
+    to: finalizationInfo.l2MessagingBlocksRange.endBlock,
+    maxLookBack: l2SearchConfig.maxLookBack,
   });
   const l2Messages = l1ClaimingService.getMessageSiblings(
     messageHash,
@@ -174,14 +174,14 @@ export async function lineaL2ToL1Finalizer(
   // Linea L2->L1 messages are claimable after 6 - 32 hours
   const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 24 * 8, 6);
   const l1SearchConfig = {
-    fromBlock: l1FromBlock,
-    toBlock: l1ToBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+    from: l1FromBlock,
+    to: l1ToBlock,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
   };
   const l2SearchConfig = {
-    fromBlock: l2FromBlock,
-    toBlock: l2ToBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l2ChainId] || 5_000,
+    from: l2FromBlock,
+    to: l2ToBlock,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l2ChainId] || 5_000,
   };
   const l2Provider = await getProvider(l2ChainId);
   const l1Provider = await getProvider(l1ChainId);
@@ -211,7 +211,7 @@ export async function lineaL2ToL1Finalizer(
     );
 
   // Get Linea's MessageSent events for each src event
-  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map((event) => event.transactionHash)));
+  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map(({ txnRef }) => txnRef)));
   const relevantMessages = (
     await Promise.all(uniqueTxHashes.map((txHash) => getMessagesWithStatusByTxHash(txHash)))
   ).flat();
@@ -267,12 +267,12 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,
       destinationChainId: l1ChainId,
-      l1TokenSymbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
     };
@@ -280,12 +280,12 @@ export async function lineaL2ToL1Finalizer(
     return transfer;
   });
 
-  const averageBlockTimeSeconds = await sdkUtils.averageBlockTime(spokePoolClient.spokePool.provider);
+  const averageBlockTimeSeconds = await arch.evm.averageBlockTime(spokePoolClient.spokePool.provider);
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
     message: "Linea L2->L1 message statuses",
     averageBlockTimeSeconds,
-    latestSpokePoolBlock: spokePoolClient.latestBlockSearched,
+    latestSpokePoolBlock: spokePoolClient.latestHeightSearched,
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
@@ -297,7 +297,7 @@ export async function lineaL2ToL1Finalizer(
         txnHash: message.txHash,
         withdrawalBlock,
         maturedHours:
-          (averageBlockTimeSeconds.average * (spokePoolClient.latestBlockSearched - withdrawalBlock)) / 60 / 60,
+          (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
       };
     }),
   });
@@ -307,7 +307,7 @@ export async function lineaL2ToL1Finalizer(
 
 function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokensBridgedEvents: TokensBridged[]) {
   const messagesByTxHash = groupBy(messages, ({ txHash }) => txHash);
-  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ transactionHash }) => transactionHash);
+  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ txnRef }) => txnRef);
 
   const merged: {
     message: MessageWithStatus;

@@ -17,7 +17,7 @@ import {
 import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
+import { caching, clients, arch } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";
 
 export interface Clients {
@@ -219,7 +219,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
 
   // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
   // state to the same "latest" block per chain.
-  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestBlockSearched);
+  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestHeightSearched);
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
@@ -278,9 +278,9 @@ export function getSpokePoolClientsForContract(
       });
     }
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      toBlock: toBlocks[chainId],
-      maxBlockLookBack: config.maxBlockLookBack[chainId],
+      from: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
+      to: toBlocks[chainId],
+      maxLookBack: config.maxBlockLookBack[chainId],
     };
     spokePoolClients[chainId] = new SpokePoolClient(
       logger,
@@ -313,9 +313,9 @@ export async function constructClients(
   const latestMainnetBlock = await hubPoolProvider.getBlockNumber();
 
   const rateModelClientSearchSettings = {
-    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+    from: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
+    to: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
+    maxLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
   const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
@@ -327,11 +327,11 @@ export async function constructClients(
   );
 
   const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
-  const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
+  const { average: avgMainnetBlockTime } = await arch.evm.averageBlockTime(hubPoolProvider);
   const fromBlock = isDefined(hubPoolLookback)
     ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
     : hubPoolDeploymentBlock;
-  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
+  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, from: fromBlock };
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);

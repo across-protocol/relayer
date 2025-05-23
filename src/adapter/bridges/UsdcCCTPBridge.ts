@@ -24,9 +24,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private readonly l1UsdcTokenAddress: EvmAddress;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address),
-    ]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
@@ -87,8 +85,10 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
       : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
-    const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
-      compareAddressesSimple(event.args.mintRecipient, toAddress.toBytes32())
+    const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter(
+      (event) =>
+        compareAddressesSimple(event.args.mintRecipient, toAddress.toBytes32()) &&
+        event.args.destinationDomain === this.l2DestinationDomain
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),

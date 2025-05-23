@@ -20,7 +20,7 @@ import {
   bnZero,
   Signer,
   blockExplorerLink,
-  config,
+  config as dotenvConfig,
   disconnectRedisClients,
   getMultisender,
   getNetworkName,
@@ -32,11 +32,13 @@ import {
   Profiler,
   stringifyThrownValue,
 } from "../utils";
-import { ChainFinalizer, CrossChainMessage } from "./types";
+import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,
+  binanceFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
+  heliosL1toL2Finalizer,
   lineaL1ToL2Finalizer,
   lineaL2ToL1Finalizer,
   opStackFinalizer,
@@ -47,7 +49,7 @@ import {
 import { assert as ssAssert, enums } from "superstruct";
 const { isDefined } = sdkUtils;
 
-config();
+dotenvConfig();
 let logger: winston.Logger;
 
 /**
@@ -120,6 +122,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.BSC]: {
+    finalizeOnL1: [binanceFinalizer],
+    finalizeOnL2: [heliosL1toL2Finalizer],
+  },
   [CHAIN_IDs.SONEIUM]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
@@ -176,15 +182,20 @@ export async function finalize(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
-  configuredChainIds: number[],
-  submitFinalizationTransactions: boolean,
-  finalizationStrategy: FinalizationType
+  config: FinalizerConfig
 ): Promise<void> {
   const hubChainId = hubPoolClient.chainId;
 
+  const {
+    chainsToFinalize: configuredChainIds,
+    finalizationStrategy,
+    sendingTransactionsEnabled: submitFinalizationTransactions,
+  } = config;
+
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizationsToBatch: { txn: Multicall2Call; crossChainMessage?: CrossChainMessage }[] = [];
+  const finalizerResponseTxns: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] =
+    [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   await sdkUtils.mapAsync(configuredChainIds, async (chainId) => {
@@ -258,7 +269,7 @@ export async function finalize(
         );
 
         callData.forEach((txn, idx) => {
-          finalizationsToBatch.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
         });
 
         totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
@@ -307,25 +318,39 @@ export async function finalize(
   // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
 
   // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizationsToBatch, async ({ txn: _txn, crossChainMessage }) => {
-    const txnToSubmit: AugmentedTransaction = {
-      contract: multicall2Lookup[crossChainMessage.destinationChainId],
-      chainId: crossChainMessage.destinationChainId,
-      method: "aggregate",
-      // aggregate() takes an array of tuples: [calldata: bytes, target: address].
-      args: [[_txn]],
-    };
-    const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
+  const finalizations = await sdkUtils.filterAsync(finalizerResponseTxns, async ({ txn: _txn, crossChainMessage }) => {
+    let simErrorReason: string;
+    if (!isAugmentedTransaction(_txn)) {
+      // Multicall transaction simulation flow
+      const txnToSubmit: AugmentedTransaction = {
+        contract: multicall2Lookup[crossChainMessage.destinationChainId],
+        chainId: crossChainMessage.destinationChainId,
+        method: "aggregate",
+        // aggregate() takes an array of tuples: [calldata: bytes, target: address].
+        args: [[_txn]],
+      };
+      const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
 
-    if (succeed) {
-      // Increase running counter of estimated gas cost for batch finalization.
-      // gasLimit should be defined if succeed is True.
-      const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
-      if (updatedGasEstimation.lt(batchGasLimit)) {
-        gasEstimation = updatedGasEstimation;
+      if (succeed) {
+        // Increase running counter of estimated gas cost for batch finalization.
+        // gasLimit should be defined if succeed is True.
+        const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
+        if (updatedGasEstimation.lt(batchGasLimit)) {
+          gasEstimation = updatedGasEstimation;
+          return true;
+        } else {
+          return false;
+        }
+      } else {
+        simErrorReason = reason;
+      }
+    } else {
+      // Individual transaction simulation flow
+      const [{ reason, succeed }] = await txnClient.simulate([_txn]);
+      if (succeed) {
         return true;
       } else {
-        return false;
+        simErrorReason = reason;
       }
     }
 
@@ -340,7 +365,7 @@ export async function finalize(
       // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
       message = "Unknown finalizer simulation failure.";
     }
-    logger.warn({ at: "finalizer", message, reason, txn: _txn });
+    logger.warn({ at: "finalizer", message, simErrorReason, txn: _txn });
     return false;
   });
 
@@ -350,28 +375,44 @@ export async function finalize(
     // unpermissioned (i.e. msg.sender can be anyone). If this is not true for any chain then we'd need to use
     // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
-    let txnHashLookup: Record<number, string[]> = {};
+    let txnRefLookup: Record<number, string[]> = {};
     try {
       const finalizationsByChain = groupBy(
         finalizations,
         ({ crossChainMessage }) => crossChainMessage.destinationChainId
       );
+
+      // @dev Here, we enqueueTransaction individual transactions right away, and we batch all multicalls into `multicallTxns` to enqueue as a single tx right after
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
-        const finalizerTxns = finalizations.map(({ txn }) => txn);
-        const txnToSubmit: AugmentedTransaction = {
-          contract: multicall2Lookup[Number(chainId)],
-          chainId: Number(chainId),
-          method: "aggregate",
-          args: [finalizerTxns],
-          gasLimit: gasEstimation,
-          gasLimitMultiplier: 2,
-          unpermissioned: true,
-          message: `Batch finalized ${finalizerTxns.length} txns`,
-          mrkdwn: `Batch finalized ${finalizerTxns.length} txns`,
-        };
-        multicallerClient.enqueueTransaction(txnToSubmit);
+        const multicallTxns: Multicall2Call[] = [];
+
+        finalizations.forEach(({ txn }) => {
+          if (isAugmentedTransaction(txn)) {
+            // It's an AugmentedTransaction, enqueue directly
+            txn.nonMulticall = true; // cautiously enforce an invariant that should already be present
+            multicallerClient.enqueueTransaction(txn);
+          } else {
+            // It's a Multicall2Call, collect for batching
+            multicallTxns.push(txn);
+          }
+        });
+
+        if (multicallTxns.length > 0) {
+          const txnToSubmit: AugmentedTransaction = {
+            contract: multicall2Lookup[Number(chainId)],
+            chainId: Number(chainId),
+            method: "aggregate",
+            args: [multicallTxns],
+            gasLimit: gasEstimation,
+            gasLimitMultiplier: 2,
+            unpermissioned: true,
+            message: `Batch finalized ${multicallTxns.length} txns`,
+            mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
+          };
+          multicallerClient.enqueueTransaction(txnToSubmit);
+        }
       }
-      txnHashLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
+      txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
     } catch (_error) {
       const error = _error as Error;
       logger.warn({
@@ -406,9 +447,7 @@ export async function finalize(
         at: "Finalizer",
         message: `Submitted ${miscReason} on ${destinationNetwork}`,
         infoLogMessage,
-        transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
-          blockExplorerLink(txnHash, destinationChainId)
-        ),
+        txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
       });
     });
     transfers.forEach(
@@ -418,9 +457,7 @@ export async function finalize(
         logger.info({
           at: "Finalizer",
           message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          transactionHashList: txnHashLookup[destinationChainId]?.map((txnHash) =>
-            blockExplorerLink(txnHash, destinationChainId)
-          ),
+          txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
         });
       }
     );
@@ -442,6 +479,12 @@ export async function constructFinalizerClients(
   const hubPoolLookBack = 3600 * 8;
   const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
   await updateFinalizerClients(commonClients);
+
+  if (config.chainsToFinalize.length === 0) {
+    config.chainsToFinalize = commonClients.configStoreClient.getChainIdIndicesForBlock();
+  }
+
+  config.validate(config.chainsToFinalize, _logger);
 
   // Make sure we have at least one chain to finalize and that we include the mainnet chain if it's not already
   // included. Note, we deep copy so that we don't modify config.chainsToFinalize accidentally.
@@ -477,8 +520,8 @@ async function updateFinalizerClients(clients: Clients) {
 
 export class FinalizerConfig extends DataworkerConfig {
   readonly maxFinalizerLookback: number;
-  readonly chainsToFinalize: number[];
   readonly finalizationStrategy: FinalizationType;
+  public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
     const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
@@ -520,19 +563,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       profiler.mark("loopStartPostSpokePoolUpdates");
 
       if (config.finalizerEnabled) {
-        const availableChains = commonClients.configStoreClient
-          .getChainIdIndicesForBlock()
-          .filter((chainId) => isDefined(spokePoolClients[chainId]));
-
-        await finalize(
-          logger,
-          commonClients.hubSigner,
-          commonClients.hubPoolClient,
-          spokePoolClients,
-          config.chainsToFinalize.length === 0 ? availableChains : config.chainsToFinalize,
-          config.sendingTransactionsEnabled,
-          config.finalizationStrategy
-        );
+        await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }

@@ -138,7 +138,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockSearched;
+      clients.hubPoolClient.latestHeightSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -227,7 +227,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockSearched;
+              clients.hubPoolClient.latestHeightSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -265,9 +265,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
@@ -279,9 +279,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       l2TokenContract,
                       l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args.value.eq(previousNetSendAmount));
@@ -444,8 +444,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
           if (
-            leaf.transactionHash.toLowerCase() ===
-              "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
+            leaf.txnRef.toLowerCase() === "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
             leaf.chainId === CHAIN_IDs.REDSTONE
           ) {
             // Note: This bundle never made it to Redstone due to a configuration error when deploying the Redstone
@@ -477,7 +476,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     logger.debug({
       at: "validateRunningBalances#index",
       message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
-      proposalTxnHash: mostRecentValidatedBundle.transactionHash,
+      proposalTxnHash: mostRecentValidatedBundle.txnRef,
       bundleBlockRanges: JSON.stringify(bundleBlockRanges),
       logs,
     });

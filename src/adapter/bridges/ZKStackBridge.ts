@@ -13,6 +13,7 @@ import {
   isDefined,
   bnZero,
   ZERO_BYTES,
+  EvmGasPriceEstimate,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -50,7 +51,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     _l1Token: EvmAddress
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
@@ -169,6 +170,13 @@ export class ZKStackBridge extends BaseBridgeAdapter {
               compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
           )
           .map((e) => processEvent(e, "amount"));
+      } else if (toAddress.toAddress() === this.hubPool.address) {
+        // If the recipient is not an L2 contract, then we should ignore any events where the sender is the HubPool,
+        // because the only deposits that we care about that send to a contract are from the HubPool, and we're
+        // already tracking that above in the `isL2Contract` case. This case is important because we know the monitor
+        // might set the from and to addresses to the same address, and we don't want to double count Hub->Spoke
+        // transfers.
+        processedEvents = [];
       } else {
         const rawEvents = await paginatedEventQuery(
           this.sharedBridge,
@@ -200,17 +208,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       if (assetId === ZERO_BYTES) {
         throw new Error(`Undefined assetId for L2 token ${l2Token}`);
       }
-      const events = isSpokePool
-        ? await paginatedEventQuery(
-            this.getL2Bridge(),
-            this.getL2Bridge().filters.BridgeMint(this.hubChainId, assetId),
-            eventConfig
-          )
-        : await paginatedEventQuery(
-            this.getL2Bridge(),
-            this.getL2Bridge().filters.BridgeMint(this.hubChainId, assetId),
-            eventConfig
-          );
+      const events = await paginatedEventQuery(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.BridgeMint(this.hubChainId, assetId),
+        eventConfig
+      );
       processedEvents = events
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
         .map((event) => processEvent(event, "amount"));
@@ -254,7 +256,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   }
 
   async _txBaseCost(): Promise<BigNumber> {
-    const l1GasPriceData = await gasPriceOracle.getGasPriceEstimate(this.getL1Bridge().provider!);
+    const l1GasPriceData = (await gasPriceOracle.getGasPriceEstimate(
+      this.getL1Bridge().provider!
+    )) as EvmGasPriceEstimate;
 
     // Similar to the ZkSyncBridge types, we must calculate the l2 gas cost by querying a system contract. In this case,
     // the system contract to query is the bridge hub contract.

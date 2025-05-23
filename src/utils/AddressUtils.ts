@@ -1,5 +1,5 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BigNumber, compareAddressesSimple, ethers, isDefined } from ".";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { BigNumber, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
   // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
@@ -50,32 +50,14 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
 }
 
 /**
- * Resolves a list of token symbols for a list of token addresses and a chain ID.
- * @dev This function is dangerous because multiple token addresses can map to the same token symbol
- * so the output can be unexpected.
- * @param tokenAddresses The token addresses to resolve the symbols for.
- * @param chainId The chain ID to resolve the symbols for.
- * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ * @notice Returns the token address for a given token address on a given chain ID and lets caller specify
+ * whether they want the native or bridged USDC for an L2 chain, if the l1 token is USDC.
+ * @param l1Token L1 token address
+ * @param hubChainId L1 token chain
+ * @param l2ChainId Chain on which the token address is requested
+ * @param isNativeUsdc True if caller wants native USDC on L2, false if caller wants bridged USDC on L2
+ * @returns L2 token address
  */
-export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
-  const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
-  return tokenAddresses
-    .map((tokenAddress) => {
-      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
-        ?.symbol;
-    })
-    .filter(Boolean);
-}
-
-export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
-  const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
-  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
-  if (!targetAddress) {
-    throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
-  }
-  return targetAddress;
-}
-
 export function getTranslatedTokenAddress(
   l1Token: string,
   hubChainId: number,
@@ -86,20 +68,16 @@ export function getTranslatedTokenAddress(
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    const onZora = l2ChainId === CHAIN_IDs.ZORA;
-    return isNativeUsdc
-      ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : "USDC.e"].addresses[l2ChainId];
-  } else if (
-    l2ChainId === CHAIN_IDs.BLAST &&
-    compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
-  ) {
-    return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
+  // Native USDC or not USDC, we can just look up in the token map directly.
+  if (isNativeUsdc || !compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
+    return getRemoteTokenForL1Token(l1Token, l2ChainId, { chainId: hubChainId });
   }
-
-  return getTokenAddress(l1Token, hubChainId, l2ChainId);
+  // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
+  const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
+    ({ symbol, addresses }) =>
+      symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token) && addresses[l2ChainId]
+  );
+  return bridgedUsdcMapping?.addresses[l2ChainId];
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {
