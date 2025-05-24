@@ -11,7 +11,7 @@ import {
   UsdcTokenSplitterBridge,
 } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 
 import { ZERO_ADDRESS } from "../constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger, toBN } from "../utils";
@@ -108,10 +108,10 @@ describe("Cross Chain Adapter: OP Stack", async function () {
 
     spokePoolContract = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.OPTIMISM, 0, {
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.OPTIMISM, 0, {
       from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.MAINNET, 0, {
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.MAINNET, 0, {
       from: 0,
     });
 

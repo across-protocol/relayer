@@ -9,6 +9,7 @@ export const addressAdapters = sdk.addressAggregator.adapters;
 
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
+export const { isEVMSpokePoolClient, isSVMSpokePoolClient } = sdk.clients;
 
 export class Address extends sdk.utils.Address {}
 export class EvmAddress extends sdk.utils.EvmAddress {}

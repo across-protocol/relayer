@@ -13,6 +13,8 @@ import {
   winston,
   convertFromWei,
   getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -46,6 +48,7 @@ export async function scrollFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId, targetAddress] = [
     hubPoolClient.chainId,
     spokePoolClient.chainId,
