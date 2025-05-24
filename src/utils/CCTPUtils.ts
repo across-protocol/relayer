@@ -6,7 +6,7 @@ import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { getCachedProvider } from "./ProviderUtils";
+import { RetryProvider, getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
 import { assert } from ".";
@@ -50,7 +50,6 @@ export function isDepositForBurnEvent(event: CCTPMessageEvent): event is Deposit
 }
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
-// TODO: check these
 const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1 = ethers.utils.id(
   "DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)"
 );
@@ -131,41 +130,62 @@ export function getCctpDomainForChainId(chainId: number): number {
   return cctpDomain;
 }
 
-async function getCCTPMessageEvents(
-  senderAddresses: string[],
-  sourceChainId: number,
-  destinationChainId: number,
+/**
+ * Creates and validates CCTP contract interfaces for TokenMessenger and MessageTransmitter contracts.
+ * Asserts that the event topic hashes match expected values to ensure interface correctness.
+ */
+function getContractInterfaces(
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPMessageEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  // TODO: separate into a function `getContractInterfaces`
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { address: _tokenMessengerAddr, abi: tokenMessengerAbi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { address: _messageTransmitterAddr, abi: messageTransmitterAbi } = getCctpMessageTransmitter(
-    l2ChainId,
-    sourceChainId
-  );
+  sourceChainId: number,
+  isCctpV2: boolean
+): {
+  tokenMessengerInterface: ethers.utils.Interface;
+  messageTransmitterInterface: ethers.utils.Interface;
+} {
+  // Get contract ABIs
+  const { abi: tokenMessengerAbi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  const { abi: messageTransmitterAbi } = getCctpMessageTransmitter(l2ChainId, sourceChainId);
+
+  // Create interfaces
   const tokenMessengerInterface = new ethers.utils.Interface(tokenMessengerAbi);
   const messageTransmitterInterface = new ethers.utils.Interface(messageTransmitterAbi);
 
+  // Validate event topic hashes to ensure interface correctness
   const depositForBurnTopic = tokenMessengerInterface.getEventTopic("DepositForBurn");
+  const expectedDepositForBurnTopic = isCctpV2
+    ? CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2
+    : CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1;
   assert(
-    depositForBurnTopic === (isCctpV2 ? CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 : CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1)
+    depositForBurnTopic === expectedDepositForBurnTopic,
+    `DepositForBurn topic mismatch: expected ${expectedDepositForBurnTopic}, got ${depositForBurnTopic}`
   );
-  const messegeSentTopic = messageTransmitterInterface.getEventTopic("MessageSent");
-  assert(messegeSentTopic === CCTP_MESSAGE_SENT_TOPIC_HASH);
 
-  const srcProvider = getCachedProvider(sourceChainId);
+  const messageSentTopic = messageTransmitterInterface.getEventTopic("MessageSent");
+  assert(
+    messageSentTopic === CCTP_MESSAGE_SENT_TOPIC_HASH,
+    `MessageSent topic mismatch: expected ${CCTP_MESSAGE_SENT_TOPIC_HASH}, got ${messageSentTopic}`
+  );
 
-  // Step 1: Get all HubPool MessageRelayed and TokensRelayed events
+  return {
+    tokenMessengerInterface,
+    messageTransmitterInterface,
+  };
+}
+
+/**
+ * Gets all tx hashes that may be relevant for CCTP finalization: all txs where HubPool was sending money / messages *and*
+ * all tx hashes where `DepositForBurn` events happened
+ */
+async function getRelevantCCTPTxHashes(
+  srcProvider: RetryProvider,
+  sourceChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+) {
   const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
   if (!hubPoolAddress) {
     throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
   }
 
-  // TODO: separate into a function `getRelevantTxHashes`: `const uniqueTxHashes = await getRelevantTxHashes();`
   const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
 
   const messageRelayedFilter = hubPool.filters.MessageRelayed();
@@ -178,6 +198,28 @@ async function getCCTPMessageEvents(
     ...messageRelayedEvents.map((e) => e.transactionHash),
     ...tokensRelayedEvents.map((e) => e.transactionHash),
   ]);
+
+  // TODO: also query some DepositForBurn events to be able to finalize not only HubPool-initiated token deposits
+
+  return uniqueTxHashes;
+}
+
+async function getCCTPMessageEvents(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<CCTPMessageEvent[]> {
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const { tokenMessengerInterface, messageTransmitterInterface } = getContractInterfaces(
+    l2ChainId,
+    sourceChainId,
+    isCctpV2
+  );
+
+  const srcProvider = getCachedProvider(sourceChainId);
+  const uniqueTxHashes = await getRelevantCCTPTxHashes(srcProvider, sourceChainId, sourceEventSearchConfig);
 
   if (uniqueTxHashes.size === 0) {
     return [];
