@@ -179,8 +179,11 @@ function getContractInterfaces(
 async function getRelevantCCTPTxHashes(
   srcProvider: RetryProvider,
   sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  senderAddresses: string[],
   sourceEventSearchConfig: EventSearchConfig
-) {
+): Promise<Set<string>> {
   const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
   if (!hubPoolAddress) {
     throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
@@ -194,16 +197,31 @@ async function getRelevantCCTPTxHashes(
   const tokensRelayedFilter = hubPool.filters.TokensRelayed();
   const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
 
+  // Step 2: Get all DepositForBurn events matching the senderAddress and source chain
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  const srcTokenMessenger = new Contract(address, abi, srcProvider);
+
+  const eventFilterParams = isCctpV2
+    ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
+    : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
+  const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
+  const depositForBurnEvents = (
+    await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
+  ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
+
   const uniqueTxHashes = new Set([
     ...messageRelayedEvents.map((e) => e.transactionHash),
     ...tokensRelayedEvents.map((e) => e.transactionHash),
+    ...depositForBurnEvents.map((e) => e.transactionHash),
   ]);
-
-  // TODO: also query some DepositForBurn events to be able to finalize not only HubPool-initiated token deposits
 
   return uniqueTxHashes;
 }
 
+/**
+ * Gets all CCTP messages that we can finalize: any CCTP token sends + HubPool message sends to SpokePools
+ */
 async function getCCTPMessageEvents(
   senderAddresses: string[],
   sourceChainId: number,
@@ -219,7 +237,14 @@ async function getCCTPMessageEvents(
   );
 
   const srcProvider = getCachedProvider(sourceChainId);
-  const uniqueTxHashes = await getRelevantCCTPTxHashes(srcProvider, sourceChainId, sourceEventSearchConfig);
+  const uniqueTxHashes = await getRelevantCCTPTxHashes(
+    srcProvider,
+    sourceChainId,
+    destinationChainId,
+    l2ChainId,
+    senderAddresses,
+    sourceEventSearchConfig
+  );
 
   if (uniqueTxHashes.size === 0) {
     return [];
