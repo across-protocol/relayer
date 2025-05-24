@@ -1,7 +1,7 @@
 import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
-import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, FillProfit, EVMSpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
 import {
   bnZero,
@@ -154,7 +154,7 @@ describe("ProfitClient: Consider relay profit", () => {
           spokeChainId,
           chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
         );
-        const spokePoolClient = new SpokePoolClient(
+        const spokePoolClient = new EVMSpokePoolClient(
           spyLogger,
           spokePool.connect(owner),
           null,

@@ -3,7 +3,6 @@ import {
   BigNumber,
   EventSearchConfig,
   Signer,
-  Provider,
   getTranslatedTokenAddress,
   assert,
   isDefined,
@@ -34,7 +33,6 @@ export abstract class BaseBridgeAdapter {
     protected l2chainId: number,
     protected hubChainId: number,
     protected l1Signer: Signer,
-    protected l2SignerOrProvider: Signer | Provider,
     public l1Gateways: EvmAddress[]
   ) {}
 

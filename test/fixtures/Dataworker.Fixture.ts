@@ -3,7 +3,6 @@ import {
   deploySpokePoolWithToken,
   enableRoutesOnHubPool,
   Contract,
-  enableRoutes,
   sampleRateModel,
   createSpyLogger,
   winston,
@@ -32,7 +31,6 @@ import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
-import { MockDataworker } from "../mocks/MockDataworker";
 
 export { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 
@@ -48,13 +46,13 @@ async function _constructSpokePoolClientsWithLookback(
   await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
-    return new clients.SpokePoolClient(
+    return new clients.EVMSpokePoolClient(
       spyLogger,
       pool.connect(signer),
       hubPoolClient,
       spokePoolChains[i],
       deploymentBlocks?.[spokePoolChains[i]] ?? 0,
-      lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
+      lookbackForAllChains === undefined ? undefined : { from: latestBlocks[i] - lookbackForAllChains }
     );
   });
 }
@@ -129,11 +127,6 @@ export async function setupDataworker(
     umaEcosystem.timer.address
   );
 
-  // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
-  await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
-  await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
-  await enableRoutes(spokePool_4, [{ originToken: l1Token_1.address, destinationChainId: destinationChainId }]);
-  // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
     { destinationChainId: originChainId, l1Token: l1Token_1, destinationToken: erc20_1 },
     { destinationChainId: destinationChainId, l1Token: l1Token_1, destinationToken: erc20_2 },
@@ -237,7 +230,7 @@ export async function setupDataworker(
     configStoreClient: configStoreClient as unknown as sdkClients.AcrossConfigStoreClient,
     priceClient,
   };
-  const dataworkerInstance = new MockDataworker(
+  const dataworkerInstance = new Dataworker(
     spyLogger,
     {} as DataworkerConfig,
     dataworkerClients,
@@ -245,21 +238,6 @@ export async function setupDataworker(
     maxRefundPerRelayerRefundLeaf,
     maxL1TokensPerPoolRebalanceLeaf
   );
-  dataworkerInstance.setTokenMap(originChainId, erc20_1.address, {
-    address: l1Token_1.address,
-    symbol: "TEST",
-    decimals: 18,
-  });
-  dataworkerInstance.setTokenMap(destinationChainId, erc20_2.address, {
-    address: l1Token_1.address,
-    symbol: "TEST",
-    decimals: 18,
-  });
-  dataworkerInstance.setTokenMap(hubPoolChainId, l1Token_1.address, {
-    address: l1Token_1.address,
-    symbol: "TEST",
-    decimals: 18,
-  });
 
   // Give owner tokens to LP on HubPool with.
   await setupTokensForWallet(spokePool_1, owner, [l1Token_1, l1Token_2], undefined, 100); // Seed owner to LP.

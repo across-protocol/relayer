@@ -1,16 +1,16 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { getCctpDomainForChainId, EvmAddress } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
-  fromBlock: 1,
-  toBlock: 1_000_000,
+  from: 1,
+  to: 1_000_000,
 };
 
 const monitoredEoa = randomAddress();
@@ -54,11 +54,11 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
 
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
-      fromBlock: 0,
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
+      from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
-      fromBlock: 0,
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
+      from: 0,
     });
 
     const l1Signer = l1SpokePoolClient.spokePool.signer;
@@ -95,8 +95,8 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     adapter.setCCTPL2Bridge(l1UsdcAddress, cctpBridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("ERC20", () => {
@@ -156,7 +156,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     it("return simulated success tx if above threshold", async () => {
       const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
-      expect(tx?.hash).to.equal(ZERO_ADDRESS);
+      expect(tx?.hash).to.equal(ZERO_BYTES);
     });
   });
 

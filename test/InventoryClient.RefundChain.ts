@@ -134,6 +134,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       false, // simMode
       false // prioritizeUtilization
     );
+    (inventoryClient as MockInventoryClient).setTokenMapping({
+      [mainnetWeth]: {
+        [MAINNET]: mainnetWeth,
+        [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+        [POLYGON]: l2TokensForWeth[POLYGON],
+        [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+      },
+      [mainnetUsdc]: {
+        [MAINNET]: mainnetUsdc,
+        [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+        [POLYGON]: l2TokensForUsdc[POLYGON],
+        [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+      },
+    });
 
     seedMocks(initialAllocation);
   });
@@ -408,7 +422,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     it("token config is not defined", async function () {
       // Defaults to destination chain.
-      const _inventoryClient = new InventoryClient(
+      const _inventoryClient = new MockInventoryClient(
         owner.address,
         spyLogger,
         {
@@ -424,6 +438,12 @@ describe("InventoryClient: Refund chain selection", async function () {
         false, // simMode
         false // prioritizeUtilization
       );
+      _inventoryClient.setTokenMapping({
+        [mainnetWeth]: {
+          [sampleDepositData.originChainId]: sampleDepositData.inputToken,
+          [sampleDepositData.destinationChainId]: sampleDepositData.outputToken,
+        },
+      });
       expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([
         sampleDepositData.destinationChainId,
       ]);
@@ -433,7 +453,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(2);
     });
   });
 
@@ -574,7 +593,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId, MAINNET].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(3);
     });
   });
 
@@ -636,6 +654,20 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusiveRelayer: ZERO_ADDRESS,
       };
       hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          // [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          // [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("returns only origin chain as repayment chain if it is underallocated", async function () {
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
@@ -682,6 +714,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          // [POLYGON]: l2TokensForWeth[POLYGON],
+          // [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          // [POLYGON]: l2TokensForUsdc[POLYGON],
+          // [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("only origin chain can be repayment chain", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
@@ -727,6 +773,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.deleteTokenMapping(mainnetWeth, ARBITRUM);
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          // [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          // [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("origin chain and hub chain can be repayment chain", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);

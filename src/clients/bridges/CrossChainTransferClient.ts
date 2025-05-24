@@ -91,7 +91,7 @@ export class CrossChainTransferClient {
     const outstandingTransfersPerChain = await Promise.all(
       chainIds.map(async (chainId) => [
         chainId,
-        await this.adapterManager.getOutstandingCrossChainTokenTransferAmount(chainId, l1Tokens),
+        await this.adapterManager.getOutstandingCrossChainTransfers(chainId, l1Tokens),
       ])
     );
     this.outstandingCrossChainTransfers = Object.fromEntries(outstandingTransfersPerChain);

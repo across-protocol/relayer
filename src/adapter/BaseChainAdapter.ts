@@ -9,7 +9,6 @@ import {
   MakeOptional,
   Signer,
   TransactionResponse,
-  ZERO_ADDRESS,
   assert,
   assign,
   createFormatFunction,
@@ -22,7 +21,7 @@ import {
   forEachAsync,
   filterAsync,
   mapAsync,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
@@ -30,10 +29,13 @@ import {
   Address,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
+  stringifyThrownValue,
+  ZERO_BYTES,
+  isEVMSpokePoolClient,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
-import { BaseBridgeAdapter } from "./bridges/BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -42,8 +44,8 @@ export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
 
 export class BaseChainAdapter {
-  protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
-  protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "toBlock">;
+  protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "to">;
+  protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "to">;
   private transactionClient: TransactionClient;
 
   constructor(
@@ -71,29 +73,31 @@ export class BaseChainAdapter {
     this.logger[level]({ at: name, message, ...data });
   }
 
-  protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "toBlock"> {
+  protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "to"> {
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 
   protected getSigner(chainId: number): Signer {
-    return this.spokePoolClients[chainId].spokePool.signer;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    return spokePoolClient.spokePool.signer;
   }
 
   // Note: this must be called after the SpokePoolClients are updated.
   public getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestBlockSearched;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestBlockSearched;
+    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestHeightSearched;
+    const l2LatestBlock = this.spokePoolClients[this.chainId].latestHeightSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
     return {
       l1SearchConfig: {
         ...this.baseL1SearchConfig,
-        toBlock: this.baseL1SearchConfig?.toBlock ?? l1LatestBlock,
+        to: this.baseL1SearchConfig?.to ?? l1LatestBlock,
       },
       l2SearchConfig: {
         ...this.baseL2SearchConfig,
-        toBlock: this.baseL2SearchConfig?.toBlock ?? l2LatestBlock,
+        to: this.baseL2SearchConfig?.to ?? l2LatestBlock,
       },
     };
   }
@@ -190,12 +194,36 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<string[]> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
-    const l1Token = EvmAddress.from(l1TokenInfo.address);
-    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+    const _l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
+    const l1Token = EvmAddress.from(_l1Token);
+    if (!this.isSupportedL2Bridge(l1Token.toAddress())) {
       return [];
     }
-    const txnsToSend = this.l2Bridges[l1TokenInfo.address].constructWithdrawToL1Txns(address, l2Token, l1Token, amount);
+    let txnsToSend: AugmentedTransaction[];
+    try {
+      txnsToSend = await this.l2Bridges[l1Token.toAddress()].constructWithdrawToL1Txns(
+        address,
+        l2Token,
+        l1Token,
+        amount
+      );
+    } catch (e) {
+      this.log(
+        "Failed to constructWithdrawToL1Txns",
+        {
+          toAddress: address,
+          l2Token: l2Token.toAddress(),
+          l1Token: l1Token.toAddress(),
+          amount: amount.toString(),
+          srcChainId: this.chainId,
+          dstChainId: this.hubChainId,
+          error: stringifyThrownValue(e),
+        },
+        "error",
+        "withdrawTokenFromL2"
+      );
+      return [];
+    }
     const multicallerClient = new MultiCallerClient(this.logger);
     txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
     const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
@@ -207,8 +235,8 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.chainId);
-    if (!this.isSupportedL2Bridge(l1TokenInfo.address)) {
+    const l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
@@ -216,14 +244,14 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
     const l1EventSearchConfig: EventSearchConfig = {
-      fromBlock: l1SearchFromBlock,
-      toBlock: this.baseL1SearchConfig.toBlock,
+      from: l1SearchFromBlock,
+      to: this.baseL1SearchConfig.to,
     };
     const l2EventSearchConfig: EventSearchConfig = {
-      fromBlock: l2SearchFromBlock,
-      toBlock: this.baseL2SearchConfig.toBlock,
+      from: l2SearchFromBlock,
+      to: this.baseL2SearchConfig.to,
     };
-    return await this.l2Bridges[l1TokenInfo.address].getL2PendingWithdrawalAmount(
+    return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
       fromAddress,
@@ -240,7 +268,27 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toAddress()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    const { contract, method, args, value } = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    let bridgeTransactionDetails: BridgeTransactionDetails;
+    try {
+      bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+    } catch (e) {
+      this.log(
+        "Failed to construct L1 to L2 transaction",
+        {
+          address: address.toAddress(),
+          l1Token: l1Token.toAddress(),
+          l2Token: l2Token.toAddress(),
+          amount: amount.toString(),
+          srcChainId: this.hubChainId,
+          dstChainId: this.chainId,
+          error: stringifyThrownValue(e),
+        },
+        "error",
+        "sendTokenToTargetChain"
+      );
+      return { hash: ZERO_BYTES } as TransactionResponse;
+    }
+    const { contract, method, args, value } = bridgeTransactionDetails;
     const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
@@ -275,7 +323,7 @@ export class BaseChainAdapter {
     );
     if (simMode) {
       this.log("Simulation result", { succeed }, "debug", "sendTokenToTargetChain");
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     }
     return (await this.transactionClient.submit(this.hubChainId, [{ ...txnRequest }]))[0];
   }
@@ -300,7 +348,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const expectedTokenSymbol = nativeTokenSymbol === "ETH" ? "WETH" : nativeTokenSymbol;
+      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB";
+      const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
         `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
@@ -332,7 +381,7 @@ export class BaseChainAdapter {
         "debug",
         "wrapNativeTokenIfAboveThreshold"
       );
-      return { hash: ZERO_ADDRESS } as TransactionResponse;
+      return { hash: ZERO_BYTES } as TransactionResponse;
     } else {
       (await this.transactionClient.submit(this.chainId, [augmentedTxn]))[0];
     }

@@ -42,7 +42,7 @@ export class MockAdapterManager extends AdapterManager {
     return this.adapterChains ?? super.supportedChains();
   }
 
-  override async getOutstandingCrossChainTokenTransferAmount(
+  override async getOutstandingCrossChainTransfers(
     chainId: number,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Tokens: string[]

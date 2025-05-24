@@ -5,7 +5,7 @@ import {
   Contract,
   createFormatFunction,
   EventSearchConfig,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getNetworkName,
   isDefined,
   paginatedEventQuery,
@@ -13,6 +13,7 @@ import {
   Signer,
   toBN,
   EvmAddress,
+  getTokenInfo,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -47,26 +48,25 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     l2Token: EvmAddress,
     _l1Token: EvmAddress,
     amount: BigNumber
-  ): AugmentedTransaction[] {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
-    const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
+  ): Promise<AugmentedTransaction[]> {
+    const l1Token = getL1TokenAddress(l2Token.toAddress(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2GatewayRouter,
       chainId: this.l2chainId,
       method: "outboundTransfer",
       args: [
-        l1TokenInfo.address, // l1Token
+        l1Token, // l1Token
         toAddress.toAddress(), // to
         amount, // amount
         "0x", // data
       ],
       nonMulticall: true,
       message: "🎰 Withdrew Orbit ERC20 to L1",
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l1TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${symbol} from ${getNetworkName(this.l2chainId)} to L1`,
     };
-    return [withdrawTxn];
+    return Promise.resolve([withdrawTxn]);
   }
 
   async getL2PendingWithdrawalAmount(
@@ -75,7 +75,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const l1TokenInfo = getL1TokenInfo(l2Token.toAddress(), this.l2chainId);
+    const l1Token = getL1TokenAddress(l2Token.toAddress(), this.l2chainId);
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,
@@ -95,7 +95,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       ),
     ]);
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, event) => {
-      if (event.args.l1Token === l1TokenInfo.address) {
+      if (event.args.l1Token === l1Token) {
         const matchingFinalizedEvent = withdrawalFinalizedEvents.find((e) =>
           toBN(e.args._amount.toString()).eq(toBN(event.args._amount.toString()))
         );

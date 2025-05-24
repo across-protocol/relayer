@@ -12,6 +12,7 @@ import {
   Multicall2Call,
   winston,
   convertFromWei,
+  isEVMSpokePoolClient,
 } from "../../../utils";
 import {
   AttestedCCTPDepositEvent,
@@ -29,10 +30,11 @@ export async function cctpL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
   const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
   const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
     senderAddresses,
@@ -41,7 +43,9 @@ export async function cctpL1toL2Finalizer(
     l2SpokePoolClient.chainId,
     searchConfig
   );
-  const unprocessedMessages = outstandingDeposits.filter((message) => message.status === "ready");
+  const unprocessedMessages = outstandingDeposits.filter(
+    (message) => message.status === "ready" && message.attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
@@ -75,7 +79,7 @@ async function generateMultiCallData(
   messageTransmitter: Contract,
   messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
+  assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
