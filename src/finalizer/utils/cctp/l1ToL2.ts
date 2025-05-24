@@ -15,10 +15,11 @@ import {
   isEVMSpokePoolClient,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPMessage,
   CCTPMessageStatus,
-  getAttestationsForCCTPDepositEvents,
+  getAttestedCCTPMessages,
   getCctpMessageTransmitter,
+  isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
@@ -36,12 +37,13 @@ export async function cctpL1toL2Finalizer(
     to: l1SpokePoolClient.latestHeightSearched,
     maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
-  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
+  const outstandingDeposits = await getAttestedCCTPMessages(
     senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
-    searchConfig
+    searchConfig,
+    true
   );
   const unprocessedMessages = outstandingDeposits.filter(
     (message) => message.status === "ready" && message.attestation !== "PENDING"
@@ -77,7 +79,7 @@ export async function cctpL1toL2Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPMessage, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
@@ -102,15 +104,26 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateDepositData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: AttestedCCTPMessage[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
-  return messages.map((message) => ({
-    l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
-    type: "deposit",
-    originationChainId,
-    destinationChainId,
-  }));
+  return messages.map((message) => {
+    if (isDepositForBurnEvent(message)) {
+      return {
+        l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
+        amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
+        type: "deposit",
+        originationChainId,
+        destinationChainId,
+      };
+    } else {
+      return {
+        type: "misc",
+        miscReason: `Finalization of CCTP crosschain message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+        originationChainId,
+        destinationChainId,
+      };
+    }
+  });
 }

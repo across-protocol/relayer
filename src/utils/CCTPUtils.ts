@@ -6,22 +6,27 @@ import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { getCachedProvider } from "./ProviderUtils";
-import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
-import { findLast } from "lodash";
+import { RetryProvider, getCachedProvider } from "./ProviderUtils";
+import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
+import { assert } from ".";
 
-type CCTPDeposit = {
-  nonceHash: string;
-  amount: string;
+type CommonMessageData = {
+  version: number; // 0 == v1, 1 == v2. This is how Circle assigns them
   sourceDomain: number;
   destinationDomain: number;
   sender: string;
   recipient: string;
+
   messageHash: string;
   messageBytes: string;
+  nonceHash: string;
 };
-type CCTPDepositEvent = CCTPDeposit & { log: Log };
+// Common data + auxilary data from depositForBurn event
+type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecipient: string; burnToken: string };
+type CommonMessageEvent = CommonMessageData & { log: Log };
+type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
+
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
   status: string;
@@ -37,9 +42,20 @@ function isCctpV2ApiResponse(
   return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
+export type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
+export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPDeposit = DepositForBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export function isDepositForBurnEvent(event: CCTPMessageEvent): event is DepositForBurnMessageEvent {
+  return "amount" in event && "mintRecipient" in event && "burnToken" in event;
+}
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
+const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1 = ethers.utils.id(
+  "DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)"
+);
+const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
+  "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
+);
 
 const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA];
 
@@ -114,19 +130,101 @@ export function getCctpDomainForChainId(chainId: number): number {
   return cctpDomain;
 }
 
-async function getCCTPDepositEvents(
-  senderAddresses: string[],
+/**
+ * Creates and validates CCTP contract interfaces for TokenMessenger and MessageTransmitter contracts.
+ * Asserts that the event topic hashes match expected values to ensure interface correctness.
+ */
+function getContractInterfaces(
+  l2ChainId: number,
+  sourceChainId: number,
+  isCctpV2: boolean
+): {
+  tokenMessengerInterface: ethers.utils.Interface;
+  messageTransmitterInterface: ethers.utils.Interface;
+} {
+  // Get contract ABIs
+  const { abi: tokenMessengerAbi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  const { abi: messageTransmitterAbi } = getCctpMessageTransmitter(l2ChainId, sourceChainId);
+
+  // Create interfaces
+  const tokenMessengerInterface = new ethers.utils.Interface(tokenMessengerAbi);
+  const messageTransmitterInterface = new ethers.utils.Interface(messageTransmitterAbi);
+
+  // Validate event topic hashes to ensure interface correctness
+  const depositForBurnTopic = tokenMessengerInterface.getEventTopic("DepositForBurn");
+  const expectedDepositForBurnTopic = isCctpV2
+    ? CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2
+    : CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1;
+  assert(
+    depositForBurnTopic === expectedDepositForBurnTopic,
+    `DepositForBurn topic mismatch: expected ${expectedDepositForBurnTopic}, got ${depositForBurnTopic}`
+  );
+
+  const messageSentTopic = messageTransmitterInterface.getEventTopic("MessageSent");
+  assert(
+    messageSentTopic === CCTP_MESSAGE_SENT_TOPIC_HASH,
+    `MessageSent topic mismatch: expected ${CCTP_MESSAGE_SENT_TOPIC_HASH}, got ${messageSentTopic}`
+  );
+
+  return {
+    tokenMessengerInterface,
+    messageTransmitterInterface,
+  };
+}
+
+/**
+ * Gets all tx hashes that may be relevant for CCTP finalization.
+ * This includes:
+ *  - All tx hashes where `DepositForBurn` events happened (for USDC transfers).
+ *  - If `includeHubPoolMessages` is true, all txs where HubPool on `sourceChainId` emitted `MessageRelayed` or `TokensRelayed` events.
+ *
+ * @param srcProvider - Provider for the source chain.
+ * @param sourceChainId - Chain ID where the messages/deposits originated.
+ * @param destinationChainId - Chain ID where the messages/deposits are targeted.
+ * @param l2ChainId - Chain ID of the L2 chain involved (can be same as `sourceChainId`), used for CCTP versioning.
+ * @param senderAddresses - Addresses that initiated the `DepositForBurn` events. If `includeHubPoolMessages` is true, the HubPool address itself is implicitly a sender for its messages.
+ * @param sourceEventSearchConfig - Configuration for event searching on the source chain.
+ * @param includeHubPoolMessages - If true, includes messages relayed by the HubPool. **WARNING:** If true, this function assumes a HubPool contract is configured for `sourceChainId`; otherwise, it will throw an error.
+ * @returns A Set of unique transaction hashes.
+ */
+async function getRelevantCCTPTxHashes(
+  srcProvider: RetryProvider,
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPDepositEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  senderAddresses: string[],
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
+): Promise<Set<string>> {
+  const txHashesFromHubPool = new Set<string>();
 
-  // Step 1: Get all DepositForBurn events matching the senderAddress and source chain.
-  const srcProvider = getCachedProvider(sourceChainId);
+  // TODO: instead of this hack, we can instead utilize `senderAddresses` to exlude HubPool events.
+  // TODO: we should do that actually.
+  if (includeHubPoolMessages) {
+    const { address: hubPoolAddress } = CONTRACT_ADDRESSES[sourceChainId]["hubPool"];
+    // TODO: this seems like incorrect error handling
+    if (!hubPoolAddress) {
+      // TODO: do we really have to throw here actually? Can't we just skip these events then?
+      throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
+    }
+
+    // TODO: import require("../common/abi/HubPool.json")
+    const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
+
+    const messageRelayedFilter = hubPool.filters.MessageRelayed();
+    const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+    messageRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+
+    const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+    const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+    tokensRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+  }
+
+  // Step 2: Get all DepositForBurn events matching the senderAddress and source chain
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
+
   const eventFilterParams = isCctpV2
     ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
     : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
@@ -135,91 +233,204 @@ async function getCCTPDepositEvents(
     await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
   ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
 
-  // Step 2: Get TransactionReceipt for all these events, which we'll use to find the accompanying MessageSent events.
-  const receipts = await Promise.all(
-    depositForBurnEvents.map((event) => srcProvider.getTransactionReceipt(event.transactionHash))
-  );
-  const messageSentEvents = depositForBurnEvents.map(({ transactionHash: txnHash, logIndex }, i) => {
-    // The MessageSent event should always precede the DepositForBurn event in the same transaction. We should
-    // search from right to left so we find the nearest preceding MessageSent event.
-    const _messageSentEvent = findLast(
-      receipts[i].logs,
-      (l) => l.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH && l.logIndex < logIndex
-    );
-    if (!isDefined(_messageSentEvent)) {
-      throw new Error(
-        `Could not find MessageSent event for DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return _messageSentEvent;
-  });
+  const uniqueTxHashes = new Set([...txHashesFromHubPool, ...depositForBurnEvents.map((e) => e.transactionHash)]);
 
-  // Step 3. Decode the MessageSent events to find the message nonce, which we can use to query the deposit status,
-  // get the attestation, and further filter the events.
-  const decodedMessages = messageSentEvents.map((_messageSentEvent, i) => {
-    const {
-      sender: decodedSender,
-      nonceHash,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
-    } = isCctpV2 ? _decodeCCTPV2Message(_messageSentEvent) : _decodeCCTPV1Message(_messageSentEvent);
-    const _depositEvent = depositForBurnEvents[i];
-
-    // Step 4. [Optional] Verify that decoded message matches the DepositForBurn event. We can skip this step
-    // if we find this reduces performance.
-    if (
-      !compareAddressesSimple(decodedSender, _depositEvent.args.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(_depositEvent.args.mintRecipient)) ||
-      !BigNumber.from(decodedAmount).eq(_depositEvent.args.amount) ||
-      decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
-      decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
-    ) {
-      const { transactionHash: txnHash, logIndex } = _depositEvent;
-      throw new Error(
-        `Decoded message at log index ${_messageSentEvent.logIndex}` +
-          ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return {
-      nonceHash,
-      sender: decodedSender,
-      recipient: decodedRecipient,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      messageHash,
-      messageBytes,
-      log: _depositEvent,
-    };
-  });
-
-  return decodedMessages;
+  return uniqueTxHashes;
 }
 
-async function getCCTPDepositEventsWithStatus(
+/**
+ * Gets all CCTP message events (both `DepositForBurn` for token transfers and potentially raw `MessageSent` from HubPool)
+ * that can be finalized.
+ *
+ * It first fetches relevant transaction hashes using `getRelevantCCTPTxHashes` and then processes receipts to extract CCTP events.
+ *
+ * @param senderAddresses - Addresses that initiated the `DepositForBurn` events. For HubPool messages, the HubPool address is the sender.
+ * @param sourceChainId - Chain ID where the messages/deposits originated.
+ * @param destinationChainId - Chain ID where the messages/deposits are targeted.
+ * @param l2ChainId - Chain ID of the L2 chain involved, used for CCTP versioning.
+ * @param sourceEventSearchConfig - Configuration for event searching on the source chain.
+ * @param includeHubPoolMessages - If true, includes `MessageSent` events relayed by the HubPool on `sourceChainId`.
+ *                                 **WARNING:** If true, assumes HubPool exists on `sourceChainId`; otherwise, it will error.
+ * @returns An array of `CCTPMessageEvent` objects.
+ */
+async function getCCTPMessageEvents(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
+): Promise<CCTPMessageEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const deposits = await getCCTPDepositEvents(
+  const { tokenMessengerInterface, messageTransmitterInterface } = getContractInterfaces(
+    l2ChainId,
+    sourceChainId,
+    isCctpV2
+  );
+
+  const srcProvider = getCachedProvider(sourceChainId);
+  const uniqueTxHashes = await getRelevantCCTPTxHashes(
+    srcProvider,
+    sourceChainId,
+    destinationChainId,
+    l2ChainId,
+    senderAddresses,
+    sourceEventSearchConfig,
+    includeHubPoolMessages
+  );
+
+  if (uniqueTxHashes.size === 0) {
+    return [];
+  }
+
+  const receipts = await Promise.all(Array.from(uniqueTxHashes).map((hash) => srcProvider.getTransactionReceipt(hash)));
+
+  const _isMessageSentEvent = (log: ethers.providers.Log): boolean => {
+    return log.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH;
+  };
+
+  // returns 0 for v1 `DepositForBurn` event, 1 for v2, -1 for other events
+  const _getDepositForBurnVersion = (log: ethers.providers.Log): number => {
+    const topic = log.topics[0];
+    switch (topic) {
+      case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1:
+        return 0;
+      case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2:
+        return 1;
+      default:
+        return -1;
+    }
+  };
+
+  const sourceDomainId = getCctpDomainForChainId(sourceChainId);
+  const destinationDomainId = getCctpDomainForChainId(destinationChainId);
+  // TODO: how come does `usdcAddress` have type `string` here? What if there's no `sourceChainId` entry?
+  const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
+  assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
+
+  const _isRelevantEvent = (event: CCTPMessageEvent): boolean => {
+    const baseConditions =
+      event.sourceDomain === sourceDomainId &&
+      event.destinationDomain === destinationDomainId &&
+      senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
+
+    return (
+      baseConditions &&
+      (!isDepositForBurnEvent(event) ||
+        // if DepositForBurnMessageEvent, check token too
+        compareAddressesSimple(event.burnToken, usdcAddress))
+    );
+  };
+
+  const relevantEvents: CCTPMessageEvent[] = [];
+  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log) => {
+    const eventData = isCctpV2 ? _decodeCommonMessageDataV1(log) : _decodeCommonMessageDataV2(log);
+    const logDescription = messageTransmitterInterface.parseLog(log);
+    const spreadArgs = spreadEvent(logDescription.args);
+    const eventName = logDescription.name;
+    const event: CommonMessageEvent = {
+      ...eventData,
+      log: {
+        ...log,
+        event: eventName,
+        args: spreadArgs,
+      },
+    };
+    if (_isRelevantEvent(event)) {
+      relevantEvents.push(event);
+    }
+  };
+  for (const receipt of receipts) {
+    let lastMessageSentEventIdx = -1;
+    let i = 0;
+    for (const log of receipt.logs) {
+      if (_isMessageSentEvent(log)) {
+        if (lastMessageSentEventIdx == -1) {
+          lastMessageSentEventIdx = i;
+        } else {
+          _addCommonMessageEventIfRelevant(log);
+        }
+      } else {
+        const logCctpVersion = _getDepositForBurnVersion(log);
+        if (logCctpVersion == -1) {
+          // Skip non-`DepositForBurn` events
+          continue;
+        }
+
+        const matchingCctpVersion = (logCctpVersion == 0 && !isCctpV2) || (logCctpVersion == 1 && isCctpV2);
+        if (matchingCctpVersion) {
+          // If DepositForBurn event matches our "desired version", assess if it matches our search parameters
+          const correspondingMessageSentLog = receipt.logs[lastMessageSentEventIdx];
+          const eventData = isCctpV2
+            ? _decodeDepositForBurnMessageDataV2(correspondingMessageSentLog)
+            : _decodeDepositForBurnMessageDataV1(correspondingMessageSentLog);
+          const logDescription = tokenMessengerInterface.parseLog(log);
+          const spreadArgs = spreadEvent(logDescription.args);
+          const eventName = logDescription.name;
+
+          // Verify that decoded message matches the DepositForBurn event. We can skip this step if we find this reduces performance
+          if (
+            !compareAddressesSimple(eventData.sender, spreadArgs.depositor) ||
+            !compareAddressesSimple(eventData.recipient, cctpBytes32ToAddress(spreadArgs.mintRecipient)) ||
+            !BigNumber.from(eventData.amount).eq(spreadArgs.amount)
+          ) {
+            const { transactionHash: txnHash, logIndex } = log;
+            throw new Error(
+              `Decoded message at log index ${correspondingMessageSentLog.logIndex}` +
+                ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
+            );
+          }
+
+          const event: DepositForBurnMessageEvent = {
+            ...eventData,
+            log: {
+              ...log,
+              event: eventName,
+              args: spreadArgs,
+            },
+          };
+          if (_isRelevantEvent(event)) {
+            relevantEvents.push(event);
+          }
+          lastMessageSentEventIdx = -1;
+        } else {
+          // reset `lastMessageSentEventIdx`, because we found a matching `DepositForBurn` event
+          lastMessageSentEventIdx = -1;
+        }
+      }
+      i += 1;
+    }
+    // After the loop over all logs, we might have an unmatched `MessageSent` event. Try to add it to `relevantEvents`
+    if (lastMessageSentEventIdx != -1) {
+      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx]);
+    }
+  }
+
+  return relevantEvents;
+}
+
+async function getCCTPMessageEventsWithStatus(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
+): Promise<AttestedCCTPMessage[]> {
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const cctpMessages = await getCCTPMessageEvents(
     senderAddresses,
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    includeHubPoolMessages
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   return await Promise.all(
-    deposits.map(async (deposit) => {
+    cctpMessages.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
       // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
       // query the Attestation API service.
@@ -245,31 +456,81 @@ async function getCCTPDepositEventsWithStatus(
   );
 }
 
+// same as `getAttestedCCTPMessages`, but filters out all non-deposit CCTP messages
 /**
- * @notice Return all non-finalized CCTPDeposit events with their attestations attached. Attestations will be undefined
- * if the attestationn "status" is not "ready".
- * @param senderAddresses List of sender addresses to filter the DepositForBurn query
- * @param sourceChainId  Chain ID where the Deposit was created.
- * @param destinationChainid Chain ID where the Deposit is being sent to.
- * @param l2ChainId Chain ID of the L2 chain involved in the CCTP deposit. This can be the same as the source chain ID,
- * which is the chain where the Deposit was created. This is used to identify whether the CCTP deposit is V1 or V2.
- * @param sourceEventSearchConfig
+ * Fetches attested CCTP messages using `getAttestedCCTPMessages` (with HubPool messages explicitly excluded)
+ * and then filters them to return only `DepositForBurn` events (i.e., token deposits).
+ *
+ * This function is specifically for retrieving CCTP deposits and always calls the underlying
+ * `getAttestedCCTPMessages` with the `includeHubPoolMessages` flag set to `false`,
+ * ensuring that only potential `DepositForBurn` related transactions are initially considered.
+ *
+ * @param senderAddresses - List of sender addresses to filter the `DepositForBurn` query.
+ * @param sourceChainId - Chain ID where the Deposit was created.
+ * @param destinationChainId - Chain ID where the Deposit is being sent to.
+ * @param l2ChainId - Chain ID of the L2 chain involved in the CCTP deposit. This is used to identify whether the CCTP deposit is V1 or V2.
+ * @param sourceEventSearchConfig - Configuration for event searching.
+ * @returns A promise that resolves to an array of `AttestedCCTPDeposit` objects.
  */
-export async function getAttestationsForCCTPDepositEvents(
+export async function getAttestedCCTPDeposits(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const isMainnet = utils.chainIsProd(destinationChainId);
-  const depositsWithStatus = await getCCTPDepositEventsWithStatus(
+): Promise<AttestedCCTPDeposit[]> {
+  const messages = await getAttestedCCTPMessages(
     senderAddresses,
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    false
+  );
+  // only return deposit messages
+  return messages.filter((message) => isDepositForBurnEvent(message)) as AttestedCCTPDeposit[];
+}
+
+/**
+ * @notice Returns all non-finalized CCTP messages (both `DepositForBurn` and potentially raw `MessageSent` from HubPool)
+ * with their attestations attached. Attestations will be undefined if the attestation "status" is not "ready".
+ *
+ * If `includeHubPoolMessages` is true, this function will also look for `MessageSent` events that were initiated by the `HubPool`
+ * contract on the `sourceChainId` and are directed towards a `SpokePool` on the `destinationChainId`. These are considered "raw"
+ * CCTP messages with custom payloads, distinct from the standard `DepositForBurn` token transfers.
+ *
+ * **WARNING:** If `includeHubPoolMessages` is set to `true`, this function critically assumes that a `HubPool` contract address
+ * is configured and available on the `sourceChainId`. If `sourceChainId` is an L2 (or any chain without a configured HubPool)
+ * and this flag is `true`, the function will throw an error during the attempt to fetch HubPool-related events.
+ *
+ * @param senderAddresses - List of sender addresses to filter `DepositForBurn` events. For `MessageSent` events from HubPool,
+ *                        the HubPool address itself acts as the sender and is used implicitly if `includeHubPoolMessages` is true.
+ * @param sourceChainId - Chain ID where the CCTP messages originated (e.g., an L2 for deposits, or L1 for HubPool messages).
+ * @param destinationChainId - Chain ID where the CCTP messages are being sent to.
+ * @param l2ChainId - Chain ID of the L2 chain involved in the CCTP interaction. This is used to determine CCTP versioning (V1 vs V2)
+ *                  for contract ABIs and event decoding logic, especially when `sourceChainId` itself might be an L1.
+ * @param sourceEventSearchConfig - Configuration for event searching on the `sourceChainId`.
+ * @param includeHubPoolMessages - If true, the function will additionally search for `MessageSent` events emitted by the HubPool on `sourceChainId`.
+ *                                 Set to `false` if `sourceChainId` does not have a HubPool (e.g., when finalizing L2->L1 CCTP deposits).
+ * @returns A promise that resolves to an array of `AttestedCCTPMessage` objects. These can be `AttestedCCTPDeposit` or common `AttestedCCTPMessage` types.
+ */
+export async function getAttestedCCTPMessages(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
+): Promise<AttestedCCTPMessage[]> {
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const isMainnet = utils.chainIsProd(destinationChainId);
+  const messagesWithStatus = await getCCTPMessageEventsWithStatus(
+    senderAddresses,
+    sourceChainId,
+    destinationChainId,
+    l2ChainId,
+    sourceEventSearchConfig,
+    includeHubPoolMessages
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
@@ -278,20 +539,20 @@ export async function getAttestationsForCCTPDepositEvents(
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
 
-  const attestedDeposits = await Promise.all(
-    depositsWithStatus.map(async (deposit) => {
+  const attestedMessages = await Promise.all(
+    messagesWithStatus.map(async (message) => {
       // If deposit is already finalized, we won't change its attestation status:
-      if (deposit.status === "finalized") {
-        return deposit;
+      if (message.status === "finalized") {
+        return message;
       }
       // Otherwise, update the deposit's status after loading its attestation.
-      const { transactionHash } = deposit.log;
+      const { transactionHash } = message.log;
       const count = (txnReceiptHashCount[transactionHash] ??= 0);
       ++txnReceiptHashCount[transactionHash];
 
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, transactionHash, isMainnet)
-        : await _generateCCTPAttestationProof(deposit.messageHash, isMainnet);
+        ? await _generateCCTPV2AttestationProof(message.sourceDomain, transactionHash, isMainnet)
+        : await _generateCCTPAttestationProof(message.messageHash, isMainnet);
 
       // For V2 we now have the nonceHash and we can query whether the message has been processed.
       // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
@@ -304,12 +565,12 @@ export async function getAttestationsForCCTPDepositEvents(
         );
         if (processed) {
           return {
-            ...deposit,
+            ...message,
             status: "finalized" as CCTPMessageStatus,
           };
         } else {
           return {
-            ...deposit,
+            ...message,
             // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
             // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
             // because its not needed for V2
@@ -321,14 +582,14 @@ export async function getAttestationsForCCTPDepositEvents(
         }
       } else {
         return {
-          ...deposit,
+          ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
           status: _getPendingAttestationStatus(attestation.status),
         };
       }
     })
   );
-  return attestedDeposits;
+  return attestedMessages;
 }
 
 function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
@@ -345,52 +606,95 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
-function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {
+function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
   const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(20, 52))); // sender	20	bytes32	32	Address of MessageTransmitter caller on source domain
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(52, 84))); // recipient	52	bytes32	32	Address to handle message body on destination domain
+
   // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
-  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce])); //
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // recipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
 
   return {
-    nonceHash,
-    amount: BigNumber.from(amount).toString(),
+    version: 0,
     sourceDomain,
     destinationDomain,
     sender,
     recipient,
+    nonceHash,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
   };
 }
 
-function _decodeCCTPV2Message(message: { data: string; transactionHash: string; logIndex: number }): CCTPDeposit {
+function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(44, 76))); // sender	44	bytes32	32	Address of MessageTransmitterV2 caller on source domain
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
 
   return {
-    // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
-    // the API service. For now, we cannot compute it here as Circle will not disclose the hashing algorithm.
-    nonceHash: ethers.constants.HashZero,
-    amount: BigNumber.from(amount).toString(),
+    version: 0,
     sourceDomain,
     destinationDomain,
     sender,
     recipient,
+    // For v2, we rely on Circle's API to find nonceHash
+    nonceHash: ethers.constants.HashZero,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
+  };
+}
+
+function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositForBurnMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const commonDataV1 = _decodeCommonMessageDataV1(message);
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+
+  // Values specific to `DepositForBurn`. These are values contained withing `messageBody` bytes (the last of the message.data fields)
+  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(120, 152))); // burnToken 4 bytes32 32 Address of burned token on source domain
+  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
+  const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+
+  return {
+    ...commonDataV1,
+    burnToken,
+    amount: BigNumber.from(amount).toString(),
+    // override sender and recipient from `DepositForBurn`-specific values
+    sender: sender,
+    recipient: mintRecipient,
+    mintRecipient,
+  };
+}
+
+function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositForBurnMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const commonData = _decodeCommonMessageDataV2(message);
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+
+  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // burnToken: Address of burned token on source domain. 32 bytes starting index 152 (idx 4 of body after idx 148 which ends the header)
+  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
+  const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+
+  return {
+    ...commonData,
+    burnToken,
+    amount: BigNumber.from(amount).toString(),
+    // override sender and recipient from `DepositForBurn`-specific values
+    sender: sender,
+    recipient: mintRecipient,
+    mintRecipient,
   };
 }
 
