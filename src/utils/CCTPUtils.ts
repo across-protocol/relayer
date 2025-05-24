@@ -173,8 +173,19 @@ function getContractInterfaces(
 }
 
 /**
- * Gets all tx hashes that may be relevant for CCTP finalization: all txs where HubPool was sending money / messages *and*
- * all tx hashes where `DepositForBurn` events happened
+ * Gets all tx hashes that may be relevant for CCTP finalization.
+ * This includes:
+ *  - All tx hashes where `DepositForBurn` events happened (for USDC transfers).
+ *  - If `includeHubPoolMessages` is true, all txs where HubPool on `sourceChainId` emitted `MessageRelayed` or `TokensRelayed` events.
+ *
+ * @param srcProvider - Provider for the source chain.
+ * @param sourceChainId - Chain ID where the messages/deposits originated.
+ * @param destinationChainId - Chain ID where the messages/deposits are targeted.
+ * @param l2ChainId - Chain ID of the L2 chain involved (can be same as `sourceChainId`), used for CCTP versioning.
+ * @param senderAddresses - Addresses that initiated the `DepositForBurn` events. If `includeHubPoolMessages` is true, the HubPool address itself is implicitly a sender for its messages.
+ * @param sourceEventSearchConfig - Configuration for event searching on the source chain.
+ * @param includeHubPoolMessages - If true, includes messages relayed by the HubPool. **WARNING:** If true, this function assumes a HubPool contract is configured for `sourceChainId`; otherwise, it will throw an error.
+ * @returns A Set of unique transaction hashes.
  */
 async function getRelevantCCTPTxHashes(
   srcProvider: RetryProvider,
@@ -182,20 +193,27 @@ async function getRelevantCCTPTxHashes(
   destinationChainId: number,
   l2ChainId: number,
   senderAddresses: string[],
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
 ): Promise<Set<string>> {
-  const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
-  if (!hubPoolAddress) {
-    throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
+  const txHashesFromHubPool = new Set<string>();
+
+  if (includeHubPoolMessages) {
+    const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
+    if (!hubPoolAddress) {
+      throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
+    }
+
+    const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
+
+    const messageRelayedFilter = hubPool.filters.MessageRelayed();
+    const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+    messageRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+
+    const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+    const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+    tokensRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
   }
-
-  const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
-
-  const messageRelayedFilter = hubPool.filters.MessageRelayed();
-  const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
-
-  const tokensRelayedFilter = hubPool.filters.TokensRelayed();
-  const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
 
   // Step 2: Get all DepositForBurn events matching the senderAddress and source chain
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
@@ -210,24 +228,33 @@ async function getRelevantCCTPTxHashes(
     await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
   ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
 
-  const uniqueTxHashes = new Set([
-    ...messageRelayedEvents.map((e) => e.transactionHash),
-    ...tokensRelayedEvents.map((e) => e.transactionHash),
-    ...depositForBurnEvents.map((e) => e.transactionHash),
-  ]);
+  const uniqueTxHashes = new Set([...txHashesFromHubPool, ...depositForBurnEvents.map((e) => e.transactionHash)]);
 
   return uniqueTxHashes;
 }
 
 /**
- * Gets all CCTP messages that we can finalize: any CCTP token sends + HubPool message sends to SpokePools
+ * Gets all CCTP message events (both `DepositForBurn` for token transfers and potentially raw `MessageSent` from HubPool)
+ * that can be finalized.
+ *
+ * It first fetches relevant transaction hashes using `getRelevantCCTPTxHashes` and then processes receipts to extract CCTP events.
+ *
+ * @param senderAddresses - Addresses that initiated the `DepositForBurn` events. For HubPool messages, the HubPool address is the sender.
+ * @param sourceChainId - Chain ID where the messages/deposits originated.
+ * @param destinationChainId - Chain ID where the messages/deposits are targeted.
+ * @param l2ChainId - Chain ID of the L2 chain involved, used for CCTP versioning.
+ * @param sourceEventSearchConfig - Configuration for event searching on the source chain.
+ * @param includeHubPoolMessages - If true, includes `MessageSent` events relayed by the HubPool on `sourceChainId`.
+ *                                 **WARNING:** If true, assumes HubPool exists on `sourceChainId`; otherwise, it will error.
+ * @returns An array of `CCTPMessageEvent` objects.
  */
 async function getCCTPMessageEvents(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
 ): Promise<CCTPMessageEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const { tokenMessengerInterface, messageTransmitterInterface } = getContractInterfaces(
@@ -243,7 +270,8 @@ async function getCCTPMessageEvents(
     destinationChainId,
     l2ChainId,
     senderAddresses,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    includeHubPoolMessages
   );
 
   if (uniqueTxHashes.size === 0) {
@@ -381,7 +409,8 @@ async function getCCTPMessageEventsWithStatus(
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const cctpMessages = await getCCTPMessageEvents(
@@ -389,7 +418,8 @@ async function getCCTPMessageEventsWithStatus(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    includeHubPoolMessages
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
@@ -422,6 +452,21 @@ async function getCCTPMessageEventsWithStatus(
 }
 
 // same as `getAttestedCCTPMessages`, but filters out all non-deposit CCTP messages
+/**
+ * Fetches attested CCTP messages using `getAttestedCCTPMessages` (with HubPool messages explicitly excluded)
+ * and then filters them to return only `DepositForBurn` events (i.e., token deposits).
+ *
+ * This function is specifically for retrieving CCTP deposits and always calls the underlying
+ * `getAttestedCCTPMessages` with the `includeHubPoolMessages` flag set to `false`,
+ * ensuring that only potential `DepositForBurn` related transactions are initially considered.
+ *
+ * @param senderAddresses - List of sender addresses to filter the `DepositForBurn` query.
+ * @param sourceChainId - Chain ID where the Deposit was created.
+ * @param destinationChainId - Chain ID where the Deposit is being sent to.
+ * @param l2ChainId - Chain ID of the L2 chain involved in the CCTP deposit. This is used to identify whether the CCTP deposit is V1 or V2.
+ * @param sourceEventSearchConfig - Configuration for event searching.
+ * @returns A promise that resolves to an array of `AttestedCCTPDeposit` objects.
+ */
 export async function getAttestedCCTPDeposits(
   senderAddresses: string[],
   sourceChainId: number,
@@ -434,28 +479,43 @@ export async function getAttestedCCTPDeposits(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    false
   );
   // only return deposit messages
   return messages.filter((message) => isDepositForBurnEvent(message)) as AttestedCCTPDeposit[];
 }
 
 /**
- * @notice Return all non-finalized CCTPDeposit events with their attestations attached. Attestations will be undefined
- * if the attestationn "status" is not "ready".
- * @param senderAddresses List of sender addresses to filter the DepositForBurn query
- * @param sourceChainId  Chain ID where the Deposit was created.
- * @param destinationChainid Chain ID where the Deposit is being sent to.
- * @param l2ChainId Chain ID of the L2 chain involved in the CCTP deposit. This can be the same as the source chain ID,
- * which is the chain where the Deposit was created. This is used to identify whether the CCTP deposit is V1 or V2.
- * @param sourceEventSearchConfig
+ * @notice Returns all non-finalized CCTP messages (both `DepositForBurn` and potentially raw `MessageSent` from HubPool)
+ * with their attestations attached. Attestations will be undefined if the attestation "status" is not "ready".
+ *
+ * If `includeHubPoolMessages` is true, this function will also look for `MessageSent` events that were initiated by the `HubPool`
+ * contract on the `sourceChainId` and are directed towards a `SpokePool` on the `destinationChainId`. These are considered "raw"
+ * CCTP messages with custom payloads, distinct from the standard `DepositForBurn` token transfers.
+ *
+ * **WARNING:** If `includeHubPoolMessages` is set to `true`, this function critically assumes that a `HubPool` contract address
+ * is configured and available on the `sourceChainId`. If `sourceChainId` is an L2 (or any chain without a configured HubPool)
+ * and this flag is `true`, the function will throw an error during the attempt to fetch HubPool-related events.
+ *
+ * @param senderAddresses - List of sender addresses to filter `DepositForBurn` events. For `MessageSent` events from HubPool,
+ *                        the HubPool address itself acts as the sender and is used implicitly if `includeHubPoolMessages` is true.
+ * @param sourceChainId - Chain ID where the CCTP messages originated (e.g., an L2 for deposits, or L1 for HubPool messages).
+ * @param destinationChainId - Chain ID where the CCTP messages are being sent to.
+ * @param l2ChainId - Chain ID of the L2 chain involved in the CCTP interaction. This is used to determine CCTP versioning (V1 vs V2)
+ *                  for contract ABIs and event decoding logic, especially when `sourceChainId` itself might be an L1.
+ * @param sourceEventSearchConfig - Configuration for event searching on the `sourceChainId`.
+ * @param includeHubPoolMessages - If true, the function will additionally search for `MessageSent` events emitted by the HubPool on `sourceChainId`.
+ *                                 Set to `false` if `sourceChainId` does not have a HubPool (e.g., when finalizing L2->L1 CCTP deposits).
+ * @returns A promise that resolves to an array of `AttestedCCTPMessage` objects. These can be `AttestedCCTPDeposit` or common `AttestedCCTPMessage` types.
  */
 export async function getAttestedCCTPMessages(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  includeHubPoolMessages: boolean
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
@@ -464,7 +524,8 @@ export async function getAttestedCCTPMessages(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig
+    sourceEventSearchConfig,
+    includeHubPoolMessages
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
