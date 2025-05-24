@@ -14,9 +14,9 @@ import {
   EventSearchConfig,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPDeposit,
   CCTPMessageStatus,
-  getAttestationsForCCTPDepositEvents,
+  getAttestedCCTPDeposits,
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
@@ -34,7 +34,7 @@ export async function cctpL2toL1Finalizer(
     to: spokePoolClient.latestHeightSearched,
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
-  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
+  const outstandingDeposits = await getAttestedCCTPDeposits(
     senderAddresses,
     spokePoolClient.chainId,
     hubPoolClient.chainId,
@@ -76,7 +76,7 @@ export async function cctpL2toL1Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPDeposit, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -101,7 +101,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateWithdrawalData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: Pick<AttestedCCTPDeposit, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {

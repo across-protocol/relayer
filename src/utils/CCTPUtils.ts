@@ -8,7 +8,6 @@ import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
-import { findLast } from "lodash";
 import { Log } from "../interfaces";
 import { assert } from ".";
 
@@ -28,17 +27,6 @@ type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecip
 type CommonMessageEvent = CommonMessageData & { log: Log };
 type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
 
-type CCTPDeposit = {
-  nonceHash: string;
-  amount: string;
-  sourceDomain: number;
-  destinationDomain: number;
-  sender: string;
-  recipient: string;
-  messageHash: string;
-  messageBytes: string;
-};
-type CCTPDepositEvent = CCTPDeposit & { log: Log };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
   status: string;
@@ -54,10 +42,10 @@ function isCctpV2ApiResponse(
   return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
 export type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
-export type AttestedCCTPMessageEvent = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
-function isDepositForBurnMessageEvent(event: CCTPMessageEvent): event is DepositForBurnMessageEvent {
+export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export type AttestedCCTPDeposit = DepositForBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export function isDepositForBurnEvent(event: CCTPMessageEvent): event is DepositForBurnMessageEvent {
   return "amount" in event && "mintRecipient" in event && "burnToken" in event;
 }
 
@@ -228,7 +216,7 @@ async function getCCTPMessageEvents(
 
     return (
       baseConditions &&
-      (!isDepositForBurnMessageEvent(event) ||
+      (!isDepositForBurnEvent(event) ||
         // if DepositForBurnMessageEvent, check token too
         compareAddressesSimple(event.burnToken, usdcAddress))
     );
@@ -321,101 +309,15 @@ async function getCCTPMessageEvents(
   return relevantEvents;
 }
 
-async function getCCTPDepositEvents(
+async function getCCTPMessageEventsWithStatus(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<CCTPDepositEvent[]> {
+): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-
-  // Step 1: Get all DepositForBurn events matching the senderAddress and source chain.
-  const srcProvider = getCachedProvider(sourceChainId);
-  const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  const srcTokenMessenger = new Contract(address, abi, srcProvider);
-  const eventFilterParams = isCctpV2
-    ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
-    : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
-  const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
-  const depositForBurnEvents = (
-    await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
-  ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
-
-  // Step 2: Get TransactionReceipt for all these events, which we'll use to find the accompanying MessageSent events.
-  const receipts = await Promise.all(
-    depositForBurnEvents.map((event) => srcProvider.getTransactionReceipt(event.transactionHash))
-  );
-  const messageSentEvents = depositForBurnEvents.map(({ transactionHash: txnHash, logIndex }, i) => {
-    // The MessageSent event should always precede the DepositForBurn event in the same transaction. We should
-    // search from right to left so we find the nearest preceding MessageSent event.
-    const _messageSentEvent = findLast(
-      receipts[i].logs,
-      (l) => l.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH && l.logIndex < logIndex
-    );
-    if (!isDefined(_messageSentEvent)) {
-      throw new Error(
-        `Could not find MessageSent event for DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return _messageSentEvent;
-  });
-
-  // Step 3. Decode the MessageSent events to find the message nonce, which we can use to query the deposit status,
-  // get the attestation, and further filter the events.
-  const decodedMessages = messageSentEvents.map((_messageSentEvent, i) => {
-    const {
-      sender: decodedSender,
-      nonceHash,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      recipient: decodedRecipient,
-      messageHash,
-      messageBytes,
-    } = isCctpV2 ? _decodeCCTPV2Message(_messageSentEvent) : _decodeCCTPV1Message(_messageSentEvent);
-    const _depositEvent = depositForBurnEvents[i];
-
-    // Step 4. [Optional] Verify that decoded message matches the DepositForBurn event. We can skip this step
-    // if we find this reduces performance.
-    if (
-      !compareAddressesSimple(decodedSender, _depositEvent.args.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(_depositEvent.args.mintRecipient)) ||
-      !BigNumber.from(decodedAmount).eq(_depositEvent.args.amount) ||
-      decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
-      decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
-    ) {
-      const { transactionHash: txnHash, logIndex } = _depositEvent;
-      throw new Error(
-        `Decoded message at log index ${_messageSentEvent.logIndex}` +
-          ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-    return {
-      nonceHash,
-      sender: decodedSender,
-      recipient: decodedRecipient,
-      amount: decodedAmount,
-      sourceDomain: decodedSourceDomain,
-      destinationDomain: decodedDestinationDomain,
-      messageHash,
-      messageBytes,
-      log: _depositEvent,
-    };
-  });
-
-  return decodedMessages;
-}
-
-async function getCCTPDepositEventsWithStatus(
-  senderAddresses: string[],
-  sourceChainId: number,
-  destinationChainId: number,
-  l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
-  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const deposits = await getCCTPDepositEvents(
+  const cctpMessages = await getCCTPMessageEvents(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -426,7 +328,7 @@ async function getCCTPDepositEventsWithStatus(
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   return await Promise.all(
-    deposits.map(async (deposit) => {
+    cctpMessages.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
       // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
       // query the Attestation API service.
@@ -452,6 +354,25 @@ async function getCCTPDepositEventsWithStatus(
   );
 }
 
+// same as `getAttestedCCTPMessages`, but filters out all non-deposit CCTP messages
+export async function getAttestedCCTPDeposits(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<AttestedCCTPDeposit[]> {
+  const messages = await getAttestedCCTPMessages(
+    senderAddresses,
+    sourceChainId,
+    destinationChainId,
+    l2ChainId,
+    sourceEventSearchConfig
+  );
+  // only return deposit messages
+  return messages.filter((message) => isDepositForBurnEvent(message)) as AttestedCCTPDeposit[];
+}
+
 /**
  * @notice Return all non-finalized CCTPDeposit events with their attestations attached. Attestations will be undefined
  * if the attestationn "status" is not "ready".
@@ -462,16 +383,16 @@ async function getCCTPDepositEventsWithStatus(
  * which is the chain where the Deposit was created. This is used to identify whether the CCTP deposit is V1 or V2.
  * @param sourceEventSearchConfig
  */
-export async function getAttestationsForCCTPDepositEvents(
+export async function getAttestedCCTPMessages(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig
-): Promise<AttestedCCTPDepositEvent[]> {
+): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
-  const depositsWithStatus = await getCCTPDepositEventsWithStatus(
+  const messagesWithStatus = await getCCTPMessageEventsWithStatus(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -485,20 +406,20 @@ export async function getAttestationsForCCTPDepositEvents(
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
 
-  const attestedDeposits = await Promise.all(
-    depositsWithStatus.map(async (deposit) => {
+  const attestedMessages = await Promise.all(
+    messagesWithStatus.map(async (message) => {
       // If deposit is already finalized, we won't change its attestation status:
-      if (deposit.status === "finalized") {
-        return deposit;
+      if (message.status === "finalized") {
+        return message;
       }
       // Otherwise, update the deposit's status after loading its attestation.
-      const { transactionHash } = deposit.log;
+      const { transactionHash } = message.log;
       const count = (txnReceiptHashCount[transactionHash] ??= 0);
       ++txnReceiptHashCount[transactionHash];
 
       const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(deposit.sourceDomain, transactionHash, isMainnet)
-        : await _generateCCTPAttestationProof(deposit.messageHash, isMainnet);
+        ? await _generateCCTPV2AttestationProof(message.sourceDomain, transactionHash, isMainnet)
+        : await _generateCCTPAttestationProof(message.messageHash, isMainnet);
 
       // For V2 we now have the nonceHash and we can query whether the message has been processed.
       // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
@@ -511,12 +432,12 @@ export async function getAttestationsForCCTPDepositEvents(
         );
         if (processed) {
           return {
-            ...deposit,
+            ...message,
             status: "finalized" as CCTPMessageStatus,
           };
         } else {
           return {
-            ...deposit,
+            ...message,
             // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
             // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
             // because its not needed for V2
@@ -528,14 +449,14 @@ export async function getAttestationsForCCTPDepositEvents(
         }
       } else {
         return {
-          ...deposit,
+          ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
           status: _getPendingAttestationStatus(attestation.status),
         };
       }
     })
   );
-  return attestedDeposits;
+  return attestedMessages;
 }
 
 function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
@@ -641,55 +562,6 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
     sender: sender,
     recipient: mintRecipient,
     mintRecipient,
-  };
-}
-
-function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {
-  // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
-  const messageBytesArray = ethers.utils.arrayify(messageBytes);
-  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
-  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
-  // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
-  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce])); //
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // recipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
-
-  return {
-    nonceHash,
-    amount: BigNumber.from(amount).toString(),
-    sourceDomain,
-    destinationDomain,
-    sender,
-    recipient,
-    messageHash: ethers.utils.keccak256(messageBytes),
-    messageBytes,
-  };
-}
-
-function _decodeCCTPV2Message(message: { data: string; transactionHash: string; logIndex: number }): CCTPDeposit {
-  // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
-  const messageBytesArray = ethers.utils.arrayify(messageBytes);
-  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
-  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
-  const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
-
-  return {
-    // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it
-    // the API service. For now, we cannot compute it here as Circle will not disclose the hashing algorithm.
-    nonceHash: ethers.constants.HashZero,
-    amount: BigNumber.from(amount).toString(),
-    sourceDomain,
-    destinationDomain,
-    sender,
-    recipient,
-    messageHash: ethers.utils.keccak256(messageBytes),
-    messageBytes,
   };
 }
 
