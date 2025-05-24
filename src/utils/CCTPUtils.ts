@@ -198,12 +198,17 @@ async function getRelevantCCTPTxHashes(
 ): Promise<Set<string>> {
   const txHashesFromHubPool = new Set<string>();
 
+  // TODO: instead of this hack, we can instead utilize `senderAddresses` to exlude HubPool events.
+  // TODO: we should do that actually.
   if (includeHubPoolMessages) {
-    const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
+    const { address: hubPoolAddress } = CONTRACT_ADDRESSES[sourceChainId]["hubPool"];
+    // TODO: this seems like incorrect error handling
     if (!hubPoolAddress) {
+      // TODO: do we really have to throw here actually? Can't we just skip these events then?
       throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
     }
 
+    // TODO: import require("../common/abi/HubPool.json")
     const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
 
     const messageRelayedFilter = hubPool.filters.MessageRelayed();
