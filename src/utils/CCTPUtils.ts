@@ -10,6 +10,23 @@ import { getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
+import { assert } from ".";
+
+type CommonMessageData = {
+  version: number; // 0 == v1, 1 == v2. This is how Circle assigns them
+  sourceDomain: number;
+  destinationDomain: number;
+  sender: string;
+  recipient: string;
+
+  messageHash: string;
+  messageBytes: string;
+  nonceHash: string;
+};
+// Common data + auxilary data from depositForBurn event
+type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecipient: string; burnToken: string };
+type CommonMessageEvent = CommonMessageData & { log: Log };
+type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
 
 type CCTPDeposit = {
   nonceHash: string;
@@ -38,8 +55,20 @@ function isCctpV2ApiResponse(
 }
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CCTPMessageStatus; attestation?: string };
+export type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
+export type AttestedCCTPMessageEvent = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+function isDepositForBurnMessageEvent(event: CCTPMessageEvent): event is DepositForBurnMessageEvent {
+  return "amount" in event && "mintRecipient" in event && "burnToken" in event;
+}
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
+// TODO: check these
+const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1 = ethers.utils.id(
+  "DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)"
+);
+const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
+  "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
+);
 
 const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA];
 
@@ -112,6 +141,141 @@ export function getCctpDomainForChainId(chainId: number): number {
     throw new Error(`No CCTP domain found for chainId: ${chainId}`);
   }
   return cctpDomain;
+}
+
+async function getCCTPMessageEvents(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<CCTPMessageEvent[]> {
+  const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  const srcProvider = getCachedProvider(sourceChainId);
+
+  // Step 1: Get all HubPool MessageRelayed and TokensRelayed events
+  const hubPoolAddress = CONTRACT_ADDRESSES[sourceChainId]["hubPool"]?.address;
+  if (!hubPoolAddress) {
+    throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
+  }
+
+  const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
+
+  const messageRelayedFilter = hubPool.filters.MessageRelayed();
+  const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+
+  const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+  const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+
+  const uniqueTxHashes = new Set([
+    ...messageRelayedEvents.map((e) => e.transactionHash),
+    ...tokensRelayedEvents.map((e) => e.transactionHash),
+  ]);
+
+  if (uniqueTxHashes.size === 0) {
+    return [];
+  }
+
+  const receipts = await Promise.all(Array.from(uniqueTxHashes).map((hash) => srcProvider.getTransactionReceipt(hash)));
+
+  const _isMessageSentEvent = (log: ethers.providers.Log): boolean => {
+    return log.topics[0] === CCTP_MESSAGE_SENT_TOPIC_HASH;
+  };
+
+  // returns 0 for v1 `DepositForBurn` event, 1 for v2, -1 for other events
+  const _getDepositForBurnVersion = (log: ethers.providers.Log): number => {
+    const topic = log.topics[0];
+    switch (topic) {
+      case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1:
+        return 0;
+      case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2:
+        return 1;
+      default:
+        return -1;
+    }
+  };
+
+  const sourceDomainId = getCctpDomainForChainId(sourceChainId);
+  const destinationDomainId = getCctpDomainForChainId(destinationChainId);
+  // TODO: how come does `usdcAddress` have type `string` here? What if there's no `sourceChainId` entry?
+  const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
+  assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
+
+  const _isRelevantEvent = (event: CCTPMessageEvent): boolean => {
+    const baseConditions =
+      event.sourceDomain === sourceDomainId &&
+      event.destinationDomain === destinationDomainId &&
+      senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
+
+    return (
+      baseConditions &&
+      (!isDepositForBurnMessageEvent(event) ||
+        // if DepositForBurnMessageEvent, check token too
+        compareAddressesSimple(event.burnToken, usdcAddress))
+    );
+  };
+
+  const relevantEvents: CCTPMessageEvent[] = [];
+  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log) => {
+    const eventData = isCctpV2 ? _decodeCommonMessageDataV1(log) : _decodeCommonMessageDataV2(log);
+    const event: CommonMessageEvent = {
+      ...eventData,
+      log: log as Log,
+    };
+    if (_isRelevantEvent(event)) {
+      relevantEvents.push(event);
+    }
+  };
+  for (const receipt of receipts) {
+    let lastMessageSentEventIdx = -1;
+    let i = 0;
+    for (const log of receipt.logs) {
+      if (_isMessageSentEvent(log)) {
+        if (lastMessageSentEventIdx == -1) {
+          lastMessageSentEventIdx = i;
+        } else {
+          _addCommonMessageEventIfRelevant(log);
+        }
+      } else {
+        const logCctpVersion = _getDepositForBurnVersion(log);
+        if (logCctpVersion == -1) {
+          // skip non-`DepositForBurn` events
+          continue;
+        }
+
+        const matchingCctpVersion = (logCctpVersion == 0 && !isCctpV2) || (logCctpVersion == 1 && isCctpV2);
+        if (matchingCctpVersion) {
+          // if DepositForBurn event matches our "desired version", assess if it matches our search parameters
+          const correspondingMessageSentLog = receipt.logs[lastMessageSentEventIdx];
+          const eventData = isCctpV2
+            ? _decodeDepositForBurnMessageDataV2(correspondingMessageSentLog)
+            : _decodeDepositForBurnMessageDataV1(correspondingMessageSentLog);
+          const event: DepositForBurnMessageEvent = {
+            ...eventData,
+            // TODO: how to turn ethers.providers.Log into Log ???? :((((
+            // ! todo. This will not work. But do we even need log here?
+            log: log as Log,
+          };
+          if (_isRelevantEvent(event)) {
+            // TODO: Check correspondence between DepositForBurn and MessageSent events
+            // TODO: how to turn ethers.providers.Log into Log ???? :((((
+            relevantEvents.push(event);
+          }
+          lastMessageSentEventIdx = -1;
+        } else {
+          // reset `lastMessageSentEventIdx`, because we found a matching `DepositForBurn` event
+          lastMessageSentEventIdx = -1;
+        }
+      }
+      i += 1;
+    }
+    // After the loop over all logs, we might have an unmatched `MessageSent` event. Try to add it to `relevantEvents`
+    if (lastMessageSentEventIdx != -1) {
+      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx]);
+    }
+  }
+
+  return relevantEvents;
 }
 
 async function getCCTPDepositEvents(
@@ -343,6 +507,98 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
   const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
+}
+
+function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
+  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
+  const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(20, 52))); // sender	20	bytes32	32	Address of MessageTransmitter caller on source domain
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(52, 84))); // recipient	52	bytes32	32	Address to handle message body on destination domain
+
+  // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
+  const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
+
+  return {
+    version: 0,
+    sourceDomain,
+    destinationDomain,
+    sender,
+    recipient,
+    nonceHash,
+    messageHash: ethers.utils.keccak256(messageBytes),
+    messageBytes,
+  };
+}
+
+function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+  const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
+  const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(44, 76))); // sender	44	bytes32	32	Address of MessageTransmitterV2 caller on source domain
+  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
+
+  return {
+    version: 0,
+    sourceDomain,
+    destinationDomain,
+    sender,
+    recipient,
+    // For v2, we rely on Circle's API to find nonceHash
+    nonceHash: ethers.constants.HashZero,
+    messageHash: ethers.utils.keccak256(messageBytes),
+    messageBytes,
+  };
+}
+
+function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositForBurnMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const commonDataV1 = _decodeCommonMessageDataV1(message);
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+
+  // Values specific to `DepositForBurn`. These are values contained withing `messageBody` bytes (the last of the message.data fields)
+  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(120, 152))); // burnToken 4 bytes32 32 Address of burned token on source domain
+  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
+  const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+
+  return {
+    ...commonDataV1,
+    burnToken,
+    amount: BigNumber.from(amount).toString(),
+    // override sender and recipient from `DepositForBurn`-specific values
+    sender: sender,
+    recipient: mintRecipient,
+    mintRecipient,
+  };
+}
+
+function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositForBurnMessageData {
+  // Source: https://developers.circle.com/stablecoins/message-format
+  const commonData = _decodeCommonMessageDataV2(message);
+  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+
+  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // burnToken: Address of burned token on source domain. 32 bytes starting index 152 (idx 4 of body after idx 148 which ends the header)
+  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
+  const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
+  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+
+  return {
+    ...commonData,
+    burnToken,
+    amount: BigNumber.from(amount).toString(),
+    // override sender and recipient from `DepositForBurn`-specific values
+    sender: sender,
+    recipient: mintRecipient,
+    mintRecipient,
+  };
 }
 
 function _decodeCCTPV1Message(message: { data: string }): CCTPDeposit {
