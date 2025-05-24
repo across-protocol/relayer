@@ -7,7 +7,7 @@ import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider } from "./ProviderUtils";
-import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
+import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
 import { assert } from ".";
@@ -151,6 +151,24 @@ async function getCCTPMessageEvents(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<CCTPMessageEvent[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
+  // TODO: separate into a function `getContractInterfaces`
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { address: _tokenMessengerAddr, abi: tokenMessengerAbi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { address: _messageTransmitterAddr, abi: messageTransmitterAbi } = getCctpMessageTransmitter(
+    l2ChainId,
+    sourceChainId
+  );
+  const tokenMessengerInterface = new ethers.utils.Interface(tokenMessengerAbi);
+  const messageTransmitterInterface = new ethers.utils.Interface(messageTransmitterAbi);
+
+  const depositForBurnTopic = tokenMessengerInterface.getEventTopic("DepositForBurn");
+  assert(
+    depositForBurnTopic === (isCctpV2 ? CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 : CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1)
+  );
+  const messegeSentTopic = messageTransmitterInterface.getEventTopic("MessageSent");
+  assert(messegeSentTopic === CCTP_MESSAGE_SENT_TOPIC_HASH);
+
   const srcProvider = getCachedProvider(sourceChainId);
 
   // Step 1: Get all HubPool MessageRelayed and TokensRelayed events
@@ -159,6 +177,7 @@ async function getCCTPMessageEvents(
     throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
   }
 
+  // TODO: separate into a function `getRelevantTxHashes`: `const uniqueTxHashes = await getRelevantTxHashes();`
   const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
 
   const messageRelayedFilter = hubPool.filters.MessageRelayed();
@@ -218,9 +237,16 @@ async function getCCTPMessageEvents(
   const relevantEvents: CCTPMessageEvent[] = [];
   const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log) => {
     const eventData = isCctpV2 ? _decodeCommonMessageDataV1(log) : _decodeCommonMessageDataV2(log);
+    const logDescription = messageTransmitterInterface.parseLog(log);
+    const spreadArgs = spreadEvent(logDescription.args);
+    const eventName = logDescription.name;
     const event: CommonMessageEvent = {
       ...eventData,
-      log: log as Log,
+      log: {
+        ...log,
+        event: eventName,
+        args: spreadArgs,
+      },
     };
     if (_isRelevantEvent(event)) {
       relevantEvents.push(event);
@@ -239,26 +265,43 @@ async function getCCTPMessageEvents(
       } else {
         const logCctpVersion = _getDepositForBurnVersion(log);
         if (logCctpVersion == -1) {
-          // skip non-`DepositForBurn` events
+          // Skip non-`DepositForBurn` events
           continue;
         }
 
         const matchingCctpVersion = (logCctpVersion == 0 && !isCctpV2) || (logCctpVersion == 1 && isCctpV2);
         if (matchingCctpVersion) {
-          // if DepositForBurn event matches our "desired version", assess if it matches our search parameters
+          // If DepositForBurn event matches our "desired version", assess if it matches our search parameters
           const correspondingMessageSentLog = receipt.logs[lastMessageSentEventIdx];
           const eventData = isCctpV2
             ? _decodeDepositForBurnMessageDataV2(correspondingMessageSentLog)
             : _decodeDepositForBurnMessageDataV1(correspondingMessageSentLog);
+          const logDescription = tokenMessengerInterface.parseLog(log);
+          const spreadArgs = spreadEvent(logDescription.args);
+          const eventName = logDescription.name;
+
+          // Verify that decoded message matches the DepositForBurn event. We can skip this step if we find this reduces performance
+          if (
+            !compareAddressesSimple(eventData.sender, spreadArgs.depositor) ||
+            !compareAddressesSimple(eventData.recipient, cctpBytes32ToAddress(spreadArgs.mintRecipient)) ||
+            !BigNumber.from(eventData.amount).eq(spreadArgs.amount)
+          ) {
+            const { transactionHash: txnHash, logIndex } = log;
+            throw new Error(
+              `Decoded message at log index ${correspondingMessageSentLog.logIndex}` +
+                ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
+            );
+          }
+
           const event: DepositForBurnMessageEvent = {
             ...eventData,
-            // TODO: how to turn ethers.providers.Log into Log ???? :((((
-            // ! todo. This will not work. But do we even need log here?
-            log: log as Log,
+            log: {
+              ...log,
+              event: eventName,
+              args: spreadArgs,
+            },
           };
           if (_isRelevantEvent(event)) {
-            // TODO: Check correspondence between DepositForBurn and MessageSent events
-            // TODO: how to turn ethers.providers.Log into Log ???? :((((
             relevantEvents.push(event);
           }
           lastMessageSentEventIdx = -1;
