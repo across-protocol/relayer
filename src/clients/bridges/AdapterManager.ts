@@ -11,6 +11,7 @@ import {
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
+  chainIsEvm,
   isDefined,
   winston,
   Signer,
@@ -48,7 +49,9 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress.toEvmAddress());
+    const spokePoolAddresses = Object.values(spokePoolClients)
+      .filter(({ chainId }) => chainIsEvm(chainId))
+      .map((client) => client.spokePoolAddress.toEvmAddress());
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -67,6 +70,11 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       } // Special case for the EthereumAdapter
+
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = spokePoolClients[chainId];
@@ -100,9 +108,11 @@ export class AdapterManager {
           .filter(isDefined) ?? []
       );
     };
-    Object.keys(this.spokePoolClients).map((_chainId) => {
-      const chainId = Number(_chainId);
-      assert(chainId.toString() === _chainId);
+    Object.values(this.spokePoolClients).map(({ chainId }) => {
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,

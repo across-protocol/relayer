@@ -4,6 +4,7 @@ import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
+  chainIsEvm,
   Contract,
   dedupArray,
   ERC20,
@@ -222,6 +223,10 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    if (!chainIsEvm(chainId)) {
+      return {}; // @todo
+    }
+
     const spokePoolClient = this.spokePoolClients[chainId];
 
     assert(isEVMSpokePoolClient(spokePoolClient));
