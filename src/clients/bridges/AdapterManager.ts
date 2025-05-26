@@ -72,7 +72,7 @@ export class AdapterManager {
       } // Special case for the EthereumAdapter
 
       if (!chainIsEvm(chainId)) {
-        return; // todo
+        return; // @todo
       }
 
       return Object.fromEntries(
@@ -110,7 +110,7 @@ export class AdapterManager {
     };
     Object.values(this.spokePoolClients).map(({ chainId }) => {
       if (!chainIsEvm(chainId)) {
-        return;
+        return; // @todo
       }
 
       // Instantiate a generic adapter and supply all network-specific configurations.

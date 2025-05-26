@@ -224,7 +224,7 @@ export class TokenClient {
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     if (!chainIsEvm(chainId)) {
-      return {};
+      return {}; // @todo
     }
 
     const spokePoolClient = this.spokePoolClients[chainId];
