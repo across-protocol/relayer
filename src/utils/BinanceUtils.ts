@@ -1,6 +1,6 @@
 import Binance from "binance-api-node";
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, KeyConfig } from "./";
 
 // Store global promises on Gckms key retrievel actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -38,8 +38,12 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
   const opts = {
     string: ["binanceSecretKey"],
   };
-  const args = minimist(process.argv.slice(2), opts);
-  const binanceKeys = await retrieveGckmsKeys(getGckmsConfig(args.binanceSecretKey ?? []));
+  const keyJson = process.env.BINANCE_GCKMS_KEY_CONFIG;
+  if (!isDefined(keyJson)) {
+    return undefined;
+  }
+  const keyConfig: KeyConfig = JSON.parse(keyJson);
+  const binanceKeys = await retrieveGckmsKeys([keyConfig]);
   if (binanceKeys.length === 0) {
     return undefined;
   }
