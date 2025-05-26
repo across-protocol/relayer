@@ -23,16 +23,11 @@ let svmBlockFinder: SVMBlockFinder;
  */
 export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder<utils.Block>> {
   if (chainIsEvm(chainId)) {
-    if (!isDefined(evmBlockFinders[chainId])) {
-      const providerForChain = await getProvider(chainId);
-      evmBlockFinders[chainId] = new EVMBlockFinder(providerForChain);
-    }
+    evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
     return evmBlockFinders[chainId];
   }
   const provider = getSvmProvider();
-  if (!isDefined(svmBlockFinder)) {
-    svmBlockFinder = new SVMBlockFinder(provider);
-  }
+  svmBlockFinder ??= new SVMBlockFinder(provider);
   return svmBlockFinder;
 }
 

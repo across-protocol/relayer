@@ -1,6 +1,7 @@
 import assert from "assert";
 import winston from "winston";
 import {
+  chainIsSvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -82,7 +83,8 @@ export async function resolveSpokePoolActivationBlock(
   const blockFinder = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
-  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+  const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
+  const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
   const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
 
   const cacheAfter = 5 * 24 * 3600; // 5 days
@@ -333,7 +335,14 @@ export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
   eventsToQuery?: string[]
 ): Promise<void> {
-  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
+  await Promise.all(
+    Object.values(spokePoolClients).map((client) =>
+      // SVM does not implement RequestedSpeedUpDeposit.
+      chainIsSvm(client.chainId)
+        ? client.update(eventsToQuery.filter((event) => event !== "RequestedSpeedUpDeposit"))
+        : client.update(eventsToQuery)
+    )
+  );
 }
 
 export async function constructClients(
