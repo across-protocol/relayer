@@ -237,7 +237,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
         this.logger.debug({
           at: "SpokePoolClient#removeEvent",
-          message: `Removed ${this.#chain} ${eventName} event for block ${blockNumber}.`,
+          message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event for block ${blockNumber}.`,
           event,
         });
       }
