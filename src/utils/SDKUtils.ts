@@ -2,10 +2,13 @@ import * as sdk from "@across-protocol/sdk";
 
 // EVMBlockFinder returns _only_ EVMBlock types.
 export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
+export class SVMBlockFinder extends sdk.arch.svm.SVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
 
 export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
 export const addressAdapters = sdk.addressAggregator.adapters;
+
+export class SvmCpiEventsClient extends sdk.arch.svm.SvmCpiEventsClient {}
 
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
