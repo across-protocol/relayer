@@ -37,6 +37,7 @@ export const {
   chainIsProd,
   chainIsMatic,
   chainIsLinea,
+  chainIsSvm,
   dedupArray,
   fixedPointAdjustment,
   forEachAsync,

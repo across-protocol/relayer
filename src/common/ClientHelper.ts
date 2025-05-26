@@ -1,6 +1,7 @@
 import assert from "assert";
 import winston from "winston";
 import {
+  chainIsSvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -81,7 +82,8 @@ export async function resolveSpokePoolActivationBlock(
   const blockFinder = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
-  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
+  const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
+  const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
   const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
 
   const cacheAfter = 5 * 24 * 3600; // 5 days
