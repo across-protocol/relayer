@@ -1,5 +1,5 @@
-import { SpokePoolClient, TokenClient } from "../src/clients";
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import { EVMSpokePoolClient, SpokePoolClient } from "../src/clients";
+import { MockConfigStoreClient, MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   BigNumber,
@@ -13,6 +13,7 @@ import {
   expect,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 describe("TokenClient: Token shortfall", async function () {
@@ -20,7 +21,7 @@ describe("TokenClient: Token shortfall", async function () {
   let erc20_2: Contract;
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let owner: SignerWithAddress, spyLogger: winston.Logger;
-  let tokenClient: TokenClient; // tested
+  let tokenClient: SimpleMockTokenClient; // tested
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
   const updateAllClients = async () => {
@@ -47,14 +48,14 @@ describe("TokenClient: Token shortfall", async function () {
 
     const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
@@ -72,7 +73,11 @@ describe("TokenClient: Token shortfall", async function () {
     });
     hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
+
+    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient.setRemoteTokens([l1Token_1, erc20_2]);
   });
 
   it("Captures and tracks token shortfall", async function () {

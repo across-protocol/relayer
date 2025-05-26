@@ -40,6 +40,49 @@ contract CctpTokenMessenger {
     }
 }
 
+contract CctpV2TokenMessenger {
+    event DepositForBurn(
+        address indexed burnToken,
+        uint256 amount,
+        address indexed depositor,
+        bytes32 mintRecipient,
+        uint32 destinationDomain,
+        bytes32 destinationTokenMessenger,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 indexed minFinalityThreshold,
+        bytes hookData
+    );
+    event MintAndWithdraw(address indexed mintRecipient, uint256 amount, address indexed mintToken);
+
+    function emitDepositForBurn(
+        address burnToken,
+        uint256 amount,
+        address depositor,
+        bytes32 mintRecipient,
+        uint32 destinationDomain,
+        bytes32 destinationTokenMessenger,
+        bytes32 destinationCaller
+    ) external {
+        emit DepositForBurn(
+            burnToken,
+            amount,
+            depositor,
+            mintRecipient,
+            destinationDomain,
+            destinationTokenMessenger,
+            destinationCaller,
+            0,
+            2000,
+            ""
+        );
+    }
+
+    function emitMintAndWithdraw(address mintRecipient, uint256 amount, address mintToken) external {
+        emit MintAndWithdraw(mintRecipient, amount, mintToken);
+    }
+}
+
 contract CctpMessageTransmitter {
     mapping(bytes32 => uint256) public usedNonces;
 

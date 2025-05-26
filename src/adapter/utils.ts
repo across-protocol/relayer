@@ -10,6 +10,7 @@ import {
   blockExplorerLink,
   mapAsync,
   winston,
+  Address,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
@@ -27,7 +28,7 @@ export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
 }
 
 export async function approveTokens(
-  tokens: { token: ExpandedERC20; bridges: string[] }[],
+  tokens: { token: ExpandedERC20; bridges: Address[] }[],
   chainId: number,
   hubChainId: number,
   logger: winston.Logger
@@ -36,16 +37,16 @@ export async function approveTokens(
   const approvalMarkdwn = await mapAsync(bridges, async ({ token: l1Token, bridge }) => {
     const txs = [];
     if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-      txs.push(await runTransaction(logger, l1Token, "approve", [bridge, bnZero]));
+      txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toAddress(), bnZero]));
     }
-    txs.push(await runTransaction(logger, l1Token, "approve", [bridge, MAX_SAFE_ALLOWANCE]));
+    txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toAddress(), MAX_SAFE_ALLOWANCE]));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const hubNetwork = getNetworkName(hubChainId);
     const spokeNetwork = getNetworkName(chainId);
     let internalMrkdwn =
-      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge, hubChainId)} ` +
+      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toAddress(), hubChainId)} ` +
       `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-      `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
+      `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, hubChainId)}`;
     if (receipts.length > 1) {
       internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
     }
@@ -54,16 +55,10 @@ export async function approveTokens(
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
 
-export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
-  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-    amount: BigNumber;
-    to: string;
-    from: string;
-  };
+export function processEvent(event: Log, amountField: string): BridgeEvent {
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent;
   return {
-    amount: eventSpread[amountField],
-    to: eventSpread[toField],
-    from: eventSpread[fromField],
     ...eventSpread,
+    amount: eventSpread[amountField],
   };
 }

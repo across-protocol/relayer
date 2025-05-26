@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient, TokenClient } from "../src/clients";
+import { ConfigStoreClient, SpokePoolClient, EVMSpokePoolClient } from "../src/clients";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -16,8 +16,9 @@ import {
   toBNWei,
   utf8ToHex,
   winston,
+  deployMulticall3,
 } from "./utils";
-import { MockHubPoolClient } from "./mocks";
+import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 
 describe("TokenClient: Origin token approval", async function () {
   let spokePool_1: Contract, spokePool_2: Contract, hubPool: Contract;
@@ -29,7 +30,7 @@ describe("TokenClient: Origin token approval", async function () {
     l1Token_2: Contract;
   let hubPoolClient: MockHubPoolClient, spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
-  let tokenClient: TokenClient; // tested
+  let tokenClient: SimpleMockTokenClient; // tested
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
   const updateAllClients = async () => {
@@ -65,14 +66,14 @@ describe("TokenClient: Origin token approval", async function () {
     ({ hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(owner, [], finder.address, ZERO_ADDRESS));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
@@ -83,7 +84,7 @@ describe("TokenClient: Origin token approval", async function () {
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
     const { configStore } = await deployConfigStore(owner, [l1Token_1, l1Token_2]);
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, 0);
     await configStoreClient.update();
     hubPoolClient = new MockHubPoolClient(createSpyLogger().spyLogger, hubPool, configStoreClient);
 
@@ -99,7 +100,11 @@ describe("TokenClient: Origin token approval", async function () {
     hubPoolClient.setTokenMapping(l1Token_2.address, originChainId, weth_1.address);
     hubPoolClient.setTokenMapping(l1Token_2.address, destinationChainId, weth_2.address);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
+
+    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient.setRemoteTokens([l1Token_1, l1Token_2, erc20_1, erc20_2, weth_1, weth_2]);
   });
 
   it("Executes expected L2 token approvals and produces logs", async function () {

@@ -1,24 +1,26 @@
-import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
+import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getCachedProvider,
   groupObjectCountsByProp,
   isDefined,
   Multicall2Call,
-  paginatedEventQuery,
   winston,
   convertFromWei,
+  isEVMSpokePoolClient,
 } from "../../../utils";
-import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import {
+  AttestedCCTPDepositEvent,
+  CCTPMessageStatus,
+  getAttestationsForCCTPDepositEvents,
+  getCctpMessageTransmitter,
+} from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { uniqWith } from "lodash";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -26,23 +28,26 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  senderAddresses: string[]
 ): Promise<FinalizerPromise> {
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[l2SpokePoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(
-    cctpMessageReceiverDetails.address,
-    cctpMessageReceiverDetails.abi,
-    l2SpokePoolClient.spokePool.provider
-  );
-  const decodedMessages = await resolveRelatedTxnReceipts(
-    l1ToL2AddressesToFinalize,
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  const searchConfig: EventSearchConfig = {
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
+  };
+  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
+    senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
-    l1SpokePoolClient
+    l2SpokePoolClient.chainId,
+    searchConfig
   );
-  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const unprocessedMessages = outstandingDeposits.filter(
+    (message) => message.status === "ready" && message.attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
-    decodedMessages,
+    outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
   logger.debug({
@@ -51,56 +56,17 @@ export async function cctpL1toL2Finalizer(
     statusesGrouped,
   });
 
+  const { address, abi } = getCctpMessageTransmitter(l2SpokePoolClient.chainId, l2SpokePoolClient.chainId);
+  const l2MessengerContract = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
+
   return {
     crossChainMessages: await generateDepositData(
       unprocessedMessages,
       hubPoolClient.chainId,
       l2SpokePoolClient.chainId
     ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    callData: await generateMultiCallData(l2MessengerContract, unprocessedMessages),
   };
-}
-
-async function findRelevantTxnReceiptsForCCTPDeposits(
-  currentChainId: number,
-  addressesToSearch: string[],
-  l1SpokePoolClient: SpokePoolClient
-): Promise<TransactionReceipt[]> {
-  const provider = getCachedProvider(currentChainId);
-  const tokenMessengerContract = new Contract(
-    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.address,
-    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.abi,
-    provider
-  );
-  const eventFilter = tokenMessengerContract.filters.DepositForBurn(
-    undefined,
-    TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], // Filter by only USDC token deposits
-    undefined,
-    addressesToSearch // All depositors that we are monitoring for
-  );
-  const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
-  };
-  const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
-  const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
-  // Return the receipts, without duplicated transaction hashes
-  return uniqWith(receipts, (a, b) => a.transactionHash.toLowerCase() === b.transactionHash.toLowerCase());
-}
-
-async function resolveRelatedTxnReceipts(
-  addressesToSearch: string[],
-  currentChainId: number,
-  targetDestinationChainId: number,
-  l1SpokePoolClient: SpokePoolClient
-): Promise<DecodedCCTPMessage[]> {
-  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(
-    currentChainId,
-    addressesToSearch,
-    l1SpokePoolClient
-  );
-  return resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
 }
 
 /**
@@ -111,9 +77,9 @@ async function resolveRelatedTxnReceipts(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
+  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
+  assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
@@ -136,7 +102,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateDepositData(
-  messages: DecodedCCTPMessage[],
+  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {

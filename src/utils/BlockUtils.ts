@@ -1,11 +1,19 @@
 import { interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
-import { BlockFinder, BlockFinderHints } from "./SDKUtils";
-import { getProvider } from "./ProviderUtils";
+import {
+  BlockFinderHints,
+  EVMBlockFinder,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
+  SVMBlockFinder,
+  chainIsEvm,
+} from "./SDKUtils";
+import { getProvider, getSvmProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
-const blockFinders: { [chainId: number]: BlockFinder } = {};
+const evmBlockFinders: { [chainId: number]: EVMBlockFinder } = {};
+let svmBlockFinder: SVMBlockFinder;
 
 /**
  * @notice Return block finder for chain. Loads from in memory blockFinder cache if this function was called before
@@ -13,12 +21,14 @@ const blockFinders: { [chainId: number]: BlockFinder } = {};
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
-  if (!isDefined(blockFinders[chainId])) {
-    const providerForChain = await getProvider(chainId);
-    blockFinders[chainId] = new BlockFinder(providerForChain);
+export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder<utils.Block>> {
+  if (chainIsEvm(chainId)) {
+    evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
+    return evmBlockFinders[chainId];
   }
-  return blockFinders[chainId];
+  const provider = getSvmProvider();
+  svmBlockFinder ??= new SVMBlockFinder(provider);
+  return svmBlockFinder;
 }
 
 /**
@@ -33,7 +43,7 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder,
+  blockFinder?: utils.BlockFinder<utils.Block>,
   redisCache?: interfaces.CachingMechanismInterface,
   hints: BlockFinderHints = {}
 ): Promise<number> {
@@ -55,7 +65,14 @@ export async function getTimestampsForBundleEndBlocks(
         if (spokePoolClient === undefined) {
           return;
         }
-        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+        } else if (isSVMSpokePoolClient(spokePoolClient)) {
+          return [
+            chainId,
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(endBlock)).send()),
+          ];
+        }
       })
     ).filter(isDefined)
   );

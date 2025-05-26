@@ -22,6 +22,7 @@ import {
   sinon,
   smock,
   spyLogIncludes,
+  deployMulticall3,
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
@@ -60,8 +61,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
       destinationChainId,
-      blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.DepositWithBlock);
   }
 
@@ -82,8 +83,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
       },
-      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.FillWithBlock);
   }
 
@@ -95,8 +96,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
     return mockDestinationSpokePoolClient.requestV3SlowFill({
       ...relayData,
-      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestBlockSearched, // @dev use latest block searched from non-mocked client
-      // so that mocked client's latestBlockSearched gets set to the same value.
+      blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.SlowFillRequestWithBlock);
   }
 
@@ -119,6 +120,12 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
     await updateAllClients();
+
+    // Deploy Multicall3 to the hardhat test networks.
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
       hubPoolClient.hubPool,
@@ -168,7 +175,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
         hubPoolClient: mockHubPoolClient as unknown as HubPoolClient,
       },
       dataworkerInstance.clients.bundleDataClient.spokePoolClients,
-      dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers
+      dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
+      dataworkerInstance.blockRangeEndBlockBuffer
     );
     dataworkerInstance = new Dataworker(
       dataworkerInstance.logger,
@@ -176,8 +184,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       { ...dataworkerInstance.clients, bundleDataClient },
       dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers,
       dataworkerInstance.maxRefundCountOverride,
-      dataworkerInstance.maxL1TokenCountOverride,
-      dataworkerInstance.blockRangeEndBlockBuffer
+      dataworkerInstance.maxL1TokenCountOverride
     );
   });
 
@@ -307,8 +314,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     const deposits = spokePoolClient_1.getDeposits();
     expect(deposits.length).to.equal(0);
@@ -355,8 +362,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     bundleBlockRanges[originChainIndex] = [depositBlock - 2, depositBlock - 1];
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     const deposits = spokePoolClient_1.getDeposits();
     expect(deposits.length).to.equal(0);
@@ -455,8 +462,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     const deposits = spokePoolClient_1.getDeposits();
     expect(deposits.length).to.equal(0);
@@ -498,8 +505,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     const deposits = spokePoolClient_1.getDeposits();
     expect(deposits.length).to.equal(0);
@@ -658,8 +665,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
     expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
@@ -706,8 +713,8 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     const depositBlock = await spokePool_1.provider.getBlockNumber();
 
     // Construct a spoke pool client with a small search range that would not include the deposit.
-    spokePoolClient_1.firstBlockToSearch = depositBlock + 1;
-    spokePoolClient_1.eventSearchConfig.fromBlock = spokePoolClient_1.firstBlockToSearch;
+    spokePoolClient_1.firstHeightToSearch = depositBlock + 1;
+    spokePoolClient_1.eventSearchConfig.from = spokePoolClient_1.firstHeightToSearch;
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
     expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
@@ -773,7 +780,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
     // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
     // set the msg.sender as an invalid address.
-    const provider = new providers.mocks.MockedProvider(bnZero, bnZero, destinationChainId);
+    const provider = new providers.MockedProvider(bnZero, bnZero, destinationChainId);
     const spokeWrapper = new Contract(
       mockDestinationSpokePoolClient.spokePool.address,
       mockDestinationSpokePoolClient.spokePool.interface,

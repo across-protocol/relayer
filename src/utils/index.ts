@@ -83,3 +83,4 @@ export * from "./CLIUtils";
 export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
+export * from "./BinanceUtils";

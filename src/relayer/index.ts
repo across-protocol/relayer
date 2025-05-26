@@ -32,7 +32,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalIndexer, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
+  const { externalListener, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
 
   const loop = pollingDelay > 0;
   let stop = false;
@@ -47,8 +47,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const redis = await getRedisCache(logger);
   let activeRelayerUpdated = false;
 
-  // Explicitly don't log ignoredAddresses because it can be huge and can overwhelm log transports.
-  const { ignoredAddresses: _ignoredConfig, ...loggedConfig } = config;
+  // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+  const { addressFilter: _addressFilter, ...loggedConfig } = config;
   logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
@@ -144,7 +144,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   } finally {
     await disconnectRedisClients(logger);
 
-    if (externalIndexer) {
+    if (externalListener) {
       Object.values(spokePoolClients).map((spokePoolClient) => spokePoolClient.stopWorker());
     }
   }

@@ -5,6 +5,7 @@ import {
   MultiCallerClient,
   SpokePoolClient,
   TokenClient,
+  EVMSpokePoolClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
@@ -35,6 +36,7 @@ import {
   sinon,
   spyLogIncludes,
   winston,
+  deployMulticall3,
 } from "./utils";
 
 import { Relayer } from "../src/relayer/Relayer";
@@ -88,6 +90,10 @@ describe("Relayer: Initiates slow fill requests", async function () {
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
     ]);
 
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(
       owner,
@@ -99,7 +105,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       CHAIN_ID_TEST_LIST
     ));
 
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -108,14 +114,14 @@ describe("Relayer: Initiates slow fill requests", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -141,7 +147,12 @@ describe("Relayer: Initiates slow fill requests", async function () {
       null,
       mockCrossChainTransferClient
     );
-
+    mockInventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     relayerInstance = new Relayer(
       relayer.address,

@@ -14,7 +14,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract,
-    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "toBlock"> = { fromBlock: 0, maxBlockLookBack: 0 },
+    readonly eventSearchConfig: MakeOptional<EventSearchConfig, "to"> = { from: 0, maxLookBack: 0 },
     readonly configStoreVersion: number = CONFIG_STORE_VERSION
   ) {
     super(logger, configStore, eventSearchConfig, configStoreVersion);
@@ -26,7 +26,7 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Sanity check to verify that the chain id & block number are positive integers
       if (!utils.isPositiveInteger(injectedChainId) || !utils.isPositiveInteger(injectedBlockNumber)) {
         this.logger.warn({
-          at: "ConfigStore[Relayer]#constructor",
+          at: "ConfigStoreClient#constructor",
           message: `Invalid injected chain id inclusion: ${injectedChains}`,
         });
       }
@@ -66,10 +66,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (isDefined(this.injectedChain)) {
       const { chainId: injectedChainId, blockNumber: injectedBlockNumber } = this.injectedChain;
       // Sanity check to ensure that this event doesn't happen in the future
-      if (injectedBlockNumber > this.latestBlockSearched) {
+      if (injectedBlockNumber > this.latestHeightSearched) {
         this.logger.debug({
           at: "ConfigStore[Relayer]#update",
-          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestBlockSearched}`,
+          message: `Injected block number ${injectedBlockNumber} is greater than the latest block number ${this.latestHeightSearched}`,
         });
         return;
       }
@@ -85,9 +85,9 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       // Partially create the meta-data information regarding the injected chain id inclusion
       const partialChainIdIndicesUpdate = {
         blockNumber: injectedBlockNumber,
-        transactionIndex: 0,
+        txnIndex: 0,
         logIndex: 0,
-        transactionHash: "",
+        txnRef: "",
       };
 
       // We need to now resolve the last chain id indices update

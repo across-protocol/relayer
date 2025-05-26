@@ -3,7 +3,6 @@ import {
   deploySpokePoolWithToken,
   enableRoutesOnHubPool,
   Contract,
-  enableRoutes,
   sampleRateModel,
   createSpyLogger,
   winston,
@@ -29,7 +28,7 @@ import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
 import { BundleDataClient, TokenClient } from "../../src/clients";
 import { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
-import { MockConfigStoreClient, MockedMultiCallerClient } from "../mocks";
+import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
 
@@ -47,13 +46,13 @@ async function _constructSpokePoolClientsWithLookback(
   await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
-    return new sdkClients.SpokePoolClient(
+    return new clients.EVMSpokePoolClient(
       spyLogger,
       pool.connect(signer),
       hubPoolClient,
       spokePoolChains[i],
       deploymentBlocks?.[spokePoolChains[i]] ?? 0,
-      lookbackForAllChains === undefined ? undefined : { fromBlock: latestBlocks[i] - lookbackForAllChains }
+      lookbackForAllChains === undefined ? undefined : { from: latestBlocks[i] - lookbackForAllChains }
     );
   });
 }
@@ -128,11 +127,6 @@ export async function setupDataworker(
     umaEcosystem.timer.address
   );
 
-  // Enable deposit routes for second L2 tokens so relays can be sent between spoke pool 1 <--> 2.
-  await enableRoutes(spokePool_1, [{ originToken: erc20_2.address, destinationChainId: destinationChainId }]);
-  await enableRoutes(spokePool_2, [{ originToken: erc20_1.address, destinationChainId: originChainId }]);
-  await enableRoutes(spokePool_4, [{ originToken: l1Token_1.address, destinationChainId: destinationChainId }]);
-  // For each chain, enable routes to both erc20's so that we can fill relays
   await enableRoutesOnHubPool(hubPool, [
     { destinationChainId: originChainId, l1Token: l1Token_1, destinationToken: erc20_1 },
     { destinationChainId: destinationChainId, l1Token: l1Token_1, destinationToken: erc20_2 },
@@ -174,13 +168,18 @@ export async function setupDataworker(
 
   await configStoreClient.update();
 
-  const hubPoolClient = new sdkClients.HubPoolClient(
+  const hubPoolClient = new SimpleMockHubPoolClient(
     spyLogger,
     hubPool,
     configStoreClient,
     hubPoolDeploymentBlock,
     hubPoolChainId
   );
+  hubPoolClient.mapTokenInfo(l1Token_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(l1Token_2.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_1.address, "TEST");
+  hubPoolClient.mapTokenInfo(erc20_2.address, "TEST");
+
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
   const [spokePoolClient_1, spokePoolClient_2, spokePoolClient_3, spokePoolClient_4] =
@@ -219,7 +218,8 @@ export async function setupDataworker(
       hubPoolClient,
     },
     spokePoolClients,
-    testChainIdList
+    testChainIdList,
+    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
   );
 
   const dataworkerClients: DataworkerClients = {
@@ -236,8 +236,7 @@ export async function setupDataworker(
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,
-    maxL1TokensPerPoolRebalanceLeaf,
-    Object.fromEntries(testChainIdList.map((chainId) => [chainId, defaultEndBlockBuffer]))
+    maxL1TokensPerPoolRebalanceLeaf
   );
 
   // Give owner tokens to LP on HubPool with.

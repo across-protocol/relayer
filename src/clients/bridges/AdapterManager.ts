@@ -1,6 +1,6 @@
 import { utils } from "@across-protocol/sdk";
 import {
-  spokesThatHoldEthAndWeth,
+  spokesThatHoldNativeTokens,
   SUPPORTED_TOKENS,
   CUSTOM_BRIDGE,
   CANONICAL_BRIDGE,
@@ -11,6 +11,7 @@ import {
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
+  chainIsEvm,
   isDefined,
   winston,
   Signer,
@@ -18,6 +19,12 @@ import {
   TransactionResponse,
   assert,
   Profiler,
+  EvmAddress,
+  toAddressType,
+  TOKEN_EQUIVALENCE_REMAPPING,
+  getRemoteTokenForL1Token,
+  getTokenInfo,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -31,7 +38,7 @@ export class AdapterManager {
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
-  private chainsToWrapEtherOn = [...spokesThatHoldEthAndWeth, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
+  private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
 
   constructor(
     readonly logger: winston.Logger,
@@ -42,7 +49,9 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+    const spokePoolAddresses = Object.values(spokePoolClients)
+      .filter(({ chainId }) => chainIsEvm(chainId))
+      .map((client) => client.spokePoolAddress.toEvmAddress());
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -50,23 +59,30 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           this.hubPoolClient.hubPool.address === address ||
-          this.spokePoolClients[chainId].spokePool.address === address ||
+          this.spokePoolClients[chainId].spokePoolAddress.toEvmAddress() === address ||
           !spokePoolAddresses.includes(address)
       );
     };
 
     const hubChainId = hubPoolClient.chainId;
-    const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
+    const l1Signer = hubPoolClient.hubPool.signer;
     const constructBridges = (chainId: number) => {
       if (chainId === hubChainId) {
         return {};
       } // Special case for the EthereumAdapter
+
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+          const spokePoolClient = spokePoolClients[chainId];
+          assert(isEVMSpokePoolClient(spokePoolClient));
+          const l2Signer = spokePoolClient.spokePool.signer;
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.from(l1Token));
           return [l1Token, bridge];
         }) ?? []
       );
@@ -75,31 +91,34 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       }
-      const l2Signer = spokePoolClients[chainId].spokePool.signer;
+      const spokePoolClient = spokePoolClients[chainId];
+      assert(isEVMSpokePoolClient(spokePoolClient));
+      const l2Signer = spokePoolClient.spokePool.signer;
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
             const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-            const canonicalBridge = CANONICAL_L2_BRIDGE[chainId];
-            if (!isDefined(canonicalBridge)) {
+            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
+            if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, l1Token);
+            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
       );
     };
-    Object.keys(this.spokePoolClients).map((_chainId) => {
-      const chainId = Number(_chainId);
-      assert(chainId.toString() === _chainId);
+    Object.values(this.spokePoolClients).map(({ chainId }) => {
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId),
+        filterMonitoredAddresses(chainId).map((address) => toAddressType(address)),
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
@@ -126,33 +145,44 @@ export class AdapterManager {
     return Object.keys(this.adapters).map((chainId) => Number(chainId));
   }
 
-  getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
+  getOutstandingCrossChainTransfers(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
-    const adapterSupportedL1Tokens = l1Tokens.filter((token) =>
-      adapter.supportedTokens.includes(this.hubPoolClient.getTokenInfo(this.hubPoolClient.chainId, token).symbol)
-    );
+    const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
+      const tokenSymbol = getTokenInfo(token, this.hubPoolClient.chainId).symbol;
+      return (
+        adapter.supportedTokens.includes(tokenSymbol) ||
+        adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
+      );
+    });
     this.logger.debug({
       at: "AdapterManager",
       message: `Getting outstandingCrossChainTransfers for ${chainId}`,
       adapterSupportedL1Tokens,
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
-    return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
+    return this.adapters[chainId].getOutstandingCrossChainTransfers(
+      adapterSupportedL1Tokens.map((l1Token) => EvmAddress.from(l1Token))
+    );
   }
 
   sendTokenCrossChain(
     address: string,
-    chainId: number | string,
+    chainId: number,
     l1Token: string,
     amount: BigNumber,
     simMode = false,
     l2Token?: string
   ): Promise<TransactionResponse> {
-    chainId = Number(chainId); // Ensure chainId is a number before using.
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
-    l2Token ??= this.l2TokenForL1Token(l1Token, Number(chainId));
-    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
+    return this.adapters[chainId].sendTokenToTargetChain(
+      toAddressType(address),
+      EvmAddress.from(l1Token),
+      toAddressType(l2Token),
+      amount,
+      simMode
+    );
   }
 
   withdrawTokenFromL2(
@@ -170,7 +200,12 @@ export class AdapterManager {
       l2Token,
       amount,
     });
-    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode);
+    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(
+      EvmAddress.from(address),
+      toAddressType(l2Token),
+      amount,
+      simMode
+    );
     return txnReceipts;
   }
 
@@ -181,16 +216,20 @@ export class AdapterManager {
     l2Token: string
   ): Promise<BigNumber> {
     chainId = Number(chainId);
-    return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
+    return await this.adapters[chainId].getL2PendingWithdrawalAmount(
+      lookbackPeriodSeconds,
+      toAddressType(fromAddress),
+      toAddressType(l2Token)
+    );
   }
 
-  // Check how much ETH is on the target chain and if it is above the threshold the wrap it to WETH. Note that this only
-  // needs to be done on chains where rebalancing WETH from L1 to L2 results in the relayer receiving ETH
-  // (not the ERC20), or if the relayer expects to be sent ETH perhaps as a gas refund from an original L1 to L2
+  // Check how many native tokens are on the target chain and if the number of tokens is above the wrap threshold, execute a wrap. Note that this only
+  // needs to be done on chains where rebalancing the native token from L1 to L2 results in the relayer receiving the unwrapped native token
+  // (not the ERC20), or if the relayer expects to be sent the native token perhaps as a gas refund from an original L1 to L2
   // deposit. This currently happens on Arbitrum, where the relayer address is set as the Arbitrum_Adapter's
   // L2 refund recipient, and on ZkSync, because the relayer is set as the refund recipient when rebalancing
   // inventory from L1 to ZkSync via the AtomicDepositor.
-  async wrapEthIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
+  async wrapNativeTokenIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
       this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
       async (chainId) => {
@@ -201,13 +240,15 @@ export class AdapterManager {
           wrapThreshold.gte(wrapTarget),
           `wrapEtherThreshold ${wrapThreshold.toString()} must be >= wrapEtherTarget ${wrapTarget.toString()}`
         );
-        await this.adapters[chainId].wrapEthIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
+        await this.adapters[chainId].wrapNativeTokenIfAboveThreshold(wrapThreshold, wrapTarget, simMode);
       }
     );
   }
 
   getSigner(chainId: number): Signer {
-    return this.spokePoolClients[chainId].spokePool.signer;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    return spokePoolClient.spokePool.signer;
   }
 
   l2TokenForL1Token(l1Token: string, chainId: number): string {
@@ -216,7 +257,7 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, chainId);
+      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
@@ -242,14 +283,16 @@ export class AdapterManager {
     for (const chainId of this.supportedChains()) {
       const adapter = this.adapters[chainId];
       if (isDefined(adapter)) {
-        const hubTokens = l1Tokens.filter((token) => this.l2TokenExistForL1Token(token, chainId));
+        const hubTokens = l1Tokens
+          .filter((token) => this.l2TokenExistForL1Token(token, chainId))
+          .map((l1Token) => EvmAddress.from(l1Token));
         await adapter.checkTokenApprovals(hubTokens);
       }
     }
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
-    return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
+    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

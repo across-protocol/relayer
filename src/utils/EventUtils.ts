@@ -11,7 +11,7 @@ export type EventSearchConfig = sdkUtils.EventSearchConfig;
 
 export const {
   getPaginatedBlockRanges,
-  getTransactionHashes,
+  getTransactionRefs,
   isEventOlder,
   paginatedEventQuery,
   sortEventsAscending,
@@ -31,13 +31,13 @@ export const {
  * @return Index for each event based on the # of other input events with the same transaction hash. The order of the
  * input events is preserved in the output array.
  */
-export function getUniqueLogIndex(events: { transactionHash: string }[]): number[] {
+export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
   const uniqueTokenhashes = {};
   const logIndexesForMessage = [];
   for (const event of events) {
-    const logIndex = uniqueTokenhashes[event.transactionHash] ?? 0;
+    const logIndex = uniqueTokenhashes[event.txnRef] ?? 0;
     logIndexesForMessage.push(logIndex);
-    uniqueTokenhashes[event.transactionHash] = logIndex + 1;
+    uniqueTokenhashes[event.txnRef] = logIndex + 1;
   }
   return logIndexesForMessage;
 }
@@ -62,7 +62,6 @@ export class EventManager {
     public readonly quorum: number
   ) {
     this.chain = getNetworkName(chainId);
-    this.blockNumber = 0;
   }
 
   /**
@@ -95,7 +94,7 @@ export class EventManager {
   }
 
   /**
-   * For a given Log, mark it has having been been processed.
+   * For a given Log, mark it as having been processed.
    * @param event A Log instance to mark processed.
    * @returns void
    */
@@ -160,7 +159,7 @@ export class EventManager {
 
     const events = this.events[event.blockNumber] ?? [];
 
-    // Filter coarsely on transactionHash, since a reorg should invalidate multiple events within a single transaction hash.
+    // Filter coarsely on txnRef, since a reorg should invalidate multiple events within a single transaction hash.
     const eventIdxs = events
       .map((event, idx) => ({ ...event, idx }))
       .filter(({ blockHash }) => blockHash === event.blockHash)
@@ -185,8 +184,7 @@ export class EventManager {
    * @param blockNumber Number of the latest block.
    * @returns void
    */
-  tick(blockNumber: number): Log[] {
-    this.blockNumber = blockNumber > this.blockNumber ? blockNumber : this.blockNumber;
+  tick(): Log[] {
     const blockNumbers = Object.keys(this.events)
       .map(Number)
       .sort((x, y) => x - y);

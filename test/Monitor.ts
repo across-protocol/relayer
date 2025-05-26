@@ -29,6 +29,7 @@ import {
   expect,
   lastSpyLogIncludes,
   toBNWei,
+  deployMulticall3,
 } from "./utils";
 
 type TokenMap = { [l2TokenAddress: string]: L1Token };
@@ -43,10 +44,24 @@ class TestMonitor extends Monitor {
   protected getL2ToL1TokenMap(l1Tokens: L1Token[], chainId): TokenMap {
     return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
   }
+
+  getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+    Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
+      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1TokenObject.address === l1Token);
+      if (matchedToken) {
+        return matchedToken[0];
+      }
+    });
+    return super.getRemoteTokenForL1Token(l1Token, chainId);
+  }
+
+  l2TokenAmountToL1TokenAmountConverter(): (BigNumber) => BigNumber {
+    return (amount: BigNumber) => amount;
+  }
 }
 
 describe("Monitor", async function () {
-  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", ALL_CHAINS_NAME];
+  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", "HardhatNetwork", ALL_CHAINS_NAME];
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
   let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
@@ -112,6 +127,11 @@ describe("Monitor", async function () {
       constants.MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
       0
     ));
+
+    // Deploy Multicall3 to the hardhat test networks.
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
 
     // Use a mock hub pool client for these tests so we can hardcode the L1TokenInfo for arbitrary tokens.
     hubPoolClient = new SimpleMockHubPoolClient(
@@ -329,7 +349,7 @@ describe("Monitor", async function () {
     crossChainTransferClient.increaseOutstandingTransfer(
       relayer.address,
       l1Token.address,
-      l2Token.address,
+      erc20_2.address,
       toBN(5),
       destinationChainId
     );
