@@ -77,11 +77,11 @@ async function indexedSpokePoolClient(
     spokePoolClient.init(opts);
     return spokePoolClient;
   } else {
-    const SpokePoolClient = SpokeListener(SVMSpokePoolClient);
     const provider = getSvmProvider();
     const svmEventsClient = await arch.svm.SvmCpiEventsClient.create(provider);
     const programId = svmEventsClient.getProgramAddress();
     const statePda = await arch.svm.getStatePda(programId);
+    const SpokePoolClient = SpokeListener(SVMSpokePoolClient);
     const spokePoolClient = new SpokePoolClient(
       logger,
       hubPoolClient,
