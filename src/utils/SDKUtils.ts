@@ -1,6 +1,5 @@
 import * as sdk from "@across-protocol/sdk";
 
-
 // EVMBlockFinder returns _only_ EVMBlock types.
 export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
