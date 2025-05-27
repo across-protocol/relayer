@@ -558,19 +558,29 @@ export async function getAttestedCCTPMessages(
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   const attestationResponses: Map<string, CCTPV2APIGetAttestationResponse> = new Map();
 
-  // TODO: as our CCTP v2 chain list grows, we might start hitting an API limit of 35 reqs/second here
-  // Consider implementing rate limiting. For v2 this is more important because we can't tell which messages
-  // are finalized before hitting the API, meaning that if our lookback window is long enough, it might contain > 35 tx hashes
   if (isCctpV2) {
     // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
     const sourceDomainId = getCctpDomainForChainId(sourceChainId);
-    const uniqueTxHashes = new Set([...messagesWithStatus.map((message) => message.log.transactionHash)]);
-    await Promise.all(
-      Array.from(uniqueTxHashes).map(async (txHash) => {
-        const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
-        attestationResponses.set(txHash, attestations);
-      })
-    );
+    const uniqueTxHashes = Array.from(new Set([...messagesWithStatus.map((message) => message.log.transactionHash)]));
+
+    // Circle rate limit is 35 requests / second. To avoid getting banned, batch calls into chunks with 1 second delay between chunks
+    // For v2, this is actually required because we don't know if message is finalized or not before hitting the API. Therefore as our
+    // CCTP v2 list of chains grows, we might require more than 35 calls here to fetch all attestations
+    const chunkSize = 8;
+    for (let i = 0; i < uniqueTxHashes.length; i += chunkSize) {
+      const chunk = uniqueTxHashes.slice(i, i + chunkSize);
+
+      await Promise.all(
+        chunk.map(async (txHash) => {
+          const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
+          attestationResponses.set(txHash, attestations);
+        })
+      );
+
+      if (i + chunkSize < uniqueTxHashes.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
   }
 
   const attestedMessages = await Promise.all(
