@@ -86,7 +86,7 @@ export class MonitorConfig extends CommonConfig {
     };
 
     if (MONITOR_IGNORE_FOLLOW_DISTANCE === "true") {
-      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => this.blockRangeEndBlockBuffer[chainId] = 0);
+      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
     }
 
     // Used to monitor activities not from whitelisted data workers or relayers.
