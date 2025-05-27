@@ -198,29 +198,30 @@ async function getRelevantCCTPTxHashes(
 ): Promise<Set<string>> {
   const txHashesFromHubPool = new Set<string>();
 
-  // TODO: instead of this hack, we can instead utilize `senderAddresses` to exlude HubPool events.
-  // TODO: we should do that actually.
   if (includeHubPoolMessages) {
-    const { address: hubPoolAddress } = CONTRACT_ADDRESSES[sourceChainId]["hubPool"];
-    // TODO: this seems like incorrect error handling
-    if (!hubPoolAddress) {
-      // TODO: do we really have to throw here actually? Can't we just skip these events then?
-      throw new Error(`No HubPool address found for chainId: ${sourceChainId}`);
+    const { address: hubPoolAddress, abi } = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
+    if (!isDefined(hubPoolAddress) || !isDefined(abi)) {
+      throw new Error(`No HubPool address or abi found for chainId: ${sourceChainId}`);
     }
 
-    // TODO: import require("../common/abi/HubPool.json")
-    const hubPool = new Contract(hubPoolAddress, require("../common/abi/HubPool.json"), srcProvider);
+    const isHubPoolAmongSenders = senderAddresses.some((senderAddr) =>
+      compareAddressesSimple(senderAddr, hubPoolAddress)
+    );
 
-    const messageRelayedFilter = hubPool.filters.MessageRelayed();
-    const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
-    messageRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+    if (isHubPoolAmongSenders) {
+      const hubPool = new Contract(hubPoolAddress, abi, srcProvider);
 
-    const tokensRelayedFilter = hubPool.filters.TokensRelayed();
-    const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
-    tokensRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+      const messageRelayedFilter = hubPool.filters.MessageRelayed();
+      const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+      messageRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+
+      const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+      const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+      tokensRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+    }
   }
 
-  // Step 2: Get all DepositForBurn events matching the senderAddress and source chain
+  // Step 2: Get all DepositForBurn events matching the senderAddresses and source chain
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
@@ -304,7 +305,6 @@ async function getCCTPMessageEvents(
 
   const sourceDomainId = getCctpDomainForChainId(sourceChainId);
   const destinationDomainId = getCctpDomainForChainId(destinationChainId);
-  // TODO: how come does `usdcAddress` have type `string` here? What if there's no `sourceChainId` entry?
   const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
   assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
 
