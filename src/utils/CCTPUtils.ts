@@ -1,7 +1,7 @@
 import { utils } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
-import { Contract, ethers } from "ethers";
+import { Contract, ethers, EventFilter } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
@@ -21,6 +21,11 @@ type CommonMessageData = {
   messageHash: string;
   messageBytes: string;
   nonceHash: string;
+
+  // Index of cctp message within one txn among other cctp messages. We rely on this to match
+  // messages to attestation responses from Cirle's API correctly. When we learn to derive v2
+  // nonceHash, we can instead move to querying the attestation per message directly
+  cctpMessageIndex: number;
 };
 // Common data + auxilary data from depositForBurn event
 type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecipient: string; burnToken: string };
@@ -36,6 +41,7 @@ type CCTPV2APIAttestation = {
   cctpVersion: number;
 };
 type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function isCctpV2ApiResponse(
   obj: CCTPAPIGetAttestationResponse | CCTPV2APIGetAttestationResponse
 ): obj is CCTPV2APIGetAttestationResponse {
@@ -196,7 +202,7 @@ async function getRelevantCCTPTxHashes(
   sourceEventSearchConfig: EventSearchConfig,
   includeTokenlessHubPoolMessages: boolean
 ): Promise<Set<string>> {
-  const txHashesFromHubPool = new Set<string>();
+  const txHashesFromHubPool: string[] = [];
 
   if (includeTokenlessHubPoolMessages) {
     const { address: hubPoolAddress, abi } = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
@@ -211,13 +217,14 @@ async function getRelevantCCTPTxHashes(
     if (isHubPoolAmongSenders) {
       const hubPool = new Contract(hubPoolAddress, abi, srcProvider);
 
-      const messageRelayedFilter = hubPool.filters.MessageRelayed();
-      const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
-      messageRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+      // Create a combined filter for both MessageRelayed and TokensRelayed events
+      const combinedFilter: EventFilter = {
+        address: hubPoolAddress,
+        topics: [[hubPool.interface.getEventTopic("MessageRelayed"), hubPool.interface.getEventTopic("TokensRelayed")]],
+      };
 
-      const tokensRelayedFilter = hubPool.filters.TokensRelayed();
-      const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
-      tokensRelayedEvents.forEach((e) => txHashesFromHubPool.add(e.transactionHash));
+      const hubPoolEvents = await paginatedEventQuery(hubPool, combinedFilter, sourceEventSearchConfig);
+      hubPoolEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
     }
   }
 
@@ -309,22 +316,22 @@ async function getCCTPMessageEvents(
   assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
 
   const _isRelevantEvent = (event: CCTPMessageEvent): boolean => {
-    const baseConditions =
+    const relevant =
       event.sourceDomain === sourceDomainId &&
       event.destinationDomain === destinationDomainId &&
       senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
 
-    return (
-      baseConditions &&
-      (!isDepositForBurnEvent(event) ||
-        // if DepositForBurnMessageEvent, check token too
-        compareAddressesSimple(event.burnToken, usdcAddress))
-    );
+    if (isDepositForBurnEvent(event)) {
+      return relevant && compareAddressesSimple(event.burnToken, usdcAddress);
+    } else {
+      return relevant;
+    }
   };
 
   const relevantEvents: CCTPMessageEvent[] = [];
-  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log) => {
-    const eventData = isCctpV2 ? _decodeCommonMessageDataV1(log) : _decodeCommonMessageDataV2(log);
+  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log, cctpMessageIndex: number) => {
+    const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
+    eventData.cctpMessageIndex = cctpMessageIndex;
     const logDescription = messageTransmitterInterface.parseLog(log);
     const spreadArgs = spreadEvent(logDescription.args);
     const eventName = logDescription.name;
@@ -342,28 +349,38 @@ async function getCCTPMessageEvents(
   };
   for (const receipt of receipts) {
     let lastMessageSentEventIdx = -1;
-    let i = 0;
-    for (const log of receipt.logs) {
+    let cctpMessageIndex = 0;
+    receipt.logs.forEach((log, i) => {
       if (_isMessageSentEvent(log)) {
         if (lastMessageSentEventIdx == -1) {
           lastMessageSentEventIdx = i;
         } else {
-          _addCommonMessageEventIfRelevant(log);
+          _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx], cctpMessageIndex);
+          lastMessageSentEventIdx = i;
+          cctpMessageIndex++;
         }
       } else {
-        const logCctpVersion = _getDepositForBurnVersion(log);
-        if (logCctpVersion == -1) {
+        const depositForBurnVersion = _getDepositForBurnVersion(log);
+        if (depositForBurnVersion == -1) {
           // Skip non-`DepositForBurn` events
-          continue;
+          return;
+        }
+        if (lastMessageSentEventIdx == -1) {
+          throw new Error(
+            "DepositForBurn event found without corresponding MessageSent event. " +
+              "Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
+              `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
+          );
         }
 
-        const matchingCctpVersion = (logCctpVersion == 0 && !isCctpV2) || (logCctpVersion == 1 && isCctpV2);
-        if (matchingCctpVersion) {
-          // If DepositForBurn event matches our "desired version", assess if it matches our search parameters
+        const matchingCCTPVersion =
+          (depositForBurnVersion == 0 && !isCctpV2) || (depositForBurnVersion == 1 && isCctpV2);
+        if (matchingCCTPVersion) {
           const correspondingMessageSentLog = receipt.logs[lastMessageSentEventIdx];
           const eventData = isCctpV2
             ? _decodeDepositForBurnMessageDataV2(correspondingMessageSentLog)
             : _decodeDepositForBurnMessageDataV1(correspondingMessageSentLog);
+          eventData.cctpMessageIndex = cctpMessageIndex;
           const logDescription = tokenMessengerInterface.parseLog(log);
           const spreadArgs = spreadEvent(logDescription.args);
           const eventName = logDescription.name;
@@ -393,23 +410,25 @@ async function getCCTPMessageEvents(
             relevantEvents.push(event);
           }
           lastMessageSentEventIdx = -1;
+          cctpMessageIndex++;
         } else {
-          // reset `lastMessageSentEventIdx`, because we found a matching `DepositForBurn` event
+          // reset `lastMessageSentEventIdx`, because we found a matching `DepositForBurn` event for it, completing the (MessageSent, DepositForBurn) sequence
           lastMessageSentEventIdx = -1;
+          // increment `cctpMessageIndex` as this message, albeit not relevant to our current search, will impact the response from Circle's api
+          cctpMessageIndex++;
         }
       }
-      i += 1;
-    }
+    });
     // After the loop over all logs, we might have an unmatched `MessageSent` event. Try to add it to `relevantEvents`
     if (lastMessageSentEventIdx != -1) {
-      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx]);
+      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx], cctpMessageIndex);
     }
   }
 
   return relevantEvents;
 }
 
-async function getCCTPMessageEventsWithStatus(
+async function getCCTPMessagesWithStatus(
   senderAddresses: string[],
   sourceChainId: number,
   destinationChainId: number,
@@ -418,7 +437,7 @@ async function getCCTPMessageEventsWithStatus(
   includeTokenlessHubPoolMessages: boolean
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const cctpMessages = await getCCTPMessageEvents(
+  const cctpMessageEvents = await getCCTPMessageEvents(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -430,7 +449,7 @@ async function getCCTPMessageEventsWithStatus(
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   return await Promise.all(
-    cctpMessages.map(async (deposit) => {
+    cctpMessageEvents.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
       // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
       // query the Attestation API service.
@@ -524,7 +543,7 @@ export async function getAttestedCCTPMessages(
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
-  const messagesWithStatus = await getCCTPMessageEventsWithStatus(
+  const messagesWithStatus = await getCCTPMessagesWithStatus(
     senderAddresses,
     sourceChainId,
     destinationChainId,
@@ -534,10 +553,25 @@ export async function getAttestedCCTPMessages(
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
-  const txnReceiptHashCount: { [hash: string]: number } = {};
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  const attestationResponses: Map<string, CCTPV2APIGetAttestationResponse> = new Map();
+
+  // TODO: as our CCTP v2 chain list grows, we might start hitting an API limit of 35 reqs/second here
+  // Consider implementing rate limiting. For v2 this is more important because we can't tell which messages
+  // are finalized before hitting the API, meaning that if our lookback window is long enough, it might contain > 35 tx hashes
+  if (isCctpV2) {
+    // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
+    const sourceDomainId = getCctpDomainForChainId(sourceChainId);
+    const uniqueTxHashes = new Set([...messagesWithStatus.map((message) => message.log.transactionHash)]);
+    await Promise.all(
+      Array.from(uniqueTxHashes).map(async (txHash) => {
+        const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
+        attestationResponses.set(txHash, attestations);
+      })
+    );
+  }
 
   const attestedMessages = await Promise.all(
     messagesWithStatus.map(async (message) => {
@@ -545,22 +579,16 @@ export async function getAttestedCCTPMessages(
       if (message.status === "finalized") {
         return message;
       }
+
       // Otherwise, update the deposit's status after loading its attestation.
-      const { transactionHash } = message.log;
-      const count = (txnReceiptHashCount[transactionHash] ??= 0);
-      ++txnReceiptHashCount[transactionHash];
+      if (isCctpV2) {
+        const attestations = attestationResponses.get(message.log.transactionHash);
 
-      const attestation = isCctpV2
-        ? await _generateCCTPV2AttestationProof(message.sourceDomain, transactionHash, isMainnet)
-        : await _generateCCTPAttestationProof(message.messageHash, isMainnet);
-
-      // For V2 we now have the nonceHash and we can query whether the message has been processed.
-      // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
-      // deposits in getCCTPDepositEventsWithStatus().
-      if (isCctpV2ApiResponse(attestation)) {
-        const attestationForDeposit = attestation.messages[count];
+        // TODO: does `message.cctpMessageIndex` work correctly here?
+        // Pick `messageAttestation` by `cctpMessageIndex`
+        const messageAttestation = attestations.messages[message.cctpMessageIndex];
         const processed = await _hasCCTPMessageBeenProcessed(
-          attestationForDeposit.eventNonce,
+          messageAttestation.eventNonce,
           destinationMessageTransmitter
         );
         if (processed) {
@@ -574,13 +602,15 @@ export async function getAttestedCCTPMessages(
             // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
             // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
             // because its not needed for V2
-            nonceHash: attestationForDeposit.eventNonce,
-            messageBytes: attestationForDeposit.message,
-            attestation: attestationForDeposit?.attestation, // Will be undefined if status is "pending"
-            status: _getPendingV2AttestationStatus(attestationForDeposit.status),
+            nonceHash: messageAttestation.eventNonce,
+            messageBytes: messageAttestation.message,
+            attestation: messageAttestation?.attestation, // Will be undefined if status is "pending"
+            status: _getPendingV2AttestationStatus(messageAttestation.status),
           };
         }
       } else {
+        // For v1 messages, fetch attestation by messageHash -> receive a single attestation in response
+        const attestation = await _fetchV1Attestation(message.messageHash, isMainnet);
         return {
           ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
@@ -596,6 +626,7 @@ function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus 
   return attestation === "pending_confirmation" ? "pending" : "ready";
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
   return attestation === "pending_confirmations" ? "pending" : "ready";
 }
@@ -628,6 +659,7 @@ function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageDat
     nonceHash,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
+    cctpMessageIndex: 0, // to be set separately
   };
 }
 
@@ -650,6 +682,7 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
     nonceHash: ethers.constants.HashZero,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
+    cctpMessageIndex: 0, // to be set separately
   };
 }
 
@@ -706,10 +739,7 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
  * then the proof will be null according to the CCTP dev docs.
  * @link https://developers.circle.com/stablecoins/reference/getattestation
  */
-async function _generateCCTPAttestationProof(
-  messageHash: string,
-  isMainnet: boolean
-): Promise<CCTPAPIGetAttestationResponse> {
+async function _fetchV1Attestation(messageHash: string, isMainnet: boolean): Promise<CCTPAPIGetAttestationResponse> {
   const httpResponse = await axios.get<CCTPAPIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
@@ -718,7 +748,8 @@ async function _generateCCTPAttestationProof(
 }
 
 // @todo: We can pass in a nonceHash here once we know how to recreate the nonceHash.
-async function _generateCCTPV2AttestationProof(
+// Returns both v1 and v2 attestations
+async function _fetchAttestationsForTxn(
   sourceDomainId: number,
   transactionHash: string,
   isMainnet: boolean
@@ -728,9 +759,6 @@ async function _generateCCTPV2AttestationProof(
       isMainnet ? "" : "-sandbox"
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
-  // Only leave v2 attestations in the response
-  const filteredMessages = httpResponse.data.messages.filter((message) => message.cctpVersion === 2);
-  return {
-    messages: filteredMessages,
-  };
+
+  return httpResponse.data;
 }
