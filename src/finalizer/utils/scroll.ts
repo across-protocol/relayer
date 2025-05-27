@@ -133,7 +133,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
  * Returns the Scroll Relay contract for the given chain ID and signer.
  * @param l1ChainId The chain ID to use - i.e. the hub chain ID
  * @param signer The signer that will be used to sign the transaction
- * @returns A Scroll Relay contract, instnatiated with the given signer
+ * @returns A Scroll Relay contract, instantiated with the given signer
  */
 function getScrollRelayContract(l1ChainId: number, signer: Signer) {
   const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId]?.scrollRelayMessenger;
