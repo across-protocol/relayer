@@ -72,6 +72,7 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_TOKEN_SYMBOLS,
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
+      MONITOR_IGNORE_FOLLOW_DISTANCE,
     } = env;
 
     this.botModes = {
@@ -83,6 +84,10 @@ export class MonitorConfig extends CommonConfig {
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
     };
+
+    if (MONITOR_IGNORE_FOLLOW_DISTANCE === "true") {
+      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => this.blockRangeEndBlockBuffer[chainId] = 0);
+    }
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
