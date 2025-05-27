@@ -43,6 +43,5 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
   if (binanceKeys.length === 0) {
     return undefined;
   }
-  const buffer = Buffer.from(binanceKeys[0].slice(2), "hex");
-  return buffer.toString("base64");
+  return binanceKeys[0].slice(2);
 }
