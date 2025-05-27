@@ -15,12 +15,16 @@ import {
   ZERO_BYTES,
   SVMProvider,
   isDefined,
+  getSvmSignerFromEvmSigner,
+  Wallet,
+  ethers,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+import bs58 from "bs58";
 
 type MintAndWithdrawData = {
   mintRecipient: string;
@@ -36,6 +40,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   // this bridge holds onto the client promise and lazily evaluates it for when it needs to use it (in `queryL2BridgeFinalizationEvents`).
   private readonly solanaEventsClientPromise: Promise<arch.svm.SvmCpiEventsClient>;
   private solanaEventsClient: arch.svm.SvmCpiEventsClient;
+  private svmAddress: string;
 
   constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2Provider: SVMProvider) {
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
@@ -55,6 +60,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
       l2Address,
       TokenMessengerMinterIdl
     );
+    this.svmAddress = this._getEquivalentSvmAddress();
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
   }
@@ -75,6 +81,8 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    const signer = await this.l1Signer.getAddress();
+    assert(compareAddressesSimple(signer, toAddress.toEvmAddress()), "Cannot rebalance to a non-signer address");
     amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
@@ -83,13 +91,13 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
         ? [
             amount,
             this.l2DestinationDomain,
-            toAddress.toBytes32(),
+            this._getEquivalentSvmAddress(),
             this.l1UsdcTokenAddress.toAddress(),
             ZERO_BYTES, // Anyone can finalize the message on domain when this is set to bytes32(0)
             0, // maxFee set to 0 so this will be a "standard" speed transfer
             2000, // Hardcoded minFinalityThreshold value for standard transfer
           ]
-        : [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toAddress()],
+        : [amount, this.l2DestinationDomain, this._getEquivalentSvmAddress(), this.l1UsdcTokenAddress.toAddress()],
     });
   }
 
@@ -145,5 +153,10 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
         })
         .filter(isDefined),
     };
+  }
+
+  _getEquivalentSvmAddress(): string {
+    const svmSigner = getSvmSignerFromEvmSigner(this.l1Signer as Wallet);
+    return ethers.utils.hexlify(bs58.decode(svmSigner.publicKey.toBase58()));
   }
 }

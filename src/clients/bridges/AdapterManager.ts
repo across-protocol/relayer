@@ -72,10 +72,6 @@ export class AdapterManager {
         return {};
       } // Special case for the EthereumAdapter
 
-      if (!chainIsEvm(chainId)) {
-        return; // @todo
-      }
-
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = spokePoolClients[chainId];
@@ -122,10 +118,6 @@ export class AdapterManager {
       );
     };
     Object.values(this.spokePoolClients).map(({ chainId }) => {
-      if (!chainIsEvm(chainId)) {
-        return; // @todo
-      }
-
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,

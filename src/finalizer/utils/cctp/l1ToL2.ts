@@ -1,4 +1,5 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
+import { MessageTransmitterIdl, TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
@@ -13,6 +14,11 @@ import {
   winston,
   convertFromWei,
   isEVMSpokePoolClient,
+  getAnchorProgram,
+  Wallet,
+  mapAsync,
+  getSvmSignerFromEvmSigner,
+  toPublicKey,
 } from "../../../utils";
 import {
   AttestedCCTPDepositEvent,
@@ -21,6 +27,7 @@ import {
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { web3, utils, BN } from "@coral-xyz/anchor";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -30,7 +37,7 @@ export async function cctpL1toL2Finalizer(
   l1SpokePoolClient: SpokePoolClient,
   senderAddresses: string[]
 ): Promise<FinalizerPromise> {
-  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  assert(isEVMSpokePoolClient(l1SpokePoolClient));
   const searchConfig: EventSearchConfig = {
     from: l1SpokePoolClient.eventSearchConfig.from,
     to: l1SpokePoolClient.latestHeightSearched,
@@ -69,6 +76,13 @@ export async function cctpL1toL2Finalizer(
     };
   } else {
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
+    const signatures = await finalizeSvmWithdrawals(unprocessedMessages, hubPoolClient.hubPool.signer);
+    const amountFinalized = unprocessedMessages.reduce((acc, event) => acc + Number(event.amount), 0);
+    logger.info({
+      at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
+      message: `Finalized ${unprocessedMessages.length} deposits on Solana for ${amountFinalized} USDC.`,
+      signatures,
+    });
     return {
       crossChainMessages: [],
       callData: [],
@@ -120,4 +134,45 @@ async function generateDepositData(
     originationChainId,
     destinationChainId,
   }));
+}
+
+/**
+ * Finalizes CCTP deposits on Solana.
+ * @param deposits The CCTP deposits to withdraw on Solana.
+ * @param signer A base signer to be converted into a Solana signer.
+ * @returns A list of executed transaction signatures.
+ */
+async function finalizeSvmWithdrawals(deposits: AttestedCCTPDepositEvent[], signer: Signer): Promise<string[]> {
+  const [svmSigner, messageTransmitterProgram] = await Promise.all([
+    getSvmSignerFromEvmSigner(signer as Wallet),
+    getAnchorProgram(MessageTransmitterIdl, signer as Wallet),
+  ]);
+  const messageTransmitter = toPublicKey(MessageTransmitterIdl.address);
+  const tokenMessengerMinter = toPublicKey(TokenMessengerMinterIdl.address);
+  const authorityPda = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from(utils.bytes.utf8.encode("sender_authority"))],
+    tokenMessengerMinter
+  );
+  return mapAsync(deposits, async (deposit) => {
+    const noncePda = await messageTransmitterProgram.methods
+      .getNoncePda({ nonce: new BN(deposit.log.args.nonce.toNumber()), sourceDomain: deposit.sourceDomain })
+      .accounts({ messageTransmitter })
+      .view();
+
+    return messageTransmitterProgram.methods
+      .receiveMessage({
+        message: Buffer.from(deposit.messageBytes.slice(2), "hex"),
+        attestation: Buffer.from(deposit.attestation.slice(2), "hex"),
+      })
+      .accounts({
+        payer: svmSigner.publicKey,
+        caller: svmSigner.publicKey,
+        authorityPda,
+        messageTransmitter,
+        usedNonces: noncePda,
+        receiver: tokenMessengerMinter,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .rpc();
+  });
 }

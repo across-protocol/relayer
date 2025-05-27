@@ -20,8 +20,7 @@ import { EventSearchConfig, paginatedEventQuery } from "./EventUtils";
 import { getAnchorProgram } from "./AnchorUtils";
 import { findLast } from "lodash";
 import { Log } from "../interfaces";
-
-import { BN } from "@coral-xyz/anchor";
+import { BN, web3 } from "@coral-xyz/anchor";
 
 type CCTPDeposit = {
   nonceHash: string;
@@ -192,8 +191,8 @@ async function getCCTPDepositEvents(
     // Step 4. [Optional] Verify that decoded message matches the DepositForBurn event. We can skip this step
     // if we find this reduces performance.
     if (
-      !compareAddressesSimple(decodedSender, _depositEvent.args.depositor) ||
-      !compareAddressesSimple(decodedRecipient, cctpBytes32ToAddress(_depositEvent.args.mintRecipient)) ||
+      !compareAddressesSimple(decodedSender, cctpAddressToBytes32(_depositEvent.args.depositor)) ||
+      !compareAddressesSimple(decodedRecipient, cctpAddressToBytes32(_depositEvent.args.mintRecipient)) ||
       !BigNumber.from(decodedAmount).eq(_depositEvent.args.amount) ||
       decodedSourceDomain !== getCctpDomainForChainId(sourceChainId) ||
       decodedDestinationDomain !== getCctpDomainForChainId(destinationChainId)
@@ -252,7 +251,7 @@ async function getCCTPDepositEventsWithStatus(
         };
       }
       const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(0, 0)
+        ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.sourceDomain)
         : await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
@@ -381,23 +380,27 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
 // A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
 async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
   // Specifically retrieve the Solana MessageTransmitter contract.
-  const program = getAnchorProgram(MessageTransmitterIdl);
-  const noncePda = await program.methods
-    .getNoncePda({
-      nonce: new BN(nonce),
-      sourceDomain,
-    })
-    .accounts({
-      messageTransmitter: MessageTransmitterIdl.address,
-    })
-    .view();
-  const nonceUsed = await program.methods
-    .isNonceUsed(1)
-    .accounts({
-      usedNonces: noncePda,
-    })
-    .view();
-  return nonceUsed;
+  try {
+    const program = await getAnchorProgram(MessageTransmitterIdl);
+    const noncePda = await program.methods
+      .getNoncePda({
+        nonce: new BN(nonce),
+        sourceDomain,
+      })
+      .accounts({
+        messageTransmitter: new web3.PublicKey(MessageTransmitterIdl.address),
+      })
+      .view();
+    const nonceUsed = await program.methods
+      .isNonceUsed(noncePda)
+      .accounts({
+        usedNonces: noncePda,
+      })
+      .view();
+    return nonceUsed;
+  } catch {
+    return false;
+  }
 }
 
 async function _getCCTPDepositEventsSvm(
