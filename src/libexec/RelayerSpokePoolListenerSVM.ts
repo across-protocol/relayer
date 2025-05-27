@@ -1,7 +1,8 @@
 import assert from "assert";
 import minimist from "minimist";
-import { Contract, utils as ethersUtils } from "ethers";
-import { createSolanaRpcSubscriptions } from "@solana/kit";
+import { utils as ethersUtils } from "ethers";
+import { address, createSolanaRpcSubscriptions } from "@solana/kit";
+import { arch } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
@@ -13,7 +14,9 @@ import {
   getNetworkName,
   getNodeUrlList,
   getProvider,
+  getSvmProvider,
   Logger,
+  SvmAddress,
   winston,
 } from "../utils";
 import { postEvents } from "./util/ipc";
@@ -31,31 +34,62 @@ let stop = false; // tbd whether this is required, or whether abortController is
   return this.toString();
 };
 
-async function listen(
-  eventMgr: EventManager,
-  _spokePool?: Contract,
-  _eventNames?: string[],
-  quorum = 1
-): Promise<void> {
+async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames: string[], quorum = 1): Promise<void> {
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
-  const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
+  const eventAuthority = await arch.svm.getEventAuthority();
+  const config = { commitment: "confirmed" } as const;
+  const { signal: abortSignal } = abortController;
+  const subscribe = async (url: string) => {
+    const provider = createSolanaRpcSubscriptions(url);
+    return await provider.logsNotifications({ mentions: [address(eventAuthority)] }, config).subscribe({ abortSignal });
+  };
+  const subscriptions = await Promise.all(urls.map(subscribe));
 
-  for (const provider of providers) {
-    // Ideally, slotsUpdatesNotifications() would be used. Kit marks this as unstable for now.
-    // https://github.com/anza-xyz/kit/blob/053b2caf7876deefb38d1a24a20ba962f162bbf1/packages/rpc-subscriptions-api/src/slots-updates-notifications.ts#L43
-    const updates = await provider.slotNotifications().subscribe({ abortSignal: abortController.signal });
+  // These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
+  // These will ultimately be dropped from the messaging interface.
+  const unusedFields = {
+    blockHash: "",
+    transactionIndex: 0,
+    logIndex: 0,
+    data: "",
+    topics: [],
+  };
 
-    for await (const update of updates) {
-      const { slot: blockNumber } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
-      const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
-      const events = eventMgr.tick();
-      logger.debug({ at: "listen", message: "Got slot update.", update });
-      postEvents(Number(blockNumber), currentTime, events);
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
+  const readEvent = async (subscription, provider: string) => {
+    for await (const log of subscription) {
+      const {
+        value: { signature },
+        context: { slot },
+      } = log;
+      const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
+
+      const events = rawEvents
+        .filter(({ name }) => eventNames.includes(name))
+        .map((event) => ({
+          ...unusedFields,
+          transactionHash: signature,
+          blockNumber: Number(slot),
+          address: event.program,
+          event: event.name,
+          removed: false,
+          args: arch.svm.unwrapEventData(event.data),
+        }));
+
+      if (events.length > 0) {
+        events.forEach((event) => eventMgr.add(event, provider));
+        const { blockNumber: maxSlot } = events.reduce((a, b) => (a.blockNumber > b.blockNumber ? a : b), {
+          blockNumber: 0,
+        });
+        postEvents(maxSlot, getCurrentTime(), eventMgr.tick());
+      }
     }
-  }
+  };
+
+  await Promise.all(subscriptions.map((sub, i) => readEvent(sub, urls[i])));
 }
 
 /**
@@ -100,7 +134,7 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
-  const events = [];
+  const events = ["FundsDeposited", "FilledRelay", "RequestedSpeedUpDeposit"];
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
   const eventMgr = new EventManager(logger, chainId, quorum);
 
