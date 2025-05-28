@@ -17,14 +17,13 @@ import {
   isDefined,
   getSvmSignerFromEvmSigner,
   Wallet,
-  ethers,
+  getAssociatedTokenAddress,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import bs58 from "bs58";
 
 type MintAndWithdrawData = {
   mintRecipient: string;
@@ -35,6 +34,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
+  private readonly l2UsdcTokenAddress: SvmAddress;
   private readonly solanaMessageTransmitter: SvmAddress;
   // We need the constructor to operate in a synchronous context, but the call to construct an event client is asynchronous, so
   // this bridge holds onto the client promise and lazily evaluates it for when it needs to use it (in `queryL2BridgeFinalizationEvents`).
@@ -60,9 +60,8 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
       l2Address,
       TokenMessengerMinterIdl
     );
-    this.svmAddress = this._getEquivalentSvmAddress();
-
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
+    this.l2UsdcTokenAddress = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
   }
 
   private get l2DestinationDomain(): number {
@@ -83,6 +82,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const signer = await this.l1Signer.getAddress();
     assert(compareAddressesSimple(signer, toAddress.toEvmAddress()), "Cannot rebalance to a non-signer address");
+    const associatedTokenAddress = await this._getAssociatedTokenAddress();
     amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
@@ -91,13 +91,13 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
         ? [
             amount,
             this.l2DestinationDomain,
-            this._getEquivalentSvmAddress(),
+            associatedTokenAddress.toBytes32(),
             this.l1UsdcTokenAddress.toAddress(),
             ZERO_BYTES, // Anyone can finalize the message on domain when this is set to bytes32(0)
             0, // maxFee set to 0 so this will be a "standard" speed transfer
             2000, // Hardcoded minFinalityThreshold value for standard transfer
           ]
-        : [amount, this.l2DestinationDomain, this._getEquivalentSvmAddress(), this.l1UsdcTokenAddress.toAddress()],
+        : [amount, this.l2DestinationDomain, associatedTokenAddress.toBytes32(), this.l1UsdcTokenAddress.toAddress()],
     });
   }
 
@@ -107,13 +107,20 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    const signer = await this.l1Signer.getAddress();
+    // @todo. We can only track EOA transfers of the signer of the bot since we cannot translate an EVM address to an SVM token account
+    // unless we have knowledge of the private key.
+    if (fromAddress.toAddress() !== signer) {
+      return {};
+    }
+    const associatedTokenAddress = await this._getAssociatedTokenAddress();
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const eventFilterArgs = this.IS_CCTP_V2
       ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
       : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
     const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
-      compareAddressesSimple(event.args.mintRecipient, toAddress.toBytes32())
+      compareAddressesSimple(event.args.mintRecipient, associatedTokenAddress.toBytes32())
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
@@ -126,6 +133,14 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    const signer = await this.l1Signer.getAddress();
+    // @todo. We can only track EOA transfers of the signer of the bot since we cannot translate an EVM address to an SVM token account
+    // unless we have knowledge of the private key.
+    if (fromAddress.toAddress() !== signer) {
+      return {};
+    }
+    const associatedTokenAddress = await this._getAssociatedTokenAddress();
+
     // Lazily evaluate the events client.
     this.solanaEventsClient ??= await this.solanaEventsClientPromise;
     assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
@@ -139,7 +154,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
       [this.resolveL2TokenAddress(l1Token)]: l2FinalizationEvents
         .map((event) => {
           const data = event.data as MintAndWithdrawData;
-          if (String(data.mintRecipient) !== toAddress.toBase58()) {
+          if (String(data.mintRecipient) !== associatedTokenAddress.toBase58()) {
             return undefined;
           }
           return {
@@ -155,8 +170,12 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     };
   }
 
-  _getEquivalentSvmAddress(): string {
+  async _getAssociatedTokenAddress(): Promise<Address> {
     const svmSigner = getSvmSignerFromEvmSigner(this.l1Signer as Wallet);
-    return ethers.utils.hexlify(bs58.decode(svmSigner.publicKey.toBase58()));
+    const associatedTokenAddress = await getAssociatedTokenAddress(
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      this.l2UsdcTokenAddress
+    );
+    return SvmAddress.from(associatedTokenAddress as string);
   }
 }

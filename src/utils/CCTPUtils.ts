@@ -251,7 +251,7 @@ async function getCCTPDepositEventsWithStatus(
         };
       }
       const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.sourceDomain)
+        ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.log.args.remoteDomain)
         : await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
@@ -381,18 +381,25 @@ async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.
 async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
   // Specifically retrieve the Solana MessageTransmitter contract.
   try {
-    const program = await getAnchorProgram(MessageTransmitterIdl);
-    const noncePda = await program.methods
+    const bnNonce = new BN(nonce);
+    const messageTransmitterProgram = await getAnchorProgram(MessageTransmitterIdl);
+    const [messageTransmitterPda] = web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("message_transmitter")],
+      messageTransmitterProgram.programId
+    );
+    const noncePda = await messageTransmitterProgram.methods
       .getNoncePda({
-        nonce: new BN(nonce),
+        nonce: bnNonce,
         sourceDomain,
       })
       .accounts({
-        messageTransmitter: new web3.PublicKey(MessageTransmitterIdl.address),
+        messageTransmitter: messageTransmitterPda,
       })
       .view();
-    const nonceUsed = await program.methods
-      .isNonceUsed(noncePda)
+    const nonceUsed = await messageTransmitterProgram.methods
+      .isNonceUsed({
+        nonce: bnNonce,
+      })
       .accounts({
         usedNonces: noncePda,
       })
