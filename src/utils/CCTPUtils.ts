@@ -12,7 +12,8 @@ import { Log } from "../interfaces";
 import { assert } from ".";
 
 type CommonMessageData = {
-  cctpVersion: number; // 1 == v1, 2 == v2. Circle's docs say 0 and 1, but real endpoints return 1 and 2. :)
+  // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
+  cctpVersion: number;
   sourceDomain: number;
   destinationDomain: number;
   sender: string;
@@ -595,13 +596,18 @@ export async function getAttestedCCTPMessages(
       if (isCctpV2) {
         const attestations = attestationResponses.get(message.log.transactionHash);
 
-        // TODO: here, find a matching attestation by .message field(a hex-string, careful)
+        const matchingAttestation = attestations.messages.find((apiAttestation) => {
+          return cmpAPIToEventMessageBytesV2(apiAttestation.message, message.messageBytes);
+        });
 
-        // TODO: does `message.cctpMessageIndex` work correctly here?
-        // Pick `messageAttestation` by `cctpMessageIndex`
-        const messageAttestation = attestations.messages[message.cctpMessageIndex];
+        if (!matchingAttestation) {
+          throw new Error(
+            `No matching CCTP V2 attestation found in CTTP API response for message in tx ${message.log.transactionHash}, sourceDomain ${message.sourceDomain}, logIndex ${message.log.logIndex}`
+          );
+        }
+
         const processed = await _hasCCTPMessageBeenProcessed(
-          messageAttestation.eventNonce,
+          matchingAttestation.eventNonce,
           destinationMessageTransmitter
         );
         if (processed) {
@@ -615,10 +621,10 @@ export async function getAttestedCCTPMessages(
             // For CCTPV2, the message is different than the one emitted in the Deposit because it includes the nonce, and
             // we need the messageBytes to submit the receiveMessage call successfully. We don't overwrite the messageHash
             // because its not needed for V2
-            nonceHash: messageAttestation.eventNonce,
-            messageBytes: messageAttestation.message,
-            attestation: messageAttestation?.attestation, // Will be undefined if status is "pending"
-            status: _getPendingV2AttestationStatus(messageAttestation),
+            nonceHash: matchingAttestation.eventNonce,
+            messageBytes: matchingAttestation.message,
+            attestation: matchingAttestation?.attestation, // Will be undefined if status is "pending"
+            status: _getPendingV2AttestationStatus(matchingAttestation),
           };
         }
       } else {
@@ -787,4 +793,40 @@ async function _fetchAttestationsForTxn(
   );
 
   return httpResponse.data;
+}
+
+// This function compares message we need to finalize with the api response message. It skips the `nonce` part of comparison as it's not set at the time of emitting an on-chain `MessageSent` event
+function cmpAPIToEventMessageBytesV2(apiResponseMessage: string, eventMessageBytes: string): boolean {
+  // Source https://developers.circle.com/stablecoins/message-format
+  const normalize = (hex: string) => (hex.startsWith("0x") ? hex.substring(2) : hex).toLowerCase();
+  const normApiMsg = normalize(apiResponseMessage);
+  const normLocalMsg = normalize(eventMessageBytes);
+
+  // Bytes [12 .. 44) are ignored. These are responsible for nonceHash, which is set remotely by Circle and not present in an event on source chain
+  // In hex string (2 chars/byte):
+  // Chars [0 .. 24) must match.
+  // Chars [24 .. 88) are ignored.
+  // Chars 88 onwards must match.
+
+  // Hex strings must be at least 44 bytes long (88 characters).
+  if (normApiMsg.length < 88 || normLocalMsg.length < 88) {
+    return false;
+  }
+
+  if (normApiMsg.length !== normLocalMsg.length) {
+    return false;
+  }
+
+  const prefixApi = normApiMsg.substring(0, 24);
+  const prefixLocal = normLocalMsg.substring(0, 24);
+  if (prefixApi !== prefixLocal) {
+    return false;
+  }
+
+  const suffixApi = normApiMsg.substring(88);
+  const suffixLocal = normLocalMsg.substring(88);
+  if (suffixApi !== suffixLocal) {
+    return false;
+  }
+  return true;
 }
