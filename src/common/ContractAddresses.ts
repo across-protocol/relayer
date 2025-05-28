@@ -324,6 +324,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
+  [CHAIN_IDs.SOLANA]: {
+    cctpTokenMessenger: {
+      address: "CCTPiPYPc6AsJuwueEnWgSgucamXDZwBd53dQ11YiKX3",
+    },
+    cctpMessageTransmitter: {
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    },
+  },
   [CHAIN_IDs.SONEIUM]: {
     opUSDCBridge: {
       address: "0x8be79275FCfD08A931087ECf70Ba8a99aee3AC59",
