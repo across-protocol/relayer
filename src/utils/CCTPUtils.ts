@@ -226,6 +226,8 @@ async function getRelevantCCTPTxHashes(
       tokensRelayedEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
     }
   }
+  // TODO: TESTING
+  txHashesFromHubPool.push("0x5c3252f08549d316af40cb8074f7126d07a7bc08236a20d2b03b6da2ff4d4ec5");
 
   // Step 2: Get all DepositForBurn events matching the senderAddresses and source chain
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
@@ -329,11 +331,44 @@ async function getCCTPMessageEvents(
 
   const relevantEvents: CCTPMessageEvent[] = [];
   const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log, cctpMessageIndex: number) => {
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] Input log:", JSON.stringify(log, null, 2));
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] Input cctpMessageIndex:", cctpMessageIndex);
+
     const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] eventData:", JSON.stringify(eventData, null, 2));
     eventData.cctpMessageIndex = cctpMessageIndex;
-    const logDescription = messageTransmitterInterface.parseLog(log);
-    const spreadArgs = spreadEvent(logDescription.args);
-    const eventName = logDescription.name;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      "[CCTPUtils._addCommonMessageEventIfRelevant] messageTransmitterInterface.getEventTopic('MessageSent'):",
+      messageTransmitterInterface.getEventTopic("MessageSent")
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      "[CCTPUtils._addCommonMessageEventIfRelevant] messageTransmitterInterface.getEvent(log.topics[0]):",
+      messageTransmitterInterface.getEvent(log.topics[0])
+    );
+
+    const eventFragment = messageTransmitterInterface.getEvent(CCTP_MESSAGE_SENT_TOPIC_HASH);
+    // underlying lib should throw error if parsing is unsuccessful
+    const args = messageTransmitterInterface.decodeEventLog(eventFragment, log.data, log.topics);
+    // eslint-disable-next-line no-console
+    console.log(
+      "[CCTPUtils._addCommonMessageEventIfRelevant] args from decodeEventLog:",
+      JSON.stringify(args, null, 2)
+    );
+
+    const spreadArgs = spreadEvent(args);
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] spreadArgs:", JSON.stringify(spreadArgs, null, 2));
+
+    const eventName = eventFragment.name;
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] eventName:", eventName);
+
     const event: CommonMessageEvent = {
       ...eventData,
       log: {
@@ -342,8 +377,16 @@ async function getCCTPMessageEvents(
         args: spreadArgs,
       },
     };
+    // eslint-disable-next-line no-console
+    console.log("[CCTPUtils._addCommonMessageEventIfRelevant] event:", JSON.stringify(event, null, 2));
+
     if (_isRelevantEvent(event)) {
+      // eslint-disable-next-line no-console
+      console.log("[CCTPUtils._addCommonMessageEventIfRelevant] Event is relevant. Pushing to relevantEvents.");
       relevantEvents.push(event);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log("[CCTPUtils._addCommonMessageEventIfRelevant] Event is NOT relevant.");
     }
   };
   for (const receipt of receipts) {
@@ -540,12 +583,12 @@ export async function getAttestedCCTPMessages(
   sourceEventSearchConfig: EventSearchConfig,
   includeTokenlessHubPoolMessages: boolean
 ): Promise<AttestedCCTPMessage[]> {
-  // TODO: override search config for testing:
-  const testSearchConfig: EventSearchConfig = {
-    from: 22567000,
-    to: 22577500,
-    maxLookBack: 10000,
-  };
+  // // TODO: override search config for testing:
+  // const testSearchConfig: EventSearchConfig = {
+  //   from: 22567000,
+  //   to: 22577500,
+  //   maxLookBack: 10000,
+  // };
 
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
@@ -554,15 +597,15 @@ export async function getAttestedCCTPMessages(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    testSearchConfig,
+    sourceEventSearchConfig,
     includeTokenlessHubPoolMessages
   );
 
   // TODO: testing
   // eslint-disable-next-line no-console
   console.log(
-    `[CCTPUtils.getAttestedCCTPMessages] testSearchConfig for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
-    JSON.stringify(testSearchConfig, null, 2)
+    `[CCTPUtils.getAttestedCCTPMessages] sourceEventSearchConfig for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
+    JSON.stringify(sourceEventSearchConfig, null, 2)
   );
 
   // Enhanced logging for messagesWithStatus
@@ -640,6 +683,12 @@ export async function getAttestedCCTPMessages(
   console.log(
     `[CCTPUtils.getAttestedCCTPMessages] Other Messages Hash (keccak256) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}: ${keccakOther}`
   );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] messagesWithStatus LENGTH for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
+    messagesWithStatus.length
+  );
+
   // Original verbose logging (can be removed or kept as needed)
   // eslint-disable-next-line no-console
   console.log(
@@ -755,6 +804,18 @@ function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageDat
   // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
   const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
 
+  // eslint-disable-next-line no-console
+  console.log("[CCTPUtils._decodeCommonMessageDataV1] Decoded params:", {
+    messageBytes,
+    messageBytesArray: ethers.utils.hexlify(messageBytesArray),
+    sourceDomain,
+    destinationDomain,
+    nonce,
+    sender,
+    recipient,
+    nonceHash,
+  });
+
   return {
     version: 0,
     sourceDomain,
@@ -777,8 +838,18 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
   const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(44, 76))); // sender	44	bytes32	32	Address of MessageTransmitterV2 caller on source domain
   const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
 
+  // eslint-disable-next-line no-console
+  console.log("[CCTPUtils._decodeCommonMessageDataV2] Decoded params:", {
+    messageBytes,
+    messageBytesArray: ethers.utils.hexlify(messageBytesArray),
+    sourceDomain,
+    destinationDomain,
+    sender,
+    recipient,
+  });
+
   return {
-    version: 0,
+    version: 1,
     sourceDomain,
     destinationDomain,
     sender,
@@ -803,6 +874,14 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositF
   const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
   const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
 
+  // eslint-disable-next-line no-console
+  console.log("[CCTPUtils._decodeDepositForBurnMessageDataV1] Decoded params:", {
+    burnToken,
+    mintRecipient,
+    amount,
+    sender,
+  });
+
   return {
     ...commonDataV1,
     burnToken,
@@ -824,6 +903,14 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
   const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
   const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+
+  // eslint-disable-next-line no-console
+  console.log("[CCTPUtils._decodeDepositForBurnMessageDataV2] Decoded params:", {
+    burnToken,
+    mintRecipient,
+    amount,
+    sender,
+  });
 
   return {
     ...commonData,

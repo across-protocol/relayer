@@ -37,8 +37,11 @@ export async function cctpL1toL2Finalizer(
     to: l1SpokePoolClient.latestHeightSearched,
     maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
+
+  // TODO: testing ...
+  const testSenderAddrs = ["0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"];
   const outstandingDeposits = await getAttestedCCTPMessages(
-    senderAddresses,
+    testSenderAddrs,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
