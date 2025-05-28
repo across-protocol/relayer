@@ -1302,26 +1302,29 @@ export class Dataworker {
         `amount: ${outputAmount.toString()}`;
 
       if (submitExecution) {
-        assert(isEVMSpokePoolClient(client));
-        const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
+        if (isEVMSpokePoolClient(client)) {
+          const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
-        this.clients.multiCallerClient.enqueueTransaction({
-          contract: client.spokePool,
-          chainId,
-          method,
-          args,
-          message: "Executed SlowRelayLeaf 🌿!",
-          mrkdwn,
-          // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
-          // SpokePool.multicall() is fine.
-          unpermissioned: chainId === hubChainId,
-          // If simulating mainnet execution, can fail as it may require funds to be sent from
-          // pool rebalance leaf.
-          canFailInSimulation: chainId === hubChainId,
-          // If polygon, keep separate from relayer refund leaves since we can't execute refunds atomically
-          // with fills.
-          groupId: chainIsMatic(chainId) ? "slowRelay" : undefined,
-        });
+          this.clients.multiCallerClient.enqueueTransaction({
+            contract: client.spokePool,
+            chainId,
+            method,
+            args,
+            message: "Executed SlowRelayLeaf 🌿!",
+            mrkdwn,
+            // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
+            // SpokePool.multicall() is fine.
+            unpermissioned: chainId === hubChainId,
+            // If simulating mainnet execution, can fail as it may require funds to be sent from
+            // pool rebalance leaf.
+            canFailInSimulation: chainId === hubChainId,
+            // If polygon, keep separate from relayer refund leaves since we can't execute refunds atomically
+            // with fills.
+            groupId: chainIsMatic(chainId) ? "slowRelay" : undefined,
+          });
+        } else {
+          // Svm execution
+        }
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
       }
@@ -2227,34 +2230,34 @@ export class Dataworker {
           if (leaf.chainId !== chainId) {
             throw new Error("Leaf chainId does not match input chainId");
           }
-          if (!isEVMSpokePoolClient(client)) {
-            throw new Error("Dataworker does not support non-evm chains");
-          }
           const symbol = this.getTokenInfo(leaf.l2TokenAddress, chainId);
-          // @dev check if there's been a duplicate leaf execution and if so, then exit early.
-          // Since this function is happening near the end of the dataworker run and leaf executions are
-          // relatively infrequent, the additional RPC latency and cost is acceptable.
-          // @dev Can only filter on indexed events.
-          const eventFilter = client.spokePool.filters.ExecutedRelayerRefundRoot(
-            null, // amountToReturn
-            leaf.chainId,
-            null, // refundAmounts
-            rootBundleId,
-            leaf.leafId
-          );
-          const searchConfig = {
-            maxLookBack: client.eventSearchConfig.maxLookBack,
-            from: client.latestHeightSearched - client.eventSearchConfig.maxLookBack,
-            to: await client.spokePool.provider.getBlockNumber(),
-          };
-          const duplicateEvents = await sdkUtils.paginatedEventQuery(client.spokePool, eventFilter, searchConfig);
-          if (duplicateEvents.length > 0) {
-            this.logger.debug({
-              at: "Dataworker#executeRelayerRefundLeaves",
-              message: `Relayer Refund Leaf #${leaf.leafId} for ${symbol} on chain ${leaf.chainId} already executed`,
-              duplicateEvents,
-            });
-            return undefined;
+          // Only check for duplicate leaf execution events on EVM.
+          if (isEVMSpokePoolClient(client)) {
+            // @dev check if there's been a duplicate leaf execution and if so, then exit early.
+            // Since this function is happening near the end of the dataworker run and leaf executions are
+            // relatively infrequent, the additional RPC latency and cost is acceptable.
+            // @dev Can only filter on indexed events.
+            const eventFilter = client.spokePool.filters.ExecutedRelayerRefundRoot(
+              null, // amountToReturn
+              leaf.chainId,
+              null, // refundAmounts
+              rootBundleId,
+              leaf.leafId
+            );
+            const searchConfig = {
+              maxLookBack: client.eventSearchConfig.maxLookBack,
+              from: client.latestHeightSearched - client.eventSearchConfig.maxLookBack,
+              to: await client.spokePool.provider.getBlockNumber(),
+            };
+            const duplicateEvents = await sdkUtils.paginatedEventQuery(client.spokePool, eventFilter, searchConfig);
+            if (duplicateEvents.length > 0) {
+              this.logger.debug({
+                at: "Dataworker#executeRelayerRefundLeaves",
+                message: `Relayer Refund Leaf #${leaf.leafId} for ${symbol} on chain ${leaf.chainId} already executed`,
+                duplicateEvents,
+              });
+              return undefined;
+            }
           }
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
@@ -2270,7 +2273,8 @@ export class Dataworker {
           const valueToPassViaPayable = getMsgValue(leaf);
           // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
-          // NOTE: this is ETH required separately from the amount required to send the tokens
+          // NOTE: this is ETH required separately from the amount required to send the tokens.
+          // NOTE: The SvmSpoke does not require payable leaf executions, so we can exclude that here.
           if (isDefined(valueToPassViaPayable) && isEVMSpokePoolClient(client)) {
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
