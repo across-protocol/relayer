@@ -782,37 +782,41 @@ async function _fetchAttestationsForTxn(
 }
 
 // This function compares message we need to finalize with the api response message. It skips the `nonce` part of comparison as it's not set at the time of emitting an on-chain `MessageSent` event
+// It also skips finalityThresholdExecuted comparison for the same reason. See https://github.com/circlefin/evm-cctp-contracts/blob/6e7513cdb2bee6bb0cddf331fe972600fc5017c9/src/messages/v2/MessageV2.sol#L89
 function cmpAPIToEventMessageBytesV2(apiResponseMessage: string, eventMessageBytes: string): boolean {
   // Source https://developers.circle.com/stablecoins/message-format
   const normalize = (hex: string) => (hex.startsWith("0x") ? hex.substring(2) : hex).toLowerCase();
   const normApiMsg = normalize(apiResponseMessage);
   const normLocalMsg = normalize(eventMessageBytes);
 
-  // Bytes [12 .. 44) are ignored. These are responsible for nonceHash, which is set remotely by Circle and not present in an event on source chain
-  // In hex string (2 chars/byte):
-  // Chars [0 .. 24) must match.
-  // Chars [24 .. 88) are ignored.
-  // Chars 88 onwards must match.
-
-  // Hex strings must be at least 44 bytes long (88 characters).
-  if (normApiMsg.length < 88 || normLocalMsg.length < 88) {
-    return false;
-  }
-
   if (normApiMsg.length !== normLocalMsg.length) {
     return false;
   }
 
-  const prefixApi = normApiMsg.substring(0, 24);
-  const prefixLocal = normLocalMsg.substring(0, 24);
-  if (prefixApi !== prefixLocal) {
+  // Segment 1: Bytes [0 .. 12)
+  const seg1Api = normApiMsg.substring(0, 24);
+  const seg1Local = normLocalMsg.substring(0, 24);
+  if (seg1Api !== seg1Local) {
     return false;
   }
 
-  const suffixApi = normApiMsg.substring(88);
-  const suffixLocal = normLocalMsg.substring(88);
-  if (suffixApi !== suffixLocal) {
+  // Skip `nonce`: Bytes [12 .. 44)
+
+  // Segment 2: Bytes [44 .. 143)
+  const seg2Api = normApiMsg.substring(88, 288);
+  const seg2Local = normLocalMsg.substring(88, 288);
+  if (seg2Api !== seg2Local) {
     return false;
   }
+
+  // Skip `finalityThresholdExecuted`: Bytes [144 .. 148)
+
+  // Segment 3: Bytes [148..end)
+  const seg3Api = normApiMsg.substring(296);
+  const seg3Local = normLocalMsg.substring(296);
+  if (seg3Api !== seg3Local) {
+    return false;
+  }
+
   return true;
 }
