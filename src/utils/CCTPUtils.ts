@@ -22,11 +22,6 @@ type CommonMessageData = {
   messageHash: string;
   messageBytes: string;
   nonceHash: string;
-
-  // Index of cctp message within one txn among other cctp messages. We rely on this to match
-  // messages to attestation responses from Cirle's API correctly. When we learn to derive v2
-  // nonceHash, we can instead move to querying the attestation per message directly
-  cctpMessageIndex: number;
 };
 // Common data + auxilary data from depositForBurn event
 type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecipient: string; burnToken: string };
@@ -329,9 +324,8 @@ async function getCCTPMessageEvents(
   };
 
   const relevantEvents: CCTPMessageEvent[] = [];
-  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log, cctpMessageIndex: number) => {
+  const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log) => {
     const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
-    eventData.cctpMessageIndex = cctpMessageIndex;
     const eventFragment = messageTransmitterInterface.getEvent(CCTP_MESSAGE_SENT_TOPIC_HASH);
     // underlying lib should throw error if parsing is unsuccessful
     const args = messageTransmitterInterface.decodeEventLog(eventFragment, log.data, log.topics);
@@ -351,15 +345,13 @@ async function getCCTPMessageEvents(
   };
   for (const receipt of receipts) {
     let lastMessageSentEventIdx = -1;
-    let cctpMessageIndex = 0;
     receipt.logs.forEach((log, i) => {
       if (_isMessageSentEvent(log)) {
         if (lastMessageSentEventIdx == -1) {
           lastMessageSentEventIdx = i;
         } else {
-          _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx], cctpMessageIndex);
+          _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx]);
           lastMessageSentEventIdx = i;
-          cctpMessageIndex++;
         }
       } else {
         const depositForBurnVersion = _getDepositForBurnVersion(log);
@@ -382,7 +374,6 @@ async function getCCTPMessageEvents(
           const eventData = isCctpV2
             ? _decodeDepositForBurnMessageDataV2(correspondingMessageSentLog)
             : _decodeDepositForBurnMessageDataV1(correspondingMessageSentLog);
-          eventData.cctpMessageIndex = cctpMessageIndex;
           const logDescription = tokenMessengerInterface.parseLog(log);
           const spreadArgs = spreadEvent(logDescription.args);
           const eventName = logDescription.name;
@@ -412,18 +403,15 @@ async function getCCTPMessageEvents(
             relevantEvents.push(event);
           }
           lastMessageSentEventIdx = -1;
-          cctpMessageIndex++;
         } else {
           // reset `lastMessageSentEventIdx`, because we found a matching `DepositForBurn` event for it, completing the (MessageSent, DepositForBurn) sequence
           lastMessageSentEventIdx = -1;
-          // increment `cctpMessageIndex` as this message, albeit not relevant to our current search, will impact the response from Circle's api
-          cctpMessageIndex++;
         }
       }
     });
     // After the loop over all logs, we might have an unmatched `MessageSent` event. Try to add it to `relevantEvents`
     if (lastMessageSentEventIdx != -1) {
-      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx], cctpMessageIndex);
+      _addCommonMessageEventIfRelevant(receipt.logs[lastMessageSentEventIdx]);
     }
   }
 
@@ -689,7 +677,6 @@ function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageDat
     nonceHash,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
-    cctpMessageIndex: 0, // to be set separately
   };
 }
 
@@ -712,7 +699,6 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
     nonceHash: ethers.constants.HashZero,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
-    cctpMessageIndex: 0, // to be set separately
   };
 }
 
