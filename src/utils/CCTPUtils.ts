@@ -886,7 +886,8 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositF
     ...commonDataV1,
     burnToken,
     amount: BigNumber.from(amount).toString(),
-    // override sender and recipient from `DepositForBurn`-specific values
+    // override sender and recipient from `DepositForBurn`-specific values. This is required because raw sender / recipient for a message like this
+    // are CCTP's TokenMessenger contracts rather than the addrs sending / receiving tokens
     sender: sender,
     recipient: mintRecipient,
     mintRecipient,
@@ -916,7 +917,8 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
     ...commonData,
     burnToken,
     amount: BigNumber.from(amount).toString(),
-    // override sender and recipient from `DepositForBurn`-specific values
+    // override sender and recipient from `DepositForBurn`-specific values. This is required because raw sender / recipient for a message like this
+    // are CCTP's TokenMessenger contracts rather than the addrs sending / receiving tokens
     sender: sender,
     recipient: mintRecipient,
     mintRecipient,
