@@ -1,7 +1,7 @@
 import { utils } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
-import { Contract, ethers, EventFilter } from "ethers";
+import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
@@ -217,14 +217,13 @@ async function getRelevantCCTPTxHashes(
     if (isHubPoolAmongSenders) {
       const hubPool = new Contract(hubPoolAddress, abi, srcProvider);
 
-      // Create a combined filter for both MessageRelayed and TokensRelayed events
-      const combinedFilter: EventFilter = {
-        address: hubPoolAddress,
-        topics: [[hubPool.interface.getEventTopic("MessageRelayed"), hubPool.interface.getEventTopic("TokensRelayed")]],
-      };
+      const messageRelayedFilter = hubPool.filters.MessageRelayed();
+      const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+      messageRelayedEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
 
-      const hubPoolEvents = await paginatedEventQuery(hubPool, combinedFilter, sourceEventSearchConfig);
-      hubPoolEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
+      const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+      const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+      tokensRelayedEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
     }
   }
 
@@ -541,6 +540,13 @@ export async function getAttestedCCTPMessages(
   sourceEventSearchConfig: EventSearchConfig,
   includeTokenlessHubPoolMessages: boolean
 ): Promise<AttestedCCTPMessage[]> {
+  // TODO: override search config for testing:
+  const testSearchConfig: EventSearchConfig = {
+    from: 22567000,
+    to: 22577500,
+    maxLookBack: 10000,
+  };
+
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
   const messagesWithStatus = await getCCTPMessagesWithStatus(
@@ -548,8 +554,67 @@ export async function getAttestedCCTPMessages(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig,
+    testSearchConfig,
     includeTokenlessHubPoolMessages
+  );
+
+  // TODO: testing
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] testSearchConfig for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
+    JSON.stringify(testSearchConfig, null, 2)
+  );
+
+  // Enhanced logging for messagesWithStatus
+  const statusCounts = {
+    depositForBurn: { finalized: 0, ready: 0, pending: 0, total: 0 },
+    other: { finalized: 0, ready: 0, pending: 0, total: 0 },
+  };
+  const uniqueMessageIdentifiers = {
+    depositForBurn: new Set<string>(),
+    other: new Set<string>(),
+  };
+
+  messagesWithStatus.forEach((msg) => {
+    const category = isDepositForBurnEvent(msg) ? "depositForBurn" : "other";
+    statusCounts[category][msg.status]++;
+    statusCounts[category].total++;
+    uniqueMessageIdentifiers[category].add(`${msg.log.transactionHash}-${msg.log.logIndex}`);
+  });
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] Message Counts for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
+    JSON.stringify(statusCounts, null, 2)
+  );
+
+  const hashableStringDepositForBurn = Array.from(uniqueMessageIdentifiers.depositForBurn).sort().join("");
+  const hashableStringOther = Array.from(uniqueMessageIdentifiers.other).sort().join("");
+
+  const keccakDepositForBurn = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(hashableStringDepositForBurn));
+  const keccakOther = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(hashableStringOther));
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] Input for DepositForBurn Messages Hash (txHash-logIndex sorted) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}: ${hashableStringDepositForBurn}`
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] DepositForBurn Messages Hash (keccak256) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}: ${keccakDepositForBurn}`
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] Input for Other Messages Hash (txHash-logIndex sorted) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}: ${hashableStringOther}`
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] Other Messages Hash (keccak256) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}: ${keccakOther}`
+  );
+  // Original verbose logging (can be removed or kept as needed)
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CCTPUtils.getAttestedCCTPMessages] messagesWithStatus (verbose) for l2ChainId ${l2ChainId}, sourceChainId ${sourceChainId}, destinationChainId ${destinationChainId}:`,
+    JSON.stringify(messagesWithStatus, null, 2)
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
