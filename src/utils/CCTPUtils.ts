@@ -589,9 +589,23 @@ export async function getAttestedCCTPMessages(
         });
 
         if (!matchingAttestation) {
-          throw new Error(
-            `No matching CCTP V2 attestation found in CTTP API response for message in tx ${message.log.transactionHash}, sourceDomain ${message.sourceDomain}, logIndex ${message.log.logIndex}`
+          const anyApiMessageIsPending = attestations.messages.some(
+            (attestation) => _getPendingV2AttestationStatus(attestation) === "pending"
           );
+
+          if (anyApiMessageIsPending) {
+            // If any API message for this transaction is pending, we treat our current message as pending too.
+            return {
+              ...message,
+              status: "pending" as CCTPMessageStatus,
+              attestation: undefined,
+            };
+          } else {
+            // No matching attestation found, and no other API messages for this transaction are pending.
+            throw new Error(
+              `No matching CCTP V2 attestation found in CCTP API response for message in tx ${message.log.transactionHash}, sourceDomain ${message.sourceDomain}, logIndex ${message.log.logIndex}. Additionally, no other messages from the API for this transaction are in a 'pending' state.`
+            );
+          }
         }
 
         const processed = await _hasCCTPMessageBeenProcessed(
