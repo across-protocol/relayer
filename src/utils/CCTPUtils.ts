@@ -12,7 +12,7 @@ import { Log } from "../interfaces";
 import { assert } from ".";
 
 type CommonMessageData = {
-  version: number; // 0 == v1, 1 == v2. This is how Circle assigns them
+  cctpVersion: number; // 1 == v1, 2 == v2. Circle's docs say 0 and 1, but real endpoints return 1 and 2. :)
   sourceDomain: number;
   destinationDomain: number;
   sender: string;
@@ -595,6 +595,8 @@ export async function getAttestedCCTPMessages(
       if (isCctpV2) {
         const attestations = attestationResponses.get(message.log.transactionHash);
 
+        // TODO: here, find a matching attestation by .message field(a hex-string, careful)
+
         // TODO: does `message.cctpMessageIndex` work correctly here?
         // Pick `messageAttestation` by `cctpMessageIndex`
         const messageAttestation = attestations.messages[message.cctpMessageIndex];
@@ -616,7 +618,7 @@ export async function getAttestedCCTPMessages(
             nonceHash: messageAttestation.eventNonce,
             messageBytes: messageAttestation.message,
             attestation: messageAttestation?.attestation, // Will be undefined if status is "pending"
-            status: _getPendingV2AttestationStatus(messageAttestation.status),
+            status: _getPendingV2AttestationStatus(messageAttestation),
           };
         }
       } else {
@@ -625,7 +627,7 @@ export async function getAttestedCCTPMessages(
         return {
           ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
-          status: _getPendingAttestationStatus(attestation.status),
+          status: _getPendingAttestationStatus(attestation),
         };
       }
     })
@@ -633,13 +635,24 @@ export async function getAttestedCCTPMessages(
   return attestedMessages;
 }
 
-function _getPendingV2AttestationStatus(attestation: string): CCTPMessageStatus {
-  return attestation === "pending_confirmation" ? "pending" : "ready";
+function _getPendingV2AttestationStatus(attestation: CCTPV2APIAttestation): CCTPMessageStatus {
+  if (!isDefined(attestation.attestation)) {
+    return "pending";
+  } else {
+    return attestation.status === "pending_confirmations" || attestation.attestation === "PENDING"
+      ? "pending"
+      : "ready";
+  }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _getPendingAttestationStatus(attestation: string): CCTPMessageStatus {
-  return attestation === "pending_confirmations" ? "pending" : "ready";
+function _getPendingAttestationStatus(attestation: CCTPAPIGetAttestationResponse): CCTPMessageStatus {
+  if (!isDefined(attestation.attestation)) {
+    return "pending";
+  } else {
+    return attestation.status === "pending_confirmations" || attestation.attestation === "PENDING"
+      ? "pending"
+      : "ready";
+  }
 }
 
 async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
@@ -662,7 +675,7 @@ function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageDat
   const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
 
   return {
-    version: 0,
+    cctpVersion: 1,
     sourceDomain,
     destinationDomain,
     sender,
@@ -684,7 +697,7 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
   const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
 
   return {
-    version: 1,
+    cctpVersion: 2,
     sourceDomain,
     destinationDomain,
     sender,
