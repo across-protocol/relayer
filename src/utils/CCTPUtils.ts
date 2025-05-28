@@ -37,12 +37,6 @@ type CCTPV2APIAttestation = {
   cctpVersion: number;
 };
 type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function isCctpV2ApiResponse(
-  obj: CCTPAPIGetAttestationResponse | CCTPV2APIGetAttestationResponse
-): obj is CCTPV2APIGetAttestationResponse {
-  return (obj as CCTPV2APIGetAttestationResponse).messages !== undefined;
-}
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
 export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
