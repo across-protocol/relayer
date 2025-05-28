@@ -579,7 +579,37 @@ export async function getAttestedCCTPMessages(
     const category = isDepositForBurnEvent(msg) ? "depositForBurn" : "other";
     statusCounts[category][msg.status]++;
     statusCounts[category].total++;
-    uniqueMessageIdentifiers[category].add(`${msg.log.transactionHash}-${msg.log.logIndex}`);
+
+    let identifier: string;
+    if (isDepositForBurnEvent(msg)) {
+      // Detailed string for DepositForBurn messages
+      identifier = [
+        msg.log.transactionHash,
+        msg.log.logIndex,
+        msg.nonceHash,
+        msg.amount,
+        msg.sourceDomain,
+        msg.destinationDomain,
+        msg.sender,
+        msg.recipient,
+        msg.messageHash,
+        msg.messageBytes,
+      ].join("-");
+    } else {
+      // Detailed string for other CCTP messages
+      identifier = [
+        msg.log.transactionHash,
+        msg.log.logIndex,
+        msg.nonceHash,
+        msg.sourceDomain,
+        msg.destinationDomain,
+        msg.sender,
+        msg.recipient,
+        msg.messageHash,
+        msg.messageBytes,
+      ].join("-");
+    }
+    uniqueMessageIdentifiers[category].add(identifier);
   });
 
   // eslint-disable-next-line no-console
