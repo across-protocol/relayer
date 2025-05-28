@@ -1,7 +1,7 @@
 import { utils } from "@across-protocol/sdk";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
-import { Contract, ethers, EventFilter } from "ethers";
+import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
@@ -217,14 +217,13 @@ async function getRelevantCCTPTxHashes(
     if (isHubPoolAmongSenders) {
       const hubPool = new Contract(hubPoolAddress, abi, srcProvider);
 
-      // Create a combined filter for both MessageRelayed and TokensRelayed events
-      const combinedFilter: EventFilter = {
-        address: hubPoolAddress,
-        topics: [[hubPool.interface.getEventTopic("MessageRelayed"), hubPool.interface.getEventTopic("TokensRelayed")]],
-      };
+      const messageRelayedFilter = hubPool.filters.MessageRelayed();
+      const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+      messageRelayedEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
 
-      const hubPoolEvents = await paginatedEventQuery(hubPool, combinedFilter, sourceEventSearchConfig);
-      hubPoolEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
+      const tokensRelayedFilter = hubPool.filters.TokensRelayed();
+      const tokensRelayedEvents = await paginatedEventQuery(hubPool, tokensRelayedFilter, sourceEventSearchConfig);
+      tokensRelayedEvents.forEach((e) => txHashesFromHubPool.push(e.transactionHash));
     }
   }
 
@@ -332,9 +331,11 @@ async function getCCTPMessageEvents(
   const _addCommonMessageEventIfRelevant = (log: ethers.providers.Log, cctpMessageIndex: number) => {
     const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
     eventData.cctpMessageIndex = cctpMessageIndex;
-    const logDescription = messageTransmitterInterface.parseLog(log);
-    const spreadArgs = spreadEvent(logDescription.args);
-    const eventName = logDescription.name;
+    const eventFragment = messageTransmitterInterface.getEvent(CCTP_MESSAGE_SENT_TOPIC_HASH);
+    // underlying lib should throw error if parsing is unsuccessful
+    const args = messageTransmitterInterface.decodeEventLog(eventFragment, log.data, log.topics);
+    const spreadArgs = spreadEvent(args);
+    const eventName = eventFragment.name;
     const event: CommonMessageEvent = {
       ...eventData,
       log: {
@@ -683,7 +684,7 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
   const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
 
   return {
-    version: 0,
+    version: 1,
     sourceDomain,
     destinationDomain,
     sender,
@@ -712,7 +713,8 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositF
     ...commonDataV1,
     burnToken,
     amount: BigNumber.from(amount).toString(),
-    // override sender and recipient from `DepositForBurn`-specific values
+    // override sender and recipient from `DepositForBurn`-specific values. This is required because raw sender / recipient for a message like this
+    // are CCTP's TokenMessenger contracts rather than the addrs sending / receiving tokens
     sender: sender,
     recipient: mintRecipient,
     mintRecipient,
@@ -734,7 +736,8 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
     ...commonData,
     burnToken,
     amount: BigNumber.from(amount).toString(),
-    // override sender and recipient from `DepositForBurn`-specific values
+    // override sender and recipient from `DepositForBurn`-specific values. This is required because raw sender / recipient for a message like this
+    // are CCTP's TokenMessenger contracts rather than the addrs sending / receiving tokens
     sender: sender,
     recipient: mintRecipient,
     mintRecipient,
