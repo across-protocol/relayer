@@ -219,11 +219,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      const registrationBlock = Number(
-        process.env[`REGISTRATION_BLOCK_OVERRIDE_${chainId}`] ??
-          (await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]))
-      );
-      // const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
+      const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
       if (chainIsEvm(chainId)) {
         const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
         // TODO: initialize using typechain factory after V3.5 migration.
