@@ -490,8 +490,7 @@ export async function getAttestedCCTPDeposits(
     sourceChainId,
     destinationChainId,
     l2ChainId,
-    sourceEventSearchConfig,
-    false
+    sourceEventSearchConfig
   );
   // only return deposit messages
   return messages.filter((message) => isDepositForBurnEvent(message)) as AttestedCCTPDeposit[];
@@ -516,8 +515,6 @@ export async function getAttestedCCTPDeposits(
  * @param l2ChainId - Chain ID of the L2 chain involved in the CCTP interaction. This is used to determine CCTP versioning (V1 vs V2)
  *                  for contract ABIs and event decoding logic, especially when `sourceChainId` itself might be an L1.
  * @param sourceEventSearchConfig - Configuration for event searching on the `sourceChainId`.
- * @param isSourceHubChain - If true, the function will additionally search for `MessageSent` events emitted by the HubPool on `sourceChainId`.
- *                                 Set to `false` if `sourceChainId` does not have a HubPool (e.g., when finalizing L2->L1 CCTP deposits).
  * @returns A promise that resolves to an array of `AttestedCCTPMessage` objects. These can be `AttestedCCTPDeposit` or common `AttestedCCTPMessage` types.
  */
 export async function getAttestedCCTPMessages(
@@ -525,11 +522,11 @@ export async function getAttestedCCTPMessages(
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig,
-  isSourceHubChain: boolean
+  sourceEventSearchConfig: EventSearchConfig
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
+  const isSourceHubChain = [CHAIN_IDs.MAINNET, CHAIN_IDs.SEPOLIA].includes(sourceChainId);
   const messagesWithStatus = await getCCTPMessagesWithStatus(
     senderAddresses,
     sourceChainId,

@@ -42,8 +42,7 @@ export async function cctpL1toL2Finalizer(
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
-    searchConfig,
-    true
+    searchConfig
   );
   const unprocessedMessages = outstandingDeposits.filter(
     (message) => message.status === "ready" && message.attestation !== "PENDING"
