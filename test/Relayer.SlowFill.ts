@@ -38,6 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { SvmAddress, EvmAddress } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -130,7 +131,13 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     // TODO: Remove hardcoded relayer address.
-    tokenClient = new TokenClient(spyLogger, relayer.address, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), spokePoolClients, hubPoolClient);
+    tokenClient = new TokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      spokePoolClients,
+      hubPoolClient
+    );
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);

@@ -19,7 +19,16 @@ import {
   updateClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
+import {
+  getBlockForTimestamp,
+  getCurrentTime,
+  getProvider,
+  getRedisCache,
+  Signer,
+  SpokePool,
+  SvmAddress,
+  EvmAddress,
+} from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
@@ -122,7 +131,15 @@ export async function constructRelayerClients(
     ...config.relayerTokens,
     ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
   ]);
-  const tokenClient = new TokenClient(logger, signerAddr, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58") spokePoolClients, hubPoolClient, relayerTokens);
+  // TODO: Remove hardcoded relayer address.
+  const tokenClient = new TokenClient(
+    logger,
+    EvmAddress.from(signerAddr),
+    SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+    spokePoolClients,
+    hubPoolClient,
+    relayerTokens
+  );
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (

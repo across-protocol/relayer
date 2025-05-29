@@ -4,7 +4,6 @@ import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
-  chainIsEvm,
   chainIsSvm,
   Contract,
   dedupArray,

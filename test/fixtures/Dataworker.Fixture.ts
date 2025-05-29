@@ -14,7 +14,7 @@ import {
   sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
-import { PriceClient, acrossApi, coingecko, defiLlama } from "../../src/utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, SvmAddress, EvmAddress } from "../../src/utils";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
@@ -194,7 +194,13 @@ export async function setupDataworker(
     );
 
   // TODO: Remove hardcoded relayer address.
-  const tokenClient = new TokenClient(spyLogger, relayer.address, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), {}, hubPoolClient);
+  const tokenClient = new TokenClient(
+    spyLogger,
+    EvmAddress.from(relayer.address),
+    SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+    {},
+    hubPoolClient
+  );
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
   // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.
