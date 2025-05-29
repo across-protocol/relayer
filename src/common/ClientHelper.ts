@@ -17,8 +17,10 @@ import {
   chainIsEvm,
   forEachAsync,
   isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
   getSvmProvider,
   getBlockFinder,
+  SVMProvider,
 } from "../utils";
 import {
   HubPoolClient,
@@ -413,15 +415,17 @@ export async function updateClients(clients: Clients, config: CommonConfig, logg
 }
 
 export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number]: SpokePoolClient }): {
-  [chainId: number]: ethers.providers.Provider;
+  [chainId: number]: ethers.providers.Provider | SVMProvider;
 } {
   return Object.fromEntries(
     Object.entries(spokePoolClients)
-      .map(([chainId, client]): [number, ethers.providers.Provider] => {
+      .map(([chainId, client]): [number, ethers.providers.Provider | SVMProvider] => {
         if (isEVMSpokePoolClient(client)) {
           return [Number(chainId), client.spokePool.signer.provider];
+        } else {
+          assert(isSVMSpokePoolClient(client));
+          return [Number(chainId), client.svmEventsClient.getRpc()];
         }
-        return [Number(chainId), undefined];
       })
       .filter(([, provider]) => !!provider)
   );

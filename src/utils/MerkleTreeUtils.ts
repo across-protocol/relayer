@@ -1,7 +1,7 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT, SvmSpokeClient } from "@across-protocol/contracts";
 import { address } from "@solana/kit";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
-import { getParamType, utils, chainIsEvm } from ".";
+import { getParamType, utils, chainIsEvm, toAddressType } from ".";
 import _ from "lodash";
 import { convertRelayDataParamsToBytes32 } from "./DepositUtils";
 
@@ -19,11 +19,11 @@ export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillL
     const slowFillLeafEncoder = SvmSpokeClient.getSlowFillEncoder();
     const _relayData = input.relayData;
     const relayData: SvmSpokeClient.RelayData = {
-      depositor: address(_relayData.depositor),
-      recipient: address(_relayData.recipient),
-      exclusiveRelayer: address(_relayData.exclusiveRelayer),
-      inputToken: address(_relayData.inputToken),
-      outputToken: address(_relayData.outputToken),
+      depositor: convertToSvmAddress(_relayData.depositor),
+      recipient: convertToSvmAddress(_relayData.recipient),
+      exclusiveRelayer: convertToSvmAddress(_relayData.exclusiveRelayer),
+      inputToken: convertToSvmAddress(_relayData.inputToken),
+      outputToken: convertToSvmAddress(_relayData.outputToken),
       inputAmount: _relayData.inputAmount.toBigInt(),
       outputAmount: _relayData.outputAmount.toBigInt(),
       originChainId: BigInt(_relayData.originChainId),
@@ -64,8 +64,8 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
       chainId: input.chainId,
       refundAmounts: input.refundAmounts.map((bnAmount) => bnAmount.toBigInt()),
       leafId: input.leafId,
-      mintPublicKey: address(input.l2TokenAddress),
-      refundAddresses: input.refundAddresses.map((refundAddress) => address(refundAddress)),
+      mintPublicKey: convertToSvmAddress(input.l2TokenAddress),
+      refundAddresses: input.refundAddresses.map(convertToSvmAddress),
     };
     const serializedData = relayerRefundEncoder.encode(relayerRefundLeaf);
     const contentToHash = Buffer.concat([Buffer.alloc(64, 0), new Uint8Array(serializedData)]);
@@ -73,5 +73,10 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
   };
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
+
+// Local utility for converting a hex or base58 string into a solana kit Address.
+const convertToSvmAddress = (stringAddress: string) => {
+  return address(toAddressType(stringAddress).toBase58());
+};
 
 export { MerkleTree, RelayerRefundLeaf, RelayerRefundLeafWithGroup, EMPTY_MERKLE_ROOT };

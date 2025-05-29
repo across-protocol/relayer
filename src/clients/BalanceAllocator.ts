@@ -1,4 +1,13 @@
-import { BigNumber, ERC20, ethers, min, getNativeTokenAddressForChain } from "../utils";
+import {
+  BigNumber,
+  ERC20,
+  ethers,
+  min,
+  getNativeTokenAddressForChain,
+  SVMProvider,
+  chainIsEvm,
+  bnZero,
+} from "../utils";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -14,7 +23,7 @@ export class BalanceAllocator {
 
   public used: BalanceMap = {};
 
-  constructor(readonly providers: { [chainId: number]: ethers.providers.Provider }) {}
+  constructor(readonly providers: { [chainId: number]: ethers.providers.Provider | SVMProvider }) {}
 
   // Note: The caller is suggesting that `tokens` for a request are interchangeable.
   // The tokens whose balances are depleted first should be placed at the front of the array.
@@ -155,8 +164,15 @@ export class BalanceAllocator {
 
   // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    return getNativeTokenAddressForChain(chainId).toLowerCase() === token.toLowerCase()
-      ? await this.providers[chainId].getBalance(holder)
-      : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);
+    if (chainIsEvm(chainId)) {
+      const provider = this.providers[chainId] as ethers.providers.Provider;
+      return getNativeTokenAddressForChain(chainId).toLowerCase() === token.toLowerCase()
+        ? await provider.getBalance(holder)
+        : await ERC20.connect(token, provider).balanceOf(holder);
+    } else {
+      const provider = this.providers[chainId] as SVMProvider;
+      provider;
+      return bnZero; // @todo
+    }
   }
 }

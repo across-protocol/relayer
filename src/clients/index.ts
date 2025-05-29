@@ -2,6 +2,7 @@ import { clients } from "@across-protocol/sdk";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 export type EVMSpokePoolClient = clients.EVMSpokePoolClient;
+export type SVMSpokePoolClient = clients.SVMSpokePoolClient;
 export type SpokePoolUpdate = clients.SpokePoolUpdate;
 export const { EVMSpokePoolClient, SpokePoolClient, SVMSpokePoolClient } = clients;
 
