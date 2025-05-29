@@ -29,6 +29,7 @@ import {
   getSvmProvider,
   SvmAddress,
   SVMProvider,
+  EvmAddress,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -43,8 +44,8 @@ export class TokenClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly relayerEvmAddress: string,
-    readonly relayerSvmAddress: string,
+    readonly relayerEvmAddress: EvmAddress,
+    readonly relayerSvmAddress: SvmAddress,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly additionalL1Tokens: string[] = []
@@ -228,24 +229,16 @@ export class TokenClient {
     return tokens;
   }
 
-  resolveSolanaTokens(chainId: number, hubPoolTokens: L1Token[]): string[] {
+  resolveSolanaTokens(chainId: number, hubPoolTokens: L1Token[]): SvmAddress[] {
     assert(chainIsSvm(chainId));
     return hubPoolTokens
-      .map(({ address, symbol }) => {
+      .map(({ address }) => {
         try {
           const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
           // Validate that the remote token is a valid Solana address
-          SvmAddress.from(remoteToken);
-          return remoteToken;
+          return SvmAddress.from(remoteToken);
         } catch (error) {
-          this.logger.debug({
-            at: "TokenClient",
-            message: "Failed to resolve Solana token",
-            l1Token: address,
-            symbol,
-            chainId,
-            error: (error as any)?.message || error,
-          });
+          // No known deployment for this token on the SpokePool.
           return undefined;
         }
       })
@@ -264,15 +257,14 @@ export class TokenClient {
         return this.fetchTokenData(chainId, hubPoolTokens);
       }
 
-      const { relayerEvmAddress } = this;
       const balances: sdkUtils.Call3[] = [];
       const allowances: sdkUtils.Call3[] = [];
       this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-        balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
+        balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toAddress()] });
         allowances.push({
           contract: token,
           method: "allowance",
-          args: [relayerAddress, spokePoolClient.spokePoolAddress.toEvmAddress()],
+          args: [this.relayerEvmAddress.toAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
         });
       });
 
@@ -338,10 +330,9 @@ export class TokenClient {
     const spokePoolClient = this.spokePoolClients[chainId];
     assert(isEVMSpokePoolClient(spokePoolClient));
 
-    const { relayerEvmAddress } = this;
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
-        const balance: BigNumber = await token.balanceOf(relayerEvmAddress);
+        const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toAddress());
         const allowance = await this._getAllowance(spokePoolClient, token);
         return [token.address, { balance, allowance }];
       })
@@ -359,20 +350,6 @@ export class TokenClient {
 
     const provider = getSvmProvider();
     const solanaTokens = this.resolveSolanaTokens(chainId, hubPoolTokens);
-    const { relayerSvmAddress } = this;
-
-    // Validate relayer address is a valid Solana address
-    try {
-      SvmAddress.from(relayerSvmAddress);
-    } catch (error) {
-      this.logger.error({
-        at: "TokenClient",
-        message: "Invalid Solana relayer address",
-        relayerSvmAddress,
-        error: (error as any)?.message || error,
-      });
-      return {};
-    }
 
     if (solanaTokens.length === 0) {
       this.logger.debug({
@@ -385,8 +362,8 @@ export class TokenClient {
     }
 
     const tokenData = Object.fromEntries(
-      await sdkUtils.mapAsync(solanaTokens, async (tokenMint: string) => {
-        const balance = await this._getSolanaTokenBalance(provider, relayerAddress, tokenMint);
+      await sdkUtils.mapAsync(solanaTokens, async (tokenMint) => {
+        const balance = await this._getSolanaTokenBalance(provider, this.relayerSvmAddress, tokenMint);
         // Solana doesn't require allowances like EVM chains
         return [tokenMint, { balance, allowance: toBN(0) }];
       })
@@ -412,7 +389,7 @@ export class TokenClient {
       }
     }
     const allowance: BigNumber = await token.allowance(
-      this.relayerEvmAddress,
+      this.relayerEvmAddress.toAddress(),
       spokePoolClient.spokePoolAddress.toEvmAddress()
     );
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
@@ -462,73 +439,56 @@ export class TokenClient {
 
   private async _getSolanaTokenBalance(
     provider: SVMProvider,
-    walletAddress: string,
-    tokenMint: string
+    walletAddress: SvmAddress,
+    tokenMint: SvmAddress
   ): Promise<BigNumber> {
-    try {
-      // Convert addresses to the correct format for SVM provider
-      const ownerPubkey = SvmAddress.from(walletAddress).toV2Address();
-      const mintPubkey = SvmAddress.from(tokenMint).toV2Address();
+    // Convert addresses to the correct format for SVM provider
+    const ownerPubkey = walletAddress.toV2Address();
+    const mintPubkey = tokenMint.toV2Address();
 
-      // Get token accounts owned by the wallet for this specific mint
-      const tokenAccountsByOwner = await provider
-        .getTokenAccountsByOwner(
-          ownerPubkey,
-          {
-            mint: mintPubkey,
-          },
-          {
-            encoding: "jsonParsed",
-          }
-        )
-        .send();
-
-      const response = tokenAccountsByOwner as any;
-      if (!response.value || response.value.length === 0) {
-        // No token account found for this mint, balance is 0
-        return toBN(0);
-      }
-
-      // For SPL tokens, there should typically be only one token account per mint per owner
-      // Sum all balances in case there are multiple accounts (rare but possible)
-      let totalBalance = toBN(0);
-      for (const accountInfo of response.value) {
-        if (
-          accountInfo.account.data &&
-          typeof accountInfo.account.data === "object" &&
-          "parsed" in accountInfo.account.data
-        ) {
-          const parsedData = accountInfo.account.data.parsed;
-          if (parsedData?.info?.tokenAmount?.amount) {
-            const balance = toBN(parsedData.info.tokenAmount.amount);
-            totalBalance = totalBalance.add(balance);
-          }
+    // Get token accounts owned by the wallet for this specific mint
+    const tokenAccountsByOwner = await provider
+      .getTokenAccountsByOwner(
+        ownerPubkey,
+        {
+          mint: mintPubkey,
+        },
+        {
+          encoding: "jsonParsed",
         }
-      }
+      )
+      .send();
 
-      return totalBalance;
-    } catch (error: any) {
-      // Handle specific Solana RPC errors gracefully
-      if (error?.code === -32602 || error?.message?.includes("Invalid param")) {
-        this.logger.debug({
-          at: "TokenClient",
-          message: "Invalid Solana address or mint for token balance query",
-          walletAddress,
-          tokenMint,
-          error: error.message,
-        });
-        return toBN(0);
-      }
-
-      this.logger.warn({
-        at: "TokenClient",
-        message: "Failed to get Solana token balance",
-        walletAddress,
-        tokenMint,
-        error: error.message,
-      });
+    const response = tokenAccountsByOwner;
+    if (!response.value || response.value.length === 0) {
+      // No token account found for this mint, balance is 0
       return toBN(0);
     }
+
+    // For SPL tokens, there should typically be only one token account per mint per owner
+    // Sum all balances in case there are multiple accounts (rare but possible)
+    let totalBalance = toBN(0);
+    for (const accountInfo of response.value) {
+      const balance = accountInfo?.account?.data?.parsed?.info?.tokenAmount?.amount;
+      if (balance) {
+        totalBalance = totalBalance.add(toBN(balance));
+      }
+      if (accountInfo?.account?.data?.parsed?.info?.tokenAmount?.amount) {
+
+      if (
+        accountInfo.account.data &&
+        typeof accountInfo.account.data === "object" &&
+        "parsed" in accountInfo.account.data
+      ) {
+        const parsedData = accountInfo.account.data.parsed;
+        if (parsedData?.info?.tokenAmount?.amount) {
+          const balance = toBN(parsedData.info.tokenAmount.amount);
+          totalBalance = totalBalance.add(balance);
+        }
+      }
+    }
+
+    return totalBalance;
   }
 
   protected async getRedis(): Promise<CachingMechanismInterface | undefined> {

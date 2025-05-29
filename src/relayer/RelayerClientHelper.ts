@@ -122,7 +122,7 @@ export async function constructRelayerClients(
     ...config.relayerTokens,
     ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
   ]);
-  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient, relayerTokens);
+  const tokenClient = new TokenClient(logger, signerAddr, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58") spokePoolClients, hubPoolClient, relayerTokens);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (

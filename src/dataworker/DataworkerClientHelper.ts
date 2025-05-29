@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner, SvmAddress } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -34,7 +34,8 @@ export async function constructDataworkerClients(
   await hubPoolClient.update();
 
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
+  // TODO: Remove hardcoded relayer address.
+  const tokenClient = new TokenClient(logger, signerAddr, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), {}, hubPoolClient);
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {
