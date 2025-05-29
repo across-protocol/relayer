@@ -39,10 +39,12 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     string: ["binanceSecretKey"],
   };
   const args = minimist(process.argv.slice(2), opts);
-  const binanceKeys = await retrieveGckmsKeys(getGckmsConfig(args.binanceSecretKey ?? []));
+  if (!isDefined(args.binanceSecretKey)) {
+    return undefined;
+  }
+  const binanceKeys = await retrieveGckmsKeys(getGckmsConfig([args.binanceSecretKey]));
   if (binanceKeys.length === 0) {
     return undefined;
   }
-  const buffer = Buffer.from(binanceKeys[0].slice(2), "hex");
-  return buffer.toString("base64");
+  return binanceKeys[0].slice(2);
 }
