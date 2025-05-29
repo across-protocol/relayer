@@ -15,6 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { EvmAddress, SvmAddress } from "../src/utils";
 
 describe("TokenClient: Balance and Allowance", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -104,7 +105,7 @@ describe("TokenClient: Balance and Allowance", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(spyLogger, EvmAddress.from(owner.address), SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), spokePoolClients, hubPoolClient);
     tokenClient.setRemoteTokens([], {
       [originChainId]: [erc20_1, weth_1],
       [destinationChainId]: [erc20_2, weth_2],
