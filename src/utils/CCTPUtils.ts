@@ -6,10 +6,10 @@ import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import { bnZero, compareAddressesSimple } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { RetryProvider, getCachedProvider } from "./ProviderUtils";
+import { getCachedProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert } from ".";
+import { assert, Provider } from ".";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -184,7 +184,7 @@ function getContractInterfaces(
  * @returns A Set of unique transaction hashes.
  */
 async function getRelevantCCTPTxHashes(
-  srcProvider: RetryProvider,
+  srcProvider: Provider,
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
