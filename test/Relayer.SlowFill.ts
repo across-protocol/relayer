@@ -129,7 +129,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    // TODO: Remove hardcoded relayer address.
+    tokenClient = new TokenClient(spyLogger, relayer.address, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), spokePoolClients, hubPoolClient);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);

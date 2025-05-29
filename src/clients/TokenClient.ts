@@ -473,19 +473,6 @@ export class TokenClient {
       if (balance) {
         totalBalance = totalBalance.add(toBN(balance));
       }
-      if (accountInfo?.account?.data?.parsed?.info?.tokenAmount?.amount) {
-
-      if (
-        accountInfo.account.data &&
-        typeof accountInfo.account.data === "object" &&
-        "parsed" in accountInfo.account.data
-      ) {
-        const parsedData = accountInfo.account.data.parsed;
-        if (parsedData?.info?.tokenAmount?.amount) {
-          const balance = toBN(parsedData.info.tokenAmount.amount);
-          totalBalance = totalBalance.add(balance);
-        }
-      }
     }
 
     return totalBalance;

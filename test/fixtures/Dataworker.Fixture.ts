@@ -193,7 +193,8 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
+  // TODO: Remove hardcoded relayer address.
+  const tokenClient = new TokenClient(spyLogger, relayer.address, SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), {}, hubPoolClient);
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
   // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.
