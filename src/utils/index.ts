@@ -6,7 +6,7 @@ import winston from "winston";
 import assert from "assert";
 export { winston, assert };
 
-export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES } = sdkConstants;
+export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM } = sdkConstants;
 export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
 export {
@@ -35,13 +35,6 @@ export {
   TOKEN_EQUIVALENCE_REMAPPING,
 } from "@across-protocol/constants";
 
-export {
-  createKeyPairSignerFromPrivateKeyBytes,
-  KeyPairSigner,
-  createSignerFromKeyPair,
-  createKeyPairFromBytes,
-} from "@solana/web3.js";
-
 // TypeChain exports used in the bot.
 export {
   getContractInfoFromAddress,
@@ -56,11 +49,13 @@ export {
 } from "@across-protocol/contracts";
 
 // Utils specifically for this bot.
+export * from "./AnchorUtils";
 export * from "./SDKUtils";
 export * from "./chains";
 export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
+export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
