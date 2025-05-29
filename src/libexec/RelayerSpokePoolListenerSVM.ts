@@ -27,7 +27,6 @@ const abortController = new AbortController();
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
-let stop = false; // tbd whether this is required, or whether abortController is sufficient.
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -125,13 +124,11 @@ async function run(argv: string[]): Promise<void> {
 
   process.on("SIGHUP", () => {
     logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
-    stop = true;
     abortController.abort();
   });
 
   process.on("disconnect", () => {
     logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
-    stop = true;
     abortController.abort();
   });
 
@@ -159,6 +156,4 @@ if (require.main === module) {
       logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
       exit(process.exitCode);
     });
-
-  stop; // lint
 }
