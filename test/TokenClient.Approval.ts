@@ -104,7 +104,13 @@ describe("TokenClient: Origin token approval", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, EvmAddress.from(owner.address), SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(owner.address),
+      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token_1, l1Token_2, erc20_1, erc20_2, weth_1, weth_2]);
   });
 

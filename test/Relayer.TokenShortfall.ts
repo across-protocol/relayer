@@ -136,7 +136,13 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new SimpleMockTokenClient(spyLogger, EvmAddress.from(relayer.address), SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"), spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
