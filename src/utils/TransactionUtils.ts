@@ -1,5 +1,13 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
+import {
+  CompilableTransactionMessage,
+  compileTransaction,
+  KeyPairSigner,
+  signTransaction,
+  getBase64EncodedWireTransaction,
+  type Blockhash,
+} from "@solana/kit";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
@@ -18,6 +26,7 @@ import {
   stringifyThrownValue,
   CHAIN_IDs,
   EvmGasPriceEstimate,
+  SVMProvider,
 } from "../utils";
 dotenv.config();
 
@@ -29,6 +38,11 @@ export type TransactionSimulationResult = {
   succeed: boolean;
   reason?: string;
   data?: any;
+};
+
+export type LatestBlockhash = {
+  blockhash: Blockhash;
+  lastValidBlockHeight: bigint;
 };
 
 const { isError, isEthersError } = typeguards;
@@ -166,6 +180,17 @@ export async function runTransaction(
       throw error;
     }
   }
+}
+
+export async function runTransactionSvm(
+  unsignedTransaction: CompilableTransactionMessage,
+  signer: KeyPairSigner,
+  provider: SVMProvider
+): Promise<string> {
+  const compiledTx = compileTransaction(unsignedTransaction);
+  const signedTx = await signTransaction([signer.keyPair], compiledTx);
+  const serializedTx = getBase64EncodedWireTransaction(signedTx);
+  return provider.sendTransaction(serializedTx, { encoding: "base64" }).send();
 }
 
 export async function getGasPrice(
