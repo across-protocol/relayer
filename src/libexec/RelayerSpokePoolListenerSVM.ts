@@ -69,14 +69,14 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
 
       const events = rawEvents
         .filter(({ name }) => eventNames.includes(name))
-        .map((event) => ({
+        .map(({ program, name, data }) => ({
           ...unusedFields,
           transactionHash: signature,
           blockNumber: Number(slot),
-          address: event.program,
-          event: event.name,
+          address: program,
+          event: name,
           removed: false,
-          args: arch.svm.unwrapEventData(event.data),
+          args: arch.svm.unwrapEventData(data),
         }));
 
       if (events.length > 0) {
@@ -84,6 +84,7 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
         const { blockNumber: maxSlot } = events.reduce((a, b) => (a.blockNumber > b.blockNumber ? a : b), {
           blockNumber: 0,
         });
+        // @todo: Must be able to tick the chain without deposit events occurring for deposit confirmations to work.
         postEvents(maxSlot, getCurrentTime(), eventMgr.tick());
       }
     }

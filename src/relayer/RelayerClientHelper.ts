@@ -64,8 +64,8 @@ async function indexedSpokePoolClient(
   const searchConfig = { from, maxLookBack: opts.blockRange };
 
   if (chainIsEvm(chainId)) {
-    const SpokePoolClient = SpokeListener(EVMSpokePoolClient);
     const contract = SpokePool.connect(spokePoolAddr, signer);
+    const SpokePoolClient = SpokeListener(EVMSpokePoolClient);
     const spokePoolClient = new SpokePoolClient(
       logger,
       contract,

@@ -55,10 +55,9 @@ export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolE
 type Constructor<T = Record<string, unknown>> = new (...args: any[]) => T;
 
 // Minimum common-ish interface supplied by the SpokePoolClient.
-// The create method is an exception; it's required in order to be able to instantiate an SVMSpokePoolClient.
 type MinGenericSpokePoolClient = {
   chainId: number;
-  spokePoolAddress: Address;
+  spokePoolAddress: Address | undefined;
   deploymentBlock: number;
   _queryableEventNames: () => string[];
   eventSearchConfig: { from: number; to?: number; maxLookBack?: number };
@@ -89,14 +88,14 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       this.#pendingEvents = this._queryableEventNames().map(() => []);
       this.#pendingEventsRemoved = [];
 
-      this.#startWorker();
+      this._startWorker();
     }
 
     /**
      * Fork a child process to independently scrape events.
      * @returns void
      */
-    #startWorker(): void {
+    _startWorker(): void {
       const {
         eventSearchConfig: { from, maxLookBack: blockrange },
         spokePoolAddress: spokepool,
@@ -111,7 +110,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       });
 
       this.#worker.on("exit", (code, signal) => this.#childExit(code, signal));
-      this.#worker.on("message", (message) => this.#indexerUpdate(message));
+      this.#worker.on("message", (message) => this._indexerUpdate(message));
       this.logger.debug({
         at: "SpokePoolClient#startWorker",
         message: `Spawned ${this.#chain} SpokePool indexer.`,
@@ -166,7 +165,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @param rawMessage Message to be parsed.
      * @returns void
      */
-    #indexerUpdate(rawMessage: unknown): void {
+    _indexerUpdate(rawMessage: unknown): void {
       assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type`);
 
       const message = JSON.parse(rawMessage);
