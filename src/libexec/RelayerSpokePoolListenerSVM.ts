@@ -104,14 +104,13 @@ async function listen(
   const { signal: abortSignal } = abortController;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
 
-  const readSlot = async (provider: WSProvider, providerName: string) => {
+  const readSlot = async (provider: WSProvider) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
     for await (const update of subscription) {
       const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
       const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
       const events = eventMgr.tick();
-      logger.debug({ at: "listen", message: `Got slot update from ${providerName}`, update });
       postEvents(Number(slot), currentTime, events);
     }
   };
@@ -135,7 +134,7 @@ async function listen(
 
   const providerNames = urls.map(getOriginFromURL);
   await Promise.all([
-    readSlot(providers[0], providerNames[0]),
+    readSlot(providers[0]),
     ...providers.map((provider, i) => readEvent(provider, providerNames[i])),
   ]);
 }
