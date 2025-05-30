@@ -196,6 +196,7 @@ async function run(argv: string[]): Promise<void> {
   const opts = {
     quorum,
     deploymentBlock,
+    lookback: Number(latestSlot - startSlot),
   };
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
