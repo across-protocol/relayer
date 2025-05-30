@@ -58,14 +58,14 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
 
   const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
 
-  const readSlot = async(provider: WSProvider, _providerName: string) => {
+  const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
     for await (const update of subscription) {
       const { slot: blockNumber } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
       const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
       const events = eventMgr.tick();
-      logger.debug({ at: "listen", message: "Got slot update.", update });
+      logger.debug({ at: "listen", message: `Got slot update from ${providerName}`, update });
       postEvents(Number(blockNumber), currentTime, events);
     }
   };
@@ -101,7 +101,7 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
   const providerNames = urls.map(getOriginFromURL);
   await Promise.all([
     readSlot(providers[0], providerNames[0]),
-    ...providers.map((provider, i) => readEvent(provider, providerNames[i]))
+    ...providers.map((provider, i) => readEvent(provider, providerNames[i])),
   ]);
 }
 
