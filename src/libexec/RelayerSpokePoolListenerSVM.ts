@@ -50,6 +50,12 @@ const UNUSED_FIELDS = {
   topics: [],
 };
 
+/**
+ * Transform an EventWithData type to a Log type.
+ * @notice This conversion will be redundant after changes to the SpokePoolListener messaging interface.
+ * @param event EventWithData instance.
+ * @returns Log
+ */
 function logFromEvent(event: Pick<EventWithData, "slot" | "program" | "signature" | "name" | "data">): Log {
   return {
     ...UNUSED_FIELDS,
