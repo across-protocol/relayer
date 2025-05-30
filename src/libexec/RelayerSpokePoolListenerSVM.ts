@@ -1,6 +1,5 @@
 import assert from "assert";
 import minimist from "minimist";
-import { utils as ethersUtils } from "ethers";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch } from "@across-protocol/sdk";
 import { Log } from "../interfaces";
@@ -41,7 +40,7 @@ let chain: string;
   return this.toString();
 };
 
-// These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
+// These are Log fields that are irrelevant for SVM and are only needed for the messaging interface.
 // These will ultimately be dropped from the messaging interface.
 const UNUSED_FIELDS = {
   blockHash: "",
@@ -144,16 +143,15 @@ async function listen(
  */
 async function run(argv: string[]): Promise<void> {
   const minimistOpts = {
-    string: ["lookback", "relayer", "spokepool"],
+    string: ["lookback", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainid: chainId } = args);
-  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
+  const { lookback, blockrange: maxBlockRange = 10_000 } = args;
   lookback;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
