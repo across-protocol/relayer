@@ -93,6 +93,15 @@ async function scrapeEvents(
   }
 }
 
+/**
+ * Given a SpokePool eventsClient instance and an array of event names, subscribe to all future event emissions.
+ * Periodically transmit received events to the parent process (if defined).
+ * @param eventMgr Event manager instancea.
+ * @param eventsClient eventsClient instance.
+ * @param eventNames Event names to listen for.
+ * @param quorum Minimum quorum requirement for events.
+ * @returns void
+ */
 async function listen(
   eventMgr: EventManager,
   eventsClient: arch.svm.SvmCpiEventsClient,
