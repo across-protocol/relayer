@@ -46,16 +46,6 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
   const { signal: abortSignal } = abortController;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
 
-  // These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
-  // These will ultimately be dropped from the messaging interface.
-  const unusedFields = {
-    blockHash: "",
-    transactionIndex: 0,
-    logIndex: 0,
-    data: "",
-    topics: [],
-  };
-
   const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
 
   const readSlot = async (provider: WSProvider, providerName: string) => {
@@ -68,6 +58,16 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
       logger.debug({ at: "listen", message: `Got slot update from ${providerName}`, update });
       postEvents(Number(blockNumber), currentTime, events);
     }
+  };
+
+  // These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
+  // These will ultimately be dropped from the messaging interface.
+  const unusedFields = {
+    blockHash: "",
+    transactionIndex: 0,
+    logIndex: 0,
+    data: "",
+    topics: [],
   };
 
   const readEvent = async (provider: WSProvider, providerName: string) => {
