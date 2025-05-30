@@ -74,17 +74,16 @@ async function scrapeEvents(
   eventNames: string[],
   opts: ScraperOpts & { to: bigint }
 ): Promise<void> {
-  const { to } = opts;
   const provider = eventsClient.getRpc();
   const [currentTime, ...events] = await Promise.all([
-    provider.getBlockTime(to).send(),
+    provider.getBlockTime(opts.to).send(),
     ...eventNames.map((eventName) =>
-      _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: Number(to) }, logger)
+      _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)
     ),
   ]);
 
   if (!abortController.signal.aborted) {
-    postEvents(Number(to), Number(currentTime), events.flat().map(logFromEvent));
+    postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent));
   }
 }
 
