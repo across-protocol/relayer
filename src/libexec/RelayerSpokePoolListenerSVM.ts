@@ -83,9 +83,7 @@ async function scrapeEvents(
   const provider = eventsClient.getRpc();
   const [currentTime, ...events] = await Promise.all([
     provider.getBlockTime(opts.to).send(),
-    ...eventNames.map((eventName) =>
-      _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)
-    ),
+    ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
   if (!abortController.signal.aborted) {
@@ -146,10 +144,7 @@ async function listen(
   };
 
   const providerNames = urls.map(getOriginFromURL);
-  await Promise.all([
-    readSlot(providers[0]),
-    ...providers.map((provider, i) => readEvent(provider, providerNames[i])),
-  ]);
+  await Promise.all([readSlot(providers[0]), ...providers.map((provider, i) => readEvent(provider, providerNames[i]))]);
 }
 
 /**
