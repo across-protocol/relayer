@@ -122,15 +122,12 @@ async function listen(
       .subscribe({ abortSignal });
 
     for await (const log of subscription) {
-      const {
-        value: { signature },
-        context: { slot },
-      } = log;
+      const { signature } = log.value;
       const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
 
       const events = rawEvents
         .filter(({ name }) => eventNames.includes(name))
-        .map((event) => logFromEvent({ ...event, signature, slot }));
+        .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
       events.forEach((event) => eventMgr.add(event, providerName));
     }
