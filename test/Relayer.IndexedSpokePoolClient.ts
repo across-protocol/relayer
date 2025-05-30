@@ -27,7 +27,7 @@ function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListen
     protected _startWorker(): void {
       return;
     }
-  }
+  };
 }
 
 describe("IndexedSpokePoolClient: Update", async function () {
@@ -122,14 +122,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     ({ spyLogger: logger } = createSpyLogger());
     ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId));
     const searchConfig: EventSearchConfig | undefined = undefined;
-    spokePoolClient = new MockSpokeListener(
-      logger,
-      spokePool,
-      null,
-      chainId,
-      deploymentBlock,
-      searchConfig,
-    );
+    spokePoolClient = new MockSpokeListener(logger, spokePool, null, chainId, deploymentBlock, searchConfig);
     spokePoolClient.init({});
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
