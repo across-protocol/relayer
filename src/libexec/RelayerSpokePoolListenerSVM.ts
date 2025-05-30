@@ -3,26 +3,31 @@ import minimist from "minimist";
 import { utils as ethersUtils } from "ethers";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch } from "@across-protocol/sdk";
+import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
   EventManager,
   exit,
   isDefined,
+  getBlockForTimestamp,
   getChainQuorum,
   getCurrentTime,
+  getDeploymentBlockNumber,
   getNetworkName,
   getNodeUrlList,
   getOriginFromURL,
-  getProvider,
+  getRedisCache,
   getSvmProvider,
   Logger,
-  SvmAddress,
   winston,
 } from "../utils";
+import { ScraperOpts } from "./types";
 import { postEvents } from "./util/ipc";
+import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
 type WSProvider = RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+type EventWithData = arch.svm.EventWithData;
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const abortController = new AbortController();
@@ -36,7 +41,60 @@ let chain: string;
   return this.toString();
 };
 
-async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames: string[], quorum = 1): Promise<void> {
+// These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
+// These will ultimately be dropped from the messaging interface.
+const UNUSED_FIELDS = {
+  blockHash: "",
+  transactionIndex: 0,
+  logIndex: 0,
+  data: "",
+  topics: [],
+};
+
+function logFromEvent(event: Pick<EventWithData, "slot" | "program" | "signature" | "name" | "data">): Log {
+  return {
+    ...UNUSED_FIELDS,
+    transactionHash: event.signature,
+    blockNumber: Number(event.slot),
+    address: event.program,
+    event: event.name,
+    removed: false,
+    args: arch.svm.unwrapEventData(event.data),
+  };
+}
+
+/**
+ * Aggregate utils/scrapeEvents for a series of event names.
+ * @param spokePool Ethers Contract instance.
+ * @param eventNames The array of events to be queried.
+ * @param opts Options to configure event scraping behaviour.
+ * @returns void
+ */
+async function scrapeEvents(
+  eventsClient: arch.svm.SvmCpiEventsClient,
+  eventNames: string[],
+  opts: ScraperOpts & { to: bigint }
+): Promise<void> {
+  const { to } = opts;
+  const provider = eventsClient.getRpc();
+  const [currentTime, ...events] = await Promise.all([
+    provider.getBlockTime(to).send(),
+    ...eventNames.map((eventName) =>
+      _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: Number(to) }, logger)
+    ),
+  ]);
+
+  if (!abortController.signal.aborted) {
+    postEvents(Number(to), Number(currentTime), events.flat().map(logFromEvent));
+  }
+}
+
+async function listen(
+  eventMgr: EventManager,
+  eventsClient: arch.svm.SvmCpiEventsClient,
+  eventNames: string[],
+  quorum = 1
+): Promise<void> {
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
@@ -46,28 +104,16 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
   const { signal: abortSignal } = abortController;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
 
-  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
-
   const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
     for await (const update of subscription) {
-      const { slot: blockNumber } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
+      const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
       const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
       const events = eventMgr.tick();
       logger.debug({ at: "listen", message: `Got slot update from ${providerName}`, update });
-      postEvents(Number(blockNumber), currentTime, events);
+      postEvents(Number(slot), currentTime, events);
     }
-  };
-
-  // These are Log fields that are irrelevant for SVM and are only needed for the relayer messaging interface.
-  // These will ultimately be dropped from the messaging interface.
-  const unusedFields = {
-    blockHash: "",
-    transactionIndex: 0,
-    logIndex: 0,
-    data: "",
-    topics: [],
   };
 
   const readEvent = async (provider: WSProvider, providerName: string) => {
@@ -84,15 +130,7 @@ async function listen(eventMgr: EventManager, _spokePool: SvmAddress, eventNames
 
       const events = rawEvents
         .filter(({ name }) => eventNames.includes(name))
-        .map(({ program, name, data }) => ({
-          ...unusedFields,
-          transactionHash: signature,
-          blockNumber: Number(slot),
-          address: program,
-          event: name,
-          removed: false,
-          args: arch.svm.unwrapEventData(data),
-        }));
+        .map((event) => logFromEvent({ ...event, signature, slot }));
 
       events.forEach((event) => eventMgr.add(event, providerName));
     }
@@ -126,11 +164,35 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const quorumProvider = await getProvider(chainId);
-  quorumProvider;
+  const provider = getSvmProvider();
+  const blockFinder = undefined;
+  const latestSlot = await provider.getSlot({ commitment: "confirmed" }).send();
+  assert(typeof latestSlot === "bigint", `fuck ${latestSlot}`); // Should be unnecessary; tsc still complains.
+
+  const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
+  let startSlot = latestSlot;
+  if (/^@[0-9]+$/.test(lookback)) {
+    // Lookback to a specific block (lookback = @<block-number>).
+    startSlot = BigInt(lookback.slice(1));
+  } else if (isDefined(lookback)) {
+    // Resolve `lookback` seconds from head to a specific block.
+    assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
+
+    const now = await provider.getBlockTime(latestSlot).send();
+    assert(typeof now === "bigint"); // Should be unnecessary; tsc still complains.
+    startSlot = BigInt(
+      Math.max(
+        deploymentBlock,
+        await getBlockForTimestamp(chainId, Number(now - lookback), blockFinder, await getRedisCache())
+      )
+    );
+  } else {
+    logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
+  }
 
   const opts = {
     quorum,
+    deploymentBlock,
   };
 
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
@@ -145,12 +207,23 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
+  if (latestSlot > startSlot) {
+    const events = [
+      "FundsDeposited",
+      "FilledRelay",
+      // "RequestedSpeedUpDeposit",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ];
+    await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });
+  }
+
   const events = ["FundsDeposited", "FilledRelay"];
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
   const eventMgr = new EventManager(logger, chainId, quorum);
 
-  const spokePool = undefined;
-  await listen(eventMgr, spokePool, events, quorum);
+  await listen(eventMgr, eventsClient, events, quorum);
 }
 
 if (require.main === module) {
