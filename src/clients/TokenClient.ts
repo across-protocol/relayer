@@ -280,9 +280,9 @@ export class TokenClient {
       return balanceInfo;
     } else if (isSVMSpokePoolClient(spokePoolClient)) {
       return this.fetchSolanaTokenData(chainId, hubPoolTokens);
+    } else {
+      throw new Error(`Unknown SpokePool client type: ${chainId}`);
     }
-
-    return {};
   }
 
   async update(): Promise<void> {
@@ -349,16 +349,6 @@ export class TokenClient {
 
     const provider = getSvmProvider();
     const solanaTokens = this.resolveSolanaTokens(chainId, hubPoolTokens);
-
-    if (solanaTokens.length === 0) {
-      this.logger.debug({
-        at: "TokenClient",
-        message: "No Solana tokens found for chain",
-        chainId,
-        hubPoolTokenCount: hubPoolTokens.length,
-      });
-      return {};
-    }
 
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(solanaTokens, async (tokenMint) => {
