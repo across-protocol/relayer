@@ -366,9 +366,14 @@ async function enrichHeliosActions(
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
         logger.debug({ ...logContext, message: "Proof generation is pending.", proofId });
         break;
-      case "errored":
+      case "errored": {
         // Proof generation errored on the API side. This is concerning, so we log an error. But nothing to do for us other than to re-request
-        logger.error({
+        // Don't page on 'is not divisible by 32' error. Just warn and log to Slack
+        const log =
+          proofState.error_message && proofState.error_message.includes("is not divisible by 32")
+            ? logger.warn
+            : logger.error;
+        log({
           ...logContext,
           message: "Proof generation errored on ZK API side. Requesting again.",
           proofId,
@@ -378,6 +383,7 @@ async function enrichHeliosActions(
         await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
+      }
       case "success":
         if (!proofState.update_calldata) {
           throw new Error(`Proof status is success but update_calldata is missing for proofId ${proofId}`);
