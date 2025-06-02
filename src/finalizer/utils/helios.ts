@@ -366,6 +366,7 @@ async function enrichHeliosActions(
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
         logger.debug({ ...logContext, message: "Proof generation is pending.", proofId });
         break;
+
       case "errored": {
         // Proof generation errored on the API side. This is concerning, so we log an error. But nothing to do for us other than to re-request
         // Don't page on 'is not divisible by 32' error. Just warn and log to Slack
