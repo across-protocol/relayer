@@ -10,8 +10,13 @@ jobs:
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v4
-      - name: "Dependency Review"
-        uses: actions/dependency-review-action@v4.7.1
+      - name: Save dependency review log
+        run: |
+          unset GITHUB_STEP_SUMMARY
+          npx --yes @github/dependency-review-action > dependency-review.txt
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
         with:
-          fail-on-severity: high
-          comment-summary-in-pr: false
+          name: dependency-review
+          path: dependency-review.txt
