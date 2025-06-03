@@ -216,7 +216,6 @@ async function run(argv: string[]): Promise<void> {
     const events = [
       "FundsDeposited",
       "FilledRelay",
-      // "RequestedSpeedUpDeposit", @todo supported?
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
