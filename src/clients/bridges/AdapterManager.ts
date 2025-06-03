@@ -11,6 +11,7 @@ import {
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
+  chainIsEvm,
   isDefined,
   winston,
   Signer,
@@ -23,6 +24,7 @@ import {
   TOKEN_EQUIVALENCE_REMAPPING,
   getRemoteTokenForL1Token,
   getTokenInfo,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -47,7 +49,9 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+    const spokePoolAddresses = Object.values(spokePoolClients)
+      .filter(({ chainId }) => chainIsEvm(chainId))
+      .map((client) => client.spokePoolAddress.toEvmAddress());
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -55,20 +59,27 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           this.hubPoolClient.hubPool.address === address ||
-          this.spokePoolClients[chainId].spokePool.address === address ||
+          this.spokePoolClients[chainId].spokePoolAddress.toEvmAddress() === address ||
           !spokePoolAddresses.includes(address)
       );
     };
 
     const hubChainId = hubPoolClient.chainId;
-    const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
+    const l1Signer = hubPoolClient.hubPool.signer;
     const constructBridges = (chainId: number) => {
       if (chainId === hubChainId) {
         return {};
       } // Special case for the EthereumAdapter
+
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+          const spokePoolClient = spokePoolClients[chainId];
+          assert(isEVMSpokePoolClient(spokePoolClient));
+          const l2Signer = spokePoolClient.spokePool.signer;
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
           const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.from(l1Token));
@@ -80,7 +91,9 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       }
-      const l2Signer = spokePoolClients[chainId].spokePool.signer;
+      const spokePoolClient = spokePoolClients[chainId];
+      assert(isEVMSpokePoolClient(spokePoolClient));
+      const l2Signer = spokePoolClient.spokePool.signer;
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
@@ -95,9 +108,11 @@ export class AdapterManager {
           .filter(isDefined) ?? []
       );
     };
-    Object.keys(this.spokePoolClients).map((_chainId) => {
-      const chainId = Number(_chainId);
-      assert(chainId.toString() === _chainId);
+    Object.values(this.spokePoolClients).map(({ chainId }) => {
+      if (!chainIsEvm(chainId)) {
+        return; // @todo
+      }
+
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,
@@ -231,7 +246,9 @@ export class AdapterManager {
   }
 
   getSigner(chainId: number): Signer {
-    return this.spokePoolClients[chainId].spokePool.signer;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    return spokePoolClient.spokePool.signer;
   }
 
   l2TokenForL1Token(l1Token: string, chainId: number): string {

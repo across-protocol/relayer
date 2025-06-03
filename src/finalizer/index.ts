@@ -20,7 +20,7 @@ import {
   bnZero,
   Signer,
   blockExplorerLink,
-  config,
+  config as dotenvConfig,
   disconnectRedisClients,
   getMultisender,
   getNetworkName,
@@ -31,6 +31,7 @@ import {
   CHAIN_IDs,
   Profiler,
   stringifyThrownValue,
+  isEVMSpokePoolClient,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
@@ -49,7 +50,7 @@ import {
 import { assert as ssAssert, enums } from "superstruct";
 const { isDefined } = sdkUtils;
 
-config();
+dotenvConfig();
 let logger: winston.Logger;
 
 /**
@@ -182,11 +183,15 @@ export async function finalize(
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClients: SpokePoolClientsByChain,
-  configuredChainIds: number[],
-  submitFinalizationTransactions: boolean,
-  finalizationStrategy: FinalizationType
+  config: FinalizerConfig
 ): Promise<void> {
   const hubChainId = hubPoolClient.chainId;
+
+  const {
+    chainsToFinalize: configuredChainIds,
+    finalizationStrategy,
+    sendingTransactionsEnabled: submitFinalizationTransactions,
+  } = config;
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
@@ -240,7 +245,7 @@ export async function finalize(
       : [];
     const addressesToFinalize = [
       hubPoolClient.hubPool.address,
-      spokePoolClients[chainId].spokePool.address,
+      spokePoolClients[chainId].spokePoolAddress.toEvmAddress(),
       CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
       ...userSpecifiedAddresses,
     ].map(getAddress);
@@ -292,10 +297,11 @@ export async function finalize(
         // since any L2 -> L1 transfers will be finalized on the hub chain.
         hubChainId,
         ...configuredChainIds,
-      ]).map(
-        async (chainId) =>
-          [chainId, await getMultisender(chainId, spokePoolClients[chainId].spokePool.signer)] as [number, Contract]
-      )
+      ]).map(async (chainId) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        assert(isEVMSpokePoolClient(spokePoolClient));
+        return [chainId, await getMultisender(chainId, spokePoolClient.spokePool.signer)] as [number, Contract];
+      })
     )
   );
   // Assert that no multicall2Lookup is undefined
@@ -476,6 +482,12 @@ export async function constructFinalizerClients(
   const commonClients = await constructClients(_logger, config, baseSigner, hubPoolLookBack);
   await updateFinalizerClients(commonClients);
 
+  if (config.chainsToFinalize.length === 0) {
+    config.chainsToFinalize = commonClients.configStoreClient.getChainIdIndicesForBlock();
+  }
+
+  config.validate(config.chainsToFinalize, _logger);
+
   // Make sure we have at least one chain to finalize and that we include the mainnet chain if it's not already
   // included. Note, we deep copy so that we don't modify config.chainsToFinalize accidentally.
   const configuredChainIds = [...config.chainsToFinalize];
@@ -510,8 +522,8 @@ async function updateFinalizerClients(clients: Clients) {
 
 export class FinalizerConfig extends DataworkerConfig {
   readonly maxFinalizerLookback: number;
-  readonly chainsToFinalize: number[];
   readonly finalizationStrategy: FinalizationType;
+  public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
     const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
@@ -526,9 +538,9 @@ export class FinalizerConfig extends DataworkerConfig {
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
 
-    const _finalizationStategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
-    ssAssert(_finalizationStategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
-    this.finalizationStrategy = _finalizationStategy;
+    const _finalizationStrategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
+    ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
+    this.finalizationStrategy = _finalizationStrategy;
   }
 }
 
@@ -553,19 +565,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       profiler.mark("loopStartPostSpokePoolUpdates");
 
       if (config.finalizerEnabled) {
-        const availableChains = commonClients.configStoreClient
-          .getChainIdIndicesForBlock()
-          .filter((chainId) => isDefined(spokePoolClients[chainId]));
-
-        await finalize(
-          logger,
-          commonClients.hubSigner,
-          commonClients.hubPoolClient,
-          spokePoolClients,
-          config.chainsToFinalize.length === 0 ? availableChains : config.chainsToFinalize,
-          config.sendingTransactionsEnabled,
-          config.finalizationStrategy
-        );
+        await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
       } else {
         logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
       }

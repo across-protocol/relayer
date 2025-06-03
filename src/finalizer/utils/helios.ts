@@ -1,4 +1,4 @@
-import { HubPoolClient, SpokePoolClient, AugmentedTransaction } from "../../clients";
+import { HubPoolClient, SpokePoolClient, AugmentedTransaction, EVMSpokePoolClient } from "../../clients";
 import {
   EventSearchConfig,
   Signer,
@@ -8,6 +8,8 @@ import {
   ethers,
   BigNumber,
   groupObjectCountsByProp,
+  isEVMSpokePoolClient,
+  assert,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -19,7 +21,7 @@ import { StorageSlotVerifiedEvent, HeadUpdateEvent } from "../../interfaces/Heli
 import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
-import { getSp1HeliosContract } from "../../utils/HeliosUtils";
+import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
 import { getBlockFinder, getBlockForTimestamp } from "../../utils/BlockUtils";
 
 // --- Helios Action Types ---
@@ -62,9 +64,14 @@ export async function heliosL1toL2Finalizer(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _senderAddresses: string[]
 ): Promise<FinalizerPromise> {
+  assert(
+    isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
+    "Cannot use helios finalizer on non-evm chains"
+  );
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
-  const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(l2SpokePoolClient);
+  const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
+  const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
   const actions = await identifyRequiredActions(
@@ -72,6 +79,7 @@ export async function heliosL1toL2Finalizer(
     hubPoolClient,
     l1SpokePoolClient,
     l2SpokePoolClient,
+    sp1HeliosL2,
     l1ChainId,
     l2ChainId
   );
@@ -105,7 +113,7 @@ export async function heliosL1toL2Finalizer(
   }
 
   // --- Step 3: Generate transactions from ready-to-submit actions ---
-  return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient);
+  return generateTxnsForHeliosActions(logger, readyActions, l1ChainId, l2ChainId, l2SpokePoolClient, sp1HeliosL2);
 }
 
 // ==================================
@@ -117,8 +125,7 @@ interface Sp1HeliosHeadData {
   sp1HeliosHeader: string;
 }
 
-async function getSp1HeliosHeadData(l2SpokePoolClient: SpokePoolClient): Promise<Sp1HeliosHeadData> {
-  const sp1HeliosL2 = getSp1HeliosContract(l2SpokePoolClient.chainId, l2SpokePoolClient.spokePool.provider);
+async function getSp1HeliosHeadData(sp1HeliosL2: ethers.Contract): Promise<Sp1HeliosHeadData> {
   const sp1HeliosHeadBn: ethers.BigNumber = await sp1HeliosL2.head();
   const sp1HeliosHead = sp1HeliosHeadBn.toNumber();
   const sp1HeliosHeader = await sp1HeliosL2.headers(sp1HeliosHeadBn);
@@ -135,8 +142,9 @@ async function getSp1HeliosHeadData(l2SpokePoolClient: SpokePoolClient): Promise
 async function identifyRequiredActions(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
-  l1SpokePoolClient: SpokePoolClient,
-  l2SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
+  sp1HeliosL2: ethers.Contract,
   l1ChainId: number,
   l2ChainId: number
 ): Promise<HeliosAction[]> {
@@ -151,7 +159,7 @@ async function identifyRequiredActions(
   );
 
   // --- Substep 2: Query L2 Verification Events (StorageSlotVerified) ---
-  const verifiedSlotsMap = await getL2VerifiedSlotsMap(l2SpokePoolClient, l2ChainId);
+  const verifiedSlotsMap = await getL2VerifiedSlotsMap(l2SpokePoolClient, sp1HeliosL2);
 
   // --- Substep 3: Query L2 Execution Events (RelayedCallData) ---
   const relayedNonces = await getL2RelayedNonces(l2SpokePoolClient);
@@ -193,7 +201,7 @@ async function identifyRequiredActions(
   }
 
   // --- Substep 4: Check if Keep-Alive action is needed and push to actions if yes ---
-  if (await shouldGenerateKeepAliveAction(logger, l2SpokePoolClient, l2ChainId)) {
+  if (await shouldGenerateKeepAliveAction(logger, l2SpokePoolClient, sp1HeliosL2, l2ChainId)) {
     actions.push({
       type: "UpdateOnly",
     });
@@ -214,14 +222,12 @@ async function identifyRequiredActions(
 
 async function shouldGenerateKeepAliveAction(
   logger: winston.Logger,
-  l2SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
+  sp1HeliosL2: ethers.Contract,
   l2ChainId: number
 ): Promise<boolean> {
   const twentyFourHoursInSeconds = 24 * 60 * 60; // 24 hours
   const timestamp24hAgo = Math.floor(Date.now() / 1000) - twentyFourHoursInSeconds;
-
-  const l2Provider = l2SpokePoolClient.spokePool.provider;
-  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
 
   const searchConfig: EventSearchConfig = {
     from: l2SpokePoolClient.eventSearchConfig.from,
@@ -229,8 +235,8 @@ async function shouldGenerateKeepAliveAction(
     maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
-  const headUpdateFilter = sp1HeliosContract.filters.HeadUpdate();
-  const rawHeadUpdateLogs = await paginatedEventQuery(sp1HeliosContract, headUpdateFilter, searchConfig);
+  const headUpdateFilter = sp1HeliosL2.filters.HeadUpdate();
+  const rawHeadUpdateLogs = await paginatedEventQuery(sp1HeliosL2, headUpdateFilter, searchConfig);
 
   const headUpdateEvents: HeadUpdateEvent[] = rawHeadUpdateLogs.map(
     (log) => spreadEventWithBlockNumber(log) as HeadUpdateEvent
@@ -264,8 +270,8 @@ async function shouldGenerateKeepAliveAction(
 async function enrichHeliosActions(
   logger: winston.Logger,
   actions: HeliosAction[],
-  l2SpokePoolClient: SpokePoolClient,
-  l1SpokePoolClient: SpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
   currentL2HeliosHeader: string
 ): Promise<HeliosAction[]> {
@@ -360,9 +366,14 @@ async function enrichHeliosActions(
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
         logger.debug({ ...logContext, message: "Proof generation is pending.", proofId });
         break;
-      case "errored":
+      case "errored": {
         // Proof generation errored on the API side. This is concerning, so we log an error. But nothing to do for us other than to re-request
-        logger.error({
+        // Don't page on 'is not divisible by 32' error. Just warn and log to Slack
+        const log =
+          proofState.error_message && proofState.error_message.includes("is not divisible by 32")
+            ? logger.warn
+            : logger.error;
+        log({
           ...logContext,
           message: "Proof generation errored on ZK API side. Requesting again.",
           proofId,
@@ -372,6 +383,7 @@ async function enrichHeliosActions(
         await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
+      }
       case "success":
         if (!proofState.update_calldata) {
           throw new Error(`Proof status is success but update_calldata is missing for proofId ${proofId}`);
@@ -394,7 +406,7 @@ async function enrichHeliosActions(
 async function getRelevantL1Events(
   _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
-  l1SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
   _l2ChainId: number,
   l2SpokePoolAddress: string
@@ -431,20 +443,16 @@ async function getRelevantL1Events(
 
 /** Query L2 Verification Events and return verified slots map */
 async function getL2VerifiedSlotsMap(
-  l2SpokePoolClient: SpokePoolClient,
-  l2ChainId: number
+  l2SpokePoolClient: EVMSpokePoolClient,
+  sp1HeliosL2: ethers.Contract
 ): Promise<Map<string, StorageSlotVerifiedEvent>> {
-  const l2Provider = l2SpokePoolClient.spokePool.provider;
-  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2Provider);
-
   const l2SearchConfig: EventSearchConfig = {
     from: l2SpokePoolClient.eventSearchConfig.from,
     to: l2SpokePoolClient.latestHeightSearched,
     maxLookBack: l2SpokePoolClient.eventSearchConfig.maxLookBack,
   };
-  const storageVerifiedFilter = sp1HeliosContract.filters.StorageSlotVerified();
-
-  const rawLogs = await paginatedEventQuery(sp1HeliosContract, storageVerifiedFilter, l2SearchConfig);
+  const storageVerifiedFilter = sp1HeliosL2.filters.StorageSlotVerified();
+  const rawLogs = await paginatedEventQuery(sp1HeliosL2, storageVerifiedFilter, l2SearchConfig);
 
   // Use spreadEventWithBlockNumber and cast to the flattened type
   const events: StorageSlotVerifiedEvent[] = rawLogs.map(
@@ -468,7 +476,7 @@ async function getL2VerifiedSlotsMap(
 }
 
 /** --- Query L2 Execution Events (RelayedCallData) */
-async function getL2RelayedNonces(l2SpokePoolClient: SpokePoolClient): Promise<Set<string>> {
+async function getL2RelayedNonces(l2SpokePoolClient: EVMSpokePoolClient): Promise<Set<string>> {
   const l2Provider = l2SpokePoolClient.spokePool.provider;
   const l2SpokePoolAddress = l2SpokePoolClient.spokePool.address;
   const universalSpokePoolContract = new ethers.Contract(l2SpokePoolAddress, UNIVERSAL_SPOKE_ABI, l2Provider);
@@ -540,12 +548,12 @@ async function generateTxnsForHeliosActions(
   readyActions: HeliosAction[],
   l1ChainId: number,
   l2ChainId: number,
-  l2SpokePoolClient: SpokePoolClient
+  l2SpokePoolClient: EVMSpokePoolClient,
+  sp1HeliosL2: ethers.Contract
 ): Promise<FinalizerPromise> {
   const transactions: AugmentedTransaction[] = [];
   const crossChainMessages: CrossChainMessage[] = [];
 
-  const sp1HeliosContract = getSp1HeliosContract(l2ChainId, l2SpokePoolClient.spokePool.signer);
   const universalSpokePoolContract = new ethers.Contract(
     l2SpokePoolClient.spokePool.address,
     [...UNIVERSAL_SPOKE_ABI],
@@ -572,14 +580,14 @@ async function generateTxnsForHeliosActions(
           l2ChainId,
           transactions,
           crossChainMessages,
-          sp1HeliosContract,
+          sp1HeliosL2,
           universalSpokePoolContract,
           action
         );
         break;
 
       case "UpdateOnly":
-        addUpdateOnlyTxn(l1ChainId, l2ChainId, transactions, crossChainMessages, sp1HeliosContract, action);
+        addUpdateOnlyTxn(l1ChainId, l2ChainId, transactions, crossChainMessages, sp1HeliosL2, action);
         break;
 
       default:

@@ -46,7 +46,7 @@ async function _constructSpokePoolClientsWithLookback(
   await hubPoolClient.update();
   const latestBlocks = await Promise.all(spokePools.map((x) => x.provider.getBlockNumber()));
   return spokePools.map((pool, i) => {
-    return new clients.SpokePoolClient(
+    return new clients.EVMSpokePoolClient(
       spyLogger,
       pool.connect(signer),
       hubPoolClient,

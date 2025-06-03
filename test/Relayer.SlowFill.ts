@@ -5,6 +5,7 @@ import {
   MultiCallerClient,
   SpokePoolClient,
   TokenClient,
+  EVMSpokePoolClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
@@ -113,14 +114,14 @@ describe("Relayer: Initiates slow fill requests", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,

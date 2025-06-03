@@ -4,6 +4,7 @@ import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
+  chainIsEvm,
   Contract,
   dedupArray,
   ERC20,
@@ -21,6 +22,8 @@ import {
   TOKEN_SYMBOLS_MAP,
   getRemoteTokenForL1Token,
   getTokenInfo,
+  isEVMSpokePoolClient,
+  assert,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -146,13 +149,16 @@ export class TokenClient {
 
     let mrkdwn = "*Approval transactions:* \n";
     for (const { token, chainId } of tokensToApprove) {
-      const targetSpokePool = this.spokePoolClients[chainId].spokePool;
-      const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
-      mrkdwn +=
-        ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
-        `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx: ${blockExplorerLink(tx.hash, chainId)}\n`;
+      const targetSpokePoolClient = this.spokePoolClients[chainId];
+      if (isEVMSpokePoolClient(targetSpokePoolClient)) {
+        const targetSpokePool = targetSpokePoolClient.spokePool;
+        const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
+        const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
+        mrkdwn +=
+          ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
+          `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
+          `tx: ${blockExplorerLink(tx.hash, chainId)}\n`;
+      }
     }
     this.logger.info({ at: "TokenBalanceClient", message: "Approved whitelisted tokens! 💰", mrkdwn });
   }
@@ -178,7 +184,9 @@ export class TokenClient {
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
-    const { signer } = this.spokePoolClients[chainId].spokePool;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    const { signer } = spokePoolClient.spokePool;
 
     if (chainId === this.hubPoolClient.chainId) {
       return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
@@ -215,9 +223,14 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const { spokePool } = this.spokePoolClients[chainId];
+    if (!chainIsEvm(chainId)) {
+      return {}; // @todo
+    }
 
-    const multicall3 = sdkUtils.getMulticall3(chainId, spokePool.provider);
+    const spokePoolClient = this.spokePoolClients[chainId];
+
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
     if (!isDefined(multicall3)) {
       return this.fetchTokenData(chainId, hubPoolTokens);
     }
@@ -227,7 +240,11 @@ export class TokenClient {
     const allowances: sdkUtils.Call3[] = [];
     this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
       balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
-      allowances.push({ contract: token, method: "allowance", args: [relayerAddress, spokePool.address] });
+      allowances.push({
+        contract: token,
+        method: "allowance",
+        args: [relayerAddress, spokePoolClient.spokePoolAddress.toEvmAddress()],
+      });
     });
 
     const calls = [...balances, ...allowances];
@@ -299,8 +316,10 @@ export class TokenClient {
   }
 
   private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
-    const { chainId, spokePool } = spokePoolClient;
-    return `l2TokenAllowance_${chainId}_${originToken}_${this.relayerAddress}_targetContract:${spokePool.address}`;
+    const { chainId } = spokePoolClient;
+    return `l2TokenAllowance_${chainId}_${originToken}_${
+      this.relayerAddress
+    }_targetContract:${spokePoolClient.spokePoolAddress.toEvmAddress()}`;
   }
 
   private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
@@ -312,7 +331,10 @@ export class TokenClient {
         return toBN(result);
       }
     }
-    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+    const allowance: BigNumber = await token.allowance(
+      this.relayerAddress,
+      spokePoolClient.spokePoolAddress.toEvmAddress()
+    );
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
       // Save allowance in cache with no TTL as these should be exhausted.
       await redis.set(key, MAX_SAFE_ALLOWANCE);

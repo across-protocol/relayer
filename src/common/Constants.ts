@@ -31,11 +31,13 @@ import {
   ZKStackBridge,
   ZKStackUSDCBridge,
   ZKStackWethBridge,
+  OFTBridge,
   BinanceCEXBridge,
   BinanceCEXNativeBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
+  OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
@@ -148,6 +150,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.REDSTONE]: 10000,
   [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.SONEIUM]: 10000,
+  [CHAIN_IDs.SOLANA]: 1000,
   [CHAIN_IDs.WORLD_CHAIN]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   [CHAIN_IDs.ZORA]: 10000,
@@ -188,6 +191,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
+  [CHAIN_IDs.SOLANA]: 300, // 0.4s/block
   [CHAIN_IDs.SONEIUM]: 60, // 2s/block
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
@@ -242,8 +246,9 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.POLYGON]: 256,
   [CHAIN_IDs.REDSTONE]: 120,
-  [CHAIN_IDs.SONEIUM]: 120,
   [CHAIN_IDs.SCROLL]: 100,
+  [CHAIN_IDs.SOLANA]: 512,
+  [CHAIN_IDs.SONEIUM]: 120,
   [CHAIN_IDs.WORLD_CHAIN]: 120,
   [CHAIN_IDs.ZK_SYNC]: 512,
   [CHAIN_IDs.ZORA]: 120,
@@ -282,6 +287,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.POLYGON]: 86400,
   [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
+  [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
@@ -456,6 +462,7 @@ export const CANONICAL_L2_BRIDGE: {
 export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<BaseBridgeAdapter>>> = {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.BASE]: {
@@ -470,6 +477,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.BSC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: BinanceCEXNativeBridge,
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
@@ -517,6 +525,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
@@ -574,6 +583,7 @@ export const CUSTOM_L2_BRIDGE: {
   };
 } = {
   [CHAIN_IDs.LISK]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
   [CHAIN_IDs.REDSTONE]: {
@@ -601,6 +611,12 @@ export const CUSTOM_L2_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
   [CHAIN_IDs.UNICHAIN]: {
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+  },
+  [CHAIN_IDs.BSC]: {
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+  },
+  [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
 };
@@ -687,6 +703,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
+  [CHAIN_IDs.SOLANA]: 40 * 60,
   [CHAIN_IDs.SONEIUM]: 20 * 60,
   [CHAIN_IDs.WORLD_CHAIN]: 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,
@@ -978,10 +995,18 @@ export const HYPERLANE_ROUTERS: { [chainId: number]: { [tokenAddress: string]: s
   [CHAIN_IDs.OPTIMISM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.OPTIMISM]]: "0xacEB607CdF59EB8022Cc0699eEF3eCF246d149e2",
   },
+  [CHAIN_IDs.BSC]: {
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.BSC]]: "0xE00C6185a5c19219F1FFeD213b4406a254968c26",
+  },
+  [CHAIN_IDs.WORLD_CHAIN]: {
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.WORLD_CHAIN]]: "0x530b6596af6B6aB4D355d7Af2b5FF12eAeef8261",
+  },
 };
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
 export const HYPERLANE_DEFAULT_FEE_CAP = toWei("0.1");
 export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
-  // all supported chains that have non-eth for gas token should go here. Example: BSC
+  // all supported chains that have non-eth for gas token should go here.
+  // 0.4 BNB fee cap on BSC
+  [CHAIN_IDs.BSC]: toWei("0.4"),
 };

@@ -28,6 +28,9 @@ export function castSpokePoolName(networkId: number): string {
       return "Universal_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";
+    case CHAIN_IDs.SOLANA:
+    case CHAIN_IDs.SOLANA_DEVNET:
+      return "SvmSpoke";
     case CHAIN_IDs.SONEIUM:
       return "Cher_SpokePool";
     case CHAIN_IDs.UNICHAIN || CHAIN_IDs.UNICHAIN_SEPOLIA:
