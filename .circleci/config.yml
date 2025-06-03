@@ -13,7 +13,7 @@ jobs:
             - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
-          command: sudo corepack enable && yarn install --immutable --immutable-cache
+          command: sudo corepack enable && yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
           key: cache-node-v1-{{ checksum "yarn.lock" }}
