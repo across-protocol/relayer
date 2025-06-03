@@ -52,7 +52,7 @@ jobs:
             - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
-          command: sudo corepack enable &&yarn lint
+          command: sudo corepack enable && yarn lint
 workflows:
   version: 2.1
   build_and_test:
