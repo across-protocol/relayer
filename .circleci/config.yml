@@ -11,6 +11,9 @@ jobs:
           name: Restore Yarn Package Cache
           keys:
             - cache-node-v1-{{ checksum "yarn.lock" }}
+      - enable_corepack:
+          name: Enable Corepack
+          command: corepack enable
       - run:
           name: Install Dependencies
           command: yarn install --immutable
