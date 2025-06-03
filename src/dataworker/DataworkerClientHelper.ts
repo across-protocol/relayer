@@ -100,11 +100,8 @@ export async function constructSpokePoolClientsForFastDataworker(
   await updateSpokePoolClients(spokePoolClients, [
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-    "V3FundsDeposited",
     "FundsDeposited",
-    "RequestedV3SlowFill",
     "RequestedSlowFill",
-    "FilledV3Relay",
     "FilledRelay",
   ]);
   Object.values(spokePoolClients).forEach(({ chainId, isUpdated }) =>

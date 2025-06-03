@@ -47,7 +47,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   let depositId: number;
   const getDepositEvent = (blockNumber: number): Log => {
-    const event = generateEvent("V3FundsDeposited", blockNumber);
+    const event = generateEvent("FundsDeposited", blockNumber);
     const args = {
       depositor: randomAddress(),
       recipient: randomAddress(),
@@ -109,7 +109,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
   beforeEach(async function () {
     let deploymentBlock: number;
     ({ spyLogger: logger } = createSpyLogger());
-    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId, 1_000_000));
+    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId));
     const eventSearchConfig: EventSearchConfig | undefined = undefined;
     spokePoolClient = new MockIndexedSpokePoolClient(
       logger,
