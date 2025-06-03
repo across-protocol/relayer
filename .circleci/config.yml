@@ -13,7 +13,7 @@ jobs:
             - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
-          command: sudo corepack enable && yarn install --immutable
+          command: sudo corepack enable && yarn install --immutable --immutable-cache
       - save_cache:
           name: Save Yarn Package Cache
           key: cache-node-v1-{{ checksum "yarn.lock" }}
@@ -33,7 +33,7 @@ jobs:
             - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Run build
-          command: yarn build
+          command: sudo corepack enable && yarn build
       - run:
           name: Run tests
           command: |
@@ -52,7 +52,7 @@ jobs:
             - cache-node-v1-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
-          command: yarn lint
+          command: sudo corepack enable &&yarn lint
 workflows:
   version: 2.1
   build_and_test:
