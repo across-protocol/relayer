@@ -13,9 +13,4 @@ jobs:
       - name: "Dependency Review"
         uses: actions/dependency-review-action@v4.7.1
         with:
-          summary: false
-          output: dependency-review.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dependency-review-report
-          path: dependency-review.txt
+          comment-summary-in-pr: false
