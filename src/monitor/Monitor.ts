@@ -45,6 +45,8 @@ import {
   getTokenInfo,
   ConvertDecimals,
   getL1TokenAddress,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -457,14 +459,17 @@ export class Monitor {
             }
             if (trippedThreshold !== null) {
               const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-              const symbol =
-                token === gasTokenAddressForChain
-                  ? getNativeTokenSymbol(chainId)
-                  : await new Contract(
-                      token,
-                      ERC20.abi,
-                      this.clients.spokePoolClients[chainId].spokePool.provider
-                    ).symbol();
+              let symbol;
+              if (gasTokenAddressForChain) {
+                symbol = getNativeTokenSymbol(chainId);
+              } else {
+                const spokePoolClient = this.clients.spokePoolClients[chainId];
+                if (isEVMSpokePoolClient(spokePoolClient)) {
+                  symbol = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).symbol();
+                } else {
+                  symbol = getTokenInfo(token, chainId).symbol;
+                }
+              }
               return {
                 level: trippedThreshold.level,
                 text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
@@ -531,16 +536,18 @@ export class Monitor {
             signerAddress,
             deficit
           );
+          const spokePoolClient = this.clients.spokePoolClients[chainId];
           // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
           if (
             !canRefill &&
             token === getNativeTokenAddressForChain(chainId) &&
-            getNativeTokenSymbol(chainId) === "ETH"
+            getNativeTokenSymbol(chainId) === "ETH" &&
+            isEVMSpokePoolClient(spokePoolClient)
           ) {
             const weth = new Contract(
               TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
               WETH9.abi,
-              this.clients.spokePoolClients[chainId].spokePool.signer
+              spokePoolClient.spokePool.signer
             );
             const wethBalance = await weth.balanceOf(signerAddress);
             if (wethBalance.gte(deficit)) {
@@ -569,7 +576,7 @@ export class Monitor {
               return;
             }
           }
-          if (canRefill) {
+          if (canRefill && isEVMSpokePoolClient(spokePoolClient)) {
             this.logger.debug({
               at: "Monitor#refillBalances",
               message: "Balance below trigger and can refill to target",
@@ -598,10 +605,10 @@ export class Monitor {
               });
             } else {
               // Note: We don't multicall sending ETH as its not a contract call.
-              const gas = await getGasPrice(this.clients.spokePoolClients[chainId].spokePool.provider);
+              const gas = await getGasPrice(spokePoolClient.spokePool.provider);
               const nativeSymbolForChain = getNativeTokenSymbol(chainId);
               const tx = await (
-                await this.clients.spokePoolClients[chainId].spokePool.signer
+                await spokePoolClient.spokePool.signer
               ).sendTransaction({ to: account, value: deficit, ...gas });
               const receipt = await tx.wait();
               this.logger.info({
@@ -744,7 +751,7 @@ export class Monitor {
       this.clients.bundleDataClient.getApproximateRefundsForBlockRange(enabledChainIds, blockRangeTail),
       Object.fromEntries(
         await mapAsync(chainIds, async (chainId) => {
-          const spokePool = this.clients.spokePoolClients[chainId].spokePool.address;
+          const spokePool = this.clients.spokePoolClients[chainId].spokePoolAddress.toEvmAddress();
           const l2TokenAddresses = monitoredTokenSymbols
             .map((symbol) => l2TokenForChain(chainId, symbol))
             .filter(isDefined);
@@ -974,7 +981,7 @@ export class Monitor {
         });
       }
 
-      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePool.address;
+      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress.toEvmAddress();
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
         // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
@@ -1199,14 +1206,26 @@ export class Monitor {
 
   private async computeSpokePoolsBlocks() {
     for (const chainId of this.monitorChains) {
-      const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
-        this.clients.spokePoolClients[chainId].spokePool.provider,
-        this.monitorConfig.spokePoolsBlocks[chainId]?.startingBlock,
-        this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock
-      );
-
-      this.spokePoolsBlocks[chainId].startingBlock = startingBlock;
-      this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
+      const spokePoolClient = this.clients.spokePoolClients[chainId];
+      if (isEVMSpokePoolClient(spokePoolClient)) {
+        const { startingBlock, endingBlock } = await this.computeStartingAndEndingBlock(
+          spokePoolClient.spokePool.provider,
+          this.monitorConfig.spokePoolsBlocks[chainId]?.startingBlock,
+          this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock
+        );
+        this.spokePoolsBlocks[chainId].startingBlock = startingBlock;
+        this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
+      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+        const latestSlot = Number(await spokePoolClient.svmEventsClient.getRpc().getSlot().send());
+        const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
+        this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
+        if (this.monitorConfig.pollingDelay === 0) {
+          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock ??= latestSlot;
+        } else {
+          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock = endingBlock;
+        }
+        this.monitorConfig.spokePoolsBlocks[chainId].endingBlock = latestSlot;
+      }
     }
   }
 
@@ -1248,26 +1267,26 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
-        const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-        const balance =
-          token === gasTokenAddressForChain
-            ? await this.clients.spokePoolClients[chainId].spokePool.provider.getBalance(account)
-            : // Use the latest block number the SpokePoolClient is aware of to query balances.
-              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
-              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
-              // is now aware of those executions.
-              await new Contract(token, ERC20.abi, this.clients.spokePoolClients[chainId].spokePool.provider).balanceOf(
-                account,
-                { blockTag: this.clients.spokePoolClients[chainId].latestHeightSearched }
-              );
-        if (!this.balanceCache[chainId]) {
-          this.balanceCache[chainId] = {};
+        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
+          const balance =
+            token === gasTokenAddressForChain
+              ? await spokePoolClient.spokePool.provider.getBalance(account)
+              : // Use the latest block number the SpokePoolClient is aware of to query balances.
+                // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+                // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+                // is now aware of those executions.
+                await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(account, {
+                  blockTag: spokePoolClient.latestHeightSearched,
+                });
+          this.balanceCache[chainId] ??= {};
+          this.balanceCache[chainId][token] ??= {};
+          this.balanceCache[chainId][token][account] = balance;
+          return balance;
         }
-        if (!this.balanceCache[chainId][token]) {
-          this.balanceCache[chainId][token] = {};
-        }
-        this.balanceCache[chainId][token][account] = balance;
-        return balance;
+        // @todo _getBalances is unimplemented for SVM.
+        return bnZero;
       })
     );
   }
@@ -1282,11 +1301,13 @@ export class Monitor {
         if (this.decimals[chainId]?.[token]) {
           return this.decimals[chainId][token];
         }
-        const decimals: number = await new Contract(
-          token,
-          ERC20.abi,
-          this.clients.spokePoolClients[chainId].spokePool.provider
-        ).decimals();
+        let decimals: number;
+        const spokePoolClient = this.clients.spokePoolClients[chainId];
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          decimals = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).decimals();
+        } else {
+          decimals = getTokenInfo(token, chainId).decimals;
+        }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};
         }

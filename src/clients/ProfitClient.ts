@@ -32,6 +32,11 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   dedupArray,
+  SVMProvider,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
+  getDeployedAddress,
+  chainIsEvm,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -142,10 +147,14 @@ export class ProfitClient {
     ]);
 
     for (const chainId of this.enabledChainIds) {
-      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(
-        chainId,
-        spokePoolClients[chainId].spokePool.provider
-      );
+      const spokePoolClient = spokePoolClients[chainId];
+      let provider;
+      if (isEVMSpokePoolClient(spokePoolClient)) {
+        provider = spokePoolClient.spokePool.provider;
+      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+        provider = spokePoolClient.svmEventsClient.getRpc();
+      }
+      this.relayerFeeQueries[chainId] = this.constructRelayerFeeQuery(chainId, provider);
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
@@ -579,7 +588,7 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[this._getNativeTokenNetwork(symbol)];
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
         nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
@@ -713,7 +722,14 @@ export class ProfitClient {
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
-  private constructRelayerFeeQuery(chainId: number, provider: Provider): relayFeeCalculator.QueryInterface {
+  private _getNativeTokenNetwork(symbol: string): number {
+    return symbol === "SOL" ? CHAIN_IDs.SOLANA : CHAIN_IDs.MAINNET;
+  }
+
+  private constructRelayerFeeQuery(
+    chainId: number,
+    provider: Provider | SVMProvider
+  ): relayFeeCalculator.QueryInterface {
     // Fallback to Coingecko's free API for now.
     // TODO: Add support for Coingecko Pro.
     const coingeckoProApiKey = undefined;
@@ -722,7 +738,7 @@ export class ProfitClient {
       chainId,
       provider,
       undefined, // symbolMapping
-      undefined, // spokePoolAddress
+      chainIsEvm(chainId) ? undefined : getDeployedAddress("SvmSpoke", chainId), // spokePoolAddress
       undefined, // simulatedRelayerAddress
       coingeckoProApiKey,
       this.logger

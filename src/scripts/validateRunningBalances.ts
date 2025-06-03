@@ -179,7 +179,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           ];
         logs.push(`- Bundle end block for chain: ${bundleEndBlockForChain.toNumber()}`);
         let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
-          spokePoolClients[leaf.chainId].spokePool.address,
+          spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
           {
             blockTag: bundleEndBlockForChain.toNumber(),
           }
@@ -244,7 +244,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               logs.push(`- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
               if (previousNetSendAmount.gt(bnZero)) {
-                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress();
                 let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events

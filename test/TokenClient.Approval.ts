@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, SpokePoolClient, EVMSpokePoolClient } from "../src/clients";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   Contract,
@@ -66,14 +66,14 @@ describe("TokenClient: Origin token approval", async function () {
     ({ hubPool, l1Token_1, l1Token_2 } = await deployAndConfigureHubPool(owner, [], finder.address, ZERO_ADDRESS));
     await collateralWhitelist.addToWhitelist(l1Token_1.address);
     await hubPool.setBond(l1Token_1.address, toBNWei("5"));
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
