@@ -56,8 +56,10 @@ export const {
 
 export type SignerWithAddress = utils.SignerWithAddress;
 export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
+import { smock } from "@defi-wonderland/smock";
 
 chai.use(chaiExclude);
+chai.use(smock.matchers);
 
 export async function assertPromiseError<T>(promise: Promise<T>, errMessage?: string): Promise<void> {
   const SPECIAL_ERROR_MESSAGE = "Promise didn't fail";
