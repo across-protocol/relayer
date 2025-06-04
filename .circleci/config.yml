@@ -7,6 +7,9 @@ jobs:
     resource_class: medium+
     steps:
       - checkout
+      - node/install:
+          install-yarn: true
+          yarn-version: 4.9.2
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
