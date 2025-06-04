@@ -20,6 +20,7 @@ import {
   utf8ToHex,
   ZERO_ADDRESS,
   getMessageHash,
+  toBytes32,
 } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -303,15 +304,15 @@ export async function depositV3(
           )
       : spokePool
           .connect(signer)
-          .depositV3(
-            depositor,
-            recipient,
-            inputToken,
-            outputToken,
+          .deposit(
+            toBytes32(depositor),
+            toBytes32(recipient),
+            toBytes32(inputToken),
+            toBytes32(outputToken),
             inputAmount,
             outputAmount,
             destinationChainId,
-            exclusiveRelayer,
+            toBytes32(exclusiveRelayer),
             quoteTimestamp,
             fillDeadline,
             exclusivityDeadline,
@@ -328,12 +329,13 @@ export async function depositV3(
   const { logIndex } = eventLog;
 
   const depositObject = {
-    originChainId: Number(originChainId),
     blockNumber,
     txnRef,
     txnIndex,
     logIndex,
-    ...spreadEvent(args),
+    ...(spreadEvent(args) as Deposit),
+    originChainId: Number(originChainId),
+    quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
   };
   if (isLegacyDeposit) {
@@ -383,7 +385,18 @@ export async function fillV3Relay(
   const destinationChainId = Number(await spokePool.chainId());
   assert.notEqual(deposit.originChainId, destinationChainId);
 
-  await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
+  await spokePool.connect(signer).fillRelay(
+    {
+      ...deposit,
+      depositor: toBytes32(deposit.depositor),
+      recipient: toBytes32(deposit.recipient),
+      inputToken: toBytes32(deposit.inputToken),
+      outputToken: toBytes32(deposit.outputToken),
+      exclusiveRelayer: toBytes32(deposit.exclusiveRelayer),
+    },
+    repaymentChainId ?? destinationChainId,
+    toBytes32(await signer.getAddress())
+  );
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
