@@ -12,6 +12,9 @@ jobs:
     steps:
       - node/install:
           install-yarn: true
+      - run:
+          name: Enable Corepack
+          command: corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
