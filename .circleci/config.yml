@@ -1,8 +1,4 @@
 version: 2.1
-
-orbs:
-  node: circleci/node@7.1.0
-
 jobs:
   install:
     docker:
@@ -10,8 +6,6 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
-      - node/install:
-          install-yarn: true
       - run:
           name: Enable Corepack
           command: corepack enable
