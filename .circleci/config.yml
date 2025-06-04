@@ -8,7 +8,7 @@ jobs:
     steps:
       - run:
           name: Enable Corepack
-          command: corepack enable
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
