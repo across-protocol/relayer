@@ -72,7 +72,7 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_TOKEN_SYMBOLS,
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
-      MONITOR_IGNORE_FOLLOW_DISTANCE,
+      MONITOR_USE_FOLLOW_DISTANCE,
     } = env;
 
     this.botModes = {
@@ -85,7 +85,7 @@ export class MonitorConfig extends CommonConfig {
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
     };
 
-    if (MONITOR_IGNORE_FOLLOW_DISTANCE === "true") {
+    if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
       Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
     }
 
