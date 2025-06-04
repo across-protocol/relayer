@@ -121,6 +121,7 @@ jobs:
           name: Run lint
           command: yarn lint
 workflows:
+  version: 2.1
   build_and_test:
     jobs:
       - install
