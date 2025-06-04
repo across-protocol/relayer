@@ -22,6 +22,7 @@ jobs:
           key: cache-node-v1-{{ checksum "yarn.lock" }}
           paths:
             - node_modules
+            - .yarn
   test:
     docker:
       - image: cimg/node:20.19.2
