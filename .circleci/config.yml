@@ -1,4 +1,8 @@
 version: 2.1
+
+orbs:
+  node: circleci/node@x.y
+
 jobs:
   install:
     docker:
@@ -121,7 +125,6 @@ jobs:
           name: Run lint
           command: yarn lint
 workflows:
-  version: 2.1
   build_and_test:
     jobs:
       - install
