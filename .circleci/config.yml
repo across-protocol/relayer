@@ -10,10 +10,13 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
-      - checkout
+      - run:
+          name: Install Yarn
+          command: npm install -g yarn
       - node/install:
           install-yarn: true
           yarn-version: 4.9.2
+      - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
