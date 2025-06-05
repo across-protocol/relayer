@@ -16,11 +16,6 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
   integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
 
-"@across-protocol/constants@^3.1.67":
-  version "3.1.67"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.67.tgz#10e37b48792e839a94e4841cd6f31b8980969147"
-  integrity sha512-5XJcHU0I8UksYHCHO394uiAAAKkmlNs49dWBSgD5UZwslo/U7HTiQY6MfO24f/Q8rgSabBsSt9jdquyeba7VxA==
-
 "@across-protocol/constants@^3.1.68":
   version "3.1.68"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.68.tgz#2a58b091b3f717394ee8025b20ee89022da849d8"
@@ -95,19 +90,20 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.2.8":
-  version "4.2.8"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.8.tgz#2f93d7882f7c3eb9561c1a967d5d92620d08fb99"
-  integrity sha512-QYkDrHpoTQ5j2cNI38BWZhTwzD4A/FKT+KpQ3PZN3CQ53+k8RrVwsM93PdgE9cSl3vqxiFPLQdsoIlwnyoAq2Q==
+"@across-protocol/sdk@4.2.9":
+  version "4.2.9"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.9.tgz#3b8ae1db87d5491a62277e62c01714d46612c127"
+  integrity sha512-0+xWBjdudn8g9P/7RkdF6NDxui2vJZCVNPqDYzqOwF06g2Hna5GtdNbhqGy9PgeiTRzfLBnpnhtB2hoVKlBBJg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.67"
+    "@across-protocol/constants" "^3.1.68"
     "@across-protocol/contracts" "^4.0.12"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
     "@solana-program/system" "^0.7.0"
+    "@solana-program/token" "^0.5.1"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.1.0"
     "@solana/web3.js" "^1.31.0"
