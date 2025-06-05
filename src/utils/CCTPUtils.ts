@@ -41,7 +41,7 @@ export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CC
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
-const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA];
+const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA, CHAIN_IDs.WORLD_CHAIN];
 
 /**
  * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
