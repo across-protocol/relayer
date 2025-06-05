@@ -249,7 +249,7 @@ export class InventoryClient {
     if (isAliasConfig(tokenConfig)) {
       return Object.keys(tokenConfig)
         .filter((k) => isDefined(tokenConfig[k][chainId]))
-        .map((token) => toAddressType(token));
+        .map((token) => toAddressType(token, Number(chainId)));
     }
 
     const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
@@ -1447,20 +1447,24 @@ export class InventoryClient {
         Object.entries(distributionForToken[chainId]).forEach(([l2Token, amount]) => {
           const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           const l2Formatter = createFormatFunction(2, 4, false, l2TokenDecimals);
-          const balanceOnChain = this.getBalanceOnChain(chainId, toAddressType(l1Token), toAddressType(l2Token));
+          const balanceOnChain = this.getBalanceOnChain(
+            chainId,
+            toAddressType(l1Token),
+            toAddressType(l2Token, chainId)
+          );
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
             chainId,
             toAddressType(l1Token),
-            toAddressType(l2Token)
+            toAddressType(l2Token, chainId)
           );
-          const actualBalanceOnChain = this.tokenClient.getBalance(chainId, toAddressType(l2Token));
+          const actualBalanceOnChain = this.tokenClient.getBalance(chainId, toAddressType(l2Token, chainId));
           logData[symbol][chainId][l2Token] = {
             actualBalanceOnChain: l2Formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),
             tokenShortFalls: l2Formatter(
-              this.tokenClient.getShortfallTotalRequirement(chainId, toAddressType(l2Token)).toString()
+              this.tokenClient.getShortfallTotalRequirement(chainId, toAddressType(l2Token, chainId)).toString()
             ),
             proRataShare: this.formatWei(amount.mul(100).toString()) + "%",
           };

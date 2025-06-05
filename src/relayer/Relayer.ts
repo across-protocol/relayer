@@ -1363,23 +1363,28 @@ export class Relayer {
       const chainId = Number(_chainId);
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
-        const { symbol, formatter } = this.formatAmount(chainId, toAddressType(token));
+        const { symbol, formatter } = this.formatAmount(chainId, toAddressType(token, chainId));
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token), chainId);
+          const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token, chainId), chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerAddress,
               chainId,
               l1Token,
-              toAddressType(token)
+              toAddressType(token, chainId)
             );
           crossChainLog = outstandingCrossChainTransferAmount.gt(0)
             ? " There is " +
               formatter(
                 this.clients.inventoryClient.crossChainTransferClient
-                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token, toAddressType(token))
+                  .getOutstandingCrossChainTransferAmount(
+                    this.relayerAddress,
+                    chainId,
+                    l1Token,
+                    toAddressType(token, chainId)
+                  )
                   // TODO: Add in additional l2Token param here once we can specify it
                   .toString()
               ) +

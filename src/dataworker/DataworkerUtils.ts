@@ -243,20 +243,26 @@ export function _buildRelayerRefundRoot(
       // is no way to send the token back to the HubPool.
       if (
         !clients.hubPoolClient.l2TokenHasPoolRebalanceRoute(
-          toAddressType(l2TokenAddress),
+          toAddressType(l2TokenAddress, repaymentChainId),
           repaymentChainId,
           endBlockForMainnet
         )
       ) {
         relayerRefundLeaves.push(
-          ..._getRefundLeaves(refunds, bnZero, repaymentChainId, toAddressType(l2TokenAddress), maxRefundCount)
+          ..._getRefundLeaves(
+            refunds,
+            bnZero,
+            repaymentChainId,
+            toAddressType(l2TokenAddress, repaymentChainId),
+            maxRefundCount
+          )
         );
         return;
       }
       // If the token can be mapped to a PoolRebalanceRoute, then we need to calculate the amount to return based
       // on its running balances.
       const l1TokenCounterpart = clients.hubPoolClient.getL1TokenForL2TokenAtBlock(
-        toAddressType(l2TokenAddress),
+        toAddressType(l2TokenAddress, repaymentChainId),
         repaymentChainId,
         endBlockForMainnet
       );
@@ -274,7 +280,13 @@ export function _buildRelayerRefundRoot(
       );
 
       relayerRefundLeaves.push(
-        ..._getRefundLeaves(refunds, amountToReturn, repaymentChainId, toAddressType(l2TokenAddress), maxRefundCount)
+        ..._getRefundLeaves(
+          refunds,
+          amountToReturn,
+          repaymentChainId,
+          toAddressType(l2TokenAddress, repaymentChainId),
+          maxRefundCount
+        )
       );
     });
   });
@@ -295,7 +307,7 @@ export function _buildRelayerRefundRoot(
       // If we've already seen this leaf, then skip.
       const existingLeaf = relayerRefundLeaves.find(
         (relayerRefundLeaf) =>
-          relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress === l2TokenCounterpart
+          relayerRefundLeaf.chainId === leaf.chainId && relayerRefundLeaf.l2TokenAddress.eq(l2TokenCounterpart)
       );
       if (existingLeaf !== undefined) {
         return;
@@ -379,7 +391,7 @@ function getNativeTokens(chainId: number): Address[] {
   // Can't use TOKEN_SYMBOLS_MAP for ETH because it duplicates the WETH addresses, which is not correct for this use case.
   const nativeTokens = [
     getWrappedNativeTokenAddress(chainId),
-    toAddressType(CONTRACT_ADDRESSES[chainId].nativeToken.address),
+    toAddressType(CONTRACT_ADDRESSES[chainId].nativeToken.address, chainId),
   ];
   if (nativeTokens.some((tokenAddress) => !isDefined(tokenAddress))) {
     throw new Error(`${nativeTokenSymbol} address not defined for chain ${chainId}`);

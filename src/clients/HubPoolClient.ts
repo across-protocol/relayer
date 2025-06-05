@@ -73,7 +73,7 @@ export class HubPoolClient extends clients.HubPoolClient {
   async update(eventsToQuery?: any): Promise<void> {
     if (isDefined(this.injectedChain)) {
       const dataToAdd: CrossChainContractsSet = {
-        spokePool: toAddressType(this.injectedChain.spokePool),
+        spokePool: toAddressType(this.injectedChain.spokePool, this.injectedChain.chainId),
         blockNumber: this.injectedChain.blockNumber,
         txnRef: toBytes32(zeroAddress),
         logIndex: 0,

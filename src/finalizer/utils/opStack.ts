@@ -157,7 +157,7 @@ export async function opStackFinalizer(
       amountToReturn: event.args.amount,
       chainId,
       leafId: 0,
-      l2TokenAddress: toAddressType(event.l2TokenAddress),
+      l2TokenAddress: toAddressType(event.l2TokenAddress, chainId),
       txnRef: transactionHash,
       txnIndex: transactionIndex,
     };

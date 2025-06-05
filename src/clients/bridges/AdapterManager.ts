@@ -57,7 +57,7 @@ export class AdapterManager {
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          toAddressType(this.hubPoolClient.hubPool.address).eq(address) ||
+          toAddressType(this.hubPoolClient.hubPool.address, this.hubPoolClient.chainId).eq(address) ||
           this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
@@ -81,7 +81,13 @@ export class AdapterManager {
           const l2Signer = spokePoolClient.spokePool.signer;
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, l1Token);
+          const bridge = new bridgeConstructor(
+            chainId,
+            hubChainId,
+            l1Signer,
+            l2Signer,
+            toAddressType(l1Token, hubChainId)
+          );
           return [l1Token, bridge];
         }) ?? []
       );
@@ -101,7 +107,13 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, l1Token);
+            const bridge = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l2Signer,
+              l1Signer,
+              toAddressType(l1Token, hubChainId)
+            );
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
@@ -243,7 +255,7 @@ export class AdapterManager {
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
-      if (l2TokenForL1Token.eq(toAddressType(getL2TokenAddresses(l1Token.toEvmAddress())[chainId]))) {
+      if (!l2TokenForL1Token.eq(toAddressType(getL2TokenAddresses(l1Token.toEvmAddress())[chainId], chainId))) {
         throw new Error(
           `Token address mismatch (${l2TokenForL1Token} != ${getL2TokenAddresses(l1Token.toEvmAddress())[chainId]})`
         );

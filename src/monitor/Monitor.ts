@@ -369,7 +369,7 @@ export class Monitor {
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await this._getBalances(
           l2TokenAddresses.map((address) => ({
-            token: toAddressType(address),
+            token: toAddressType(address, chainId),
             chainId: chainId,
             account: relayer,
           }))
@@ -540,7 +540,7 @@ export class Monitor {
           let canRefill = await this.balanceAllocator.requestBalanceAllocation(
             chainId,
             [token],
-            toAddressType(signerAddress),
+            toAddressType(signerAddress, chainId),
             deficit
           );
           const spokePoolClient = this.clients.spokePoolClients[chainId];
@@ -1067,7 +1067,7 @@ export class Monitor {
           relayer,
           chainId,
           tokenInfo.address,
-          toAddressType(l2Token)
+          toAddressType(l2Token, chainId)
         );
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
@@ -1285,7 +1285,7 @@ export class Monitor {
                 // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
                 // is now aware of those executions.
                 await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
-                  account,
+                  account.toEvmAddress(),
                   {
                     blockTag: spokePoolClient.latestHeightSearched,
                   }

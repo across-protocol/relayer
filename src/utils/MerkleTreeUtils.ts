@@ -8,10 +8,13 @@ export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillL
   const hashFn = (_input: SlowFillLeaf) => {
     // Clone the input so we can mutate it.
     const input = _.cloneDeep(_input);
-    input.relayData = convertRelayDataParamsToBytes32(input.relayData);
     const verifyFn = "verifyV3SlowRelayFulfillment";
     const paramType = getParamType("MerkleLibTest", verifyFn, "slowFill");
-    return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
+    const ethersSlowFillLeaf = {
+      ...input,
+      relayData: convertRelayDataParamsToBytes32(input.relayData),
+    };
+    return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [ethersSlowFillLeaf]));
   };
   return new MerkleTree(relays, hashFn);
 }
@@ -25,7 +28,14 @@ export function buildRelayerRefundTree(relayerRefundLeaves: RelayerRefundLeaf[])
   }
 
   const paramType = getParamType("MerkleLibTest", "verifyRelayerRefund", "refund");
-  const hashFn = (input: RelayerRefundLeaf) => utils.keccak256(utils.defaultAbiCoder.encode([paramType], [input]));
+  const hashFn = (input: RelayerRefundLeaf) => {
+    const ethersRelayerRefundLeaf = {
+      ...input,
+      l2TokenAddress: input.l2TokenAddress.toEvmAddress(),
+      refundAddresses: input.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+    };
+    return utils.keccak256(utils.defaultAbiCoder.encode([paramType], [ethersRelayerRefundLeaf]));
+  };
   return new MerkleTree<RelayerRefundLeaf>(relayerRefundLeaves, hashFn);
 }
 

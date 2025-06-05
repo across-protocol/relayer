@@ -37,6 +37,7 @@ import {
   RelayerRefundLeaf,
   SlowFillLeaf,
   FillStatus,
+  ConvertedRelayData,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -1339,7 +1340,10 @@ export class Dataworker {
     slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
     leaf: SlowFillLeaf
-  ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
+  ): {
+    method: string;
+    args: (number | string[] | { relayData: ConvertedRelayData; chainId: number; updatedOutputAmount: BigNumber })[];
+  } {
     const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
@@ -1626,7 +1630,10 @@ export class Dataworker {
           return true;
         }
         const hubChainId = this.clients.hubPoolClient.chainId;
-        const hubPoolAddress = toAddressType(this.clients.hubPoolClient.hubPool.address);
+        const hubPoolAddress = toAddressType(
+          this.clients.hubPoolClient.hubPool.address,
+          this.clients.hubPoolClient.chainId
+        );
         const success = await balanceAllocator.requestBalanceAllocation(
           hubChainId,
           [l1Token],
@@ -1696,7 +1703,7 @@ export class Dataworker {
         });
         if (submitExecution) {
           const canFund = await balanceAllocator.requestBalanceAllocations([
-            { ...feeData, holder: toAddressType(await signer.getAddress()) },
+            { ...feeData, holder: toAddressType(await signer.getAddress(), hubPoolChainId) },
           ]);
           if (!canFund) {
             this.logger.error({
@@ -1831,7 +1838,7 @@ export class Dataworker {
       const postSyncLiquidReserves = await balanceAllocator.getBalanceSubUsed(
         chainId,
         l1Token,
-        toAddressType(hubPool.address)
+        toAddressType(hubPool.address, chainId)
       );
 
       // If updated liquid reserves are not enough to cover the payment, then send an error log that
@@ -1901,7 +1908,7 @@ export class Dataworker {
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
       const currHubPoolLiquidReserves =
         latestLiquidReserves[l1Token] ??
-        this.clients.hubPoolClient.getLpTokenInfoForL1Token(toAddressType(l1Token))?.liquidReserves;
+        this.clients.hubPoolClient.getLpTokenInfoForL1Token(toAddressType(l1Token, hubPoolChainId))?.liquidReserves;
       assert(
         currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0),
         "Liquid reserves should be >= 0"
@@ -1914,7 +1921,9 @@ export class Dataworker {
         return;
       }
 
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(toAddressType(l1Token))?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(
+        toAddressType(l1Token, hubPoolChainId)
+      )?.symbol;
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
@@ -1946,8 +1955,8 @@ export class Dataworker {
       // including any netSendAmounts used in a prior pool leaf execution.
       const updatedLiquidReserves = await balanceAllocator.getBalanceSubUsed(
         hubPoolChainId,
-        toAddressType(l1Token),
-        toAddressType(hubPool.address)
+        toAddressType(l1Token, hubPoolChainId),
+        toAddressType(hubPool.address, hubPoolChainId)
       );
 
       // If the post-sync balance is still too low to execute all the pool leaves, then log an error
@@ -1993,7 +2002,9 @@ export class Dataworker {
     // multiple transactions for the same token.
     if (submitExecution) {
       for (const l1Token of updatedL1Tokens) {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(toAddressType(l1Token))?.symbol;
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(
+          toAddressType(l1Token, hubPoolChainId)
+        )?.symbol;
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,
@@ -2300,8 +2311,8 @@ export class Dataworker {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [toAddressType(ZERO_ADDRESS)], // ZERO_ADDRESS is used to represent ETH.
-              holder: toAddressType(signer), // The signer's address is what will be sending the ETH.
+              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
           }
@@ -2331,7 +2342,7 @@ export class Dataworker {
               balanceAllocator.addUsed(
                 leaf.chainId,
                 leaf.l2TokenAddress,
-                toAddressType(this.clients.hubPoolClient.hubPool.address),
+                toAddressType(this.clients.hubPoolClient.hubPool.address, leaf.chainId),
                 leaf.amountToReturn.mul(-1)
               );
             }
@@ -2536,8 +2547,8 @@ export class Dataworker {
     }
     return {
       amount: requiredAmount,
-      token: toAddressType(token),
-      holder: toAddressType(holder),
+      token: toAddressType(token, leaf.chainId),
+      holder: toAddressType(holder, leaf.chainId),
     };
   }
 

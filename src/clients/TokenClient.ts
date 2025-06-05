@@ -113,9 +113,9 @@ export class TokenClient {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { totalRequirement, deposits }]) =>
         assign(tokenShortfall, [chainId, token], {
-          balance: this.getBalance(chainId, toAddressType(token)),
+          balance: this.getBalance(chainId, toAddressType(token, chainId)),
           needed: totalRequirement,
-          shortfall: this.getTokensNeededToCoverShortfall(chainId, toAddressType(token)),
+          shortfall: this.getTokensNeededToCoverShortfall(chainId, toAddressType(token, chainId)),
           deposits,
         })
       );
@@ -242,11 +242,11 @@ export class TokenClient {
     const balances: sdkUtils.Call3[] = [];
     const allowances: sdkUtils.Call3[] = [];
     this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-      balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
+      balances.push({ contract: token, method: "balanceOf", args: [relayerAddress.toEvmAddress()] });
       allowances.push({
         contract: token,
         method: "allowance",
-        args: [relayerAddress, spokePoolClient.spokePoolAddress.toEvmAddress()],
+        args: [relayerAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
       });
     });
 

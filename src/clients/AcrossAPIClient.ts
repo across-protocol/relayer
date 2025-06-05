@@ -13,6 +13,7 @@ import {
   Address,
   EvmAddress,
   toAddressType,
+  isDefined,
 } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -46,7 +47,11 @@ export class AcrossApiClient {
     this.endpoint = `https://${getAcrossHost(hubChainId)}/api`;
     if (Object.keys(tokensQuery).length === 0) {
       this.tokensQuery = dedupArray(
-        Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => toAddressType(addresses[hubChainId]))
+        Object.values(TOKEN_SYMBOLS_MAP)
+          .map(({ addresses }) =>
+            isDefined(addresses[hubChainId]) ? toAddressType(addresses[hubChainId], hubChainId) : undefined
+          )
+          .filter(isDefined)
       );
     }
 
