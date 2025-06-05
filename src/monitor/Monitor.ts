@@ -47,6 +47,8 @@ import {
   getL1TokenAddress,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  toAddressType,
+  Address,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -68,7 +70,7 @@ const ALL_BALANCE_TYPES = [
   BalanceType.TOTAL,
 ];
 
-type BalanceRequest = { chainId: number; token: string; account: string };
+type BalanceRequest = { chainId: number; token: Address; account: Address };
 
 export class Monitor {
   // Block range to search is only defined on calling update().
@@ -153,7 +155,7 @@ export class Monitor {
       if (l1TokenUtilization.utilization.gt(toBN(this.monitorConfig.utilizationThreshold).mul(toBNWei("0.01")))) {
         const utilizationString = l1TokenUtilization.utilization.mul(100).toString();
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
-          ${blockExplorerLink(l1TokenUtilization.l1Token, l1TokenUtilization.chainId)} on \
+          ${blockExplorerLink(l1TokenUtilization.l1Token.toEvmAddress(), l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
           ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
         this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
@@ -178,7 +180,7 @@ export class Monitor {
     );
 
     for (const event of proposedBundles) {
-      this.notifyIfUnknownCaller(event.proposer, BundleAction.PROPOSED, event.txnRef);
+      this.notifyIfUnknownCaller(event.proposer.toEvmAddress(), BundleAction.PROPOSED, event.txnRef);
     }
     for (const event of cancelledBundles) {
       this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.txnRef);
@@ -207,8 +209,8 @@ export class Monitor {
       unfilledAmountByChainAndToken[chainId] ??= {};
 
       deposits.forEach(({ outputToken, outputAmount }) => {
-        const unfilledAmount = unfilledAmountByChainAndToken[chainId][outputToken] ?? bnZero;
-        unfilledAmountByChainAndToken[chainId][outputToken] = unfilledAmount.add(outputAmount);
+        const unfilledAmount = unfilledAmountByChainAndToken[chainId][outputToken.toBytes32()] ?? bnZero;
+        unfilledAmountByChainAndToken[chainId][outputToken.toBytes32()] = unfilledAmount.add(outputAmount);
       });
     });
 
@@ -270,7 +272,7 @@ export class Monitor {
     if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]) {
       allL1Tokens.splice(indexOfUsdc, 0, {
         symbol: "USDC.e",
-        address: TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
+        address: toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]),
         decimals: 6,
       });
     }
@@ -290,7 +292,7 @@ export class Monitor {
     await this.updateLatestAndFutureRelayerRefunds(reports);
 
     for (const relayer of relayers) {
-      const report = reports[relayer];
+      const report = reports[relayer.toBytes32()];
       let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
       for (const token of allL1Tokens) {
@@ -367,7 +369,7 @@ export class Monitor {
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
         const tokenBalances = await this._getBalances(
           l2TokenAddresses.map((address) => ({
-            token: address,
+            token: toAddressType(address),
             chainId: chainId,
             account: relayer,
           }))
@@ -377,7 +379,7 @@ export class Monitor {
           const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddresses[i], chainId);
           const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
-            relayerBalanceReport[relayer],
+            relayerBalanceReport[relayer.toBytes32()],
             symbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
@@ -400,7 +402,8 @@ export class Monitor {
           const l2TokenSymbols = Object.entries(TOKEN_SYMBOLS_MAP)
             .filter(
               ([, { addresses }]) =>
-                addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() === l1Token.address.toLowerCase()
+                addresses[this.clients.hubPoolClient.chainId]?.toLowerCase() ===
+                l1Token.address.toEvmAddress().toLowerCase()
             )
             .map(([symbol]) => symbol);
 
@@ -465,15 +468,19 @@ export class Monitor {
               } else {
                 const spokePoolClient = this.clients.spokePoolClients[chainId];
                 if (isEVMSpokePoolClient(spokePoolClient)) {
-                  symbol = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).symbol();
+                  symbol = await new Contract(
+                    token.toEvmAddress(),
+                    ERC20.abi,
+                    spokePoolClient.spokePool.provider
+                  ).symbol();
                 } else {
-                  symbol = getTokenInfo(token, chainId).symbol;
+                  symbol = getTokenInfo(token.toAddress(), chainId).symbol;
                 }
               }
               return {
                 level: trippedThreshold.level,
                 text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
-                  account,
+                  account.toAddress(),
                   chainId
                 )} is ${formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
               };
@@ -533,14 +540,14 @@ export class Monitor {
           let canRefill = await this.balanceAllocator.requestBalanceAllocation(
             chainId,
             [token],
-            signerAddress,
+            toAddressType(signerAddress),
             deficit
           );
           const spokePoolClient = this.clients.spokePoolClients[chainId];
           // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
           if (
             !canRefill &&
-            token === getNativeTokenAddressForChain(chainId) &&
+            token.eq(getNativeTokenAddressForChain(chainId)) &&
             getNativeTokenSymbol(chainId) === "ETH" &&
             isEVMSpokePoolClient(spokePoolClient)
           ) {
@@ -609,7 +616,7 @@ export class Monitor {
               const nativeSymbolForChain = getNativeTokenSymbol(chainId);
               const tx = await (
                 await spokePoolClient.spokePool.signer
-              ).sendTransaction({ to: account, value: deficit, ...gas });
+              ).sendTransaction({ to: account.toEvmAddress(), value: deficit, ...gas });
               const receipt = await tx.wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
@@ -751,7 +758,7 @@ export class Monitor {
       this.clients.bundleDataClient.getApproximateRefundsForBlockRange(enabledChainIds, blockRangeTail),
       Object.fromEntries(
         await mapAsync(chainIds, async (chainId) => {
-          const spokePool = this.clients.spokePoolClients[chainId].spokePoolAddress.toEvmAddress();
+          const spokePool = this.clients.spokePoolClients[chainId].spokePoolAddress;
           const l2TokenAddresses = monitoredTokenSymbols
             .map((symbol) => l2TokenForChain(chainId, symbol))
             .filter(isDefined);
@@ -981,7 +988,7 @@ export class Monitor {
         });
       }
 
-      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress.toEvmAddress();
+      const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress;
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
         // chain events are queried. Some only allow us to index on the fromAddress, the L1 originator or the
@@ -990,7 +997,7 @@ export class Monitor {
           .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
           .add(
             this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              this.clients.hubPoolClient.hubPool.address,
+              toAddressType(this.clients.hubPoolClient.hubPool.address),
               chainId,
               l1Token.address
             )
@@ -1005,7 +1012,7 @@ export class Monitor {
         ).concat(
           blockExplorerLinks(
             this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-              this.clients.hubPoolClient.hubPool.address,
+              toAddressType(this.clients.hubPoolClient.hubPool.address),
               chainId,
               l1Token.address
             ),
@@ -1035,20 +1042,20 @@ export class Monitor {
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.PENDING);
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
       }
     }
     for (const refunds of nextBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer], relayer, BalanceType.NEXT);
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
       }
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer]);
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
     }
   }
 
-  updateCrossChainTransfers(relayer: string, relayerBalanceTable: RelayerBalanceTable): void {
+  updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     for (const chainId of this.crossChainAdapterSupportedChains) {
       const l2ToL1Tokens = this.getL2ToL1TokenMap(allL1Tokens, chainId);
@@ -1060,7 +1067,7 @@ export class Monitor {
           relayer,
           chainId,
           tokenInfo.address,
-          l2Token
+          toAddressType(l2Token)
         );
         this.updateRelayerBalanceTable(
           relayerBalanceTable,
@@ -1077,16 +1084,16 @@ export class Monitor {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(relayers: string[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
+  initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
-      reports[relayer] = {};
+      reports[relayer.toBytes32()] = {};
       for (const token of allL1Tokens) {
-        reports[relayer][token.symbol] = {};
+        reports[relayer.toBytes32()][token.symbol] = {};
         for (const chainName of allChainNames) {
-          reports[relayer][token.symbol][chainName] = {};
+          reports[relayer.toBytes32()][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer][token.symbol][chainName][balanceType] = bnZero;
+            reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
           }
         }
       }
@@ -1097,7 +1104,7 @@ export class Monitor {
   private updateRelayerRefunds(
     fillsToRefundPerChain: CombinedRefunds,
     relayerBalanceTable: RelayerBalanceTable,
-    relayer: string,
+    relayer: Address,
     balanceType: BalanceType
   ) {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
@@ -1117,7 +1124,7 @@ export class Monitor {
           continue;
         }
 
-        const totalRefundAmount = fillsToRefund[tokenAddress][relayer];
+        const totalRefundAmount = fillsToRefund[tokenAddress][relayer.toBytes32()];
         const { symbol } = l2ToL1Tokens[tokenAddress];
         const amount = decimalConverter(totalRefundAmount ?? bnZero);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
@@ -1125,7 +1132,7 @@ export class Monitor {
     }
   }
 
-  protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+  protected getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
     return chainId === this.clients.hubPoolClient.chainId
       ? l1Token
       : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
@@ -1160,7 +1167,7 @@ export class Monitor {
   }
 
   private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
-    if (this.monitorConfig.whitelistedDataworkers.includes(caller)) {
+    if (this.monitorConfig.whitelistedDataworkers.some((dataworker) => dataworker.eq(toAddressType(caller)))) {
       return;
     }
 
@@ -1264,25 +1271,28 @@ export class Monitor {
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
     return await Promise.all(
       balanceRequests.map(async ({ chainId, token, account }) => {
-        if (this.balanceCache[chainId]?.[token]?.[account]) {
-          return this.balanceCache[chainId][token][account];
+        if (this.balanceCache[chainId]?.[token.toBytes32()]?.[account.toBytes32()]) {
+          return this.balanceCache[chainId][token.toBytes32()][account.toBytes32()];
         }
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
           const balance =
             token === gasTokenAddressForChain
-              ? await spokePoolClient.spokePool.provider.getBalance(account)
+              ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
               : // Use the latest block number the SpokePoolClient is aware of to query balances.
                 // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
                 // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
                 // is now aware of those executions.
-                await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(account, {
-                  blockTag: spokePoolClient.latestHeightSearched,
-                });
+                await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
+                  account,
+                  {
+                    blockTag: spokePoolClient.latestHeightSearched,
+                  }
+                );
           this.balanceCache[chainId] ??= {};
-          this.balanceCache[chainId][token] ??= {};
-          this.balanceCache[chainId][token][account] = balance;
+          this.balanceCache[chainId][token.toBytes32()] ??= {};
+          this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;
           return balance;
         }
         // @todo _getBalances is unimplemented for SVM.
@@ -1291,28 +1301,28 @@ export class Monitor {
     );
   }
 
-  private async _getDecimals(decimalrequests: { chainId: number; token: string }[]): Promise<number[]> {
+  private async _getDecimals(decimalrequests: { chainId: number; token: Address }[]): Promise<number[]> {
     return await Promise.all(
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-        if (token === gasTokenAddressForChain) {
+        if (token.eq(gasTokenAddressForChain)) {
           return 18;
         } // Assume all EVM chains have 18 decimal native tokens.
-        if (this.decimals[chainId]?.[token]) {
-          return this.decimals[chainId][token];
+        if (this.decimals[chainId]?.[token.toBytes32()]) {
+          return this.decimals[chainId][token.toBytes32()];
         }
         let decimals: number;
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          decimals = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).decimals();
+          decimals = await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).decimals();
         } else {
-          decimals = getTokenInfo(token, chainId).decimals;
+          decimals = getTokenInfo(token.toAddress(), chainId).decimals;
         }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};
         }
-        if (!this.decimals[chainId][token]) {
-          this.decimals[chainId][token] = decimals;
+        if (!this.decimals[chainId][token.toBytes32()]) {
+          this.decimals[chainId][token.toBytes32()] = decimals;
         }
         return decimals;
       })

@@ -24,6 +24,9 @@ import {
   getTokenInfo,
   isEVMSpokePoolClient,
   assert,
+  EvmAddress,
+  Address,
+  toAddressType,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -38,10 +41,10 @@ export class TokenClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly relayerAddress: string,
+    readonly relayerAddress: Address,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly additionalL1Tokens: string[] = []
+    readonly additionalL1Tokens: EvmAddress[] = []
   ) {
     this.profiler = new Profiler({ at: "TokenClient", logger });
   }
@@ -50,27 +53,27 @@ export class TokenClient {
     return this.tokenData;
   }
 
-  getBalance(chainId: number, token: string): BigNumber {
+  getBalance(chainId: number, token: Address): BigNumber {
     if (!this._hasTokenPairData(chainId, token)) {
       return bnZero;
     }
-    return this.tokenData[chainId][token].balance;
+    return this.tokenData[chainId][token.toBytes32()].balance;
   }
 
-  decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
-    this.tokenData[chainId][token].balance = this.tokenData[chainId][token].balance.sub(amount);
+  decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
+    this.tokenData[chainId][token.toBytes32()].balance = this.tokenData[chainId][token.toBytes32()].balance.sub(amount);
   }
 
-  getShortfallTotalRequirement(chainId: number, token: string): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement ?? bnZero;
+  getShortfallTotalRequirement(chainId: number, token: Address): BigNumber {
+    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.totalRequirement ?? bnZero;
   }
 
-  getTokensNeededToCoverShortfall(chainId: number, token: string): BigNumber {
+  getTokensNeededToCoverShortfall(chainId: number, token: Address): BigNumber {
     return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
   }
 
-  getShortfallDeposits(chainId: number, token: string): BigNumber[] {
-    return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
+  getShortfallDeposits(chainId: number, token: Address): BigNumber[] {
+    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.deposits || [];
   }
 
   hasBalanceForFill(deposit: Deposit): boolean {
@@ -79,7 +82,7 @@ export class TokenClient {
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it will capture the
   // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
-  captureTokenShortfall(chainId: number, token: string, depositId: BigNumber, unfilledAmount: BigNumber): void {
+  captureTokenShortfall(chainId: number, token: Address, depositId: BigNumber, unfilledAmount: BigNumber): void {
     // Shortfall is the previous shortfall + the current unfilledAmount from this deposit.
     const totalRequirement = this.getShortfallTotalRequirement(chainId, token).add(unfilledAmount);
 
@@ -110,9 +113,9 @@ export class TokenClient {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { totalRequirement, deposits }]) =>
         assign(tokenShortfall, [chainId, token], {
-          balance: this.getBalance(chainId, token),
+          balance: this.getBalance(chainId, toAddressType(token)),
           needed: totalRequirement,
-          shortfall: this.getTokensNeededToCoverShortfall(chainId, token),
+          shortfall: this.getTokensNeededToCoverShortfall(chainId, toAddressType(token)),
           deposits,
         })
       );
@@ -189,7 +192,7 @@ export class TokenClient {
     const { signer } = spokePoolClient.spokePool;
 
     if (chainId === this.hubPoolClient.chainId) {
-      return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
+      return hubPoolTokens.map(({ address }) => new Contract(address.toEvmAddress(), ERC20.abi, signer));
     }
 
     const tokens = hubPoolTokens
@@ -197,7 +200,7 @@ export class TokenClient {
         let tokenAddrs: string[] = [];
         try {
           const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
-          tokenAddrs.push(spokePoolToken);
+          tokenAddrs.push(spokePoolToken.toEvmAddress());
         } catch {
           // No known deployment for this token on the SpokePool.
           // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
@@ -363,10 +366,13 @@ export class TokenClient {
     return bondToken;
   }
 
-  private _hasTokenPairData(chainId: number, token: string) {
-    const hasData = !!this.tokenData?.[chainId]?.[token];
+  private _hasTokenPairData(chainId: number, token: Address) {
+    const hasData = !!this.tokenData?.[chainId]?.[token.toBytes32()];
     if (!hasData) {
-      this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
+      this.logger.warn({
+        at: "TokenBalanceClient",
+        message: `No data on ${getNetworkName(chainId)} -> ${token.toAddress()}`,
+      });
     }
     return hasData;
   }
@@ -375,7 +381,7 @@ export class TokenClient {
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
-      getTokenInfo(l1Token, this.hubPoolClient.chainId)
+      getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId)
     );
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
