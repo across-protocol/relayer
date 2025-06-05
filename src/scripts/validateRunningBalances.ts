@@ -170,7 +170,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         logs.push(`**** Chain ${leaf.chainId} - ${tokenInfo.symbol} (${l1Token}) ****`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
-        const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
+        const l2TokenContract = new Contract(l2Token.toEvmAddress(), ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
         const bundleEndBlockForChain =
@@ -393,7 +393,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         // Transfer events where the sender is 0x0.
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
-        if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
+        if (relayedRoot === undefined || relayedRoot[l2Token.toEvmAddress()] === undefined) {
           // If we get here, then either the relayer refund root was not relayed from the Hub to the
           // Spoke yet or the refund leaf has not been executed.
           const reconstructedBundleData = await dataworker._proposeRootBundle(
@@ -458,7 +458,10 @@ export async function runScript(baseSigner: Signer): Promise<void> {
             );
           }
         } else {
-          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
+          const executedRelayerRefund = Object.values(relayedRoot[l2Token.toEvmAddress()]).reduce(
+            (a, b) => a.add(b),
+            bnZero
+          );
           excess = excess.sub(executedRelayerRefund);
           logs.push(`- Subtracted executed relayer refund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
         }

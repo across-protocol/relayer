@@ -1,4 +1,4 @@
-import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject } from "../../utils";
+import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject, Address, EvmAddress } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
@@ -13,18 +13,19 @@ export class CrossChainTransferClient {
 
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(
-    address: string,
+    address: Address,
     chainId: number | string,
-    l1Token: string,
-    l2Token?: string
+    l1Token: EvmAddress,
+    l2Token?: Address
   ): BigNumber {
-    const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
+    const transfers =
+      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toBytes32()];
     if (!transfers) {
       return bnZero;
     }
 
     if (l2Token) {
-      return transfers[l2Token]?.totalAmount ?? bnZero;
+      return transfers[l2Token.toBytes32()]?.totalAmount ?? bnZero;
     }
 
     // No specific l2Token specified; return the sum of all l1Token transfers to chainId.
@@ -32,18 +33,19 @@ export class CrossChainTransferClient {
   }
 
   getOutstandingCrossChainTransferTxs(
-    address: string,
+    address: Address,
     chainId: number | string,
-    l1Token: string,
-    l2Token?: string
+    l1Token: EvmAddress,
+    l2Token?: Address
   ): string[] {
-    const transfers = this.outstandingCrossChainTransfers[Number(chainId)]?.[address]?.[l1Token];
+    const transfers =
+      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toBytes32()];
     if (!transfers) {
       return [];
     }
 
     if (l2Token) {
-      return transfers[l2Token]?.depositTxHashes ?? [];
+      return transfers[l2Token.toBytes32()]?.depositTxHashes ?? [];
     }
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
@@ -59,27 +61,26 @@ export class CrossChainTransferClient {
   }
 
   increaseOutstandingTransfer(
-    address: string,
-    l1Token: string,
-    l2Token: string,
+    address: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
     rebalance: BigNumber,
     chainId: number
   ): void {
     const transfers = (this.outstandingCrossChainTransfers[chainId] ??= {});
-    transfers[address] ??= {};
-    transfers[address][l1Token] ??= {};
-    transfers[address][l1Token][l2Token] ??= { totalAmount: bnZero, depositTxHashes: [] };
+    transfers[address.toBytes32()] ??= {};
+    transfers[address.toBytes32()][l1Token.toBytes32()] ??= {};
+    transfers[address.toBytes32()][l1Token.toBytes32()][l2Token.toBytes32()] ??= {
+      totalAmount: bnZero,
+      depositTxHashes: [],
+    };
 
     // TODO: Require a tx hash here so we can track it as well.
-    transfers[address][l1Token][l2Token].totalAmount = this.getOutstandingCrossChainTransferAmount(
-      address,
-      chainId,
-      l1Token,
-      l2Token
-    ).add(rebalance);
+    transfers[address.toBytes32()][l1Token.toBytes32()][l2Token.toBytes32()].totalAmount =
+      this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token, l2Token).add(rebalance);
   }
 
-  async update(l1Tokens: string[], chainIds = this.getEnabledL2Chains()): Promise<void> {
+  async update(l1Tokens: EvmAddress[], chainIds = this.getEnabledL2Chains()): Promise<void> {
     const enabledChainIds = this.getEnabledL2Chains();
     chainIds = chainIds.filter((chainId) => enabledChainIds.includes(chainId));
     if (chainIds.length === 0) {

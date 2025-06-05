@@ -20,10 +20,12 @@ import {
   TransactionResponse,
   Profiler,
   formatGwei,
-  toBytes32,
   depositForcesOriginChainRepayment,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  Address,
+  toAddressType,
+  EvmAddress,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -47,7 +49,7 @@ type RepaymentChainProfitability = {
 };
 
 export class Relayer {
-  public readonly relayerAddress: string;
+  public readonly relayerAddress: Address;
   public readonly fillStatus: { [depositHash: string]: number } = {};
   private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
   private lastLogTime = 0;
@@ -81,7 +83,7 @@ export class Relayer {
       at: "Relayer",
       logger: this.logger,
     });
-    this.relayerAddress = getAddress(relayerAddress);
+    this.relayerAddress = toAddressType(getAddress(relayerAddress));
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
   }
@@ -264,7 +266,7 @@ export class Relayer {
       deposit.outputToken,
     ].some((address) => {
       try {
-        getAddress(address);
+        address.toEvmAddress();
       } catch {
         return true;
       }
@@ -279,7 +281,10 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (addressFilter?.has(getAddress(depositor)) || addressFilter?.has(getAddress(recipient))) {
+    if (
+      addressFilter?.has(getAddress(depositor.toAddress())) ||
+      addressFilter?.has(getAddress(recipient.toAddress()))
+    ) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
@@ -293,7 +298,7 @@ export class Relayer {
     // Skip any L1 tokens that are not specified in the config.
     // If relayerTokens is an empty list, we'll assume that all tokens are supported.
     const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
-    if (relayerTokens.length > 0 && !relayerTokens.includes(l1Token)) {
+    if (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
@@ -390,7 +395,7 @@ export class Relayer {
       return false;
     }
 
-    if (this.fillIsExclusive(deposit) && getAddress(deposit.exclusiveRelayer) !== this.relayerAddress) {
+    if (this.fillIsExclusive(deposit) && !deposit.exclusiveRelayer.eq(this.relayerAddress)) {
       return false;
     }
 
@@ -694,7 +699,7 @@ export class Relayer {
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
-    if (slowDepositors?.includes(depositor)) {
+    if (slowDepositors?.some((slowDepositor) => depositor.eq(slowDepositor))) {
       if (fillStatus === FillStatus.Unfilled && !this.fillIsExclusive(deposit)) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
@@ -710,7 +715,7 @@ export class Relayer {
     // is at least that old before filling it. This is mainly useful on chains with long block times,
     // where there is a high chance of fill collisions in the first blocks after a deposit is made.
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
-    if (minFillTime > 0 && deposit.exclusiveRelayer !== this.relayerAddress) {
+    if (minFillTime > 0 && deposit.exclusiveRelayer.eq(this.relayerAddress)) {
       const originSpoke = spokePoolClients[originChainId];
       let avgBlockTime;
       if (isEVMSpokePoolClient(originSpoke)) {
@@ -1025,7 +1030,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken.toAddress(), destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1088,7 +1093,7 @@ export class Relayer {
         ? [
             "fillRelay",
             "",
-            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, toBytes32(this.relayerAddress)],
+            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.relayerAddress.toBytes32()],
           ]
         : [
             "fillRelayWithUpdatedDeposit",
@@ -1096,9 +1101,9 @@ export class Relayer {
             [
               convertRelayDataParamsToBytes32(deposit),
               repaymentChainId,
-              toBytes32(this.relayerAddress),
+              this.relayerAddress.toBytes32(),
               deposit.updatedOutputAmount,
-              toBytes32(deposit.updatedRecipient),
+              deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
               deposit.speedUpSignature,
             ],
@@ -1128,7 +1133,7 @@ export class Relayer {
    */
   protected async resolveRepaymentChain(
     deposit: DepositWithBlock,
-    hubPoolToken: string,
+    hubPoolToken: EvmAddress,
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
@@ -1358,23 +1363,23 @@ export class Relayer {
       const chainId = Number(_chainId);
       mrkdwn += `*Shortfall on ${getNetworkName(chainId)}:*\n`;
       Object.entries(shortfallForChain).forEach(([token, { shortfall, balance, needed, deposits }]) => {
-        const { symbol, formatter } = this.formatAmount(chainId, token);
+        const { symbol, formatter } = this.formatAmount(chainId, toAddressType(token));
         let crossChainLog = "";
         if (this.clients.inventoryClient.isInventoryManagementEnabled() && chainId !== hubChainId) {
           // Shortfalls are mapped to deposit output tokens so look up output token in token symbol map.
-          const l1Token = this.clients.inventoryClient.getL1TokenAddress(token, chainId);
+          const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token), chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
               this.relayerAddress,
               chainId,
               l1Token,
-              token
+              toAddressType(token)
             );
           crossChainLog = outstandingCrossChainTransferAmount.gt(0)
             ? " There is " +
               formatter(
                 this.clients.inventoryClient.crossChainTransferClient
-                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token, token)
+                  .getOutstandingCrossChainTransferAmount(this.relayerAddress, chainId, l1Token, toAddressType(token))
                   // TODO: Add in additional l2Token param here once we can specify it
                   .toString()
               ) +
@@ -1399,9 +1404,9 @@ export class Relayer {
 
   private formatAmount(
     chainId: number,
-    tokenAddress: string
+    tokenAddress: Address
   ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress.toAddress(), chainId);
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
@@ -1489,7 +1494,7 @@ export class Relayer {
 
     if (isDepositSpedUp(deposit)) {
       const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken,
+        deposit.outputToken.toAddress(),
         deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
@@ -1501,12 +1506,12 @@ export class Relayer {
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-      deposit.inputToken,
+      deposit.inputToken.toAddress(),
       deposit.originChainId
     );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
-    const depositor = blockExplorerLink(deposit.depositor, deposit.originChainId);
+    const depositor = blockExplorerLink(deposit.depositor.toAddress(), deposit.originChainId);
     const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
     let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
@@ -1517,7 +1522,7 @@ export class Relayer {
       .div(deposit.inputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
-      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken.toAddress(), deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +

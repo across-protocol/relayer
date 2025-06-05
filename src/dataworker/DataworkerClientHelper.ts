@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner, toAddressType } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -26,7 +26,8 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const signerAddr = await baseSigner.getAddress();
+  const _signerAddr = await baseSigner.getAddress();
+  const signerAddr = toAddressType(_signerAddr);
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
