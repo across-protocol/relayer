@@ -39,6 +39,7 @@ import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridg
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
+import { ExpandedERC20 } from "@across-protocol/contracts";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -123,6 +124,73 @@ export class BaseChainAdapter {
   }
 
   async checkTokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
+    await Promise.all([this.checkL1TokenApprovals(l1Tokens), this.checkL2TokenApprovals(l1Tokens)]);
+  }
+
+  async checkL2TokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
+    const tokensToApprove: { token: ExpandedERC20; bridges: Address[] }[] = [];
+    const unavailableTokens: EvmAddress[] = [];
+
+    await Promise.all(
+      l1Tokens.map(async (l1Token) => {
+        const l1TokenAddress = l1Token.toAddress();
+        const l2Bridge = this.l2Bridges[l1TokenAddress];
+
+        if (!l2Bridge || !this.isSupportedToken(l1Token)) {
+          unavailableTokens.push(l1Token);
+          return;
+        }
+
+        const requiredApprovals = l2Bridge.requiredTokenApprovals();
+
+        if (requiredApprovals.length === 0) {
+          return;
+        }
+
+        await Promise.all(
+          requiredApprovals.map(async ({ token: tokenAddress, bridge: bridgeAddress }) => {
+            const erc20 = ERC20.connect(tokenAddress.toAddress(), this.getSigner(this.chainId));
+
+            const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
+
+            /*
+            TODO:
+            No cache ops for now as those are aimed at L1 tokens only. If I change cache key, would we need a DB migration of some sort?
+            I can of course just introduce a new key for L2 token approvals, but it seems redundant. Instead, the key could be smth like:
+            `bridgeAllowance_${chainId}_${token}_${userAddress}_targetContract:${targetContract}`;
+            */
+            const allowance = await erc20.allowance(senderAddress.toAddress(), bridgeAddress.toAddress());
+
+            if (!aboveAllowanceThreshold(allowance)) {
+              const existingTokenIdx = tokensToApprove.findIndex((item) => item.token.address === erc20.address);
+
+              if (existingTokenIdx >= 0) {
+                tokensToApprove[existingTokenIdx].bridges.push(bridgeAddress);
+              } else {
+                tokensToApprove.push({ token: erc20, bridges: [bridgeAddress] });
+              }
+            }
+          })
+        );
+      })
+    );
+
+    if (unavailableTokens.length > 0) {
+      this.log("Some tokens do not have a bridge contract for L2 -> L1 bridging", {
+        unavailableTokens: unavailableTokens.map((token) => token.toAddress()),
+      });
+    }
+
+    if (tokensToApprove.length === 0) {
+      this.log("No L2 token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toAddress()) });
+      return;
+    }
+
+    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
+    this.log("Approved L2 bridge tokens! 💰", { mrkdwn }, "info");
+  }
+
+  async checkL1TokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
     const unavailableTokens: EvmAddress[] = [];
     // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
     // each bridge supports (if applicable).
