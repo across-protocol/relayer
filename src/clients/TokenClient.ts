@@ -456,10 +456,10 @@ export class TokenClient {
 
     // For SPL tokens, there should typically be only one token account per mint per owner
     // Sum all balances in case there are multiple accounts (rare but possible)
-const totalBalance = response.value.reduce((acc, accountInfo) => {
-  const balance = accountInfo?.account?.data?.parsed?.info?.tokenAmount?.amount;
-  return balance ? acc.add(toBN(balance)) : acc;
-}, toBN(0));
+    const totalBalance = response.value.reduce((acc, accountInfo) => {
+      const balance = accountInfo?.account?.data?.parsed?.info?.tokenAmount?.amount;
+      return balance ? acc.add(toBN(balance)) : acc;
+    }, toBN(0));
 
     return totalBalance;
   }

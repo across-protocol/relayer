@@ -28,6 +28,7 @@ import {
   SpokePool,
   SvmAddress,
   EvmAddress,
+  getSvmSignerFromEvmSigner,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -131,11 +132,12 @@ export async function constructRelayerClients(
     ...config.relayerTokens,
     ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
   ]);
-  // TODO: Remove hardcoded relayer address.
+
+  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const tokenClient = new TokenClient(
     logger,
     EvmAddress.from(signerAddr),
-    SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
     spokePoolClients,
     hubPoolClient,
     relayerTokens

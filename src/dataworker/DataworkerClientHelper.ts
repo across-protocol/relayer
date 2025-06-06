@@ -17,6 +17,7 @@ import {
   Signer,
   getArweaveJWKSigner,
   SvmAddress,
+  getSvmSignerFromEvmSigner,
 } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
@@ -42,12 +43,13 @@ export async function constructDataworkerClients(
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
+  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  // TODO: Remove hardcoded relayer address.
   const tokenClient = new TokenClient(
     logger,
     EvmAddress.from(signerAddr),
-    SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
     {},
     hubPoolClient
   );

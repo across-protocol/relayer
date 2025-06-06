@@ -14,7 +14,15 @@ import {
   sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
-import { PriceClient, acrossApi, coingecko, defiLlama, SvmAddress, EvmAddress } from "../../src/utils";
+import {
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
+  SvmAddress,
+  EvmAddress,
+  getSvmSignerFromEvmSigner,
+} from "../../src/utils";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
@@ -193,11 +201,12 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  // TODO: Remove hardcoded relayer address.
+  const svmSigner = getSvmSignerFromEvmSigner(relayer);
+
   const tokenClient = new TokenClient(
     spyLogger,
     EvmAddress.from(relayer.address),
-    SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
     {},
     hubPoolClient
   );

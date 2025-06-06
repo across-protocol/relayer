@@ -38,7 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { SvmAddress, EvmAddress } from "../src/utils";
+import { SvmAddress, EvmAddress, getSvmSignerFromEvmSigner } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -130,11 +130,12 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    // TODO: Remove hardcoded relayer address.
+
+    const svmSigner = getSvmSignerFromEvmSigner(relayer);
     tokenClient = new TokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
       spokePoolClients,
       hubPoolClient
     );

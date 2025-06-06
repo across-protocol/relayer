@@ -18,6 +18,7 @@ import {
   getMessageHash,
   EvmAddress,
   SvmAddress,
+  getSvmSignerFromEvmSigner,
 } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -166,10 +167,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
+    const svmSigner = getSvmSignerFromEvmSigner(relayer);
+
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
       spokePoolClients,
       hubPoolClient
     );

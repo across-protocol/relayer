@@ -44,6 +44,7 @@ import {
   randomAddress,
   setupTokensForWallet,
   deployMulticall3,
+  getSvmSignerFromEvmSigner,
 } from "./utils";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -142,10 +143,12 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
+
+    const svmSigner = getSvmSignerFromEvmSigner(relayer);
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
       spokePoolClients,
       hubPoolClient
     );

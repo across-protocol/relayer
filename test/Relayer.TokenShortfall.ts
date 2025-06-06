@@ -43,7 +43,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { EvmAddress, SvmAddress } from "../src/utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress } from "../src/utils";
 
 describe("Relayer: Token balance shortfall", async function () {
   const noSlowRelays = false; // Don't send slow fills.
@@ -136,10 +136,12 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
+
+    const svmSigner = getSvmSignerFromEvmSigner(relayer);
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from("86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT", "base58"),
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
       spokePoolClients,
       hubPoolClient
     );
