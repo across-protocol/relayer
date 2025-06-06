@@ -90,7 +90,7 @@ export async function cctpL1toL2Finalizer(
       hubPoolClient.chainId
     );
     const amountFinalized = unprocessedMessages.reduce((acc, event) => acc + Number(event.amount), 0);
-    logger[simulate ? "debug" : "info"]({
+    logger[simulate || amountFinalized === 0 ? "debug" : "info"]({
       at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
       message: `Finalized ${unprocessedMessages.length} deposits on Solana for ${convertFromWei(
         String(amountFinalized),
