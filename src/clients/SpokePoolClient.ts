@@ -84,6 +84,7 @@ export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
    * @returns void
    */
   protected startWorker(): void {
+    // fromBlock is retained for the life of the SpokePoolClient and is reused in case of listener crash.
     const {
       eventSearchConfig: { from, maxLookBack: blockrange },
       spokePool: { address: spokepool },
@@ -146,6 +147,50 @@ export class IndexedSpokePoolClient extends clients.EVMSpokePoolClient {
       code,
       signal,
     });
+  }
+
+  /**
+   * The worker process has exited. Optionally restart it based on the exit code.
+   * See also: https://nodejs.org/api/child_process.html#event-exit
+   * @param code Optional exit code.
+   * @param signal Optional signal resulting in termination.
+   * @returns void
+   */
+  protected childExit(code?: number, signal?: string): void {
+    if (code === 0) {
+      return;
+    }
+
+    this.logger.warn({
+      at: "SpokePoolClient#childExit",
+      message: `${this.chain} SpokePool listener exited.`,
+      code,
+      signal,
+    });
+
+    // Flush all ingested deposits to protect against re-org.
+    // xxx this probably belongs upstream in a `protected SpokePoolClient.init()` method
+    // that is called in the constructor, such that it can be re-called by this method to
+    // re-initialise the same defaults.
+    this.currentTime = 0;
+    this.oldestTime = 0;
+    this.depositHashes = {};
+    this.depositHashesToFills = {};
+    this.speedUps = {};
+    this.slowFillRequests = {};
+    this.fills = {};
+    this.depositRoutes = {};
+
+    this.tokensBridged = [];
+    this.rootBundleRelays = [];
+    this.relayerRefundExecutions = [];
+    this.earliestDepositIdQueried = Number.MAX_SAFE_INTEGER;
+    this.latestDepositIdQueried = 0;
+    this.firstDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
+    this.lastDepositIdForSpokePool = Number.MAX_SAFE_INTEGER;
+
+    // Restart the listener process from the initial `fromBlock`.
+    this.startWorker();
   }
 
   /**
