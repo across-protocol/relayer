@@ -138,7 +138,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
+    finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
