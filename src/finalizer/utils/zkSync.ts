@@ -1,5 +1,5 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
-import { Contract, Wallet, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -16,6 +16,7 @@ import {
   zkSync as zkSyncUtils,
   assert,
   isEVMSpokePoolClient,
+  isSignerWallet,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -44,7 +45,8 @@ export async function zkSyncFinalizer(
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
-  const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
+  assert(isSignerWallet(signer), "Signer is not a Wallet");
+  const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
   // Zksync takes ~6 hours to finalize so ignore any events
   // earlier than that.

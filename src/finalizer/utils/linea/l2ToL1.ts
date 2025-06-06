@@ -1,5 +1,4 @@
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { Wallet } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
@@ -253,7 +252,7 @@ export async function lineaL2ToL1Finalizer(
         to: message.destination,
         fee: message.fee,
         value: message.value,
-        feeRecipient: (signer as Wallet).address,
+        feeRecipient: await signer.getAddress(),
         data: message.calldata,
         messageNumber: message.messageNonce,
         proof: proof.proof,

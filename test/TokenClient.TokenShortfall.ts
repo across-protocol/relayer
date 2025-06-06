@@ -15,6 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress } from "../src/utils";
 
 describe("TokenClient: Token shortfall", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -76,7 +77,15 @@ describe("TokenClient: Token shortfall", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    const svmSigner = getSvmSignerFromEvmSigner(owner);
+
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(owner.address),
+      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token_1, erc20_2]);
   });
 

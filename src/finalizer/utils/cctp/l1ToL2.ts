@@ -16,7 +16,6 @@ import {
   convertFromWei,
   isEVMSpokePoolClient,
   getAnchorProgram,
-  Wallet,
   mapAsync,
   getSvmSignerFromEvmSigner,
   toPublicKey,
@@ -168,8 +167,8 @@ async function finalizeSvmWithdrawals(
     TOKEN_SYMBOLS_MAP.USDC.addresses[chainIsProd(hubChainId) ? CHAIN_IDs.SOLANA : CHAIN_IDs.SOLANA_DEVNET]
   );
   const [svmSigner, messageTransmitterProgram] = await Promise.all([
-    getSvmSignerFromEvmSigner(signer as Wallet),
-    getAnchorProgram(MessageTransmitterIdl, signer as Wallet),
+    getSvmSignerFromEvmSigner(signer),
+    getAnchorProgram(MessageTransmitterIdl, signer),
   ]);
   const messageTransmitter = toPublicKey(MessageTransmitterIdl.address);
   const tokenMessengerMinter = toPublicKey(TokenMessengerMinterIdl.address);

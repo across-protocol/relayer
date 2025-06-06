@@ -14,7 +14,15 @@ import {
   sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
-import { PriceClient, acrossApi, coingecko, defiLlama } from "../../src/utils";
+import {
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
+  SvmAddress,
+  EvmAddress,
+  getSvmSignerFromEvmSigner,
+} from "../../src/utils";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
@@ -193,7 +201,15 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  const tokenClient = new TokenClient(spyLogger, relayer.address, {}, hubPoolClient);
+  const svmSigner = getSvmSignerFromEvmSigner(relayer);
+
+  const tokenClient = new TokenClient(
+    spyLogger,
+    EvmAddress.from(relayer.address),
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    {},
+    hubPoolClient
+  );
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
   // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.
