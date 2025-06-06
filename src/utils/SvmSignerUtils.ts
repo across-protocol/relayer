@@ -1,28 +1,13 @@
-import {
-  createKeyPairSignerFromPrivateKeyBytes,
-  KeyPairSigner,
-  createKeyPairFromBytes,
-  createSignerFromKeyPair,
-  Wallet,
-} from "./";
-import fs from "fs";
+import { web3 } from "@coral-xyz/anchor";
+import { Wallet } from "./";
 
-export async function getSvmSignerFromEvmSigner(evmSigner: Wallet): Promise<KeyPairSigner> {
+export function getSvmSignerFromEvmSigner(evmSigner: Wallet): web3.Keypair {
   // Extract the private key from the evm signer and use it to create a svm signer.
   const evmPrivateKey = evmSigner._signingKey().privateKey;
-  return await getSvmSignerFromPrivateKey(evmPrivateKey);
+  return getSvmSignerFromPrivateKey(evmPrivateKey);
 }
 
-export async function getSvmSignerFromFile(filePath: string): Promise<KeyPairSigner> {
-  const keypairFile = fs.readFileSync(filePath);
-  const keypairBytes = new Uint8Array(JSON.parse(keypairFile.toString()));
-
-  // Create a KeyPairSigner from the bytes.
-  const keys = await createKeyPairFromBytes(keypairBytes);
-  return await createSignerFromKeyPair(keys);
-}
-
-export async function getSvmSignerFromPrivateKey(privateKey: string): Promise<KeyPairSigner> {
+export function getSvmSignerFromPrivateKey(privateKey: string): web3.Keypair {
   const privateKeyAsBytes = Uint8Array.from(Buffer.from(privateKey.slice(2), "hex"));
-  return await createKeyPairSignerFromPrivateKeyBytes(privateKeyAsBytes);
+  return web3.Keypair.fromSeed(privateKeyAsBytes);
 }

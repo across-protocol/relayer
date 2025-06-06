@@ -25,6 +25,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -71,18 +72,24 @@ export class AdapterManager {
         return {};
       } // Special case for the EthereumAdapter
 
-      if (!chainIsEvm(chainId)) {
-        return; // @todo
-      }
-
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
           const spokePoolClient = spokePoolClients[chainId];
-          assert(isEVMSpokePoolClient(spokePoolClient));
-          const l2Signer = spokePoolClient.spokePool.signer;
+          let l2SignerOrProvider;
+          if (isEVMSpokePoolClient(spokePoolClient)) {
+            l2SignerOrProvider = spokePoolClient.spokePool.signer;
+          } else if (isSVMSpokePoolClient(spokePoolClient)) {
+            l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
+          }
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.from(l1Token));
+          const bridge = new bridgeConstructor(
+            chainId,
+            hubChainId,
+            l1Signer,
+            l2SignerOrProvider,
+            EvmAddress.from(l1Token)
+          );
           return [l1Token, bridge];
         }) ?? []
       );
@@ -92,8 +99,10 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = spokePoolClients[chainId];
-      assert(isEVMSpokePoolClient(spokePoolClient));
-      const l2Signer = spokePoolClient.spokePool.signer;
+      let l2Signer;
+      if (isEVMSpokePoolClient(spokePoolClient)) {
+        l2Signer = spokePoolClient.spokePool.signer;
+      }
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
@@ -109,10 +118,6 @@ export class AdapterManager {
       );
     };
     Object.values(this.spokePoolClients).map(({ chainId }) => {
-      if (!chainIsEvm(chainId)) {
-        return; // @todo
-      }
-
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,
