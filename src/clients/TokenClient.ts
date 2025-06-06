@@ -195,7 +195,7 @@ export class TokenClient {
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
     const spokePoolClient = this.spokePoolClients[chainId];
     assert(isEVMSpokePoolClient(spokePoolClient));
-    const signer = (spokePoolClient as any).spokePool.signer;
+    const signer = spokePoolClient.spokePool.signer;
 
     if (chainId === this.hubPoolClient.chainId) {
       return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
