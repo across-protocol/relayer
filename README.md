@@ -95,7 +95,7 @@ yalc add @across-protocol/sdk
 
 To make updates to the SDK, you can run `yalc update @across-protocol/sdk` in this repository.
 
-Once you are done testing, you can remove the local SDK by running `yarn remove @across-protocol/sdk` in this repository.
+Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
 
 
 ## Bug Bounty
