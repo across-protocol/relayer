@@ -69,11 +69,11 @@ Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/mast
 
 ### Testing 
 
-### Local SDK Development
+#### Local SDK Development
 
 This repository depends on functionality from other across libraries such as [@across-protocol/sdk](https://github.com/across-protocol/sdk).
 
-To test local changes to the SDK alongside this repository you can `yalc`:
+To test local changes to the SDK alongside this repository you can use `yalc`:
 
 1. Install `yalc` globally:
 
@@ -94,6 +94,8 @@ yalc add @across-protocol/sdk
 ```
 
 To make updates to the SDK, you can run `yalc update @across-protocol/sdk` in this repository.
+
+Once you are done testing, you can remove the local SDK by running `yarn remove @across-protocol/sdk` in this repository.
 
 
 ## Bug Bounty
