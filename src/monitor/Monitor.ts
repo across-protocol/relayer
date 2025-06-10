@@ -195,7 +195,6 @@ export class Monitor {
         const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
           ({ deposit, invalidFills: invalid }) => {
             if (invalid.length > 0) {
-              const origin = getNetworkName(deposit.originChainId);
               const invalidFills = Object.fromEntries(
                 invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
                   return [relayer, { destinationChainId, depositId, txnRef }];
@@ -204,7 +203,7 @@ export class Monitor {
               this.logger.warn({
                 at: "SpokePoolClient",
                 chainId: destinationChainId,
-                message: `Invalid fills found matching ${origin} deposit.`,
+                message: `Invalid fills found matching ${getNetworkName(deposit.originChainId)} deposit.`,
                 deposit,
                 invalidFills,
                 notificationPath: "across-invalid-fills",
