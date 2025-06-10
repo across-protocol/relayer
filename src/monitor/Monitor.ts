@@ -48,6 +48,8 @@ import {
   getL1TokenAddress,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  getBinanceApiClient,
+  getBinanceWithdrawalLimits,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -511,6 +513,17 @@ export class Monitor {
         "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
       this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
     }
+  }
+
+  async checkBinanceWithdrawalLimits() {
+    const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
+    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const aboveThreshold = wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
+    this.logger[aboveThreshold ? "warn" : "debug"]({
+      at: "Monitor#checkBinanceWithdrawalLimits",
+      message: "Binance withdrawal quota",
+      wdQuota,
+    });
   }
 
   /**
