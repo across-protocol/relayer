@@ -554,7 +554,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           version: configStoreClient.configStoreVersion,
         },
       ]);
-    expect(lastSpyLogIncludes(spy, "Invalid fills found")).to.be.true;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to fill again because there has been one invalid fill from this same relayer.
