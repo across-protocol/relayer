@@ -2,7 +2,7 @@ import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { MessageTransmitterIdl, TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { web3, BN } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { HubPoolClient, SpokePoolClient } from "../../../clients";
+import { HubPoolClient, SpokePoolClient, SVMSpokePoolClient } from "../../../clients";
 import {
   Contract,
   EventSearchConfig,
@@ -26,6 +26,7 @@ import {
   EvmAddress,
   ethers,
   chainIsProd,
+  isSVMSpokePoolClient,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
@@ -35,7 +36,6 @@ import {
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { isSVMSpokePoolClient, SVMSpokePoolClient } from "@across-protocol/sdk/dist/types/clients";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
