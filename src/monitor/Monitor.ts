@@ -193,8 +193,28 @@ export class Monitor {
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
       await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
         const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
-          ({ deposit }) => deposit
+          ({ deposit, invalidFills: invalid }) => {
+            if (invalid.length > 0) {
+              const origin = getNetworkName(deposit.originChainId);
+              const invalidFills = Object.fromEntries(
+                invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+                  return [relayer, { destinationChainId, depositId, txnRef }];
+                })
+              );
+              this.logger.warn({
+                at: "SpokePoolClient",
+                chainId: destinationChainId,
+                message: `Invalid fills found matching ${origin} deposit.`,
+                deposit,
+                invalidFills,
+                notificationPath: "across-invalid-fills",
+              });
+            }
+
+            return deposit;
+          }
         );
+
         const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
         return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
       })
