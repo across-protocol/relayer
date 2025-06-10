@@ -40,7 +40,6 @@ import {
   ethers,
   expect,
   getLastBlockTime,
-  lastSpyLogIncludes,
   randomAddress,
   setupTokensForWallet,
   deployMulticall3,
