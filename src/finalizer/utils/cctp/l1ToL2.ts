@@ -35,6 +35,7 @@ import {
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { isSVMSpokePoolClient, SVMSpokePoolClient } from "@across-protocol/sdk/dist/types/clients";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -82,29 +83,51 @@ export async function cctpL1toL2Finalizer(
       callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
     };
   } else {
+    assert(isSVMSpokePoolClient(l2SpokePoolClient));
     const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
     const signatures = await finalizeSvmWithdrawals(
       unprocessedMessages,
       hubPoolClient.hubPool.signer,
       simulate,
-      hubPoolClient.chainId
+      hubPoolClient.chainId,
+      l2SpokePoolClient
     );
+
+    let depositMessagesCount = 0;
+    let tokenlessMessagesCount = 0;
     const amountFinalized = unprocessedMessages.reduce((acc, event) => {
       if (isDepositForBurnEvent(event)) {
+        depositMessagesCount++;
         return acc + Number(event.amount);
       } else {
+        tokenlessMessagesCount++;
         return acc;
       }
     }, 0);
-    logger[simulate || amountFinalized === 0 ? "debug" : "info"]({
-      at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
-      message: `Finalized ${unprocessedMessages.length} deposits on Solana for ${convertFromWei(
-        String(amountFinalized),
-        TOKEN_SYMBOLS_MAP.USDC.decimals
-      )} USDC.`,
-      signatures,
-    });
+
+    const anythingFinalized = unprocessedMessages.length > 0;
+    if (anythingFinalized) {
+      const logMessageParts: string[] = [];
+      if (depositMessagesCount > 0) {
+        logMessageParts.push(
+          `${depositMessagesCount} deposits for ${convertFromWei(
+            String(amountFinalized),
+            TOKEN_SYMBOLS_MAP.USDC.decimals
+          )} USDC`
+        );
+      }
+      if (tokenlessMessagesCount > 0) {
+        logMessageParts.push(`${tokenlessMessagesCount} tokenless messages`);
+      }
+
+      logger[simulate ? "debug" : "info"]({
+        at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
+        message: `Finalized ${logMessageParts.join(" and ")} on Solana.`,
+        signatures,
+      });
+    }
+
     return {
       crossChainMessages: [],
       callData: [],
@@ -179,7 +202,8 @@ async function finalizeSvmWithdrawals(
   attestedMessages: AttestedCCTPMessage[],
   signer: Signer,
   simulate = false,
-  hubChainId = 1
+  hubChainId = 1,
+  svmSpokePoolClient: SVMSpokePoolClient
 ): Promise<string[]> {
   const l1Usdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId]);
   const l2Usdc = SvmAddress.from(
@@ -292,6 +316,10 @@ async function finalizeSvmWithdrawals(
       },
     ];
 
+    const cctpMessageReceiver = isDepositForBurnEvent(message)
+      ? tokenMessengerMinter
+      : toPublicKey(svmSpokePoolClient.spokePoolAddress.toBase58());
+
     const pendingTx = messageTransmitterProgram.methods
       .receiveMessage({
         message: Buffer.from(message.messageBytes.slice(2), "hex"),
@@ -303,7 +331,7 @@ async function finalizeSvmWithdrawals(
         authorityPda,
         messageTransmitter: messageTransmitterPda,
         usedNonces: noncePda,
-        receiver: tokenMessengerMinter, // TODO: for *tokenless* messages this probably doesn't work. How to?
+        receiver: cctpMessageReceiver,
         systemProgram: web3.SystemProgram.programId,
       })
       .remainingAccounts(accountMetas);
