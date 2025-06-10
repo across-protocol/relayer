@@ -205,7 +205,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
 
   // First callStatic, which will surface a custom error if the transaction would fail.
-  // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
+  // This is useful for surfacing custom error revert reasons like RelayFilled in the SpokePool but
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;

@@ -1,15 +1,26 @@
 import { utils } from "@across-protocol/sdk";
+import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
-import { bnZero, compareAddressesSimple } from "./SDKUtils";
+import {
+  bnZero,
+  compareAddressesSimple,
+  chainIsSvm,
+  SvmCpiEventsClient,
+  SvmAddress,
+  mapAsync,
+  chainIsProd,
+} from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { getCachedProvider } from "./ProviderUtils";
+import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
+import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
 import { assert, Provider } from ".";
+import { BN, web3 } from "@coral-xyz/anchor";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -28,6 +39,13 @@ type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecip
 type CommonMessageEvent = CommonMessageData & { log: Log };
 type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
 
+type CCTPSvmAPIAttestation = {
+  attestation: string;
+  message: string;
+  eventNonce: string;
+};
+
+type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIAttestation = {
   status: string;
@@ -372,8 +390,8 @@ function getRelevantCCTPEventsFromReceipt(
     // Verify that args decoded from raw `MessageSent` event match the values reported with `DepositForBurn` event.
     // We can skip this step if we find this reduces performance
     if (
-      !compareAddressesSimple(eventData.sender, spreadArgs.depositor) ||
-      !compareAddressesSimple(eventData.recipient, cctpBytes32ToAddress(spreadArgs.mintRecipient)) ||
+      !compareAddressesSimple(eventData.sender, cctpAddressToBytes32(spreadArgs.depositor)) ||
+      !compareAddressesSimple(eventData.recipient, cctpAddressToBytes32(spreadArgs.mintRecipient)) ||
       !BigNumber.from(eventData.amount).eq(spreadArgs.amount)
     ) {
       const { transactionHash: txnHash, logIndex } = depositForBurnLog;
@@ -412,7 +430,9 @@ function getRelevantCCTPEventsFromReceipt(
     const isMessageSentEvent = messageSentVersion != -1;
     if (isMessageSentEvent) {
       if (_isMatchingCCTPVersion(messageSentVersion)) {
-        _addMessageSentEventIfRelevant(receipt.logs[lastMessageSentIdx]);
+        if (lastMessageSentIdx != -1) {
+          _addMessageSentEventIfRelevant(receipt.logs[lastMessageSentIdx]);
+        }
         lastMessageSentIdx = i;
       }
       return;
@@ -472,7 +492,10 @@ async function getCCTPMessagesWithStatus(
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  // const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  const messageTransmitterContract = chainIsSvm(destinationChainId)
+    ? undefined
+    : new Contract(address, abi, dstProvider);
   return await Promise.all(
     cctpMessageEvents.map(async (deposit) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
@@ -484,7 +507,10 @@ async function getCCTPMessagesWithStatus(
           status: "pending",
         };
       }
-      const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, destinationMessageTransmitter);
+      // const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
+      const processed = chainIsSvm(destinationChainId)
+        ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.log.args.remoteDomain)
+        : await _hasCCTPMessageBeenProcessedEvm(deposit.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
           ...deposit,
@@ -565,6 +591,17 @@ export async function getAttestedCCTPMessages(
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
   const isSourceHubChain = [CHAIN_IDs.MAINNET, CHAIN_IDs.SEPOLIA].includes(sourceChainId);
+  // Reading Solana deposits/attestations follows a different flow from EVM networks, so divert to this flow if the source chain is Solana.
+  if (chainIsSvm(sourceChainId)) {
+    assert(!isSourceHubChain);
+    return _getCCTPDepositEventsSvm(
+      senderAddresses,
+      sourceChainId,
+      destinationChainId,
+      l2ChainId,
+      sourceEventSearchConfig
+    );
+  }
   const messagesWithStatus = await getCCTPMessagesWithStatus(
     senderAddresses,
     sourceChainId,
@@ -640,7 +677,7 @@ export async function getAttestedCCTPMessages(
           }
         }
 
-        const processed = await _hasCCTPMessageBeenProcessed(
+        const processed = await _hasCCTPMessageBeenProcessedEvm(
           matchingAttestation.eventNonce,
           destinationMessageTransmitter
         );
@@ -663,7 +700,7 @@ export async function getAttestedCCTPMessages(
         }
       } else {
         // For v1 messages, fetch attestation by messageHash -> receive a single attestation in response
-        const attestation = await _fetchV1Attestation(message.messageHash, isMainnet);
+        const attestation = await _fetchAttestation(message.messageHash, isMainnet);
         return {
           ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
@@ -687,21 +724,98 @@ function _getPendingAttestationStatus(
   }
 }
 
-async function _hasCCTPMessageBeenProcessed(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
+async function _hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
   const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
-function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageData {
+// A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
+async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
+  // Specifically retrieve the Solana MessageTransmitter contract.
+  try {
+    const bnNonce = new BN(nonce);
+    const messageTransmitterProgram = await getAnchorProgram(MessageTransmitterIdl);
+    const [messageTransmitterPda] = web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("message_transmitter")],
+      messageTransmitterProgram.programId
+    );
+    const noncePda = await messageTransmitterProgram.methods
+      .getNoncePda({
+        nonce: bnNonce,
+        sourceDomain,
+      })
+      .accounts({
+        messageTransmitter: messageTransmitterPda,
+      })
+      .view();
+    const nonceUsed = await messageTransmitterProgram.methods
+      .isNonceUsed({
+        nonce: bnNonce,
+      })
+      .accounts({
+        usedNonces: noncePda,
+      })
+      .view();
+    return nonceUsed;
+  } catch {
+    return false;
+  }
+}
+
+async function _getCCTPDepositEventsSvm(
+  senderAddresses: string[],
+  sourceChainId: number,
+  destinationChainId: number,
+  l2ChainId: number,
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<AttestedCCTPDeposit[]> {
+  // Get the `DepositForBurn` events on Solana.
+  const provider = getSvmProvider();
+  const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+
+  const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
+  const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
+    "DepositForBurn",
+    SvmAddress.from(address).toV2Address(),
+    BigInt(sourceEventSearchConfig.from),
+    BigInt(sourceEventSearchConfig.to)
+  );
+
+  // Query the CCTP API to get the encoded message bytes/attestation.
+  // Return undefined if we need to filter out the deposit event.
+  const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
+    const attestation = await _fetchCCTPSvmAttestationProof(event.signature);
+    return await mapAsync(attestation.messages, async (data) => {
+      const decodedMessage = _decodeDepositForBurnMessageDataV1({ data: data.message }, true);
+      if (
+        !senderAddresses.includes(cctpBytes32ToAddress(decodedMessage.sender)) ||
+        getCctpDomainForChainId(destinationChainId) !== decodedMessage.destinationDomain
+      ) {
+        return undefined;
+      }
+      // The destination network cannot be Solana since the origin network is Solana.
+      const attestationStatusObject = await _fetchAttestation(decodedMessage.messageHash, chainIsProd(l2ChainId));
+      return {
+        ...decodedMessage,
+        attestation: data.attestation,
+        status: _getPendingAttestationStatus(attestationStatusObject),
+        log: undefined,
+      };
+    });
+  });
+  return _depositsWithAttestations.flat().filter(isDefined);
+}
+
+function _decodeCommonMessageDataV1(message: { data: string }, isSvm: boolean = false): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
   const nonce = BigNumber.from(ethers.utils.hexlify(messageBytesArray.slice(12, 20))).toNumber(); // nonce 8 bytes starting index 12
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(20, 52))); // sender	20	bytes32	32	Address of MessageTransmitter caller on source domain
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(52, 84))); // recipient	52	bytes32	32	Address to handle message body on destination domain
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(20, 52)); // sender	20	bytes32	32	Address of MessageTransmitter caller on source domain
+  const recipient = ethers.utils.hexlify(messageBytesArray.slice(52, 84)); // recipient	52	bytes32	32	Address to handle message body on destination domain
 
   // V1 nonce hash is a simple hash of the nonce emitted in Deposit event with the source domain ID.
   const nonceHash = ethers.utils.keccak256(ethers.utils.solidityPack(["uint32", "uint64"], [sourceDomain, nonce]));
@@ -718,14 +832,14 @@ function _decodeCommonMessageDataV1(message: { data: string }): CommonMessageDat
   };
 }
 
-function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageData {
+function _decodeCommonMessageDataV2(message: { data: string }, isSvm: boolean = false): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(44, 76))); // sender	44	bytes32	32	Address of MessageTransmitterV2 caller on source domain
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(76, 108))); // recipient	76	bytes32	32	Address to handle message body on destination domain
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(44, 76)); // sender	44	bytes32	32	Address of MessageTransmitterV2 caller on source domain
+  const recipient = ethers.utils.hexlify(messageBytesArray.slice(76, 108)); // recipient	76	bytes32	32	Address to handle message body on destination domain
 
   return {
     cctpVersion: 2,
@@ -740,17 +854,20 @@ function _decodeCommonMessageDataV2(message: { data: string }): CommonMessageDat
   };
 }
 
-function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositForBurnMessageData {
+function _decodeDepositForBurnMessageDataV1(
+  message: { data: string },
+  isSvm: boolean = false
+): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const commonDataV1 = _decodeCommonMessageDataV1(message);
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
   // Values specific to `DepositForBurn`. These are values contained withing `messageBody` bytes (the last of the message.data fields)
-  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(120, 152))); // burnToken 4 bytes32 32 Address of burned token on source domain
-  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
+  const burnToken = ethers.utils.hexlify(messageBytesArray.slice(120, 152)); // burnToken 4 bytes32 32 Address of burned token on source domain
+  const mintRecipient = ethers.utils.hexlify(messageBytesArray.slice(152, 184)); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(216, 248))); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // sender 32 bytes starting index 216 (idx 100 of body after idx 116 which ends the header)
 
   return {
     ...commonDataV1,
@@ -764,16 +881,19 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }): DepositF
   };
 }
 
-function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositForBurnMessageData {
+function _decodeDepositForBurnMessageDataV2(
+  message: { data: string },
+  isSvm: boolean = false
+): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const commonData = _decodeCommonMessageDataV2(message);
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
+  const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
-  const burnToken = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(152, 184))); // burnToken: Address of burned token on source domain. 32 bytes starting index 152 (idx 4 of body after idx 148 which ends the header)
-  const mintRecipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
+  const burnToken = ethers.utils.hexlify(messageBytesArray.slice(152, 184)); // burnToken: Address of burned token on source domain. 32 bytes starting index 152 (idx 4 of body after idx 148 which ends the header)
+  const mintRecipient = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(248, 280)); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
 
   return {
     ...commonData,
@@ -789,13 +909,15 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }): DepositF
 
 /**
  * Generates an attestation proof for a given message hash. This is required to finalize a CCTP message.
+ * @dev Only works for v1 messages because we don't have nonceHash filled in for message when the v2 event is emitted on-chain, so we can't generate a messageHash locally.
+ * That's why for v2 messages we have to use _fetchAttestationsForTxn instead
  * @param messageHash The message hash to generate an attestation proof for. This is generated by taking the keccak256 hash of the message bytes of the initial transaction log.
  * @param isMainnet Whether or not the attestation proof should be generated on mainnet. If this is false, the attestation proof will be generated on the sandbox environment.
  * @returns The attestation status and proof for the given message hash. This is a string of the form "0x<attestation proof>". If the status is pending_confirmation
  * then the proof will be null according to the CCTP dev docs.
  * @link https://developers.circle.com/stablecoins/reference/getattestation
  */
-async function _fetchV1Attestation(messageHash: string, isMainnet: boolean): Promise<CCTPAPIGetAttestationResponse> {
+async function _fetchAttestation(messageHash: string, isMainnet: boolean): Promise<CCTPAPIGetAttestationResponse> {
   const httpResponse = await axios.get<CCTPAPIGetAttestationResponse>(
     `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/attestations/${messageHash}`
   );
@@ -817,6 +939,14 @@ async function _fetchAttestationsForTxn(
   );
 
   return httpResponse.data;
+}
+
+async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPSvmAPIGetAttestationResponse> {
+  const httpResponse = await axios.get<CCTPSvmAPIGetAttestationResponse>(
+    `https://iris-api.circle.com/messages/5/${transactionHash}`
+  );
+  const attestationResponse = httpResponse.data;
+  return attestationResponse;
 }
 
 // This function compares message we need to finalize with the api response message. It skips the `nonce` part of comparison as it's not set at the time of emitting an on-chain `MessageSent` event
