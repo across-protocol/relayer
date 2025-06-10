@@ -34,9 +34,9 @@ export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
         value: [...(this.liteChainIndicesUpdates.value ?? []), ...chainIds],
         blockNumber,
         timestamp: blockTimestamp,
-        transactionIndex: Math.floor(Math.random() * 10),
+        txnIndex: Math.floor(Math.random() * 10),
         logIndex: Math.floor(Math.random() * 10),
-        transactionHash: "",
+        txnRef: "",
       },
     ];
   }

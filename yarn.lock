@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
   integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
 
-"@across-protocol/constants@^3.1.67":
-  version "3.1.67"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.67.tgz#10e37b48792e839a94e4841cd6f31b8980969147"
-  integrity sha512-5XJcHU0I8UksYHCHO394uiAAAKkmlNs49dWBSgD5UZwslo/U7HTiQY6MfO24f/Q8rgSabBsSt9jdquyeba7VxA==
+"@across-protocol/constants@^3.1.68":
+  version "3.1.68"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.68.tgz#2a58b091b3f717394ee8025b20ee89022da849d8"
+  integrity sha512-f/o4i323HxwT/4h32xZdxKLwN3xXoAaxcd/xwP0tfAc/+X4/a+1qJ5Mfx+U2IwDkSheiSyqRYF3z5oYPnax3mg==
 
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
@@ -29,6 +29,37 @@
     "@eth-optimism/contracts" "^0.5.5"
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
+
+"@across-protocol/contracts@^4.0.12":
+  version "4.0.12"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.12.tgz#45e8d6cc1fe137ae5349c1aa4b17e9ebc8e982cd"
+  integrity sha512-OreKSdJS1uOo9/bPkYQrym1Gcwz9ccINviQ+72Nbfw11NwJmlkdWEMAMQ7Y8MaiXPvneOkXH1enZJI2M9YIrgA==
+  dependencies:
+    "@across-protocol/constants" "^3.1.63"
+    "@coral-xyz/anchor" "^0.31.1"
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.40"
+    "@ethersproject/abstract-provider" "5.7.0"
+    "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
+    "@openzeppelin/contracts" "4.9.6"
+    "@openzeppelin/contracts-upgradeable" "4.9.6"
+    "@scroll-tech/contracts" "^0.1.0"
+    "@solana-developers/helpers" "^2.4.0"
+    "@solana-program/address-lookup-table" "^0.7.0"
+    "@solana-program/token" "^0.5.1"
+    "@solana/kit" "^2.1.0"
+    "@solana/spl-token" "^0.4.6"
+    "@solana/web3.js" "1.98.2"
+    "@types/yargs" "^17.0.33"
+    "@uma/common" "^2.37.3"
+    "@uma/contracts-node" "^0.4.17"
+    "@uma/core" "^2.61.0"
+    axios "^1.7.4"
+    bs58 "^6.0.0"
+    prettier-plugin-rust "^0.1.9"
+    yargs "^17.7.2"
+    zksync-web3 "^0.14.3"
 
 "@across-protocol/contracts@^4.0.9":
   version "4.0.9"
@@ -59,19 +90,20 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.2.5":
-  version "4.2.5"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.5.tgz#9d99c9d712cce2e74d2db7feeafd225df0784319"
-  integrity sha512-8/Lb/0bm94HZPUJtng+tmbU6IJr3hFCEtmsB2Tek0KRu6itny+KbaYzzHatUoWZFGjwyzVMxo/u2r/lSDUaPyA==
+"@across-protocol/sdk@4.2.11":
+  version "4.2.11"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.11.tgz#24de05c637e777f767c11c06aff1809188a78dbd"
+  integrity sha512-2P4VMydADQLFCstQEcUbRp3wKdyPjInoPM8vXYpItoliCDvtNPB6q9g7cm6O6XLnbwiPAkmkCmccgd9u/ZtuXw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.67"
-    "@across-protocol/contracts" "^4.0.9"
+    "@across-protocol/constants" "^3.1.68"
+    "@across-protocol/contracts" "^4.0.12"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
     "@solana-program/system" "^0.7.0"
+    "@solana-program/token" "^0.5.1"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.1.0"
     "@solana/web3.js" "^1.31.0"
@@ -2736,6 +2768,24 @@
   resolved "https://registry.yarnpkg.com/@sinonjs/text-encoding/-/text-encoding-0.7.1.tgz#8da5c6530915653f3a1f38fd5f101d8c3f8079c5"
   integrity sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
 
+"@solana-developers/helpers@^2.4.0":
+  version "2.8.1"
+  resolved "https://registry.yarnpkg.com/@solana-developers/helpers/-/helpers-2.8.1.tgz#73618effb22073546e06c7a7875640d46c93a7fc"
+  integrity sha512-xvoOj+ewL18+h6fMrXp1vTss0WBLnhQHnBb6mMPfEQE32w0THlxm8OPXNUY8g4tREX7ugU5cDEP7c2teye1Z7A==
+  dependencies:
+    "@coral-xyz/anchor" "^0.30.1"
+    "@solana/spl-token" "^0.4.8"
+    "@solana/spl-token-metadata" "^0.1.4"
+    "@solana/web3.js" "^1.98.0"
+    bn.js "^5.2.1"
+    bs58 "^6.0.0"
+    dotenv "^16.4.5"
+
+"@solana-program/address-lookup-table@^0.7.0":
+  version "0.7.0"
+  resolved "https://registry.yarnpkg.com/@solana-program/address-lookup-table/-/address-lookup-table-0.7.0.tgz#6651657308547fefb59ce2e20b1871270e93d48d"
+  integrity sha512-dzCeIO5LtiK3bIg0AwO+TPeGURjSG2BKt0c4FRx7105AgLy7uzTktpUzUj6NXAK9SzbirI8HyvHUvw1uvL8O9A==
+
 "@solana-program/system@^0.7.0":
   version "0.7.0"
   resolved "https://registry.yarnpkg.com/@solana-program/system/-/system-0.7.0.tgz#3e21c9fb31d3795eb65ba5cb663947c19b305bad"
@@ -3139,7 +3189,7 @@
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token-metadata@^0.1.6":
+"@solana/spl-token-metadata@^0.1.4", "@solana/spl-token-metadata@^0.1.6":
   version "0.1.6"
   resolved "https://registry.yarnpkg.com/@solana/spl-token-metadata/-/spl-token-metadata-0.1.6.tgz#d240947aed6e7318d637238022a7b0981b32ae80"
   integrity sha512-7sMt1rsm/zQOQcUWllQX9mD2O6KhSAtY1hFR2hfFwgqfFWzSY9E9GDvFVNYUI1F0iQKcm6HmePU9QbKRXTEBiA==
@@ -3150,6 +3200,17 @@
   version "0.4.9"
   resolved "https://registry.yarnpkg.com/@solana/spl-token/-/spl-token-0.4.9.tgz#24d032d2935f237925c3b058ba6bb1e1ece5428c"
   integrity sha512-g3wbj4F4gq82YQlwqhPB0gHFXfgsC6UmyGMxtSLf/BozT/oKd59465DbnlUK8L8EcimKMavxsVAMoLcEdeCicg==
+  dependencies:
+    "@solana/buffer-layout" "^4.0.0"
+    "@solana/buffer-layout-utils" "^0.2.0"
+    "@solana/spl-token-group" "^0.0.7"
+    "@solana/spl-token-metadata" "^0.1.6"
+    buffer "^6.0.3"
+
+"@solana/spl-token@^0.4.8":
+  version "0.4.13"
+  resolved "https://registry.yarnpkg.com/@solana/spl-token/-/spl-token-0.4.13.tgz#8f65c3c2b315e1a00a91b8d0f60922c6eb71de62"
+  integrity sha512-cite/pYWQZZVvLbg5lsodSovbetK/eA24gaR0eeUeMuBAMNrT8XFCwaygKy0N2WSg3gSyjjNpIeAGBAKZaY/1w==
   dependencies:
     "@solana/buffer-layout" "^4.0.0"
     "@solana/buffer-layout-utils" "^0.2.0"
@@ -3221,7 +3282,7 @@
     "@solana/rpc-types" "2.1.0"
     "@solana/transaction-messages" "2.1.0"
 
-"@solana/web3.js@1.98.2", "@solana/web3.js@^1.69.0":
+"@solana/web3.js@1.98.2", "@solana/web3.js@^1.69.0", "@solana/web3.js@^1.98.0":
   version "1.98.2"
   resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-1.98.2.tgz#45167a5cfb64436944bf4dc1e8be8482bd6d4c14"
   integrity sha512-BqVwEG+TaG2yCkBMbD3C4hdpustR4FpuUFRPUmqRZYYlPI9Hg4XMWxHWOWRzHE9Lkc9NDjzXFX7lDXSgzC7R1A==
@@ -6839,6 +6900,11 @@ dotenv@^16.3.1:
   version "16.3.1"
   resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.3.1.tgz#369034de7d7e5b120972693352a3bf112172cc3e"
   integrity sha512-IPzF4w4/Rd94bA9imS68tZBaYyBWSCE47V1RGuMrB94iyTOIEwRmVL2x/4An+6mETpLrKJ5hQkB8W4kFAadeIQ==
+
+dotenv@^16.4.5:
+  version "16.5.0"
+  resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-16.5.0.tgz#092b49f25f808f020050051d1ff258e404c78692"
+  integrity sha512-m/C+AwOAr9/W1UOIZUo232ejMNnJAJtYQjUbHoNTBNTJSvqzzDh7vnrei3o3r3m9blf6ZoDkvcw0VmozNRFJxg==
 
 dotenv@^9.0.0:
   version "9.0.2"

@@ -60,7 +60,7 @@ export type AttestedCCTPDepositEvent = CCTPDepositEvent & { log: Log; status: CC
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
-const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA];
+const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA, CHAIN_IDs.WORLD_CHAIN];
 
 /**
  * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
@@ -488,9 +488,9 @@ function _decodeCCTPV2Message(message: { data: string; transactionHash: string; 
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
   const sourceDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(4, 8))); // sourceDomain 4 bytes starting index 4
   const destinationDomain = Number(ethers.utils.hexlify(messageBytesArray.slice(8, 12))); // destinationDomain 4 bytes starting index 8
-  const recipient = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(184, 216))); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
+  const recipient = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // recipient 32 bytes starting index 184 (idx 36 of body after idx 148 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(216, 248)); // amount 32 bytes starting index 216 (idx 68 of body after idx 148 which ends the header)
-  const sender = cctpBytes32ToAddress(ethers.utils.hexlify(messageBytesArray.slice(248, 280))); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
+  const sender = ethers.utils.hexlify(messageBytesArray.slice(248, 280)); // sender 32 bytes starting index 248 (idx 100 of body after idx 148 which ends the header)
 
   return {
     // Nonce is hardcoded to bytes32(0) in the V2 DepositForBurn event, so we either need to compute it here or get it

@@ -39,7 +39,6 @@ import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
-import SP1_HELIOS_ABI from "./abi/SP1Helios.json";
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -271,12 +270,6 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
   },
-  [CHAIN_IDs.BSC]: {
-    sp1Helios: {
-      address: "0xCdb25d0A6FfFE639BC591a565F2D99507837f2b7",
-      abi: SP1_HELIOS_ABI,
-    },
-  },
   [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
       abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
@@ -346,9 +339,13 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    opUSDCBridge: {
-      address: "0xbD80b06d3dbD0801132c6689429aC09Ca6D27f82",
-      abi: OP_USDC_BRIDGE_ABI,
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
