@@ -59,6 +59,7 @@
     "prettier": "prettier .",
     "eslint": "eslint .",
     "test": "RELAYER_TEST=true hardhat test",
+    "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
