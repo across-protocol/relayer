@@ -16,10 +16,19 @@ import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 
+import winston from "winston";
 let logger: typeof Logger;
 let cmd: string;
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
+  if (process.env.PRETTY_PRINT_LOGS === "false") {
+    Logger.clear();
+    Logger.add(
+      new winston.transports.Console({
+        format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+      })
+    );
+  }
   logger = Logger;
 
   const cmds = {
