@@ -61,6 +61,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "Check spoke pool balances monitor disabled" });
       }
 
+      if (config.botModes.binanceWithdrawalLimitsEnabled) {
+        await acrossMonitor.checkBinanceWithdrawalLimits();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Binance withdrawal limits check disabled" });
+      }
+
       await clients.multiCallerClient.executeTxnQueues();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
