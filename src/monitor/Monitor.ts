@@ -496,8 +496,8 @@ export class Monitor {
   async checkBinanceWithdrawalLimits() {
     const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
     const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
-    const belowThreshold = 1 - wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
-    this.logger[belowThreshold ? "warn" : "debug"]({
+    const aboveThreshold = wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
+    this.logger[aboveThreshold ? "error" : "debug"]({
       at: "Monitor#checkBinanceWithdrawalLimits",
       message: "Binance withdrawal quota",
       wdQuota,
