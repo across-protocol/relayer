@@ -28,7 +28,6 @@ import {
   chainIsProd,
 } from "../../../utils";
 import {
-  AttestedCCTPDeposit,
   AttestedCCTPMessage,
   CCTPMessageStatus,
   getAttestedCCTPMessages,

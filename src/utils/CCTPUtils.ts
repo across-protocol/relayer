@@ -807,7 +807,7 @@ async function _getCCTPDepositEventsSvm(
   return _depositsWithAttestations.flat().filter(isDefined);
 }
 
-function _decodeCommonMessageDataV1(message: { data: string }, isSvm: boolean = false): CommonMessageData {
+function _decodeCommonMessageDataV1(message: { data: string }, isSvm = false): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
@@ -832,7 +832,7 @@ function _decodeCommonMessageDataV1(message: { data: string }, isSvm: boolean = 
   };
 }
 
-function _decodeCommonMessageDataV2(message: { data: string }, isSvm: boolean = false): CommonMessageData {
+function _decodeCommonMessageDataV2(message: { data: string }, isSvm = false): CommonMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
@@ -854,10 +854,7 @@ function _decodeCommonMessageDataV2(message: { data: string }, isSvm: boolean = 
   };
 }
 
-function _decodeDepositForBurnMessageDataV1(
-  message: { data: string },
-  isSvm: boolean = false
-): DepositForBurnMessageData {
+function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = false): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const commonDataV1 = _decodeCommonMessageDataV1(message);
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
@@ -881,10 +878,7 @@ function _decodeDepositForBurnMessageDataV1(
   };
 }
 
-function _decodeDepositForBurnMessageDataV2(
-  message: { data: string },
-  isSvm: boolean = false
-): DepositForBurnMessageData {
+function _decodeDepositForBurnMessageDataV2(message: { data: string }, isSvm = false): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
   const commonData = _decodeCommonMessageDataV2(message);
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
