@@ -40,6 +40,7 @@ import {
   EvmAddress,
   Address,
   toAddressType,
+  toBytes32,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -212,7 +213,7 @@ export class ProfitClient {
    */
   getPriceOfToken(token: string): BigNumber {
     const address = this.resolveTokenAddress(token);
-    const price = this.tokenPrices[address.toAddress()];
+    const price = this.tokenPrices[address.toBytes32()];
     if (!isDefined(price)) {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
       return bnZero;
@@ -604,13 +605,13 @@ export class ProfitClient {
     // Pre-populate any new addresses.
     Object.entries(tokens).forEach(([symbol, address]) => {
       this.tokenSymbolMap[symbol] ??= address;
-      this.tokenPrices[address] ??= bnZero;
+      this.tokenPrices[toBytes32(address)] ??= bnZero;
     });
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
+      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[toBytes32(address)] = toBNWei(price)));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;

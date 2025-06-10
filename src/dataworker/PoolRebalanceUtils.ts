@@ -17,6 +17,7 @@ import {
   getNetworkName,
   isChainDisabled,
   EvmAddress,
+  Address,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
@@ -112,16 +113,16 @@ export function generateMarkdownForRootBundle(
     }`;
   });
 
-  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+  const convertTokenListFromWei = (chainId: number, tokenAddresses: Address[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(token.toAddress(), chainId);
       return convertFromWei(weiVals[index], decimals);
     });
   };
-  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-    return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) => {
+    return hubPoolClient.getTokenInfoForAddress(tokenAddress.toAddress(), chainId).symbol;
   };
-  const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+  const convertL1TokenAddressesToSymbols = (l1Tokens: EvmAddress[]) => {
     return l1Tokens.map((l1Token) => {
       return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
     });
@@ -145,7 +146,7 @@ export function generateMarkdownForRootBundle(
     delete leaf.leafId;
     leaf.amountToReturn = convertFromWei(
       leaf.amountToReturn,
-      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
+      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress.toAddress(), leaf.chainId).decimals
     );
     leaf.refundAmounts = convertTokenListFromWei(
       leaf.chainId,
@@ -154,7 +155,7 @@ export function generateMarkdownForRootBundle(
     );
     leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
+    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 

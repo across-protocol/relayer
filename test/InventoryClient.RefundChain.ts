@@ -20,7 +20,15 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { Deposit, InventoryConfig } from "../src/interfaces";
-import { CHAIN_IDs, ZERO_ADDRESS, bnZero, getNetworkName, parseUnits, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import {
+  CHAIN_IDs,
+  ZERO_ADDRESS,
+  bnZero,
+  getNetworkName,
+  parseUnits,
+  TOKEN_SYMBOLS_MAP,
+  toAddressType,
+} from "../src/utils";
 import {
   MockAdapterManager,
   MockBundleDataClient,
@@ -87,10 +95,20 @@ describe("InventoryClient: Refund chain selection", async function () {
     hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
     hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
     enabledChainIds.forEach((chainId) => {
-      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, bnZero);
-      adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, bnZero);
-      tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
-      tokenClient.setTokenData(chainId, l2TokensForUsdc[chainId], seedBalances[chainId][mainnetUsdc]);
+      adapterManager.setMockedOutstandingCrossChainTransfers(
+        chainId,
+        toAddressType(owner.address),
+        toAddressType(mainnetWeth),
+        bnZero
+      );
+      adapterManager.setMockedOutstandingCrossChainTransfers(
+        chainId,
+        toAddressType(owner.address),
+        toAddressType(mainnetUsdc),
+        bnZero
+      );
+      tokenClient.setTokenData(chainId, toAddressType(l2TokensForWeth[chainId]), seedBalances[chainId][mainnetWeth]);
+      tokenClient.setTokenData(chainId, toAddressType(l2TokensForUsdc[chainId]), seedBalances[chainId][mainnetUsdc]);
       hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
       hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
       hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
@@ -122,7 +140,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new MockInventoryClient(
-      owner.address,
+      toAddressType(owner.address),
       spyLogger,
       inventoryConfig,
       tokenClient,
@@ -161,18 +179,18 @@ describe("InventoryClient: Refund chain selection", async function () {
         toLiteChain: false,
         originChainId: MAINNET,
         destinationChainId: OPTIMISM,
-        depositor: owner.address,
-        recipient: owner.address,
-        inputToken: mainnetWeth,
+        depositor: toAddressType(owner.address),
+        recipient: toAddressType(owner.address),
+        inputToken: toAddressType(mainnetWeth),
         inputAmount,
-        outputToken: l2TokensForWeth[OPTIMISM],
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM]),
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
         quoteTimestamp: hubPoolClient.currentTime!,
         fillDeadline: 0,
         exclusivityDeadline: 0,
-        exclusiveRelayer: ZERO_ADDRESS,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS),
       };
     });
     it("Correctly decides when to refund based on relay size", async function () {
@@ -181,7 +199,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       // affect the allocation percentage computation, which intuitively means that the relayer's overall inventory is
       // decreasing on the destination chain by the output amount but increasing by the input amount.
       sampleDepositData.originChainId = ARBITRUM;
-      sampleDepositData.inputToken = l2TokensForWeth[ARBITRUM];
+      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM]);
 
       // First destination chain is evaluated, then origin chain.
       sampleDepositData.inputAmount = toWei(1);

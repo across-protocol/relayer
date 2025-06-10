@@ -348,7 +348,7 @@ export class Relayer {
 
     // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
     // making the same relayer fill a deposit multiple times.
-    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer === this.relayerAddress)) {
+    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(this.relayerAddress))) {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
@@ -814,7 +814,9 @@ export class Relayer {
    * @returns A string identifying the deposit in a BatchLPFees object.
    */
   getLPFeeKey(relayData: Pick<Deposit, "originChainId" | "inputToken" | "inputAmount" | "quoteTimestamp">): string {
-    return `${relayData.originChainId}-${relayData.inputToken}-${relayData.inputAmount}-${relayData.quoteTimestamp}`;
+    return `${relayData.originChainId}-${relayData.inputToken.toBytes32()}-${relayData.inputAmount}-${
+      relayData.quoteTimestamp
+    }`;
   }
 
   /**

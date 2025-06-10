@@ -429,7 +429,7 @@ export class InventoryClient {
     try {
       const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
       const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
-      return l1TokenMappedToInputToken === l1TokenMappedToOutputToken;
+      return l1TokenMappedToInputToken.eq(l1TokenMappedToOutputToken);
     } catch (e) {
       // @dev getL1TokenAddress will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
       return false;

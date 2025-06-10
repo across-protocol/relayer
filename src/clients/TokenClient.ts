@@ -151,10 +151,11 @@ export class TokenClient {
     }
 
     let mrkdwn = "*Approval transactions:* \n";
-    for (const { token, chainId } of tokensToApprove) {
+    for (const { token: _token, chainId } of tokensToApprove) {
       const targetSpokePoolClient = this.spokePoolClients[chainId];
       if (isEVMSpokePoolClient(targetSpokePoolClient)) {
         const targetSpokePool = targetSpokePoolClient.spokePool;
+        const token = toAddressType(_token).toEvmAddress();
         const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
         const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
         mrkdwn +=
@@ -256,7 +257,10 @@ export class TokenClient {
     const allowanceOffset = balances.length;
     const balanceInfo = Object.fromEntries(
       balances.map(({ contract: { address } }, idx) => {
-        return [address, { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] }];
+        return [
+          toAddressType(address, chainId).toBytes32(),
+          { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
+        ];
       })
     );
 
@@ -278,8 +282,9 @@ export class TokenClient {
 
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
-      for (const token of Object.keys(tokenData)) {
-        assign(this.tokenData, [chainId, token], tokenData[token]);
+      for (const _token of Object.keys(tokenData)) {
+        const token = toAddressType(_token, chainId);
+        assign(this.tokenData, [chainId, token.toBytes32()], tokenData[token.toBytes32()]);
       }
     });
 
@@ -311,7 +316,7 @@ export class TokenClient {
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
         const balance: BigNumber = await token.balanceOf(relayerAddress);
         const allowance = await this._getAllowance(spokePoolClient, token);
-        return [token.address, { balance, allowance }];
+        return [toAddressType(token.address, chainId).toBytes32(), { balance, allowance }];
       })
     );
 
