@@ -29,7 +29,6 @@ type CommonMessageData = {
   destinationDomain: number;
   sender: string;
   recipient: string;
-
   messageHash: string;
   messageBytes: string;
   nonceHash: string;
@@ -427,7 +426,7 @@ function getRelevantCCTPEventsFromReceipt(
   receipt.logs.forEach((log, i) => {
     // --- Try to parse log as `MessageSent` --- //
     const messageSentVersion = _getMessageSentVersion(log);
-    const isMessageSentEvent = messageSentVersion != -1;
+    const isMessageSentEvent = messageSentVersion !== -1;
     if (isMessageSentEvent) {
       if (_isMatchingCCTPVersion(messageSentVersion)) {
         if (lastMessageSentIdx != -1) {
