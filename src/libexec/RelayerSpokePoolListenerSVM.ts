@@ -213,12 +213,7 @@ async function run(argv: string[]): Promise<void> {
 
   const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
   if (latestSlot > startSlot) {
-    const events = [
-      "FundsDeposited",
-      "FilledRelay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ];
+    const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });
   }
 
