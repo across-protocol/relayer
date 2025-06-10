@@ -219,16 +219,22 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      // TODO: initialize using typechain factory after V3.5 migration.
-      // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
-      const spokePoolContract = new ethers.Contract(
-        spokePoolAddr,
-        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
-        spokePoolSigners[chainId]
-      );
       const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
-      return { chainId, contract: spokePoolContract, registrationBlock };
+      if (chainIsEvm(chainId)) {
+        const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+        // TODO: initialize using typechain factory after V3.5 migration.
+        // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+        const spokePoolContract = new ethers.Contract(
+          spokePoolAddr,
+          [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
+          spokePoolSigners[chainId]
+        );
+        return { chainId, contract: spokePoolContract, registrationBlock };
+      } else {
+        // The hub pool client can only return the truncated address of the SVM spoke pool, so if the chain is non-evm, then fallback
+        // to the definitions in the contracts repository.
+        return { chainId, contract: undefined, registrationBlock };
+      }
     })
   );
 

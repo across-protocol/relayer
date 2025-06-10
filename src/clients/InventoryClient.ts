@@ -395,7 +395,7 @@ export class InventoryClient {
 
   /**
    * Returns true if the depositor-specified output token is supported by this inventory client.
-   * @param deposit V3 Deposit to consider
+   * @param deposit Deposit to consider
    * @returns boolean True if output and input tokens are equivalent or if input token is USDC and output token
    * is Bridged USDC.
    */
