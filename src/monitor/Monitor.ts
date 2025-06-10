@@ -48,13 +48,13 @@ import {
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
   getBinanceApiClient,
+  getBinanceWithdrawalLimits,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { HttpMethod } from "binance-api-node";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -495,12 +495,12 @@ export class Monitor {
 
   async checkBinanceWithdrawalLimits() {
     const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
-    const accountLimits = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
-    const belowThreshold = Number(accountLimits["usedWdQuota"]) < this.monitorConfig.binanceWithdrawWarnThreshold;
+    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const belowThreshold = 1 - wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
     this.logger[belowThreshold ? "warn" : "debug"]({
       at: "Monitor#checkBinanceWithdrawalLimits",
       message: "Binance withdrawal quota",
-      accountLimits,
+      wdQuota,
     });
   }
 
