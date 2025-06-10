@@ -50,7 +50,6 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
   "fillRelay",
   "fillRelayWithUpdatedFee",
-  "fillV3Relay",
   "fillRelayWithUpdatedDeposit",
   "requestSlowFill",
   "executeSlowRelayLeaf",
@@ -574,7 +573,7 @@ export class TryMulticallClient extends MultiCallerClient {
       if (!succeed || !isDefined(data?.length)) {
         return;
       }
-      // Address the case where we just call fillV3Relay(), and therefore the data field is empty.
+      // Address the case where we just call fillRelay(), and therefore the data field is empty.
       if (succeed && transaction.method !== "tryMulticall") {
         txnRequestsToSubmit.push(transaction);
         return;
