@@ -233,7 +233,7 @@ export class TokenClient {
     return hubPoolTokens
       .map(({ address }) => {
         try {
-          const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
+          const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
           // Validate that the remote token is a valid Solana address
           return SvmAddress.from(remoteToken);
         } catch (error) {
