@@ -325,6 +325,87 @@ async function getCCTPMessageEvents(
   return relevantEvents;
 }
 
+// --- Helper utilities to use in `getRelevantCCTPEventsFromReceipt` --- //
+// Returns true if the log version (0=v1,1=v2) matches the version of CCTP messages we're trying to finalize
+function _isMatchingCCTPVersion(logVersion: number, isCctpV2: boolean): boolean {
+  return (logVersion === 0 && !isCctpV2) || (logVersion === 1 && isCctpV2);
+}
+
+// Determines whether a parsed CCTP event is relevant for the provided filtering params
+function _isRelevantCCTPEvent(
+  event: CCTPMessageEvent,
+  sourceDomainId: number,
+  destinationDomainId: number,
+  senderAddresses: string[],
+  usdcAddress: string
+): boolean {
+  const relevant =
+    event.sourceDomain === sourceDomainId &&
+    event.destinationDomain === destinationDomainId &&
+    senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
+
+  if (isDepositForBurnEvent(event)) {
+    return relevant && compareAddressesSimple(event.burnToken, usdcAddress);
+  }
+  return relevant;
+}
+
+// Decodes a `MessageSent` log into a `CommonMessageEvent`
+function _createMessageSentEvent(
+  log: ethers.providers.Log,
+  isCctpV2: boolean,
+  messageTransmitterInterface: ethers.utils.Interface
+): CommonMessageEvent {
+  const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
+  const eventFragment = messageTransmitterInterface.getEvent(CCTP_MESSAGE_SENT_TOPIC_HASH);
+  const args = messageTransmitterInterface.decodeEventLog(eventFragment, log.data, log.topics);
+  return {
+    ...eventData,
+    log: {
+      ...log,
+      event: eventFragment.name,
+      args: spreadEvent(args),
+    },
+  };
+}
+
+// Decodes a `[MessageSent + DepositForBurn]` pair into a `DepositForBurnMessageEvent`
+function _createDepositForBurnMessageEvent(
+  messageSentLog: ethers.providers.Log,
+  depositForBurnLog: ethers.providers.Log,
+  isCctpV2: boolean,
+  tokenMessengerInterface: ethers.utils.Interface
+): DepositForBurnMessageEvent {
+  const eventData = isCctpV2
+    ? _decodeDepositForBurnMessageDataV2(messageSentLog)
+    : _decodeDepositForBurnMessageDataV1(messageSentLog);
+
+  const logDescription = tokenMessengerInterface.parseLog(depositForBurnLog);
+  const spreadArgs = spreadEvent(logDescription.args);
+
+  // Ensure data integrity between MessageSent and DepositForBurn events
+  if (
+    !compareAddressesSimple(eventData.sender, cctpAddressToBytes32(spreadArgs.depositor)) ||
+    !compareAddressesSimple(eventData.recipient, cctpAddressToBytes32(spreadArgs.mintRecipient)) ||
+    !BigNumber.from(eventData.amount).eq(spreadArgs.amount)
+  ) {
+    const { transactionHash: txnHash, logIndex } = depositForBurnLog;
+    throw new Error(
+      `Decoded message at log index ${messageSentLog.logIndex} does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
+    );
+  }
+
+  return {
+    ...eventData,
+    log: {
+      ...depositForBurnLog,
+      event: logDescription.name,
+      args: spreadArgs,
+    },
+  };
+}
+// --- END OF helpers for `getRelevantCCTPEventsFromReceipt` --- //
+
 function getRelevantCCTPEventsFromReceipt(
   receipt: ethers.providers.TransactionReceipt,
   isCctpV2: boolean,
@@ -337,136 +418,78 @@ function getRelevantCCTPEventsFromReceipt(
 ): CCTPMessageEvent[] {
   const relevantEvents: CCTPMessageEvent[] = [];
 
-  // --- Define helper functions --- //
-  // expects 0 for v1, 1 for v2, in accordance with `_getMessageSentVersion` and `_getDepositForBurnVersion`
-  const _isMatchingCCTPVersion = (logVersion: number): boolean => {
-    return (logVersion == 0 && !isCctpV2) || (logVersion == 1 && isCctpV2);
-  };
-
-  // Checks if event is for desired source / destination domains and addresses
-  const _isRelevantEvent = (event: CCTPMessageEvent): boolean => {
-    const relevant =
-      event.sourceDomain === sourceDomainId &&
-      event.destinationDomain === destinationDomainId &&
-      senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
-
-    if (isDepositForBurnEvent(event)) {
-      return relevant && compareAddressesSimple(event.burnToken, usdcAddress);
-    } else {
-      return relevant;
-    }
-  };
-
-  // Decodes `MessageSent` log params and tries to add `CommonMessageEvent` to `relevantEvents`
-  const _addMessageSentEventIfRelevant = (log: ethers.providers.Log) => {
-    const eventData = isCctpV2 ? _decodeCommonMessageDataV2(log) : _decodeCommonMessageDataV1(log);
-    const eventFragment = messageTransmitterInterface.getEvent(CCTP_MESSAGE_SENT_TOPIC_HASH);
-    const args = messageTransmitterInterface.decodeEventLog(eventFragment, log.data, log.topics);
-    const event: CommonMessageEvent = {
-      ...eventData,
-      log: {
-        ...log,
-        event: eventFragment.name,
-        args: spreadEvent(args),
-      },
-    };
-    if (_isRelevantEvent(event)) {
-      relevantEvents.push(event);
-    }
-  };
-
-  // Decodes `MessageSent` + `DepositForBurn` log params and tries to add `DepositForBurnMessageEvent` to `relevantEvents`
-  const _addDepositForBurnMessageEvent = (
-    messageSentLog: ethers.providers.Log,
-    depositForBurnLog: ethers.providers.Log
-  ) => {
-    const eventData = isCctpV2
-      ? _decodeDepositForBurnMessageDataV2(messageSentLog)
-      : _decodeDepositForBurnMessageDataV1(messageSentLog);
-    const logDescription = tokenMessengerInterface.parseLog(depositForBurnLog);
-    const spreadArgs = spreadEvent(logDescription.args);
-
-    // Verify that args decoded from raw `MessageSent` event match the values reported with `DepositForBurn` event.
-    // We can skip this step if we find this reduces performance
-    if (
-      !compareAddressesSimple(eventData.sender, cctpAddressToBytes32(spreadArgs.depositor)) ||
-      !compareAddressesSimple(eventData.recipient, cctpAddressToBytes32(spreadArgs.mintRecipient)) ||
-      !BigNumber.from(eventData.amount).eq(spreadArgs.amount)
-    ) {
-      const { transactionHash: txnHash, logIndex } = depositForBurnLog;
-      throw new Error(
-        `Decoded message at log index ${messageSentLog.logIndex}` +
-          ` does not match the DepositForBurn event in ${txnHash} at log index ${logIndex}`
-      );
-    }
-
-    const event: DepositForBurnMessageEvent = {
-      ...eventData,
-      log: {
-        ...depositForBurnLog,
-        event: logDescription.name,
-        args: spreadArgs,
-      },
-    };
-    if (_isRelevantEvent(event)) {
-      relevantEvents.push(event);
-    }
-  };
-  // --- END OF Define helper functions --- //
-
   /*
   For this receipt, go through all logs one-by-one.
   Identify:
-    1. Pairs: [MessageSent + DepositForBurn] == *cctp token transfers* we need to finalze
-    2. Single MessageSent events(either not followed by any other cctp event we're tracking, or followed by another MessageSent event in the logs array, not necessarily consecutively)
-    == *cctp crosschain message* we need to finalize
+    1. CCTP token transfers => these show up in the logs as pairs: [MessageSent + DepositForBurn] events
+    2. CCTP tokenless messages => these show up as standalone `MessageSent` events (either not 
+    followed by any other cctp event we're tracking, or followed by another MessageSent event in 
+    the logs array, not necessarily consecutively)
   */
-  // Index in `receipt.logs` of a `MessageSent` log with matching CCTP version
+  // Index in `receipt.logs` of the last seen `MessageSent` log with matching CCTP version.
   let lastMessageSentIdx = -1;
+
   receipt.logs.forEach((log, i) => {
-    // --- Try to parse log as `MessageSent` --- //
+    // Attempt to parse as `MessageSent`
     const messageSentVersion = _getMessageSentVersion(log);
     const isMessageSentEvent = messageSentVersion !== -1;
+
     if (isMessageSentEvent) {
-      if (_isMatchingCCTPVersion(messageSentVersion)) {
-        if (lastMessageSentIdx != -1) {
-          _addMessageSentEventIfRelevant(receipt.logs[lastMessageSentIdx]);
+      if (_isMatchingCCTPVersion(messageSentVersion, isCctpV2)) {
+        // If we already have a pending MessageSent, process it before overwriting
+        if (lastMessageSentIdx !== -1) {
+          const event = _createMessageSentEvent(
+            receipt.logs[lastMessageSentIdx],
+            isCctpV2,
+            messageTransmitterInterface
+          );
+          if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
+            relevantEvents.push(event);
+          }
         }
         lastMessageSentIdx = i;
       }
-      return;
+      return; // Continue to next log
     }
-    // --- END OF Try to parse log as `MessageSent` --- //
 
-    // --- Try to parse log as `DepositForBurn` --- //
+    // Attempt to parse as `DepositForBurn`
     const depositForBurnVersion = _getDepositForBurnVersion(log);
-    const isDepositForBurnEvent = depositForBurnVersion != -1;
+    const isDepositForBurnEvent = depositForBurnVersion !== -1;
+
     if (!isDepositForBurnEvent) {
-      // return early if event is neither `MessageSent` event nor `DepositForBurn`
-      return;
+      return; // Neither MessageSent nor DepositForBurn
     }
 
-    if (_isMatchingCCTPVersion(depositForBurnVersion)) {
-      if (lastMessageSentIdx == -1) {
+    if (_isMatchingCCTPVersion(depositForBurnVersion, isCctpV2)) {
+      if (lastMessageSentIdx === -1) {
         throw new Error(
-          "DepositForBurn event found without corresponding MessageSent event. " +
-            "Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
+          "DepositForBurn event found without corresponding MessageSent event. Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
             `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
         );
       }
 
-      // @dev We found a [MessageSent + DepositForBurn] pair! *cctp token transfers* we need to finalze
+      // Found a `[MessageSent + DepositForBurn]` pair -> token transfer we need to finalize
       const correspondingMessageSentLog = receipt.logs[lastMessageSentIdx];
-      _addDepositForBurnMessageEvent(correspondingMessageSentLog, log);
+      const event = _createDepositForBurnMessageEvent(
+        correspondingMessageSentLog,
+        log,
+        isCctpV2,
+        tokenMessengerInterface
+      );
+      if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
+        relevantEvents.push(event);
+      }
 
-      lastMessageSentIdx = -1;
+      lastMessageSentIdx = -1; // Reset pointer after processing pair
     }
-    // --- END OF Try to parse log as `DepositForBurn` --- //
   });
 
-  // After the loop over all logs, we might have an unpaired `MessageSent` event. Try to add it to `relevantEvents`
-  if (lastMessageSentIdx != -1) {
-    _addMessageSentEventIfRelevant(receipt.logs[lastMessageSentIdx]);
+  // Handle a remaining MessageSent event that didn't have a following DepositForBurn
+  if (lastMessageSentIdx !== -1) {
+    const event = _createMessageSentEvent(receipt.logs[lastMessageSentIdx], isCctpV2, messageTransmitterInterface);
+    if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
+      relevantEvents.push(event);
+    }
   }
 
   return relevantEvents;
