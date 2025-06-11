@@ -43,9 +43,7 @@ import {
   randomAddress,
   setupTokensForWallet,
   deployMulticall3,
-  getSvmSignerFromEvmSigner,
 } from "./utils";
-import { isSignerWallet } from "../src/utils";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";

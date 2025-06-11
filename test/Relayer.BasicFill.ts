@@ -18,8 +18,6 @@ import {
   getMessageHash,
   EvmAddress,
   SvmAddress,
-  getSvmSignerFromEvmSigner,
-  isSignerWallet,
 } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested

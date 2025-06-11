@@ -14,16 +14,7 @@ import {
   sinon,
 } from "../utils";
 import * as clients from "../../src/clients";
-import {
-  PriceClient,
-  acrossApi,
-  coingecko,
-  defiLlama,
-  SvmAddress,
-  EvmAddress,
-  getSvmSignerFromEvmSigner,
-} from "../../src/utils";
-import { isSignerWallet } from "../../src/utils/SignerUtils";
+import { PriceClient, acrossApi, coingecko, defiLlama, SvmAddress, EvmAddress } from "../../src/utils";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,

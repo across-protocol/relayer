@@ -43,7 +43,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet } from "../src/utils";
+import { EvmAddress, SvmAddress } from "../src/utils";
 
 describe("Relayer: Token balance shortfall", async function () {
   const noSlowRelays = false; // Don't send slow fills.
