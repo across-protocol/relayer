@@ -8,7 +8,17 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner, toAddressType } from "../utils";
+import {
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
+  Signer,
+  getArweaveJWKSigner,
+  SvmAddress,
+  toAddressType,
+  getSvmSignerFromEvmSigner,
+} from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -34,8 +44,16 @@ export async function constructDataworkerClients(
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
+  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
+  const tokenClient = new TokenClient(
+    logger,
+    signerAddr,
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    {},
+    hubPoolClient
+  );
   await tokenClient.update();
   // Run approval on hub pool.
   if (config.sendingTransactionsEnabled) {

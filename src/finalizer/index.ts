@@ -32,6 +32,7 @@ import {
   Profiler,
   stringifyThrownValue,
   isEVMSpokePoolClient,
+  chainIsEvm,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
@@ -103,6 +104,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [scrollFinalizer],
     finalizeOnL2: [],
   },
+  [CHAIN_IDs.SOLANA]: {
+    finalizeOnL1: [cctpL2toL1Finalizer],
+    finalizeOnL2: [cctpL1toL2Finalizer],
+  },
   [CHAIN_IDs.MODE]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
@@ -133,7 +138,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
+    finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
@@ -297,11 +302,13 @@ export async function finalize(
         // since any L2 -> L1 transfers will be finalized on the hub chain.
         hubChainId,
         ...configuredChainIds,
-      ]).map(async (chainId) => {
-        const spokePoolClient = spokePoolClients[chainId];
-        assert(isEVMSpokePoolClient(spokePoolClient));
-        return [chainId, await getMultisender(chainId, spokePoolClient.spokePool.signer)] as [number, Contract];
-      })
+      ])
+        .filter(chainIsEvm)
+        .map(async (chainId) => {
+          const spokePoolClient = spokePoolClients[chainId];
+          assert(isEVMSpokePoolClient(spokePoolClient));
+          return [chainId, await getMultisender(chainId, spokePoolClient.spokePool.signer)] as [number, Contract];
+        })
     )
   );
   // Assert that no multicall2Lookup is undefined

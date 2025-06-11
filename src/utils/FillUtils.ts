@@ -1,11 +1,11 @@
 import { HubPoolClient } from "../clients";
-import { Fill, FillStatus, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
-import { bnZero } from "../utils";
+import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
+import { bnZero, CHAIN_IDs } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
   version: number;
-  invalidFills: Fill[];
+  invalidFills: FillWithBlock[];
 };
 
 // @description Returns all unfilled deposits, indexed by destination chain.
@@ -49,6 +49,18 @@ export function depositForcesOriginChainRepayment(
   return (
     deposit.fromLiteChain || !hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)
   );
+}
+
+/**
+ * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
+ * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
+ * be filled or ignored given current inventory allocation levels.
+ */
+export function repaymentChainCanBeQuicklyRebalanced(
+  deposit: Pick<DepositWithBlock, "originChainId">,
+  hubPoolClient: HubPoolClient
+): boolean {
+  return [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId);
 }
 
 export function getAllUnfilledDeposits(

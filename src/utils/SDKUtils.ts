@@ -20,8 +20,9 @@ export class SvmAddress extends sdk.utils.SvmAddress {}
 
 export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
 
-export type SVMProvider = sdk.arch.svm.SVMProvider;
 export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock } = sdk.arch.evm;
+export const { getAssociatedTokenAddress } = sdk.arch.svm;
+export type SVMProvider = sdk.arch.svm.SVMProvider;
 
 export const {
   assign,
@@ -40,7 +41,6 @@ export const {
   chainIsProd,
   chainIsMatic,
   chainIsLinea,
-  chainIsSvm,
   dedupArray,
   fixedPointAdjustment,
   forEachAsync,
@@ -67,6 +67,7 @@ export const {
   isContractDeployedToAddress,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
+  compareAddresses,
   compareAddressesSimple,
   getL1TokenAddress,
   getUsdcSymbol,
@@ -77,6 +78,7 @@ export const {
   validateFillForDeposit,
   toAddressType,
   chainIsEvm,
+  chainIsSvm,
   ConvertDecimals,
   getTokenInfo,
 } = sdk.utils;

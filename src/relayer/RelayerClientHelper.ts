@@ -27,6 +27,8 @@ import {
   Signer,
   SpokePool,
   toAddressType,
+  SvmAddress,
+  getSvmSignerFromEvmSigner,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -131,7 +133,16 @@ export async function constructRelayerClients(
     ...config.relayerTokens,
     ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => toAddressType(token)),
   ]);
-  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient, relayerTokens);
+
+  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+  const tokenClient = new TokenClient(
+    logger,
+    signerAddr,
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    spokePoolClients,
+    hubPoolClient,
+    relayerTokens
+  );
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (

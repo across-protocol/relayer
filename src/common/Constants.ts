@@ -34,6 +34,7 @@ import {
   OFTBridge,
   BinanceCEXBridge,
   BinanceCEXNativeBridge,
+  SolanaUsdcCCTPBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -191,7 +192,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
-  [CHAIN_IDs.SOLANA]: 300, // 0.4s/block
+  [CHAIN_IDs.SOLANA]: 150, // ~400ms/block
   [CHAIN_IDs.SONEIUM]: 60, // 2s/block
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
@@ -366,6 +367,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
+  [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
@@ -421,6 +423,7 @@ export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdap
   [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
   [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
   [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
@@ -523,7 +526,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
@@ -703,7 +706,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
-  [CHAIN_IDs.SOLANA]: 40 * 60,
+  [CHAIN_IDs.SOLANA]: 60 * 30,
   [CHAIN_IDs.SONEIUM]: 20 * 60,
   [CHAIN_IDs.WORLD_CHAIN]: 20 * 60,
   [CHAIN_IDs.ZK_SYNC]: 60 * 60,

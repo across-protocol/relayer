@@ -44,11 +44,12 @@ import {
   setupTokensForWallet,
   deployMulticall3,
 } from "./utils";
-
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import {
+  EvmAddress,
+  SvmAddress,
   RelayerUnfilledDeposit,
   getAllUnfilledDeposits,
   getUnfilledDeposits,
@@ -141,7 +142,16 @@ describe("Relayer: Unfilled Deposits", async function () {
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    tokenClient = new SimpleMockTokenClient(spyLogger, toAddressType(relayer.address), spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
@@ -573,7 +583,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
     expect(relayerLpFees[lpFeeKey]).not.exist;
 
-    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: randomAddress() });
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: toAddressType(randomAddress()) });
     expect(relayerLpFees[lpFeeKey]).to.not.exist;
 
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });

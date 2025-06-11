@@ -85,10 +85,10 @@ export class MockInventoryClient extends InventoryClient {
     }
     if (this.tokenMappings) {
       const hasOriginChainMapping = Object.values(this.tokenMappings).some(
-        (mapping) => mapping[deposit.originChainId] === deposit.inputToken
+        (mapping) => mapping[deposit.originChainId] === deposit.inputToken.toEvmAddress()
       );
       const hasDestinationChainMapping = Object.values(this.tokenMappings).some(
-        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken
+        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken.toEvmAddress()
       );
       return hasOriginChainMapping && hasDestinationChainMapping;
     }
