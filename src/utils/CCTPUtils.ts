@@ -529,7 +529,6 @@ async function getCCTPMessagesWithStatus(
           status: "pending",
         };
       }
-      // const processed = await _hasCCTPMessageBeenProcessed(deposit.nonceHash, messageTransmitterContract);
       const processed = chainIsSvm(destinationChainId)
         ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.log.args.remoteDomain)
         : await _hasCCTPMessageBeenProcessedEvm(deposit.nonceHash, messageTransmitterContract);
@@ -634,12 +633,17 @@ export async function getAttestedCCTPMessages(
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
-  const dstProvider = getCachedProvider(destinationChainId);
-  const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+  let destinationMessageTransmitter: ethers.Contract;
   const attestationResponses: Map<string, CCTPV2APIGetAttestationResponse> = new Map();
 
   if (isCctpV2) {
+    // For v2, we're using an EVM `destinationMessageTransmitter` to determine message status, so destinationChain must be EVM
+    assert(!chainIsSvm(destinationChainId));
+
+    const dstProvider = getCachedProvider(destinationChainId);
+    const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
+    destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
+
     // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
     const sourceDomainId = getCctpDomainForChainId(sourceChainId);
     const uniqueTxHashes = Array.from(new Set([...messagesWithStatus.map((message) => message.log.transactionHash)]));
