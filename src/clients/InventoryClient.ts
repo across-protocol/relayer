@@ -971,7 +971,7 @@ export class InventoryClient {
           // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
           // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
           const tokenContract = new Contract(l1Token.toEvmAddress(), ERC20.abi, this.hubPoolClient.hubPool.signer);
-          const currentBalance = await tokenContract.balanceOf(this.relayer);
+          const currentBalance = await tokenContract.balanceOf(this.relayer.toEvmAddress());
 
           const balanceChanged = !balance.eq(currentBalance);
           const [message, log] = balanceChanged

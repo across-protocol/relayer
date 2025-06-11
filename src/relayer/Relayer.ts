@@ -528,7 +528,7 @@ export class Relayer {
     const commitment = deposits.reduce((acc, deposit) => {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer === this.relayerAddress);
+        ?.find((f) => f.relayer.eq(this.relayerAddress));
       if (!isDefined(fill)) {
         return acc;
       }
@@ -715,7 +715,7 @@ export class Relayer {
     // is at least that old before filling it. This is mainly useful on chains with long block times,
     // where there is a high chance of fill collisions in the first blocks after a deposit is made.
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
-    if (minFillTime > 0 && deposit.exclusiveRelayer.eq(this.relayerAddress)) {
+    if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.relayerAddress)) {
       const originSpoke = spokePoolClients[originChainId];
       let avgBlockTime;
       if (isEVMSpokePoolClient(originSpoke)) {

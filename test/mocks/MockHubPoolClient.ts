@@ -94,9 +94,9 @@ export class SimpleMockHubPoolClient extends clients.HubPoolClient {
     return super.getTokenInfoForAddress(token, chainId);
   }
 
-  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
-    if (this.tokenInfoMap[l1Token]) {
-      return this.tokenInfoMap[l1Token];
+  getTokenInfoForL1Token(l1Token: Address): L1Token | undefined {
+    if (this.tokenInfoMap[l1Token.toEvmAddress()]) {
+      return this.tokenInfoMap[l1Token.toEvmAddress()];
     }
     return super.getTokenInfoForL1Token(l1Token);
   }

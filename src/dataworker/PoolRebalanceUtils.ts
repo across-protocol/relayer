@@ -32,7 +32,7 @@ export async function computePoolRebalanceUsdVolume(
   const hubPoolTokens = Object.fromEntries(
     Array.from(new Set(leaves.map(({ l1Tokens }) => l1Tokens).flat()))
       .map((address) => clients.hubPoolClient.getTokenInfoForL1Token(address))
-      .map(({ symbol, decimals, address }) => [address.toEvmAddress(), { symbol, decimals, price: bnZero }])
+      .map(({ symbol, decimals, address }) => [address, { symbol, decimals, price: bnZero }])
   );
 
   // Fetch all relevant token prices.

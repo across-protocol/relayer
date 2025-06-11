@@ -506,6 +506,7 @@ export class Dataworker {
       unexecutableSlowFills,
       expiredDepositsToRefundV3
     );
+
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
       bundleFillsV3,
@@ -1734,7 +1735,7 @@ export class Dataworker {
               chainId: hubPoolChainId,
               nonMulticall: true,
               method: "transfer",
-              args: [holder, requiredAmount],
+              args: [holder.toEvmAddress(), requiredAmount],
               message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,
               mrkdwn: `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`,
             });
@@ -1782,7 +1783,7 @@ export class Dataworker {
             leaf.netSendAmounts,
             leaf.runningBalances,
             leaf.leafId,
-            leaf.l1Tokens,
+            leaf.l1Tokens.map((token) => token.toEvmAddress()),
             tree.getHexProof(leaf),
           ],
           message: `Executed PoolRebalanceLeaf for chain ${leaf.chainId} 🌿!`,
@@ -1866,7 +1867,7 @@ export class Dataworker {
             contract: hubPool,
             chainId,
             method: "exchangeRateCurrent",
-            args: [l1Token],
+            args: [l1Token.toEvmAddress()],
             message: "Updated exchange rate ♻️!",
             mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
             unpermissioned: true,
@@ -2050,9 +2051,9 @@ export class Dataworker {
       }
 
       const multicallInput = [
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
-        hubPool.interface.encodeFunctionData("sync", [l1Token]),
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token.toEvmAddress()]),
+        hubPool.interface.encodeFunctionData("sync", [l1Token.toEvmAddress()]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token.toEvmAddress()]),
       ];
       const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
       const currentPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[0]);
@@ -2082,7 +2083,7 @@ export class Dataworker {
           contract: hubPool,
           chainId,
           method: "exchangeRateCurrent",
-          args: [l1Token],
+          args: [l1Token.toEvmAddress()],
           message: "Updated exchange rate ♻️!",
           mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
           unpermissioned: true,
@@ -2362,12 +2363,17 @@ export class Dataworker {
       if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = getMsgValue(leaf);
+          const ethersLeaf = {
+            ...leaf,
+            l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
+            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+          };
           this.clients.multiCallerClient.enqueueTransaction({
             value: valueToPassViaPayable,
             contract: client.spokePool,
             chainId: Number(chainId),
             method: "executeRelayerRefundLeaf",
-            args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
+            args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
             mrkdwn,
             // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise

@@ -9,7 +9,15 @@ import {
 } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits, getMessageHash } from "../src/utils";
+import {
+  bnZero,
+  bnOne,
+  bnUint256Max,
+  getNetworkName,
+  getAllUnfilledDeposits,
+  getMessageHash,
+  toAddressType,
+} from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -157,7 +165,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    tokenClient = new SimpleMockTokenClient(spyLogger, toAddressType(relayer.address), spokePoolClients, hubPoolClient);
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
@@ -444,7 +452,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       deposits.forEach((deposit) => {
         const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
-        const status = deposit.exclusiveRelayer === relayerAddress ? FillStatus.Filled : FillStatus.Unfilled;
+        const status =
+          deposit.exclusiveRelayer === relayerAddress.toEvmAddress() ? FillStatus.Filled : FillStatus.Unfilled;
         expect(fillStatus[depositHash] ?? FillStatus.Unfilled).to.equal(status);
       });
 
@@ -452,7 +461,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
-      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress);
+      const exclusiveDeposit = deposits.find(
+        ({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress.toEvmAddress()
+      );
       expect(exclusiveDeposit).to.exist;
       await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
       await updateAllClients();
@@ -569,7 +580,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         outputToken,
         outputAmount
       );
-      const fillAmount = profitClient.getFillAmountInUsd(deposit1)!;
+      const fillAmount = profitClient.getFillAmountInUsd({
+        ...deposit1,
+        outputToken: toAddressType(deposit1.outputToken),
+      })!;
       expect(fillAmount).to.exist;
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
@@ -619,7 +633,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
 
       originChainCommitment = relayerInstance.computeOriginChainCommitment(originChainId, 0, Number.MAX_SAFE_INTEGER);
-      expect(originChainCommitment.eq(getFillAmount(deposit1, tokenPrice))).to.be.true;
+      expect(
+        originChainCommitment.eq(
+          getFillAmount({ ...deposit1, outputToken: toAddressType(deposit1.outputToken) }, tokenPrice)
+        )
+      ).to.be.true;
 
       let originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
       expect(isChainOvercommitted(originChainLimits)).to.be.false;
@@ -947,15 +965,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address)).at(-1);
           expect(fill).to.exist;
           fill = fill!;
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
 
-          expect(fill.relayExecutionInfo.updatedRecipient).to.not.equal(deposit.recipient);
-          expect(fill.relayExecutionInfo.updatedRecipient).to.equal(update.recipient);
+          expect(fill.relayExecutionInfo.updatedRecipient.toEvmAddress()).to.not.equal(deposit.recipient);
+          expect(fill.relayExecutionInfo.updatedRecipient.toEvmAddress()).to.equal(update.recipient);
 
           expect(fill.relayExecutionInfo.updatedMessageHash).to.equal(deposit.messageHash);
           expect(fill.relayExecutionInfo.updatedMessageHash.toString()).to.equal(getMessageHash(update.message));

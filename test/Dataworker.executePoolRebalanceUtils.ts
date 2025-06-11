@@ -522,18 +522,8 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       token1 = toAddressType(randomAddress());
       token2 = toAddressType(randomAddress());
       balanceAllocator = getNewBalanceAllocator();
-      balanceAllocator.testSetBalance(
-        hubPoolClient.chainId,
-        toAddressType(token1),
-        toAddressType(hubPool.address),
-        toBNWei("2")
-      );
-      balanceAllocator.testSetBalance(
-        hubPoolClient.chainId,
-        toAddressType(token2),
-        toAddressType(hubPool.address),
-        toBNWei("2")
-      );
+      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, toAddressType(hubPool.address), toBNWei("2"));
+      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, toAddressType(hubPool.address), toBNWei("2"));
     });
     it("non-orbit leaf", async function () {
       // Should just submit execution
