@@ -205,7 +205,7 @@ export class TokenClient {
       .map(({ symbol, address }) => {
         let tokenAddrs: string[] = [];
         try {
-          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
+          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
           tokenAddrs.push(spokePoolToken);
         } catch {
           // No known deployment for this token on the SpokePool.
@@ -233,7 +233,7 @@ export class TokenClient {
     return hubPoolTokens
       .map(({ address }) => {
         try {
-          const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient);
+          const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
           // Validate that the remote token is a valid Solana address
           return SvmAddress.from(remoteToken);
         } catch (error) {
