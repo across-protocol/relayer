@@ -23,6 +23,8 @@ export {
   setTokenAllowanceInCache,
 } from "../clients/bridges/utils";
 
+export { getL2TokenAllowanceFromCache, setL2TokenAllowanceInCache } from "../clients/bridges/utils";
+
 export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
   return allowance.gte(toBN(MAX_SAFE_ALLOWANCE).div(2));
 }

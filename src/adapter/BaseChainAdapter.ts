@@ -34,7 +34,14 @@ import {
   isEVMSpokePoolClient,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
-import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
+import {
+  approveTokens,
+  getTokenAllowanceFromCache,
+  aboveAllowanceThreshold,
+  setTokenAllowanceInCache,
+  getL2TokenAllowanceFromCache,
+  setL2TokenAllowanceInCache,
+} from "./utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
@@ -150,16 +157,19 @@ export class BaseChainAdapter {
         await Promise.all(
           requiredApprovals.map(async ({ token: tokenAddress, bridge: bridgeAddress }) => {
             const erc20 = ERC20.connect(tokenAddress.toAddress(), this.getSigner(this.chainId));
+            const senderAddress = EvmAddress.from(await this.getSigner(this.chainId).getAddress());
 
-            const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
-
-            /*
-            TODO:
-            No cache ops for now as those are aimed at L1 tokens only. If I change cache key, would we need a DB migration of some sort?
-            I can of course just introduce a new key for L2 token approvals, but it seems redundant. Instead, the key could be smth like:
-            `bridgeAllowance_${chainId}_${token}_${userAddress}_targetContract:${targetContract}`;
-            */
-            const allowance = await erc20.allowance(senderAddress.toAddress(), bridgeAddress.toAddress());
+            const cachedResult = await getL2TokenAllowanceFromCache(
+              this.chainId,
+              tokenAddress,
+              senderAddress,
+              bridgeAddress
+            );
+            const allowance =
+              cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridgeAddress.toAddress()));
+            if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
+              await setL2TokenAllowanceInCache(this.chainId, tokenAddress, senderAddress, bridgeAddress, allowance);
+            }
 
             if (!aboveAllowanceThreshold(allowance)) {
               const existingTokenIdx = tokensToApprove.findIndex((item) => item.token.address === erc20.address);
