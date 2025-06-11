@@ -196,6 +196,8 @@ export async function binanceFinalizer(
           amountToFinalize = Number(coin.balance);
         }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
+          // Lastly, we need to truncate the amount to withdraw to six decimal places.
+          amountToFinalize = Math.floor(amountToFinalize * 1_000_000)/1_000_000;
           const withdrawalId = await binanceApi.withdraw({
             coin: symbol,
             address,
