@@ -3,7 +3,6 @@ import { constants, utils } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish } from "./BNUtils";
 import { formatUnits } from "./SDKUtils";
-import { HubPoolClient } from "../clients";
 import { isDefined } from "./TypeGuards";
 
 const { ZERO_ADDRESS } = constants;
@@ -12,17 +11,17 @@ export const { fetchTokenInfo, getL2TokenAddresses } = utils;
 
 export function getRemoteTokenForL1Token(
   l1Token: string,
-  chainId: number | string,
-  hubPoolClient: Pick<HubPoolClient, "chainId">
+  remoteChainId: number | string,
+  hubChainId: number
 ): string | undefined {
   const tokenMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
-    ({ addresses }) => addresses[hubPoolClient.chainId] === l1Token && isDefined(addresses[chainId])
+    ({ addresses }) => addresses[hubChainId] === l1Token && isDefined(addresses[remoteChainId])
   );
   if (!tokenMapping) {
     return undefined;
   }
   const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenMapping.symbol] ?? tokenMapping.symbol;
-  return TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[chainId] ?? tokenMapping.addresses[chainId];
+  return TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId];
 }
 
 export function getNativeTokenAddressForChain(chainId: number): string {
