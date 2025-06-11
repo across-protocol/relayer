@@ -144,14 +144,8 @@ describe("Relayer: Unfilled Deposits", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    let svmAddress: SvmAddress;
-    if (isSignerWallet(relayer)) {
-      const svmSigner = getSvmSignerFromEvmSigner(relayer);
-      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-    } else {
-      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
-      svmAddress = SvmAddress.from("11111111111111111111111111111111");
-    }
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),

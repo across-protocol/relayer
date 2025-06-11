@@ -202,15 +202,8 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  // Only create SVM signer if relayer is a real Wallet, otherwise use a default SVM address for tests
-  let svmAddress: SvmAddress;
-  if (isSignerWallet(relayer)) {
-    const svmSigner = getSvmSignerFromEvmSigner(relayer);
-    svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-  } else {
-    // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
-    svmAddress = SvmAddress.from("11111111111111111111111111111111");
-  }
+  // Tests use non-Wallet signers, so hardcode SVM address
+  const svmAddress = SvmAddress.from("11111111111111111111111111111111");
 
   const tokenClient = new TokenClient(spyLogger, EvmAddress.from(relayer.address), svmAddress, {}, hubPoolClient);
 

@@ -131,14 +131,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    let svmAddress: SvmAddress;
-    if (isSignerWallet(relayer)) {
-      const svmSigner = getSvmSignerFromEvmSigner(relayer);
-      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-    } else {
-      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
-      svmAddress = SvmAddress.from("11111111111111111111111111111111");
-    }
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
     tokenClient = new TokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
