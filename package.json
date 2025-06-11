@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.68",
     "@across-protocol/contracts": "^4.0.9",
-    "@across-protocol/sdk": "4.2.11",
+    "@across-protocol/sdk": "4.2.13",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@coral-xyz/anchor": "^0.31.1",
@@ -59,6 +59,7 @@
     "prettier": "prettier .",
     "eslint": "eslint .",
     "test": "RELAYER_TEST=true hardhat test",
+    "test:parallel": "RELAYER_TEST=true hardhat test --parallel",
     "build": "tsc --build",
     "watch": "tsc --build --incremental --watch",
     "build:test": "tsc --project tsconfig.test.json",
