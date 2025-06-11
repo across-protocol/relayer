@@ -342,10 +342,12 @@ function _isRelevantCCTPEvent(
   const relevant =
     event.sourceDomain === sourceDomainId &&
     event.destinationDomain === destinationDomainId &&
-    senderAddresses.some((sender) => compareAddressesSimple(sender, event.sender));
+    // This code assumes that `senderAddresses` is an array of bytes20 hex strings
+    senderAddresses.some((sender) => compareAddressesSimple(sender, cctpBytes32ToAddress(event.sender)));
 
   if (isDepositForBurnEvent(event)) {
-    return relevant && compareAddressesSimple(event.burnToken, usdcAddress);
+    // This code assumes that `usdcAddress` is a bytes20 hex string
+    return relevant && compareAddressesSimple(cctpBytes32ToAddress(event.burnToken), usdcAddress);
   }
   return relevant;
 }
@@ -519,27 +521,30 @@ async function getCCTPMessagesWithStatus(
     ? undefined
     : new Contract(address, abi, dstProvider);
   return await Promise.all(
-    cctpMessageEvents.map(async (deposit) => {
+    cctpMessageEvents.map(async (messageEvent) => {
       // @dev Currently we have no way to recreate the V2 nonce hash until after we've received the attestation,
       // so skip this step for V2 since we have no way of knowing whether the message is finalized until after we
       // query the Attestation API service.
       if (isCctpV2) {
         return {
-          ...deposit,
+          ...messageEvent,
           status: "pending",
         };
       }
       const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(deposit.log.args.nonce.toNumber(), deposit.log.args.remoteDomain)
-        : await _hasCCTPMessageBeenProcessedEvm(deposit.nonceHash, messageTransmitterContract);
+        ? await _hasCCTPMessageBeenProcessedSvm(
+            messageEvent.log.args.nonce.toNumber(),
+            messageEvent.log.args.remoteDomain
+          )
+        : await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
-          ...deposit,
+          ...messageEvent,
           status: "pending", // We'll flip to ready once we get the attestation.
         };
       } else {
         return {
-          ...deposit,
+          ...messageEvent,
           status: "finalized",
         };
       }
