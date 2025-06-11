@@ -18,7 +18,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress } from "../src/utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet } from "../src/utils";
 import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 
 describe("TokenClient: Origin token approval", async function () {
@@ -104,11 +104,18 @@ describe("TokenClient: Origin token approval", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    const svmSigner = getSvmSignerFromEvmSigner(owner);
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(owner)) {
+      const svmSigner = getSvmSignerFromEvmSigner(owner);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(owner.address),
-      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      svmAddress,
       spokePoolClients,
       hubPoolClient
     );

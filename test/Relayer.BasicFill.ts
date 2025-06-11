@@ -19,6 +19,7 @@ import {
   EvmAddress,
   SvmAddress,
   getSvmSignerFromEvmSigner,
+  isSignerWallet,
 } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -167,12 +168,19 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    const svmSigner = getSvmSignerFromEvmSigner(relayer);
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(relayer)) {
+      const svmSigner = getSvmSignerFromEvmSigner(relayer);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
 
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      svmAddress,
       spokePoolClients,
       hubPoolClient
     );

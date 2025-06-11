@@ -45,6 +45,7 @@ import {
   deployMulticall3,
   getSvmSignerFromEvmSigner,
 } from "./utils";
+import { isSignerWallet } from "../src/utils";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
@@ -143,11 +144,18 @@ describe("Relayer: Unfilled Deposits", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    const svmSigner = getSvmSignerFromEvmSigner(relayer);
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(relayer)) {
+      const svmSigner = getSvmSignerFromEvmSigner(relayer);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      svmAddress,
       spokePoolClients,
       hubPoolClient
     );

@@ -38,7 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { SvmAddress, EvmAddress, getSvmSignerFromEvmSigner } from "../src/utils";
+import { SvmAddress, EvmAddress, getSvmSignerFromEvmSigner, isSignerWallet } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -131,11 +131,18 @@ describe("Relayer: Initiates slow fill requests", async function () {
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
 
-    const svmSigner = getSvmSignerFromEvmSigner(relayer);
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(relayer)) {
+      const svmSigner = getSvmSignerFromEvmSigner(relayer);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
     tokenClient = new TokenClient(
       spyLogger,
       EvmAddress.from(relayer.address),
-      SvmAddress.from(svmSigner.publicKey.toBase58()),
+      svmAddress,
       spokePoolClients,
       hubPoolClient
     );
