@@ -80,6 +80,7 @@ export async function setTokenAllowanceInCache(
   await redis?.set(key, allowance.toString());
 }
 
+// Note: All of these are set as `EvmAddress` types since their `toString()` implementation outputs a 20 byte address.
 function getL2AllowanceCacheKey(
   l2ChainId: number,
   l2Token: EvmAddress,
