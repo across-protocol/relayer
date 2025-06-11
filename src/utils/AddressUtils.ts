@@ -1,5 +1,5 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BigNumber, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
+import { compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
