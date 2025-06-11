@@ -23,6 +23,7 @@ import {
   EvmAddress,
   getSvmSignerFromEvmSigner,
 } from "../../src/utils";
+import { isSignerWallet } from "../../src/utils/SignerUtils";
 import {
   amountToLp,
   destinationChainId as defaultDestinationChainId,
@@ -201,15 +202,17 @@ export async function setupDataworker(
       spokePoolDeploymentBlocks
     );
 
-  const svmSigner = getSvmSignerFromEvmSigner(relayer);
+  // Only create SVM signer if relayer is a real Wallet, otherwise use a default SVM address for tests
+  let svmAddress: SvmAddress;
+  if (isSignerWallet(relayer)) {
+    const svmSigner = getSvmSignerFromEvmSigner(relayer);
+    svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+  } else {
+    // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+    svmAddress = SvmAddress.from("11111111111111111111111111111111");
+  }
 
-  const tokenClient = new TokenClient(
-    spyLogger,
-    EvmAddress.from(relayer.address),
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
-    {},
-    hubPoolClient
-  );
+  const tokenClient = new TokenClient(spyLogger, EvmAddress.from(relayer.address), svmAddress, {}, hubPoolClient);
 
   // This client dictionary can be conveniently passed in root builder functions that expect mapping of clients to
   // load events from. Dataworker needs a client mapped to every chain ID set in testChainIdList.
