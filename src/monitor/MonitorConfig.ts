@@ -11,6 +11,7 @@ export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
+  binanceWithdrawalLimitsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -44,9 +45,7 @@ export class MonitorConfig extends CommonConfig {
     token: string;
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
-
-  // TODO: Remove this config once we fully migrate to generic adapters.
-  readonly useGenericAdapter: boolean;
+  readonly binanceWithdrawWarnThreshold: number;
 
   constructor(env: ProcessEnv) {
     super(env);
@@ -72,6 +71,7 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_TOKEN_SYMBOLS,
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
+      BINANCE_WITHDRAW_WARN_THRESHOLD,
     } = env;
 
     this.botModes = {
@@ -82,6 +82,7 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      binanceWithdrawalLimitsEnabled: isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD),
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
@@ -99,6 +100,7 @@ export class MonitorConfig extends CommonConfig {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
     });
+    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 0);
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
