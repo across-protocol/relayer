@@ -67,6 +67,7 @@ export const {
   isContractDeployedToAddress,
   blockExplorerLinks,
   createShortHexString: shortenHexString,
+  compareAddresses,
   compareAddressesSimple,
   getL1TokenAddress,
   getUsdcSymbol,

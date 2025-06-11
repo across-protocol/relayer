@@ -1,16 +1,16 @@
 import {
   getNodeUrlList,
   CHAIN_IDs,
-  Wallet,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM,
   isDefined,
   getSvmSignerFromEvmSigner,
+  Signer,
 } from "./";
 import { AnchorProvider, Program, Idl, web3, Wallet as SolanaWallet } from "@coral-xyz/anchor";
 
-export async function getAnchorProgram(idl: Idl, signer?: Wallet): Promise<Program> {
+export async function getAnchorProgram(idl: Idl, signer?: Signer): Promise<Program> {
   const wallet = isDefined(signer)
-    ? new SolanaWallet(await getSvmSignerFromEvmSigner(signer))
+    ? new SolanaWallet(getSvmSignerFromEvmSigner(signer))
     : (AnchorVoidSigner(new web3.PublicKey(DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM)) as SolanaWallet);
   const provider = getAnchorProvider(wallet);
   return new Program(idl, provider);
