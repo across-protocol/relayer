@@ -67,6 +67,9 @@ type BinanceInteraction = {
   status?: number;
 };
 
+// The precision of a `DECIMAL` type in the Binance API.
+const DECIMAL_PRECISION = 1_000_000;
+
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
 type ParsedAccountCoins = Coin[];
 
@@ -197,7 +200,7 @@ export async function binanceFinalizer(
         }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
           // Lastly, we need to truncate the amount to withdraw to six decimal places.
-          amountToFinalize = Math.floor(amountToFinalize * 1_000_000)/1_000_000;
+          amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           const withdrawalId = await binanceApi.withdraw({
             coin: symbol,
             address,
