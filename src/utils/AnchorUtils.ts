@@ -18,7 +18,7 @@ export async function getAnchorProgram(idl: Idl, signer?: Signer): Promise<Progr
 
 export async function getTypedAnchorProgram<P extends Idl>(
   idl: P,
-  signer?: Wallet,
+  signer?: Signer,
   overrideProgramId?: string
 ): Promise<Program<P>> {
   const wallet = isDefined(signer)
