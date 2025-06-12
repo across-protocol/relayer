@@ -19,7 +19,7 @@ import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
-import { assert, Provider } from ".";
+import { assert, Provider, Logger } from ".";
 import { BN, web3 } from "@coral-xyz/anchor";
 
 type CommonMessageData = {
@@ -31,6 +31,7 @@ type CommonMessageData = {
   recipient: string;
   messageHash: string;
   messageBytes: string;
+  nonce: number; // This nonce makes sense only for v1 events, as it's emitted on src chain send
   nonceHash: string;
 };
 // Common data + auxilary data from depositForBurn event
@@ -532,10 +533,7 @@ async function getCCTPMessagesWithStatus(
         };
       }
       const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(
-            messageEvent.log.args.nonce.toNumber(),
-            messageEvent.log.args.remoteDomain
-          )
+        ? await _hasCCTPMessageBeenProcessedSvm(messageEvent.nonce, messageEvent.sourceDomain)
         : await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       if (!processed) {
         return {
@@ -857,6 +855,7 @@ function _decodeCommonMessageDataV1(message: { data: string }, isSvm = false): C
     destinationDomain,
     sender,
     recipient,
+    nonce,
     nonceHash,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
@@ -878,7 +877,8 @@ function _decodeCommonMessageDataV2(message: { data: string }, isSvm = false): C
     destinationDomain,
     sender,
     recipient,
-    // For v2, we rely on Circle's API to find nonceHash
+    // For v2, we rely on Circle's API to find nonceHash. `nonce` is undefined
+    nonce: undefined,
     nonceHash: ethers.constants.HashZero,
     messageHash: ethers.utils.keccak256(messageBytes),
     messageBytes,
