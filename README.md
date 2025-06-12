@@ -67,6 +67,37 @@ yarn lint-fix
 
 Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md) for a general overview of our contribution process. These guidelines are shared between the UMA and Across codebases because they were built originally by the same teams.
 
+### Testing 
+
+#### Local SDK Development
+
+This repository depends on functionality from other across libraries such as [@across-protocol/sdk](https://github.com/across-protocol/sdk).
+
+To test local changes to the SDK alongside this repository you can use `yalc`:
+
+1. Install `yalc` globally:
+
+```sh
+npm install -g yalc
+```
+
+2. Inside the `@across-protocol/sdk` directory, publish the local SDK to your local yalc server:
+
+```sh
+yalc publish
+```
+
+3. Link the local SDK in this repository:
+
+```sh
+yalc add @across-protocol/sdk
+```
+
+To make updates to the SDK, you can run `yalc update @across-protocol/sdk` in this repository.
+
+Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
+
+
 ## Bug Bounty
 
 Here's the official Across [bug bounty program](https://docs.across.to/resources/bug-bounty). The bug bounty only applies to the `master` branch and is agnostic of release versions.
