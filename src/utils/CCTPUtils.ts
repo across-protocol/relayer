@@ -19,7 +19,7 @@ import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
-import { assert, Provider, Logger } from ".";
+import { assert, Provider } from ".";
 import { BN, web3 } from "@coral-xyz/anchor";
 
 type CommonMessageData = {

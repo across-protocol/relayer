@@ -5,7 +5,7 @@ import {
   SvmSpokeIdl,
   TokenMessengerMinterIdl,
 } from "@across-protocol/contracts";
-import { web3, BN, Idl, Program } from "@coral-xyz/anchor";
+import { web3, BN, Program } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { HubPoolClient, SpokePoolClient, SVMSpokePoolClient } from "../../../clients";
 import {
@@ -213,11 +213,7 @@ async function finalizeSvmMessages(
   const [svmSigner, messageTransmitterProgram, svmSpokeProgram] = await Promise.all([
     getSvmSignerFromEvmSigner(signer),
     getAnchorProgram(MessageTransmitterIdl, signer),
-    getTypedAnchorProgram(
-      SvmSpokeIdl as SvmSpokeAnchor,
-      signer,
-      svmSpokePoolClient.spokePoolAddress.toBase58()
-    ),
+    getTypedAnchorProgram(SvmSpokeIdl as SvmSpokeAnchor, signer, svmSpokePoolClient.spokePoolAddress.toBase58()),
   ]);
 
   const messageTransmitter = toPublicKey(MessageTransmitterIdl.address);
@@ -243,7 +239,7 @@ async function finalizeSvmMessages(
       .view();
 
     // Notice: for Svm tokenless messages, we currently only support very specific finalizations: Hub -> Spoke relayRootBundle calls
-    let accountMetas: web3.AccountMeta[] = isDepositForBurnEvent(message)
+    const accountMetas: web3.AccountMeta[] = isDepositForBurnEvent(message)
       ? await getAccountMetasForDepositMessage(message, hubChainId, tokenMessengerMinter, svmSigner)
       : await getAccountMetasForTokenlessMessage(svmSpokeProgram, svmSigner);
 
@@ -373,7 +369,7 @@ async function getAccountMetasForTokenlessMessage(
   svmSigner: web3.Keypair
 ): Promise<web3.AccountMeta[]> {
   const seed = new BN("0"); // Seed is always 0 for the state account PDA in public networks.
-  const [statePda, _] = web3.PublicKey.findProgramAddressSync(
+  const [statePda] = web3.PublicKey.findProgramAddressSync(
     [Buffer.from("state"), seed.toArrayLike(Buffer, "le", 8)],
     svmSpokeProgram.programId
   );
