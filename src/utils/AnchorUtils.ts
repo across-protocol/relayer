@@ -32,11 +32,6 @@ export async function getTypedAnchorProgram<P extends Idl>(
   return new Program<P>(idl, provider);
 }
 
-export function getConnectedProgram<P extends Idl>(idl: P, provider: AnchorProvider, programId: string) {
-  idl.address = programId;
-  return new Program<P>(idl, provider);
-}
-
 export function getAnchorProvider(wallet: SolanaWallet): AnchorProvider {
   const nodeUrlList = getNodeUrlList(CHAIN_IDs.SOLANA);
   return new AnchorProvider(new web3.Connection(Object.values(nodeUrlList)[0]), wallet);
