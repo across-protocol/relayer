@@ -8,7 +8,7 @@ jobs:
     steps:
       - run:
           name: Enable Corepack
-          command: npm install -g corepack@latest && corepack enable
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
@@ -32,7 +32,7 @@ jobs:
     steps:
       - run:
           name: Enable Corepack
-          command: npm install -g corepack@latest && corepack enable
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
@@ -118,7 +118,7 @@ jobs:
     steps:
       - run:
           name: Enable Corepack
-          command: npm install -g corepack@latest && corepack enable
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
