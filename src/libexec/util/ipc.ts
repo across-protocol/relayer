@@ -10,7 +10,7 @@ import { Log, SpokePoolClientMessage } from "./../types";
  * @param events An array of Log objects to be submitted.
  * @returns void
  */
-export function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
+export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
   if (!isDefined(process.send)) {
     return;
   }
@@ -22,7 +22,13 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
-  process.send(JSON.stringify(message));
+  try {
+    process.send(JSON.stringify(message));
+  } catch {
+    return false;
+  }
+
+  return true;
 }
 
 /**
