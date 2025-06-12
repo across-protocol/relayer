@@ -64,7 +64,7 @@ export function getTranslatedTokenAddress(
   }
   // Native USDC or not USDC, we can just look up in the token map directly.
   if (isNativeUsdc || !compareAddressesSimple(l1Token.toEvmAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    return getRemoteTokenForL1Token(l1Token, l2ChainId, { chainId: hubChainId });
+    return getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
   }
   // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
   const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(

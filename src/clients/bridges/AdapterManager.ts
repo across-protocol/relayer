@@ -249,7 +249,7 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
+      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
@@ -284,7 +284,7 @@ export class AdapterManager {
   }
 
   l2TokenExistForL1Token(l1Token: EvmAddress, l2ChainId: number): boolean {
-    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient));
+    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient.chainId));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

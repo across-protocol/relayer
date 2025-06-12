@@ -28,7 +28,6 @@ import {
   HYPERLANE_FEE_CAP_OVERRIDES,
 } from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
@@ -91,20 +90,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
-    const approvalTxn: AugmentedTransaction = {
-      contract: erc20,
-      chainId: this.l2chainId,
-      method: "approve",
-      unpermissioned: false,
-      nonMulticall: true,
-      args: [this.l2Bridge.address, amount],
-      message: `✅ Approve Hyperlane ${symbol} for withdrawal`,
-      mrkdwn: `Approve ${formatter(amount.toString())} ${symbol} for withdrawal via Hyperlane router ${
-        this.l2Bridge.address
-      } on ${getNetworkName(this.l2chainId)}`,
-    };
-
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
     const feeCap = HYPERLANE_FEE_CAP_OVERRIDES[this.l2chainId] ?? HYPERLANE_DEFAULT_FEE_CAP;
     assert(
@@ -120,9 +105,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       method: "transferRemote",
       unpermissioned: false,
       nonMulticall: true,
-      // TODO: `canFailInSimulation` and  `gasLimit` are set for now because of current approval flow (see tx above). If we approve these contracts in advance, we'll be able to remove these constraints
-      canFailInSimulation: true,
-      gasLimit: BigNumber.from(600000),
       args: [this.destinationDomainId, toAddress.toBytes32(), amount],
       value: fee,
       message: `🎰 Withdrew Hyperlane xERC20 ${symbol} to L1`,
@@ -131,7 +113,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       )} to L1 via Hyperlane`,
     };
 
-    return [approvalTxn, withdrawTxn];
+    return [withdrawTxn];
   }
 
   async getL2PendingWithdrawalAmount(
@@ -185,5 +167,14 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     }
 
     return outstandingWithdrawalAmount;
+  }
+
+  public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
+    return [
+      {
+        token: this.l2Token,
+        bridge: EvmAddress.from(this.l2Bridge.address),
+      },
+    ];
   }
 }
