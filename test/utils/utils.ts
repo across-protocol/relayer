@@ -487,8 +487,8 @@ export function createRefunds(
   repaymentToken: string
 ): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
   return {
-    [repaymentToken]: {
-      [outputToken]: refundAmount,
+    [toBytes32(repaymentToken)]: {
+      [toBytes32(outputToken)]: refundAmount,
     },
   };
 }

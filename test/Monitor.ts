@@ -13,7 +13,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, L1Token, V3DepositWithBlock } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType } from "../src/utils";
+import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, toBytes32 } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -47,9 +47,7 @@ class TestMonitor extends Monitor {
 
   getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
     Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
-      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) =>
-        l1Token.eq(toAddressType(l1TokenObject.address))
-      );
+      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1Token.eq(l1TokenObject.address));
       if (matchedToken) {
         return matchedToken[0];
       }
@@ -94,7 +92,7 @@ describe("Monitor", async function () {
         leaf.netSendAmounts,
         leaf.runningBalances,
         leaf.leafId,
-        leaf.l1Tokens,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
         expectedPoolRebalanceRoot.tree.getHexProof(leaf)
       );
     }
@@ -205,21 +203,21 @@ describe("Monitor", async function () {
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
       [l2Token.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(destinationChainId, {
       [erc20_2.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(hubPoolClient.chainId, {
       [l1Token.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address),
         decimals: 18,
       },
     });
@@ -363,7 +361,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
-      reports[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reports[toBytes32(relayer.address)]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
   });
 
@@ -397,15 +395,16 @@ describe("Monitor", async function () {
     // Simulate some pending cross chain transfers to SpokePools.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       originChainId,
-      spokePool_1.address,
-      l1Token.address,
+      toAddressType(spokePool_1.address),
+      toAddressType(l1Token.address),
       toBN(5),
-      l2Token.address
+      toAddressType(l2Token.address)
     );
     await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkStuckRebalances();
 
+    // console.log(spy.getCalls());
     const stuckTransfer = spy.getCalls().find((call) => call.lastArg.message.includes("rebalances stuck"));
     const stuckRootRelay = spy.getCalls().find((call) => call.lastArg.message.includes("root bundle relay stuck"));
     expect(stuckTransfer).to.not.be.undefined;

@@ -252,7 +252,10 @@ export class Monitor {
         let unfilledAmount: string;
         try {
           let decimals: number;
-          ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId));
+          ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
+            toAddressType(tokenAddress, chainId).toAddress(),
+            chainId
+          ));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
         } catch {
           symbol = tokenAddress; // Using the address helps investigation.
@@ -269,11 +272,11 @@ export class Monitor {
     }
   }
 
-  l2TokenAmountToL1TokenAmountConverter(l2Token: string, chainId: number): (BigNumber) => BigNumber {
+  l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
     // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = getL1TokenAddress(l2Token, chainId);
+    const l1Token = getL1TokenAddress(l2Token.toAddress(), chainId);
     const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
-    const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
+    const l2TokenDecimals = getTokenInfo(l2Token.toAddress(), chainId).decimals;
     return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
   }
 
@@ -400,7 +403,10 @@ export class Monitor {
         );
 
         for (let i = 0; i < l2TokenAddresses.length; i++) {
-          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddresses[i], chainId);
+          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(
+            toAddressType(l2TokenAddresses[i], chainId),
+            chainId
+          );
           const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
             relayerBalanceReport[relayer.toBytes32()],
@@ -836,7 +842,12 @@ export class Monitor {
       const l2TokenMap = this.getL2ToL1TokenMap(enabledTokens, leaf.chainId);
       pendingRebalanceRoots[leaf.chainId] = {};
       Object.entries(l2TokenMap).forEach(([l2Token, l1Token]) => {
-        const rebalanceAmount = leaf.netSendAmounts[leaf.l1Tokens.findIndex((token) => token === l1Token.address)];
+        const rebalanceAmount =
+          leaf.netSendAmounts[
+            leaf.l1Tokens
+              .map((l1Token) => l1Token.toEvmAddress())
+              .findIndex((token) => token === l1Token.address.toEvmAddress())
+          ];
         pendingRebalanceRoots[leaf.chainId][l2Token] = rebalanceAmount ?? bnZero;
       });
     }
@@ -1151,16 +1162,20 @@ export class Monitor {
         continue;
       }
 
-      for (const tokenAddress of Object.keys(fillsToRefund)) {
+      for (const _tokenAddress of Object.keys(fillsToRefund)) {
+        const tokenAddress = toAddressType(_tokenAddress, chainId);
         const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(tokenAddress, chainId);
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
-        if (fillsToRefund[tokenAddress] === undefined || l2ToL1Tokens[tokenAddress] === undefined) {
+        if (
+          fillsToRefund[tokenAddress.toBytes32()] === undefined ||
+          l2ToL1Tokens[tokenAddress.toAddress()] === undefined
+        ) {
           continue;
         }
 
-        const totalRefundAmount = fillsToRefund[tokenAddress][relayer.toBytes32()];
-        const { symbol } = l2ToL1Tokens[tokenAddress];
+        const totalRefundAmount = fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()];
+        const { symbol } = l2ToL1Tokens[tokenAddress.toAddress()];
         const amount = decimalConverter(totalRefundAmount ?? bnZero);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
@@ -1312,19 +1327,18 @@ export class Monitor {
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-          const balance =
-            token === gasTokenAddressForChain
-              ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
-              : // Use the latest block number the SpokePoolClient is aware of to query balances.
-                // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
-                // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
-                // is now aware of those executions.
-                await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
-                  account.toEvmAddress(),
-                  {
-                    blockTag: spokePoolClient.latestHeightSearched,
-                  }
-                );
+          const balance = token.eq(gasTokenAddressForChain)
+            ? await spokePoolClient.spokePool.provider.getBalance(account.toEvmAddress())
+            : // Use the latest block number the SpokePoolClient is aware of to query balances.
+              // This prevents double counting when there are very recent refund leaf executions that the SpokePoolClients
+              // missed (the provider node did not see those events yet) but when the balanceOf calls are made, the node
+              // is now aware of those executions.
+              await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).balanceOf(
+                account.toEvmAddress(),
+                {
+                  blockTag: spokePoolClient.latestHeightSearched,
+                }
+              );
           this.balanceCache[chainId] ??= {};
           this.balanceCache[chainId][token.toBytes32()] ??= {};
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;

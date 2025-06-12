@@ -19,7 +19,7 @@ export class CrossChainTransferClient {
     l2Token?: Address
   ): BigNumber {
     const transfers =
-      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toBytes32()];
+      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
     if (!transfers) {
       return bnZero;
     }
@@ -39,7 +39,7 @@ export class CrossChainTransferClient {
     l2Token?: Address
   ): string[] {
     const transfers =
-      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toBytes32()];
+      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
     if (!transfers) {
       return [];
     }
@@ -69,14 +69,14 @@ export class CrossChainTransferClient {
   ): void {
     const transfers = (this.outstandingCrossChainTransfers[chainId] ??= {});
     transfers[address.toBytes32()] ??= {};
-    transfers[address.toBytes32()][l1Token.toBytes32()] ??= {};
-    transfers[address.toBytes32()][l1Token.toBytes32()][l2Token.toBytes32()] ??= {
+    transfers[address.toBytes32()][l1Token.toEvmAddress()] ??= {};
+    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()] ??= {
       totalAmount: bnZero,
       depositTxHashes: [],
     };
 
     // TODO: Require a tx hash here so we can track it as well.
-    transfers[address.toBytes32()][l1Token.toBytes32()][l2Token.toBytes32()].totalAmount =
+    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()].totalAmount =
       this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token, l2Token).add(rebalance);
   }
 
