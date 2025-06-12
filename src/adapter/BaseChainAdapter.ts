@@ -34,11 +34,19 @@ import {
   isEVMSpokePoolClient,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
-import { approveTokens, getTokenAllowanceFromCache, aboveAllowanceThreshold, setTokenAllowanceInCache } from "./utils";
+import {
+  approveTokens,
+  getTokenAllowanceFromCache,
+  aboveAllowanceThreshold,
+  setTokenAllowanceInCache,
+  getL2TokenAllowanceFromCache,
+  setL2TokenAllowanceInCache,
+} from "./utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
+import { ExpandedERC20 } from "@across-protocol/contracts";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -123,6 +131,76 @@ export class BaseChainAdapter {
   }
 
   async checkTokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
+    await Promise.all([this.checkL1TokenApprovals(l1Tokens), this.checkL2TokenApprovals(l1Tokens)]);
+  }
+
+  async checkL2TokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
+    const tokensToApprove: { token: ExpandedERC20; bridges: Address[] }[] = [];
+    const unavailableTokens: EvmAddress[] = [];
+
+    await Promise.all(
+      l1Tokens.map(async (l1Token) => {
+        const l1TokenAddress = l1Token.toAddress();
+        const l2Bridge = this.l2Bridges[l1TokenAddress];
+
+        if (!l2Bridge || !this.isSupportedToken(l1Token)) {
+          unavailableTokens.push(l1Token);
+          return;
+        }
+
+        const requiredApprovals = l2Bridge.requiredTokenApprovals();
+
+        if (requiredApprovals.length === 0) {
+          return;
+        }
+
+        await Promise.all(
+          requiredApprovals.map(async ({ token: tokenAddress, bridge: bridgeAddress }) => {
+            const erc20 = ERC20.connect(tokenAddress.toAddress(), this.getSigner(this.chainId));
+            const senderAddress = EvmAddress.from(await this.getSigner(this.chainId).getAddress());
+
+            const cachedResult = await getL2TokenAllowanceFromCache(
+              this.chainId,
+              tokenAddress,
+              senderAddress,
+              bridgeAddress
+            );
+            const allowance =
+              cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridgeAddress.toAddress()));
+            if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
+              await setL2TokenAllowanceInCache(this.chainId, tokenAddress, senderAddress, bridgeAddress, allowance);
+            }
+
+            if (!aboveAllowanceThreshold(allowance)) {
+              const existingTokenIdx = tokensToApprove.findIndex((item) => item.token.address === erc20.address);
+
+              if (existingTokenIdx >= 0) {
+                tokensToApprove[existingTokenIdx].bridges.push(bridgeAddress);
+              } else {
+                tokensToApprove.push({ token: erc20, bridges: [bridgeAddress] });
+              }
+            }
+          })
+        );
+      })
+    );
+
+    if (unavailableTokens.length > 0) {
+      this.log("Some tokens do not have a bridge contract for L2 -> L1 bridging", {
+        unavailableTokens: unavailableTokens.map((token) => token.toAddress()),
+      });
+    }
+
+    if (tokensToApprove.length === 0) {
+      this.log("No L2 token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toAddress()) });
+      return;
+    }
+
+    const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
+    this.log("Approved L2 bridge tokens! 💰", { mrkdwn }, "info");
+  }
+
+  async checkL1TokenApprovals(l1Tokens: EvmAddress[]): Promise<void> {
     const unavailableTokens: EvmAddress[] = [];
     // Approve tokens to bridges. This includes the tokens we want to send over a bridge as well as the custom gas tokens
     // each bridge supports (if applicable).

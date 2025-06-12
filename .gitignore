@@ -18,3 +18,6 @@ dist
 
 # Address lists
 addresses.json
+
+# AI context files
+CLAUDE.md

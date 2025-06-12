@@ -221,7 +221,7 @@ export class InventoryClient {
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     return chainId === this.hubPoolClient.chainId
       ? l1Token
-      : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
+      : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
   }
 
   /**
@@ -1469,13 +1469,14 @@ export class InventoryClient {
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
 
-  async setL1TokenApprovals(): Promise<void> {
+  async setTokenApprovals(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(l1Tokens);
+
+    await this.adapterManager.setTokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

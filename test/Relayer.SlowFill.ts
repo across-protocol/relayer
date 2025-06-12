@@ -38,6 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { SvmAddress, EvmAddress } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -129,7 +130,16 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new TokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);

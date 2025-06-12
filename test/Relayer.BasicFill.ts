@@ -9,7 +9,16 @@ import {
 } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
-import { bnZero, bnOne, bnUint256Max, getNetworkName, getAllUnfilledDeposits, getMessageHash } from "../src/utils";
+import {
+  bnZero,
+  bnOne,
+  bnUint256Max,
+  getNetworkName,
+  getAllUnfilledDeposits,
+  getMessageHash,
+  EvmAddress,
+  SvmAddress,
+} from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
 import {
@@ -157,7 +166,16 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
