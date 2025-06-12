@@ -12,7 +12,9 @@ import { Log, SpokePoolClientMessage } from "./../types";
  */
 export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
   if (!isDefined(process.send)) {
-    return true; // Process may have been started standalone.
+    // Process was probably started standalone.
+    // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
+    return true;
   }
 
   events = sortEventsAscending(events);
