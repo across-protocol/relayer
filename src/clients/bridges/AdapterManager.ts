@@ -262,7 +262,7 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
+      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
@@ -282,7 +282,7 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
+  async setTokenApprovals(l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
@@ -297,7 +297,7 @@ export class AdapterManager {
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
-    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient));
+    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient.chainId));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

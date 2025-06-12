@@ -21,7 +21,6 @@ import {
   convertFromWei,
   isEVMSpokePoolClient,
   getAnchorProgram,
-  Wallet,
   mapAsync,
   getSvmSignerFromEvmSigner,
   toPublicKey,
@@ -212,11 +211,11 @@ async function finalizeSvmMessages(
   svmSpokePoolClient: SVMSpokePoolClient
 ): Promise<string[]> {
   const [svmSigner, messageTransmitterProgram, svmSpokeProgram] = await Promise.all([
-    getSvmSignerFromEvmSigner(signer as Wallet),
-    getAnchorProgram(MessageTransmitterIdl, signer as Wallet),
+    getSvmSignerFromEvmSigner(signer),
+    getAnchorProgram(MessageTransmitterIdl, signer),
     getTypedAnchorProgram(
       SvmSpokeIdl as SvmSpokeAnchor,
-      signer as Wallet,
+      signer,
       svmSpokePoolClient.spokePoolAddress.toBase58()
     ),
   ]);

@@ -1163,7 +1163,7 @@ export class Monitor {
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     return chainId === this.clients.hubPoolClient.chainId
       ? l1Token
-      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
+      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient.chainId);
   }
 
   private updateRelayerBalanceTable(
