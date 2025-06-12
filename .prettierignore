@@ -6,3 +6,4 @@ gasReporterOutput.json
 dist
 typechain*
 addresses.json
+*.md
