@@ -22,8 +22,10 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
+
+  const msg = JSON.stringify(message);
   try {
-    process.send(JSON.stringify(message));
+    process.send(msg);
   } catch {
     return false;
   }
