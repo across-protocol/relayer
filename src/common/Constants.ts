@@ -764,6 +764,11 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.MODE]: {
+    l1: {
+      DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
+    },
+  },
   [CHAIN_IDs.REDSTONE]: {
     l1: {
       AddressManager: "0xFe27f187A9E46104a932189dDF229871E06B22F8",
