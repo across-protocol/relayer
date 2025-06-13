@@ -809,7 +809,7 @@ export class Monitor {
               (
                 await this._getBalances([
                   {
-                    token: l2Token,
+                    token: toAddressType(l2Token, chainId),
                     chainId: chainId,
                     account: spokePool,
                   },
