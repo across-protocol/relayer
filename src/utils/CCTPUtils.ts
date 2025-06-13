@@ -822,12 +822,10 @@ async function _getCCTPDepositEventsSvm(
   // Return undefined if we need to filter out the deposit event.
   const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
     const eventData = event.data as MinimalSvmDepositForBurnData;
-    const trimmedDepositor = cctpBytes32ToAddress(SvmAddress.from(eventData.depositor, "base58").toBytes32());
-    const destinationDomain = eventData.destinationDomain;
 
     if (
-      !senderAddresses.some((addr) => compareAddressesSimple(addr, trimmedDepositor)) ||
-      getCctpDomainForChainId(destinationChainId) !== destinationDomain
+      !senderAddresses.some((addr) => compareAddressesSimple(addr, eventData.depositor)) ||
+      getCctpDomainForChainId(destinationChainId) !== eventData.destinationDomain
     ) {
       return undefined;
     }
@@ -836,7 +834,7 @@ async function _getCCTPDepositEventsSvm(
     return await mapAsync(attestation.messages, async (data) => {
       const decodedMessage = _decodeDepositForBurnMessageDataV1({ data: data.message }, true);
       if (
-        !senderAddresses.includes(cctpBytes32ToAddress(decodedMessage.sender)) ||
+        !senderAddresses.includes(SvmAddress.from(decodedMessage.sender, "base16").toBase58()) ||
         getCctpDomainForChainId(destinationChainId) !== decodedMessage.destinationDomain
       ) {
         return undefined;

@@ -41,12 +41,12 @@ export async function cctpL2toL1Finalizer(
   };
 
   const finalizingFromSolana = [CHAIN_IDs.SOLANA, CHAIN_IDs.SOLANA_DEVNET].includes(spokePoolClient.chainId);
-  const augmentedSenderAddresses = finalizingFromSolana
-    ? augmentSendersListForSolana(senderAddresses, spokePoolClient)
+  const adjustedSenderAddresses = finalizingFromSolana
+    ? getSenderAddressesSolana(senderAddresses, spokePoolClient)
     : senderAddresses;
 
   const outstandingDeposits = await getAttestedCCTPDeposits(
-    augmentedSenderAddresses,
+    adjustedSenderAddresses,
     spokePoolClient.chainId,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
@@ -126,25 +126,26 @@ async function generateWithdrawalData(
 }
 
 /**
- * When finalizing CCTP token transfers from Solana to Ethereum, especially transfers from the SpokePool, it's not enough
- * to have SpokePool address in the `senderAddresses`. We instead need SpokePool's `statePda` in there, because that is
- * what gets recorded as `depositor` in the `DepositForBurn` event
+ * @note assumes that the only relevant transfers to track from Solana are:
+ * 1. From SpokePool 
+ * 2. From user-defined EOAs in `FINALIZER_CCTP_SOLANA_EOAS` env var
+ * @returns an array of natively-formatted Solana addresses (base58-encoded, 32 bytes of data)
  */
-// TODO: this function is fragile, because it assumes the format of `senderAddresses` and how it gets populated
-// TODO: When we fully move to using the `Address` class, this problem should be alleviated by using `Address.eq` instead
-function augmentSendersListForSolana(senderAddresses: string[], spokePoolClient: SpokePoolClient) {
-  const spokeAddress = spokePoolClient.spokePoolAddress;
-  // This format is taken from `src/finalizer/index.ts`
-  if (senderAddresses.includes(spokeAddress.toEvmAddress())) {
+function getSenderAddressesSolana(senderAddresses: string[], spokePoolClient: SpokePoolClient): string[] {
+  const solanaSendersToTrack: string[] = process.env.FINALIZER_CCTP_SOLANA_EOAS
+    ? JSON.parse(process.env.FINALIZER_CCTP_SOLANA_EOAS)
+    : [];
+  const spokePoolAddress = spokePoolClient.spokePoolAddress;
+  // TODO: fragile. Format for `spokePoolPresent` must match `src/finalizer/index.ts`
+  const spokePoolPresent: boolean = senderAddresses.includes(spokePoolAddress.toEvmAddress())
+  if (spokePoolPresent) {
     const seed = new BN("0"); // Seed is always 0 for the state account PDA in public networks.
     const [statePda] = web3.PublicKey.findProgramAddressSync(
       [Buffer.from("state"), seed.toArrayLike(Buffer, "le", 8)],
-      toPublicKey(spokeAddress.toBase58())
+      toPublicKey(spokePoolAddress.toBase58())
     );
-    // This format has to match format in CCTPUtils.ts >
-    const trimmedStatePda = cctpBytes32ToAddress(SvmAddress.from(statePda.toBase58(), "base58").toBytes32());
-    return [...senderAddresses, trimmedStatePda];
-  } else {
-    return senderAddresses;
+    solanaSendersToTrack.push(statePda.toBase58());
   }
+
+  return solanaSendersToTrack;
 }
