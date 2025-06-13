@@ -477,7 +477,7 @@ function getRelevantCCTPEventsFromReceipt(
     }
   }
 
-  // Process all the CCTP token transfers (comprised of 2 events each)
+  // Process all the CCTP token transfers (each composed of 2 events)
   for (let [messageSentIndex, depositForBurnIndex] of depositIndexPairs) {
     const event = _createDepositForBurnMessageEvent(
       receipt.logs[messageSentIndex],
