@@ -377,6 +377,9 @@ async function viem_multicallOptimismFinalizations(
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
+    if (event.l2TokenAddress === "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2") {
+      console.log(event)
+    }
     const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(event.amountToReturn.toString(), decimals);
 
