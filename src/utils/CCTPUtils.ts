@@ -80,7 +80,7 @@ const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
   "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
 );
 
-const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA];
+const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA, CHAIN_IDs.WORLD_CHAIN];
 
 /**
  * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
@@ -468,7 +468,7 @@ function getRelevantCCTPEventsFromReceipt(
       if (messageSentIndicies.length === 0) {
         throw new Error(
           "DepositForBurn event found without corresponding MessageSent event. Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
-            `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
+          `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
         );
       }
 
@@ -982,8 +982,7 @@ async function _fetchAttestationsForTxn(
   isMainnet: boolean
 ): Promise<CCTPV2APIGetAttestationResponse> {
   const httpResponse = await axios.get<CCTPV2APIGetAttestationResponse>(
-    `https://iris-api${
-      isMainnet ? "" : "-sandbox"
+    `https://iris-api${isMainnet ? "" : "-sandbox"
     }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
   );
 
