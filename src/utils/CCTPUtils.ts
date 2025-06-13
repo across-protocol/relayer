@@ -55,6 +55,15 @@ type CCTPV2APIAttestation = {
   cctpVersion: number;
 };
 type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
+
+// Notice: minimal data included in the `DepositForBurn` event on the Solana side
+type MinimalSvmDepositForBurnData = {
+  // base58 encoding, 32 bytes string
+  depositor: string;
+  // just an int
+  destinationDomain: number;
+};
+
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
 export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
@@ -431,9 +440,9 @@ function getRelevantCCTPEventsFromReceipt(
   */
 
   // Indicies of individual `MessageSent` events in `receipt.logs`
-  let messageSentIndicies = [];
+  const messageSentIndicies = [];
   // Pairs of indicies representing a single CCTP token transfer
-  let depositIndexPairs = [];
+  const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
     const messageSentVersion = _getMessageSentVersion(log);
@@ -464,13 +473,13 @@ function getRelevantCCTPEventsFromReceipt(
       }
 
       // Record a `MessageSent` + `DepositForBurn` pair into the `depositIndexPairs` array
-      let correspondingMessageSentIndex = messageSentIndicies.pop();
+      const correspondingMessageSentIndex = messageSentIndicies.pop();
       depositIndexPairs.push([correspondingMessageSentIndex, i]);
     }
   });
 
   // Process all the individual tokenless CCTP messages
-  for (let messageSentIndex of messageSentIndicies) {
+  for (const messageSentIndex of messageSentIndicies) {
     const event = _createMessageSentEvent(receipt.logs[messageSentIndex], isCctpV2, messageTransmitterInterface);
     if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
       relevantEvents.push(event);
@@ -478,7 +487,7 @@ function getRelevantCCTPEventsFromReceipt(
   }
 
   // Process all the CCTP token transfers (each composed of 2 events)
-  for (let [messageSentIndex, depositForBurnIndex] of depositIndexPairs) {
+  for (const [messageSentIndex, depositForBurnIndex] of depositIndexPairs) {
     const event = _createDepositForBurnMessageEvent(
       receipt.logs[messageSentIndex],
       receipt.logs[depositForBurnIndex],
@@ -512,7 +521,6 @@ async function getCCTPMessagesWithStatus(
   );
   const dstProvider = getCachedProvider(destinationChainId);
   const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
-  // const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
@@ -806,9 +814,24 @@ async function _getCCTPDepositEventsSvm(
     BigInt(sourceEventSearchConfig.to)
   );
 
+  const dstProvider = getCachedProvider(destinationChainId);
+  const { address: dstMessageTransmitterAddress, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
+  const destinationMessageTransmitter = new ethers.Contract(dstMessageTransmitterAddress, abi, dstProvider);
+
   // Query the CCTP API to get the encoded message bytes/attestation.
   // Return undefined if we need to filter out the deposit event.
   const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
+    const eventData = event.data as MinimalSvmDepositForBurnData;
+    const trimmedDepositor = cctpBytes32ToAddress(SvmAddress.from(eventData.depositor, "base58").toBytes32());
+    const destinationDomain = eventData.destinationDomain;
+
+    if (
+      !senderAddresses.some((addr) => compareAddressesSimple(addr, trimmedDepositor)) ||
+      getCctpDomainForChainId(destinationChainId) !== destinationDomain
+    ) {
+      return undefined;
+    }
+
     const attestation = await _fetchCCTPSvmAttestationProof(event.signature);
     return await mapAsync(attestation.messages, async (data) => {
       const decodedMessage = _decodeDepositForBurnMessageDataV1({ data: data.message }, true);
@@ -820,10 +843,16 @@ async function _getCCTPDepositEventsSvm(
       }
       // The destination network cannot be Solana since the origin network is Solana.
       const attestationStatusObject = await _fetchAttestation(decodedMessage.messageHash, chainIsProd(l2ChainId));
+      const alreadyProcessed = await _hasCCTPMessageBeenProcessedEvm(
+        decodedMessage.nonceHash,
+        destinationMessageTransmitter
+      );
       return {
         ...decodedMessage,
         attestation: data.attestation,
-        status: _getPendingAttestationStatus(attestationStatusObject),
+        status: alreadyProcessed
+          ? ("finalized" as CCTPMessageStatus)
+          : _getPendingAttestationStatus(attestationStatusObject),
         log: undefined,
       };
     });
@@ -882,7 +911,7 @@ function _decodeCommonMessageDataV2(message: { data: string }, isSvm = false): C
 
 function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = false): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
-  const commonDataV1 = _decodeCommonMessageDataV1(message);
+  const commonDataV1 = _decodeCommonMessageDataV1(message, isSvm);
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
@@ -906,7 +935,7 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = f
 
 function _decodeDepositForBurnMessageDataV2(message: { data: string }, isSvm = false): DepositForBurnMessageData {
   // Source: https://developers.circle.com/stablecoins/message-format
-  const commonData = _decodeCommonMessageDataV2(message);
+  const commonData = _decodeCommonMessageDataV2(message, isSvm);
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
