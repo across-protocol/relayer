@@ -74,7 +74,7 @@ export async function zkSyncFinalizer(
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress.toEvmAddress(), l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: l2ChainId,

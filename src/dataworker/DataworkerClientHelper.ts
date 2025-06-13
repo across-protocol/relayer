@@ -13,10 +13,10 @@ import {
   acrossApi,
   coingecko,
   defiLlama,
-  EvmAddress,
   Signer,
   getArweaveJWKSigner,
   SvmAddress,
+  toAddressType,
   getSvmSignerFromEvmSigner,
 } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
@@ -36,7 +36,8 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const signerAddr = await baseSigner.getAddress();
+  const _signerAddr = await baseSigner.getAddress();
+  const signerAddr = toAddressType(_signerAddr);
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
@@ -48,7 +49,7 @@ export async function constructDataworkerClients(
   // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
   const tokenClient = new TokenClient(
     logger,
-    EvmAddress.from(signerAddr),
+    signerAddr,
     SvmAddress.from(svmSigner.publicKey.toBase58()),
     {},
     hubPoolClient

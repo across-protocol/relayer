@@ -114,7 +114,7 @@ describe("Dataworker: Propose root bundle", async function () {
         leaf.netSendAmounts,
         leaf.runningBalances,
         leaf.leafId,
-        leaf.l1Tokens,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }

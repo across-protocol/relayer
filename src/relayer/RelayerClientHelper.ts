@@ -26,8 +26,8 @@ import {
   getRedisCache,
   Signer,
   SpokePool,
+  toAddressType,
   SvmAddress,
-  EvmAddress,
   getSvmSignerFromEvmSigner,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
@@ -63,7 +63,7 @@ async function indexedSpokePoolClient(
 
   const spokePoolClient = new IndexedSpokePoolClient(
     logger,
-    SpokePool.connect(spokePoolAddr, signer),
+    SpokePool.connect(spokePoolAddr.toAddress(), signer),
     hubPoolClient,
     chainId,
     activationBlock,
@@ -79,7 +79,8 @@ export async function constructRelayerClients(
   config: RelayerConfig,
   baseSigner: Signer
 ): Promise<RelayerClients> {
-  const signerAddr = await baseSigner.getAddress();
+  const _signerAddr = await baseSigner.getAddress();
+  const signerAddr = toAddressType(_signerAddr);
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
   // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
   // almost all cases. Look back to genesis on testnets.
@@ -130,13 +131,13 @@ export async function constructRelayerClients(
 
   const relayerTokens = sdkUtils.dedupArray([
     ...config.relayerTokens,
-    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
+    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => toAddressType(token)),
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const tokenClient = new TokenClient(
     logger,
-    EvmAddress.from(signerAddr),
+    signerAddr,
     SvmAddress.from(svmSigner.publicKey.toBase58()),
     spokePoolClients,
     hubPoolClient,
@@ -165,12 +166,7 @@ export async function constructRelayerClients(
   await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
-  const adapterManager = new AdapterManager(
-    logger,
-    spokePoolClients,
-    hubPoolClient,
-    monitoredAddresses.filter(() => sdkUtils.isDefined)
-  );
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, monitoredAddresses);
 
   const bundleDataClient = new BundleDataClient(
     logger,

@@ -66,7 +66,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     return this.enableAllL2Tokens;
   }
 
-  l2TokenHasPoolRebalanceRoute(l2Token: string, l2ChainId: number, hubPoolBlock: number): boolean {
+  l2TokenHasPoolRebalanceRoute(l2Token: Address, l2ChainId: number, hubPoolBlock: number): boolean {
     if (this.enableAllL2Tokens === undefined) {
       return super.l2TokenHasPoolRebalanceRoute(l2Token, l2ChainId, hubPoolBlock);
     }
@@ -94,9 +94,9 @@ export class SimpleMockHubPoolClient extends clients.HubPoolClient {
     return super.getTokenInfoForAddress(token, chainId);
   }
 
-  getTokenInfoForL1Token(l1Token: string): L1Token | undefined {
-    if (this.tokenInfoMap[l1Token]) {
-      return this.tokenInfoMap[l1Token];
+  getTokenInfoForL1Token(l1Token: Address): L1Token | undefined {
+    if (this.tokenInfoMap[l1Token.toEvmAddress()]) {
+      return this.tokenInfoMap[l1Token.toEvmAddress()];
     }
     return super.getTokenInfoForL1Token(l1Token);
   }
