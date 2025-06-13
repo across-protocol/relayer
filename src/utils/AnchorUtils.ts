@@ -16,6 +16,22 @@ export async function getAnchorProgram(idl: Idl, signer?: Signer): Promise<Progr
   return new Program(idl, provider);
 }
 
+export async function getTypedAnchorProgram<P extends Idl>(
+  idl: P,
+  signer?: Signer,
+  overrideProgramId?: string
+): Promise<Program<P>> {
+  const wallet = isDefined(signer)
+    ? new SolanaWallet(await getSvmSignerFromEvmSigner(signer))
+    : (AnchorVoidSigner(new web3.PublicKey(DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM)) as SolanaWallet);
+  const provider = getAnchorProvider(wallet);
+  if (overrideProgramId) {
+    // TODO: is this OK?
+    idl.address = overrideProgramId;
+  }
+  return new Program<P>(idl, provider);
+}
+
 export function getAnchorProvider(wallet: SolanaWallet): AnchorProvider {
   const nodeUrlList = getNodeUrlList(CHAIN_IDs.SOLANA);
   return new AnchorProvider(new web3.Connection(Object.values(nodeUrlList)[0]), wallet);
