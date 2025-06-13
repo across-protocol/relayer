@@ -30,6 +30,11 @@ type zkSyncWithdrawalData = {
   sender: string;
   proof: string[];
 };
+
+const IGNORED_WITHDRAWALS = [
+  "0xe93642e22eec21ead2abb20f23a1dc3033b41274cdfe7439cf3ada3dfa1dff06", // Lens USDC 2025-06-13 @todo remove
+];
+
 /**
  * @returns Withdrawal finalizaton calldata and metadata.
  */
@@ -60,7 +65,8 @@ export async function zkSyncFinalizer(
   });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
+    .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l2Finalized);

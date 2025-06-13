@@ -236,7 +236,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
-  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probablistic but it takes an average of 2.5 blocks.
+  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
   [CHAIN_IDs.UNICHAIN]: 120,
   [CHAIN_IDs.INK]: 120, // Follows Optimism
   [CHAIN_IDs.LENS]: 512,
@@ -717,15 +717,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   [CHAIN_IDs.BASE]: {
     // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
     l1: {
-      AddressManager: "0x8EfB6B5c4767B09Dc9AA6Af4eAA89F749522BaE2",
-      L1CrossDomainMessenger: "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_8453.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
-      L2OutputOracle: "0x56315b90c40730925ec5485cf004d835058518A0",
-      OptimismPortal2: "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e",
       DisputeGameFactory: "0x43edB88C4B80fDD2AdFF2412A7BebF9dF42cB40e",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
@@ -764,6 +755,11 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.MODE]: {
+    l1: {
+      DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
+    },
+  },
   [CHAIN_IDs.REDSTONE]: {
     l1: {
       AddressManager: "0xFe27f187A9E46104a932189dDF229871E06B22F8",
@@ -781,67 +777,30 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.SONEIUM]: {
     l1: {
-      AddressManager: "0xb24bfeece1b3b7a44559f4cbc21bed312b130b70",
-      L1CrossDomainMessenger: "0x9cf951e3f74b644e621b36ca9cea147a78d4c39f",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_1868.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
-      L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: "0x88e529a6ccd302c948689cd5156c83d4614fae92",
       DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     l1: {
-      AddressManager: "0x5891090d5085679714cb0e62f74950a3c19146a8",
-      L1CrossDomainMessenger: "0xf931a81D18B1766d15695ffc7c1920a62b7e710a",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_480.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0xd5ec14a83B7d95BE1E2Ac12523e2dEE12Cbeea6C",
-      L2OutputOracle: "0x19A6d1E9034596196295CF148509796978343c5D",
-      OptimismPortal2: "0xd5ec14a83B7d95BE1E2Ac12523e2dEE12Cbeea6C",
       DisputeGameFactory: "0x069c4c579671f8c120b1327a73217D01Ea2EC5ea",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
   [CHAIN_IDs.INK]: {
     l1: {
-      AddressManager: "0x9b7c9bbd6d540a8a4dedd935819fc4408ba71153",
-      L1CrossDomainMessenger: "0x69d3cf86b2bf1a9e99875b7e2d9b6a84426c171f",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_57073.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x5d66c1782664115999c47c9fa5cd031f495d3e4f",
-      L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: "0x5d66c1782664115999c47c9fa5cd031f495d3e4f",
       DisputeGameFactory: "0x10d7b35078d3baabb96dd45a9143b94be65b12cd",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
   [CHAIN_IDs.UNICHAIN]: {
     l1: {
-      AddressManager: "0x8098f676033a377b9defe302e9fe6877cd63d575",
-      L1CrossDomainMessenger: "0x9A3D64E386C18Cb1d6d5179a9596A4B5736e98A6",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_130.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x0bd48f6B86a26D3a217d0Fa6FfE2B491B956A7a2",
-      L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: "0x0bd48f6B86a26D3a217d0Fa6FfE2B491B956A7a2",
       DisputeGameFactory: "0x2F12d621a16e2d3285929C9996f478508951dFe4",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
   [CHAIN_IDs.ZORA]: {
     l1: {
-      L2OutputOracle: ZERO_ADDRESS,
       DisputeGameFactory: "0xB0F15106fa1e473Ddb39790f197275BC979Aa37e",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
@@ -850,15 +809,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
     l1: {
-      AddressManager: "0x709c2B8ef4A9feFc629A8a2C1AF424Dc5BD6ad1B",
-      L1CrossDomainMessenger: "0xC34855F4De64F1840e5686e64278da901e261f20",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_84532.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x49f53e41452C74589E85cA1677426Ba426459e85",
-      L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: "0x49f53e41452C74589E85cA1677426Ba426459e85",
       DisputeGameFactory: "0xd6E6dBf4F7EA0ac412fD8b65ED297e64BB7a06E1",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
@@ -913,15 +863,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     l1: {
-      AddressManager: "0xEf1295ED471DFEC101691b946fb6B4654E88f98A",
-      L1CrossDomainMessenger: "0x448A37330A60494E666F6DD60aD48d930AEbA381",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.SEPOLIA].ovmStandardBridge_1301.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
-      L2OutputOracle: ZERO_ADDRESS,
-      OptimismPortal2: "0x0d83dab629f0e0F9d36c0Cbc89B69a489f0751bD",
       DisputeGameFactory: "0xeff73e5aa3B9AEC32c659Aa3E00444d20a84394b",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
