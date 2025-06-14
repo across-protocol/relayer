@@ -162,7 +162,6 @@ async function run(argv: string[]): Promise<void> {
 
   ({ chainid: chainId } = args);
   const { lookback, blockrange: maxBlockRange = 10_000 } = args;
-  lookback;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
 
@@ -190,7 +189,7 @@ async function run(argv: string[]): Promise<void> {
     startSlot = BigInt(
       Math.max(
         deploymentBlock,
-        await getBlockForTimestamp(chainId, Number(now - lookback), blockFinder, await getRedisCache())
+        await getBlockForTimestamp(chainId, Number(now - BigInt(lookback)), blockFinder, await getRedisCache())
       )
     );
   } else {
