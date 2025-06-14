@@ -12,7 +12,9 @@ import { Log, SpokePoolClientMessage } from "./../types";
  */
 export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
   if (!isDefined(process.send)) {
-    return;
+    // Process was probably started standalone.
+    // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
+    return true;
   }
 
   events = sortEventsAscending(events);
@@ -22,8 +24,10 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
+
+  const msg = JSON.stringify(message);
   try {
-    process.send(JSON.stringify(message));
+    process.send(msg);
   } catch {
     return false;
   }

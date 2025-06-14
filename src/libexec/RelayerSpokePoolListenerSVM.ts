@@ -87,7 +87,9 @@ async function scrapeEvents(
   ]);
 
   if (!abortController.signal.aborted) {
-    postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent));
+    if (!postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent))) {
+      abortController.abort();
+    }
   }
 }
 
@@ -122,7 +124,9 @@ async function listen(
       const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
       const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
       const events = eventMgr.tick();
-      postEvents(Number(slot), currentTime, events);
+      if (!postEvents(Number(slot), currentTime, events)) {
+        abortController.abort();
+      }
     }
   };
 

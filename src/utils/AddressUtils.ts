@@ -1,19 +1,5 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BigNumber, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
-
-export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
-  // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
-  // effectively by their hex value.
-  const bnAddressA = BigNumber.from(addressA);
-  const bnAddressB = BigNumber.from(addressB);
-  if (bnAddressA.gt(bnAddressB)) {
-    return 1;
-  } else if (bnAddressA.lt(bnAddressB)) {
-    return -1;
-  } else {
-    return 0;
-  }
-}
+import { compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
@@ -70,7 +56,7 @@ export function getTranslatedTokenAddress(
   }
   // Native USDC or not USDC, we can just look up in the token map directly.
   if (isNativeUsdc || !compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    return getRemoteTokenForL1Token(l1Token, l2ChainId, { chainId: hubChainId });
+    return getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
   }
   // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
   const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
