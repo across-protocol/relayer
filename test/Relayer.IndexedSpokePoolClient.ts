@@ -3,24 +3,35 @@ import winston from "winston";
 import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
-import { IndexedSpokePoolClient } from "../src/clients";
+import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
 import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
-class MockIndexedSpokePoolClient extends IndexedSpokePoolClient {
-  // Override `protected` attribute.
-  override indexerUpdate(rawMessage: unknown): void {
-    super.indexerUpdate(rawMessage);
-  }
+type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
 
-  override startWorker(): void {
-    return;
-  }
+// Minimum common-ish interface supplied by the SpokePoolClient.
+type MinSpokeListener = {
+  _indexerUpdate: (message: unknown) => void;
+};
+
+function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListener: T) {
+  return class extends SpokeListener {
+    // Permit parent _indexerUpdate method to be called externally.
+    indexerUpdate(rawMessage: unknown): void {
+      super._indexerUpdate(rawMessage);
+    }
+
+    // Suppress spawning of workers.
+    protected _startWorker(): void {
+      return;
+    }
+  };
 }
 
 describe("IndexedSpokePoolClient: Update", async function () {
+  const MockSpokeListener = _MockSpokeListener(SpokeListener(EVMSpokePoolClient));
   const chainId = CHAIN_IDs.MAINNET;
 
   const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
@@ -79,7 +90,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   let logger: winston.Logger;
   let spokePool: Contract;
-  let spokePoolClient: MockIndexedSpokePoolClient;
+  let spokePoolClient: any; // nasty @todo
   let currentTime: number;
 
   /**
@@ -100,7 +111,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   const removeEvent = (event: Log): void => {
     event.removed = true;
-    const message: SpokePoolClientMessage = {
+    const message = {
       event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
     };
     spokePoolClient.indexerUpdate(JSON.stringify(message));
@@ -110,16 +121,9 @@ describe("IndexedSpokePoolClient: Update", async function () {
     let deploymentBlock: number;
     ({ spyLogger: logger } = createSpyLogger());
     ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId));
-    const eventSearchConfig: EventSearchConfig | undefined = undefined;
-    spokePoolClient = new MockIndexedSpokePoolClient(
-      logger,
-      spokePool,
-      null,
-      chainId,
-      deploymentBlock,
-      eventSearchConfig,
-      {}
-    );
+    const searchConfig: EventSearchConfig | undefined = undefined;
+    spokePoolClient = new MockSpokeListener(logger, spokePool, null, chainId, deploymentBlock, searchConfig);
+    spokePoolClient.init({});
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
   });
