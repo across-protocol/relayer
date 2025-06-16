@@ -6,7 +6,6 @@ import {
   startupLogLevel,
   Signer,
   disconnectRedisClients,
-  getSvmSignerFromEvmSigner,
   isDefined,
   Profiler,
 } from "../utils";
@@ -139,13 +138,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
     if (config.proposerEnabled) {
       if (config.sendingTransactionsEnabled) {
-        // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-        const svmSigner = getSvmSignerFromEvmSigner(baseSigner); // Required by TokenClient but not used in practice.
         const tokenClient = new TokenClient(
           logger,
           EvmAddress.from(await baseSigner.getAddress()),
-          SvmAddress.from(svmSigner.publicKey.toBase58()),
-          {},
+          SvmAddress.from("11111111111111111111111111111111"), // Not used for mainnet.
+          {}, // SpokePoolClients not required
           clients.hubPoolClient
         );
         await tokenClient.update();
