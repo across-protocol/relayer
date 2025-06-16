@@ -1,5 +1,4 @@
 import {
-  processEndPollingLoop,
   winston,
   config,
   startupLogLevel,
