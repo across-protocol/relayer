@@ -1,12 +1,16 @@
 import {
+  EvmAddress,
+  SvmAddress,
   winston,
   config,
   startupLogLevel,
   Signer,
   disconnectRedisClients,
+  getSvmSignerFromEvmSigner,
   isDefined,
   Profiler,
 } from "../utils";
+import { TokenClient } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -134,6 +138,21 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     }
 
     if (config.proposerEnabled) {
+      if (config.sendingTransactionsEnabled) {
+        // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
+        const svmSigner = getSvmSignerFromEvmSigner(baseSigner); // Required by TokenClient but not used in practice.
+        const tokenClient = new TokenClient(
+          logger,
+          EvmAddress.from(await baseSigner.getAddress()),
+          SvmAddress.from(svmSigner.publicKey.toBase58()),
+          {},
+          clients.hubPoolClient
+        );
+        await tokenClient.update();
+        // Run approval on hub pool.
+        await tokenClient.setBondTokenAllowance();
+      }
+
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
