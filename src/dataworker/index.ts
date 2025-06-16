@@ -1,3 +1,4 @@
+import { TokenClient } from "../clients";
 import {
   EvmAddress,
   SvmAddress,
@@ -9,7 +10,6 @@ import {
   isDefined,
   Profiler,
 } from "../utils";
-import { TokenClient } from "../clients";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
