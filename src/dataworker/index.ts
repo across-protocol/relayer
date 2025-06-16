@@ -1,12 +1,4 @@
-import {
-  winston,
-  config,
-  startupLogLevel,
-  Signer,
-  disconnectRedisClients,
-  isDefined,
-  Profiler,
-} from "../utils";
+import { winston, config, startupLogLevel, Signer, disconnectRedisClients, isDefined, Profiler } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
