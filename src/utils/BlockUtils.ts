@@ -52,25 +52,25 @@ export async function getBlockForTimestamp(
   return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
 
-export async function getTimestampsForBundleEndBlocks(
+export async function getTimestampsForBundleStartBlocks(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): Promise<{ [chainId: number]: number }> {
   return Object.fromEntries(
     (
-      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+      await utils.mapAsync(blockRanges, async ([startBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
         if (spokePoolClient === undefined) {
           return;
         }
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlock })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           return [
             chainId,
-            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(endBlock)).send()),
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlock)).send()),
           ];
         }
       })
