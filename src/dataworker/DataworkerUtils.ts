@@ -29,7 +29,6 @@ import {
   winston,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
-  MAX_UINT_VAL,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 import {
