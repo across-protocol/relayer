@@ -65,12 +65,22 @@ export async function getTimestampsForBundleStartBlocks(
         if (spokePoolClient === undefined) {
           return;
         }
+        // If a block range starts before a spoke pool's deployment block, use the deployment block timestamp.
+        // This is a simplification we can make because we know that the results of this function, the start of bundle
+        // timestamps, are compared against spoke pool client search config fromBlock timestamps. So if a fromBlock
+        // is lower than a deployment block, than we know that all possible spoke pool clients can be found by the
+        // spoke pool client. In other words, the spoke pool's deployment timestamp is the earliest timestamp we
+        // should care about.
+        const startBlockToQuery = Math.max(spokePoolClient.deploymentBlock, startBlock);
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlock })).toNumber()];
+          return [
+            chainId,
+            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
+          ];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           return [
             chainId,
-            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlock)).send()),
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlockToQuery)).send()),
           ];
         }
       })
