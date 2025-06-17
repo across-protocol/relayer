@@ -72,7 +72,7 @@ export class MonitorConfig extends CommonConfig {
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
-      BINANCE_WITHDRAW_ALERT_THRESHOLD
+      BINANCE_WITHDRAW_ALERT_THRESHOLD,
     } = env;
 
     this.botModes = {
@@ -83,7 +83,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
-      binanceWithdrawalLimitsEnabled: isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
+      binanceWithdrawalLimitsEnabled:
+        isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
