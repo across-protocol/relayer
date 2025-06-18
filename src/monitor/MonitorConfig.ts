@@ -102,8 +102,8 @@ export class MonitorConfig extends CommonConfig {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
     });
-    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 0);
-    this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 0);
+    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
+    this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
