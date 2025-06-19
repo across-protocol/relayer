@@ -1,4 +1,15 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients, isDefined, Profiler } from "../utils";
+import { TokenClient } from "../clients";
+import {
+  EvmAddress,
+  SvmAddress,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+  isDefined,
+  Profiler,
+} from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
@@ -126,6 +137,19 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     }
 
     if (config.proposerEnabled) {
+      if (config.sendingTransactionsEnabled) {
+        const tokenClient = new TokenClient(
+          logger,
+          EvmAddress.from(await baseSigner.getAddress()),
+          SvmAddress.from("11111111111111111111111111111111"), // Not used for mainnet.
+          {}, // SpokePoolClients not required
+          clients.hubPoolClient
+        );
+        await tokenClient.update();
+        // Run approval on hub pool.
+        await tokenClient.setBondTokenAllowance();
+      }
+
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
