@@ -30,6 +30,7 @@ import {
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
+  repaymentChainCanBeQuicklyRebalanced,
 } from "../utils";
 import { HubPoolClient, TokenClient, BundleDataClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -220,7 +221,7 @@ export class InventoryClient {
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     return chainId === this.hubPoolClient.chainId
       ? l1Token
-      : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
+      : getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
   }
 
   /**
@@ -494,9 +495,11 @@ export class InventoryClient {
       );
     }
 
-    // The hub chain is magical; don't fumble repayment based on perceived over-allocation.
-    if (forceOriginRepayment && deposit.originChainId === hubChainId) {
-      return [hubChainId];
+    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
+    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
+    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
+      return [deposit.originChainId];
     }
 
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
@@ -1466,13 +1469,14 @@ export class InventoryClient {
     return runTransaction(this.logger, l2Weth, "withdraw", [amount]);
   }
 
-  async setL1TokenApprovals(): Promise<void> {
+  async setTokenApprovals(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
     const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens });
-    await this.adapterManager.setL1TokenApprovals(l1Tokens);
+
+    await this.adapterManager.setTokenApprovals(l1Tokens);
   }
 
   async wrapL2EthIfAboveThreshold(): Promise<void> {

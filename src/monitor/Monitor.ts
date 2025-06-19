@@ -13,6 +13,7 @@ import {
 import {
   BigNumber,
   bnZero,
+  bnUint32Max,
   Contract,
   convertFromWei,
   createFormatFunction,
@@ -47,6 +48,8 @@ import {
   getL1TokenAddress,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  getBinanceApiClient,
+  getBinanceWithdrawalLimits,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -193,8 +196,29 @@ export class Monitor {
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
       await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
         const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
-          ({ deposit }) => deposit
+          ({ deposit, invalidFills: invalid }) => {
+            // Ignore depositId >= bnUInt32Max; these tend to be pre-fills that are eventually valid and
+            // tend to confuse this reporting because there are multiple deposits with the same depositId.
+            if (deposit.depositId < bnUint32Max && invalid.length > 0) {
+              const invalidFills = Object.fromEntries(
+                invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+                  return [relayer, { destinationChainId, depositId, txnRef }];
+                })
+              );
+              this.logger.warn({
+                at: "SpokePoolClient",
+                chainId: destinationChainId,
+                message: `Invalid fills found matching ${getNetworkName(deposit.originChainId)} deposit.`,
+                deposit,
+                invalidFills,
+                notificationPath: "across-invalid-fills",
+              });
+            }
+
+            return deposit;
+          }
         );
+
         const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
         return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
       })
@@ -489,6 +513,24 @@ export class Monitor {
         "Some balance(s) are below the configured threshold!\n" + alerts.map(({ text }) => text).join("\n");
       this.logger[maxAlertlevel]({ at: "Monitor", message: "Balance(s) below threshold", mrkdwn: mrkdwn });
     }
+  }
+
+  async checkBinanceWithdrawalLimits() {
+    const binanceApi = await getBinanceApiClient(process.env["BINANCE_API_BASE"]);
+    const wdQuota = await getBinanceWithdrawalLimits(binanceApi);
+    const aboveWarnThreshold =
+      isDefined(this.monitorConfig.binanceWithdrawWarnThreshold) &&
+      wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawWarnThreshold;
+    const aboveAlertThreshold =
+      isDefined(this.monitorConfig.binanceWithdrawAlertThreshold) &&
+      wdQuota.usedWdQuota / wdQuota.wdQuota > this.monitorConfig.binanceWithdrawAlertThreshold;
+
+    const level = aboveAlertThreshold ? "error" : aboveWarnThreshold ? "warn" : "debug";
+    this.logger[level]({
+      at: "Monitor#checkBinanceWithdrawalLimits",
+      message: "Binance withdrawal quota",
+      wdQuota,
+    });
   }
 
   /**
@@ -1128,7 +1170,7 @@ export class Monitor {
   protected getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
     return chainId === this.clients.hubPoolClient.chainId
       ? l1Token
-      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient);
+      : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient.chainId);
   }
 
   private updateRelayerBalanceTable(

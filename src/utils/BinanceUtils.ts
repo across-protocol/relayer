@@ -1,9 +1,14 @@
-import Binance from "binance-api-node";
+import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-node";
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert } from "./";
 
 // Store global promises on Gckms key retrievel actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
+
+type WithdrawalQuota = {
+  wdQuota: number;
+  usedWdQuota: number;
+};
 
 /**
  * Returns an API client to interface with Binance
@@ -47,4 +52,18 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
     return undefined;
   }
   return binanceKeys[0].slice(2);
+}
+
+/**
+ * Retrieves the input client account's withdrawal quota.
+ * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
+ * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
+ * available to rebalance per day and the amount already used.
+ */
+export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
+  const unparsedQuota = await binanceApi.privateRequest("GET" as HttpMethod, "/sapi/v1/capital/withdraw/quota", {});
+  return {
+    wdQuota: unparsedQuota["wdQuota"],
+    usedWdQuota: unparsedQuota["usedWdQuota"],
+  };
 }

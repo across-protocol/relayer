@@ -11,6 +11,7 @@ export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
+  binanceWithdrawalLimitsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -44,10 +45,8 @@ export class MonitorConfig extends CommonConfig {
     token: string;
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
-
-  // TODO: Remove this config once we fully migrate to generic adapters.
-  readonly useGenericAdapter: boolean;
-
+  readonly binanceWithdrawWarnThreshold: number;
+  readonly binanceWithdrawAlertThreshold: number;
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -73,6 +72,8 @@ export class MonitorConfig extends CommonConfig {
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
       MONITOR_USE_FOLLOW_DISTANCE,
+      BINANCE_WITHDRAW_WARN_THRESHOLD,
+      BINANCE_WITHDRAW_ALERT_THRESHOLD,
     } = env;
 
     this.botModes = {
@@ -83,6 +84,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      binanceWithdrawalLimitsEnabled:
+        isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
 
     if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
@@ -104,7 +107,8 @@ export class MonitorConfig extends CommonConfig {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
     });
-
+    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
+    this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(

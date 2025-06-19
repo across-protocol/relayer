@@ -110,7 +110,9 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
     const events = eventMgr.tick();
-    postEvents(blockNumber, currentTime, events);
+    if (!postEvents(blockNumber, currentTime, events)) {
+      stop = true;
+    }
   };
 
   const blockError = (error: Error, provider: string) => {
