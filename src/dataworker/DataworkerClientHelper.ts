@@ -8,17 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import {
-  PriceClient,
-  acrossApi,
-  coingecko,
-  defiLlama,
-  Signer,
-  getArweaveJWKSigner,
-  SvmAddress,
-  toAddressType,
-  getSvmSignerFromEvmSigner,
-} from "../utils";
+import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
