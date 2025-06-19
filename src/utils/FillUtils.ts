@@ -32,6 +32,7 @@ export function getUnfilledDeposits(
 
   return deposits
     .map((deposit) => {
+      // @TODO This can throw an runtime error if chainId is wrong.
       const { unfilledAmount, invalidFills } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
       return { deposit, unfilledAmount, invalidFills };
     })
