@@ -443,11 +443,11 @@ export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct:
       const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
       const slowFillLeaf: SlowFillLeaf = {
         relayData: {
-          depositor: sdkUtils.toBytes32(deposit.depositor),
-          recipient: sdkUtils.toBytes32(deposit.recipient),
-          exclusiveRelayer: sdkUtils.toBytes32(deposit.exclusiveRelayer),
-          inputToken: sdkUtils.toBytes32(deposit.inputToken),
-          outputToken: sdkUtils.toBytes32(deposit.outputToken),
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          inputToken: deposit.inputToken,
+          outputToken: deposit.outputToken,
           inputAmount: deposit.inputAmount,
           outputAmount: deposit.outputAmount,
           originChainId: deposit.originChainId,
@@ -487,8 +487,8 @@ export function createRefunds(
   repaymentToken: string
 ): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
   return {
-    [repaymentToken]: {
-      [outputToken]: refundAmount,
+    [toBytes32(repaymentToken)]: {
+      [toBytes32(outputToken)]: refundAmount,
     },
   };
 }

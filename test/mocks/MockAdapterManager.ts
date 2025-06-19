@@ -1,5 +1,12 @@
 import { AdapterManager } from "../../src/clients/bridges";
-import { BigNumber, TransactionResponse, bnZero, getTranslatedTokenAddress } from "../../src/utils";
+import {
+  BigNumber,
+  TransactionResponse,
+  bnZero,
+  getTranslatedTokenAddress,
+  Address,
+  EvmAddress,
+} from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
@@ -52,21 +59,21 @@ export class MockAdapterManager extends AdapterManager {
 
   setMockedOutstandingCrossChainTransfers(
     chainId: number,
-    address: string,
-    l1Token: string,
+    address: Address,
+    l1Token: EvmAddress,
     amount: BigNumber,
-    l2Token?: string
+    l2Token?: Address
   ): void {
     this.mockedOutstandingCrossChainTransfers[chainId] ??= {};
 
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
 
-    transfers[address] ??= {};
-    transfers[address][l1Token] ??= {};
+    transfers[address.toBytes32()] ??= {};
+    transfers[address.toBytes32()][l1Token.toEvmAddress()] ??= {};
 
     l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId, false);
 
-    transfers[address][l1Token][l2Token] = {
+    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()] = {
       totalAmount: amount,
       depositTxHashes: [],
     };
