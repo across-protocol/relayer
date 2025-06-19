@@ -11,7 +11,6 @@ import {
   winston,
   CHAIN_IDs,
   ethers,
-  BigNumber,
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
