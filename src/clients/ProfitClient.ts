@@ -223,6 +223,9 @@ export class ProfitClient {
     relayer: string
   ): Promise<TransactionCostEstimate> {
     try {
+      // @TODO This can throw an runtime error if chainId is wrong.
+      // We can start logging something useful for this case
+      // instead of logging "unknown error" for this case.
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
