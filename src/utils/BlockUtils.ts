@@ -52,25 +52,35 @@ export async function getBlockForTimestamp(
   return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
 
-export async function getTimestampsForBundleEndBlocks(
+export async function getTimestampsForBundleStartBlocks(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): Promise<{ [chainId: number]: number }> {
   return Object.fromEntries(
     (
-      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+      await utils.mapAsync(blockRanges, async ([startBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
         if (spokePoolClient === undefined) {
           return;
         }
+        // If a block range starts before a spoke pool's deployment block, use the deployment block timestamp.
+        // This is a simplification we can make because we know that the results of this function, the start of bundle
+        // timestamps, are compared against spoke pool client search config fromBlock timestamps. So if a fromBlock
+        // is lower than a deployment block, than we know that all possible spoke pool clients can be found by the
+        // spoke pool client. In other words, the spoke pool's deployment timestamp is the earliest timestamp we
+        // should care about.
+        const startBlockToQuery = Math.max(spokePoolClient.deploymentBlock, startBlock);
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+          return [
+            chainId,
+            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
+          ];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           return [
             chainId,
-            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(endBlock)).send()),
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlockToQuery)).send()),
           ];
         }
       })
