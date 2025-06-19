@@ -9,6 +9,7 @@ import {
   EventSearchConfig,
   getNetworkName,
   isDefined,
+  MAX_SAFE_ALLOWANCE,
   paginatedEventQuery,
   Provider,
   Signer,
@@ -36,7 +37,7 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     this.l1Bridge = new Contract(l1Address, l1ABI, l1Provider);
   }
 
-  constructWithdrawToL1Txns(
+  async constructWithdrawToL1Txns(
     to: EvmAddress,
     l2Token: EvmAddress,
     _l1Token: EvmAddress,
@@ -54,26 +55,29 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const nonMulticall = true;
     const unpermissioned = false;
 
-    txns.push({
-      chainId,
-      contract: erc20,
-      method: "approve",
-      args: [l2Bridge.address, amount],
-      nonMulticall,
-      unpermissioned,
-      message: `✅ Approved ${formattedAmount} Circle Bridged (upgradable) ${symbol} for withdrawal from ${chain}.`,
-    });
-
-    txns.push({
-      chainId,
-      contract: l2Bridge,
-      method: "sendMessage",
-      args: [to.toAddress(), amount.toString(), this.minGasLimit],
-      nonMulticall,
-      unpermissioned,
-      canFailInSimulation: true, // approval has not been confirmed at the time of simulation.
-      message: `🎰 Withdrew ${formattedAmount} Circle Bridged (upgradable) ${symbol} from ${chain} to L1`,
-    });
+    const allowance = await erc20.allowance(await this.l2Signer.getAddress(), l2Bridge.address);
+    if (allowance.lt(amount)) {
+      // Approval must be in place before withdrawal is enqueued. Catch the withdrawal on the next run.
+      txns.push({
+        chainId,
+        contract: erc20,
+        method: "approve",
+        args: [l2Bridge.address, MAX_SAFE_ALLOWANCE],
+        nonMulticall,
+        unpermissioned,
+        message: `✅ Approved Circle Bridged (upgradable) ${symbol} for withdrawal from ${chain}.`,
+      });
+    } else {
+      txns.push({
+        chainId,
+        contract: l2Bridge,
+        method: "sendMessage",
+        args: [to.toAddress(), amount.toString(), this.minGasLimit],
+        nonMulticall,
+        unpermissioned,
+        message: `🎰 Withdrew ${formattedAmount} Circle Bridged (upgradable) ${symbol} from ${chain} to L1`,
+      });
+    }
 
     return Promise.resolve(txns);
   }
