@@ -2071,8 +2071,8 @@ export class Dataworker {
 
     // Execute each chain's leaves sequentially to take advantage of pool rebalance root caching. If we executed
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
-    for (const [_chainId, client] of Object.entries(spokePoolClients)) {
-      const chainId = Number(_chainId);
+    for (const client of Object.values(spokePoolClients)) {
+      const { chainId } = client;
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
         (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
       );
