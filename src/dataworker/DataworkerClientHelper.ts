@@ -19,14 +19,13 @@ import {
   toAddressType,
   getSvmSignerFromEvmSigner,
 } from "../utils";
-import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
+import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
 import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
-  tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
   priceClient?: PriceClient;
 }
@@ -36,29 +35,11 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const _signerAddr = await baseSigner.getAddress();
-  const signerAddr = toAddressType(_signerAddr);
   const commonClients = await constructClients(logger, config, baseSigner);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
-
-  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
-
-  // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(
-    logger,
-    signerAddr,
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
-    {},
-    hubPoolClient
-  );
-  await tokenClient.update();
-  // Run approval on hub pool.
-  if (config.sendingTransactionsEnabled) {
-    await tokenClient.setBondTokenAllowance();
-  }
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
@@ -91,7 +72,6 @@ export async function constructDataworkerClients(
   return {
     ...commonClients,
     bundleDataClient,
-    tokenClient,
     priceClient,
     arweaveClient,
   };

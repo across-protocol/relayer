@@ -145,13 +145,14 @@ export async function opStackFinalizer(
   // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
   const ovmFromAddresses = senderAddresses.filter((sender) => sender !== spokePool.address);
   const searchConfig = { ...spokePoolClient.eventSearchConfig, to };
-  const ovmStdEvents = await getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
-  const opUSDCEvents = await getOPUSDCEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig);
+  const withdrawalEvents = await Promise.all([
+    getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig),
+    getOPUSDCEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig),
+  ]);
 
-  const withdrawalEvents = [...ovmStdEvents, ...opUSDCEvents];
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
-  withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
+  withdrawalEvents.flat().forEach(({ transactionHash, transactionIndex, ...event }) => {
     const tokenBridgedEvent: TokensBridged = {
       ...event,
       amountToReturn: event.args.amount,

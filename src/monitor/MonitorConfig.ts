@@ -54,7 +54,7 @@ export class MonitorConfig extends CommonConfig {
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
-
+  readonly binanceWithdrawAlertThreshold: number;
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -80,6 +80,7 @@ export class MonitorConfig extends CommonConfig {
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
+      BINANCE_WITHDRAW_ALERT_THRESHOLD,
     } = env;
 
     this.botModes = {
@@ -90,7 +91,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
-      binanceWithdrawalLimitsEnabled: isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD),
+      binanceWithdrawalLimitsEnabled:
+        isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
@@ -108,8 +110,8 @@ export class MonitorConfig extends CommonConfig {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
     });
-    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 0);
-
+    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
+    this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
