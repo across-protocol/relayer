@@ -25,7 +25,6 @@ import {
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { BN, web3 } from "@coral-xyz/anchor";
-import { CHAIN_IDs } from "@across-protocol/contracts";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
