@@ -74,7 +74,7 @@ export async function blockRangesAreInvalidForSpokeClients(
       },
       {
         timestamp: Object.values(startBlockTimestamps)[0],
-        chainId: -1,
+        chainId: Object.keys(startBlockTimestamps)[0],
       }
     );
   }
