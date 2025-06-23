@@ -14,6 +14,7 @@ import {
   EventSearchConfig,
   SvmAddress,
   toPublicKey,
+  chainIsSvm,
 } from "../../../utils";
 import {
   AttestedCCTPDeposit,
@@ -40,7 +41,7 @@ export async function cctpL2toL1Finalizer(
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
 
-  const finalizingFromSolana = [CHAIN_IDs.SOLANA, CHAIN_IDs.SOLANA_DEVNET].includes(spokePoolClient.chainId);
+  const finalizingFromSolana = chainIsSvm(spokePoolClient.chainId);
   const augmentedSenderAddresses = finalizingFromSolana
     ? augmentSendersListForSolana(senderAddresses, spokePoolClient)
     : senderAddresses;
