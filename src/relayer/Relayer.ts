@@ -1514,7 +1514,7 @@ export class Relayer {
 
     let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
     const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-    const adjustedInputAmount = deposit.inputAmount.mul(outputTokenDecimals).div(decimals);
+    const adjustedInputAmount = sdkUtils.ConvertDecimals(decimals, outputTokenDecimals)(deposit.inputAmount);
     const _totalFeePct = adjustedInputAmount
       .sub(deposit.outputAmount)
       .mul(fixedPointAdjustment)
