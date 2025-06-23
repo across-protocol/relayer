@@ -328,7 +328,28 @@ export async function getAttestationsForCCTPDepositEvents(
       // We can remove this V2 custom logic once we can derive nonceHashes locally and filter out already "finalized"
       // deposits in getCCTPDepositEventsWithStatus().
       if (isCctpV2ApiResponse(attestation)) {
-        const attestationForDeposit = attestation.messages[count];
+        let attestationForDeposit: CCTPV2APIAttestation;
+
+        // We can't always rely on the CCTP API to return us attestations in the correct order so first try to
+        // match as much of the message as possible. The following logic is hacky, purposefully, but it in certain
+        // cases helps us avoid a situation where the API returns attestations in a non deterministic order. We
+        // opportunistically try to match on the destination domain, and there should only be one DepositForBurn
+        // event per destination domain for all Hub to Spoke pool leaf batch executions. When withdrawing from L2
+        // to L1, the following logic will be skipped for batch executions, since all CCTP deposits from L2 are destined
+        // for L1.
+        // Note, this won't work if there are multiple deposits to the same L2, which can happen if the deposited amount
+        // exceeds the maximum (e.g. 1mil USDC)
+        const potentialAttestations = attestation.messages.filter((message) => {
+          // @dev I've tried calling _decodeCCTPV2Message here but it hasn't worked so I opted for a more naive
+          // implementation.
+          const destinationDomain = "0x" + message.message.slice(24, 26);
+          return destinationDomain === ethers.utils.hexlify(deposit.destinationDomain);
+        });
+        if (potentialAttestations.length === 1) {
+          attestationForDeposit = potentialAttestations[0];
+        } else {
+          attestationForDeposit = attestation.messages[count];
+        }
         const destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
         const processed = await _hasCCTPMessageBeenProcessed(
           attestationForDeposit.eventNonce,
