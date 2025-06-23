@@ -143,7 +143,7 @@ export class InventoryClient {
 
     // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
-      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
       balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
       return balance.add(
         crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
@@ -153,7 +153,7 @@ export class InventoryClient {
     const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
     balance = l2Tokens
       .map((l2Token) => {
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
         return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
       })
       .reduce((acc, curr) => acc.add(curr), bnZero);
@@ -211,7 +211,7 @@ export class InventoryClient {
       return bnZero;
     }
 
-    const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+    const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
     const shortfall = sdkUtils.ConvertDecimals(
       l2TokenDecimals,
@@ -272,8 +272,9 @@ export class InventoryClient {
 
   getL1Tokens(): EvmAddress[] {
     return (
-      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) => toAddressType(token)) ||
-      this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
+      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) =>
+        toAddressType(token, this.hubPoolClient.chainId)
+      ) || this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
     );
   }
 
@@ -345,7 +346,7 @@ export class InventoryClient {
           refunds[chainId] = bnZero;
         } else {
           const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
-            destinationToken.toAddress(),
+            destinationToken.toNative(),
             chainId
           );
           refunds[chainId] = sdkUtils.ConvertDecimals(
@@ -401,7 +402,7 @@ export class InventoryClient {
   }
 
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    return toAddressType(getL1TokenAddress(l2Token.toAddress(), chainId));
+    return toAddressType(getL1TokenAddress(l2Token.toNative(), chainId), chainId);
   }
 
   /**
@@ -515,7 +516,7 @@ export class InventoryClient {
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
-      inputToken.toAddress(),
+      inputToken.toNative(),
       originChainId
     );
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
@@ -604,7 +605,7 @@ export class InventoryClient {
         );
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
-        repaymentToken.toAddress(),
+        repaymentToken.toNative(),
         chainId
       );
       const chainShortfall = sdkUtils.ConvertDecimals(
@@ -739,7 +740,7 @@ export class InventoryClient {
           l1Token
         );
         const l2Token = this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, Number(chainId));
-        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId).decimals;
+        const l2TokenDecimals = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId).decimals;
         const l2AmountToL1Amount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
 
         // If there is no ExecutedRootBundle event in the hub pool client's lookback for the token and chain, then
@@ -1025,7 +1026,7 @@ export class InventoryClient {
           hash,
           chainId,
         } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
           if (!tokenInfo) {
             `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
           }
@@ -1053,7 +1054,7 @@ export class InventoryClient {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
         for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
-          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+          const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
           if (!tokenInfo) {
             throw new Error(
               `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`
@@ -1119,7 +1120,10 @@ export class InventoryClient {
     const executedTransactions: ExecutedUnwrap[] = [];
 
     try {
-      const l1Weth = toAddressType(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId]);
+      const l1Weth = toAddressType(
+        TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId],
+        this.hubPoolClient.chainId
+      );
       const chains = await Promise.all(
         this.getEnabledChains()
           .map((chainId) => {
@@ -1160,7 +1164,7 @@ export class InventoryClient {
 
       chains.forEach((chainInfo) => {
         const { chainId, weth, unwrapWethThreshold, unwrapWethTarget, balance } = chainInfo;
-        const l2WethBalance = this.tokenClient.getBalance(chainId, toAddressType(weth));
+        const l2WethBalance = this.tokenClient.getBalance(chainId, toAddressType(weth, chainId));
 
         if (balance.lt(unwrapWethThreshold)) {
           const amountToUnwrap = unwrapWethTarget.sub(balance);
@@ -1189,7 +1193,7 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const { chainInfo, amount } of unwrapsRequired) {
         const { chainId, weth } = chainInfo;
-        this.tokenClient.decrementLocalBalance(chainId, toAddressType(weth), amount);
+        this.tokenClient.decrementLocalBalance(chainId, toAddressType(weth, chainId), amount);
         const receipt = await this._unwrapWeth(chainId, weth, amount);
         executedTransactions.push({ chainInfo, amount, hash: receipt.hash });
       }
@@ -1216,7 +1220,7 @@ export class InventoryClient {
         mrkdwn +=
           "- WETH unwrap blocked. Required to send " +
           `${formatter(amount.toString())} but relayer has ` +
-          `${formatter(this.tokenClient.getBalance(chainId, toAddressType(weth)).toString())} WETH balance.\n`;
+          `${formatter(this.tokenClient.getBalance(chainId, toAddressType(weth, chainId)).toString())} WETH balance.\n`;
       }
 
       if (mrkdwn) {
@@ -1259,7 +1263,7 @@ export class InventoryClient {
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
-          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
           const l2TokenFormatter = createFormatFunction(2, 4, false, l2TokenDecimals);
           const l2BalanceFromL1Decimals = sdkUtils.ConvertDecimals(l1TokenInfo.decimals, l2TokenDecimals);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
@@ -1400,10 +1404,7 @@ export class InventoryClient {
         message: `L2->L1 withdrawals on ${getNetworkName(chainId)} submitted`,
         chainId,
         withdrawalsRequired: withdrawalsRequired[chainId].map((withdrawal: L2Withdrawal) => {
-          const l2TokenInfo = this.hubPoolClient.getTokenInfoForAddress(
-            withdrawal.l2Token.toAddress(),
-            Number(chainId)
-          );
+          const l2TokenInfo = this.hubPoolClient.getTokenInfoForAddress(withdrawal.l2Token.toNative(), Number(chainId));
 
           const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
           return {
@@ -1440,7 +1441,9 @@ export class InventoryClient {
       }
       const { symbol, decimals } = tokenInfo;
       const formatter = createFormatFunction(2, 4, false, decimals);
-      cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(toAddressType(l1Token)).toString());
+      cumulativeBalances[symbol] = formatter(
+        this.getCumulativeBalance(toAddressType(l1Token, this.hubPoolClient.chainId)).toString()
+      );
       logData[symbol] ??= {};
 
       Object.keys(distributionForToken).forEach((_chainId) => {
@@ -1449,17 +1452,21 @@ export class InventoryClient {
 
         Object.entries(distributionForToken[chainId]).forEach(([_l2Token, amount]) => {
           const l2Token = toAddressType(_l2Token, chainId);
-          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toAddress(), chainId);
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
           const l2Formatter = createFormatFunction(2, 4, false, l2TokenDecimals);
-          const balanceOnChain = this.getBalanceOnChain(chainId, toAddressType(l1Token), l2Token);
+          const balanceOnChain = this.getBalanceOnChain(
+            chainId,
+            toAddressType(l1Token, this.hubPoolClient.chainId),
+            l2Token
+          );
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
             chainId,
-            toAddressType(l1Token),
+            toAddressType(l1Token, this.hubPoolClient.chainId),
             l2Token
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);
-          logData[symbol][chainId][l2Token.toAddress()] = {
+          logData[symbol][chainId][l2Token.toNative()] = {
             actualBalanceOnChain: l2Formatter(actualBalanceOnChain.toString()),
             virtualBalanceOnChain: formatter(balanceOnChain.toString()),
             outstandingTransfers: formatter(transfers.toString()),

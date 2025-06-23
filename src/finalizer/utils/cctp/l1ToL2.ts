@@ -25,6 +25,7 @@ import {
   EvmAddress,
   ethers,
   chainIsProd,
+  toBuffer,
 } from "../../../utils";
 import {
   AttestedCCTPDepositEvent,
@@ -184,7 +185,7 @@ async function finalizeSvmWithdrawals(
   );
   const [tokenMinterPda] = web3.PublicKey.findProgramAddressSync([Buffer.from("token_minter")], tokenMessengerMinter);
   const [localTokenPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("local_token"), l2Usdc.toBuffer()],
+    [Buffer.from("local_token"), toBuffer(l2Usdc)],
     tokenMessengerMinter
   );
   const [tokenMessengerEventAuthorityPda] = web3.PublicKey.findProgramAddressSync(
@@ -192,7 +193,7 @@ async function finalizeSvmWithdrawals(
     tokenMessengerMinter
   );
   const [custodyTokenAccountPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("custody"), l2Usdc.toBuffer()],
+    [Buffer.from("custody"), toBuffer(l2Usdc)],
     tokenMessengerMinter
   );
   const [authorityPda] = web3.PublicKey.findProgramAddressSync(

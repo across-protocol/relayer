@@ -24,12 +24,13 @@ export function getRemoteTokenForL1Token(
   }
   const l1TokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[tokenMapping.symbol] ?? tokenMapping.symbol;
   return toAddressType(
-    TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId]
+    TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[remoteChainId] ?? tokenMapping.addresses[remoteChainId],
+    Number(remoteChainId)
   );
 }
 
 export function getNativeTokenAddressForChain(chainId: number): Address {
-  return toAddressType(CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS);
+  return toAddressType(CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS, chainId);
 }
 
 export function getWrappedNativeTokenAddress(chainId: number): Address {
@@ -40,7 +41,7 @@ export function getWrappedNativeTokenAddress(chainId: number): Address {
   const wrappedTokenSymbol = tokenSymbol === "ETH" ? "WETH" : tokenSymbol;
 
   // Undefined returns should be caught and handled by consumers of this function.
-  return toAddressType(TOKEN_SYMBOLS_MAP[wrappedTokenSymbol]?.addresses[chainId]);
+  return toAddressType(TOKEN_SYMBOLS_MAP[wrappedTokenSymbol]?.addresses[chainId], chainId);
 }
 
 /**

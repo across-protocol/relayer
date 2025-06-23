@@ -35,6 +35,7 @@ import {
   winston,
   TOKEN_SYMBOLS_MAP,
   WETH9,
+  CHAIN_IDs,
   runTransaction,
   isDefined,
   resolveTokenDecimals,
@@ -253,7 +254,7 @@ export class Monitor {
         try {
           let decimals: number;
           ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-            toAddressType(tokenAddress, chainId).toAddress(),
+            toAddressType(tokenAddress, chainId).toNative(),
             chainId
           ));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
@@ -274,9 +275,9 @@ export class Monitor {
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
     // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = getL1TokenAddress(l2Token.toAddress(), chainId);
+    const l1Token = getL1TokenAddress(l2Token.toNative(), chainId);
     const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
-    const l2TokenDecimals = getTokenInfo(l2Token.toAddress(), chainId).decimals;
+    const l2TokenDecimals = getTokenInfo(l2Token.toNative(), chainId).decimals;
     return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
   }
 
@@ -299,7 +300,10 @@ export class Monitor {
     if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]) {
       allL1Tokens.splice(indexOfUsdc, 0, {
         symbol: "USDC.e",
-        address: toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]),
+        address: toAddressType(
+          TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
+          this.clients.hubPoolClient.chainId
+        ),
         decimals: 6,
       });
     }
@@ -504,13 +508,13 @@ export class Monitor {
                     spokePoolClient.spokePool.provider
                   ).symbol();
                 } else {
-                  symbol = getTokenInfo(token.toAddress(), chainId).symbol;
+                  symbol = getTokenInfo(token.toNative(), chainId).symbol;
                 }
               }
               return {
                 level: trippedThreshold.level,
                 text: `  ${getNetworkName(chainId)} ${symbol} balance for ${blockExplorerLink(
-                  account.toAddress(),
+                  account.toNative(),
                   chainId
                 )} is ${formatUnits(balance, decimals)}. Threshold: ${trippedThreshold.threshold}`,
               };
@@ -1050,7 +1054,7 @@ export class Monitor {
           .getOutstandingCrossChainTransferAmount(spokePoolAddress, chainId, l1Token.address)
           .add(
             this.clients.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              toAddressType(this.clients.hubPoolClient.hubPool.address),
+              toAddressType(this.clients.hubPoolClient.hubPool.address, this.clients.hubPoolClient.chainId),
               chainId,
               l1Token.address
             )
@@ -1065,7 +1069,7 @@ export class Monitor {
         ).concat(
           blockExplorerLinks(
             this.clients.crossChainTransferClient.getOutstandingCrossChainTransferTxs(
-              toAddressType(this.clients.hubPoolClient.hubPool.address),
+              toAddressType(this.clients.hubPoolClient.hubPool.address, this.clients.hubPoolClient.chainId),
               chainId,
               l1Token.address
             ),
@@ -1176,13 +1180,13 @@ export class Monitor {
         // This is an edge case that shouldn't usually happen.
         if (
           fillsToRefund[tokenAddress.toBytes32()] === undefined ||
-          l2ToL1Tokens[tokenAddress.toAddress()] === undefined
+          l2ToL1Tokens[tokenAddress.toNative()] === undefined
         ) {
           continue;
         }
 
         const totalRefundAmount = fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()];
-        const { symbol } = l2ToL1Tokens[tokenAddress.toAddress()];
+        const { symbol } = l2ToL1Tokens[tokenAddress.toNative()];
         const amount = decimalConverter(totalRefundAmount ?? bnZero);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
@@ -1224,7 +1228,11 @@ export class Monitor {
   }
 
   private notifyIfUnknownCaller(caller: string, action: BundleAction, txnRef: string) {
-    if (this.monitorConfig.whitelistedDataworkers.some((dataworker) => dataworker.eq(toAddressType(caller)))) {
+    if (
+      this.monitorConfig.whitelistedDataworkers.some((dataworker) =>
+        dataworker.eq(toAddressType(caller, CHAIN_IDs.MAINNET))
+      )
+    ) {
       return;
     }
 
@@ -1372,7 +1380,7 @@ export class Monitor {
         if (isEVMSpokePoolClient(spokePoolClient)) {
           decimals = await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).decimals();
         } else {
-          decimals = getTokenInfo(token.toAddress(), chainId).decimals;
+          decimals = getTokenInfo(token.toNative(), chainId).decimals;
         }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};

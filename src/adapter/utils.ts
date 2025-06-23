@@ -40,15 +40,15 @@ export async function approveTokens(
     const txs = [];
     if (approvalChainId == hubChainId) {
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
-        txs.push(await runTransaction(logger, token, "approve", [bridge.toAddress(), bnZero]));
+        txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), bnZero]));
       }
     }
-    txs.push(await runTransaction(logger, token, "approve", [bridge.toAddress(), MAX_SAFE_ALLOWANCE]));
+    txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const networkName = getNetworkName(approvalChainId);
 
     let internalMrkdwn =
-      ` - Approved token bridge ${blockExplorerLink(bridge.toAddress(), approvalChainId)} ` +
+      ` - Approved token bridge ${blockExplorerLink(bridge.toNative(), approvalChainId)} ` +
       `to spend ${await token.symbol()} ${blockExplorerLink(token.address, approvalChainId)} on ${networkName}.` +
       `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, approvalChainId)}`;
 

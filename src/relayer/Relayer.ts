@@ -26,6 +26,7 @@ import {
   Address,
   toAddressType,
   EvmAddress,
+  CHAIN_IDs,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -83,7 +84,8 @@ export class Relayer {
       at: "Relayer",
       logger: this.logger,
     });
-    this.relayerAddress = toAddressType(getAddress(relayerAddress));
+    // Hardcode an EVM chain ID, since the relayer address stored here is an EVM address.
+    this.relayerAddress = toAddressType(getAddress(relayerAddress), CHAIN_IDs.MAINNET);
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
   }
@@ -281,10 +283,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (
-      addressFilter?.has(getAddress(depositor.toAddress())) ||
-      addressFilter?.has(getAddress(recipient.toAddress()))
-    ) {
+    if (addressFilter?.has(getAddress(depositor.toNative())) || addressFilter?.has(getAddress(recipient.toNative()))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
@@ -1032,7 +1031,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken.toAddress(), destinationChainId);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken.toNative(), destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1413,7 +1412,7 @@ export class Relayer {
     chainId: number,
     tokenAddress: Address
   ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress.toAddress(), chainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress.toNative(), chainId);
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
@@ -1501,7 +1500,7 @@ export class Relayer {
 
     if (isDepositSpedUp(deposit)) {
       const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken.toAddress(),
+        deposit.outputToken.toNative(),
         deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
@@ -1513,12 +1512,12 @@ export class Relayer {
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-      deposit.inputToken.toAddress(),
+      deposit.inputToken.toNative(),
       deposit.originChainId
     );
     const srcChain = getNetworkName(deposit.originChainId);
     const dstChain = getNetworkName(deposit.destinationChainId);
-    const depositor = blockExplorerLink(deposit.depositor.toAddress(), deposit.originChainId);
+    const depositor = blockExplorerLink(deposit.depositor.toNative(), deposit.originChainId);
     const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
     let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
@@ -1529,7 +1528,7 @@ export class Relayer {
       .div(deposit.inputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
-      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken.toAddress(), deposit.destinationChainId);
+      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken.toNative(), deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +

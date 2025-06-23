@@ -1194,8 +1194,8 @@ export class Dataworker {
 
       const { addressFilter } = this.config;
       if (
-        addressFilter?.has(getAddress(depositor.toAddress())) ||
-        addressFilter?.has(getAddress(recipient.toAddress()))
+        addressFilter?.has(getAddress(depositor.toNative())) ||
+        addressFilter?.has(getAddress(recipient.toNative()))
       ) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
@@ -2224,7 +2224,7 @@ export class Dataworker {
 
   protected getTokenInfo(l2Token: Address, chainId: number): string {
     try {
-      return getTokenInfo(l2Token.toAddress(), chainId).symbol;
+      return getTokenInfo(l2Token.toNative(), chainId).symbol;
     } catch (e) {
       return "UNKNOWN";
     }

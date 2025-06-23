@@ -79,10 +79,10 @@ export class OFTBridge extends BaseBridgeAdapter {
       `OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`
     );
 
-    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toAddress()]?.[dstChainId];
+    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toNative()]?.[dstChainId];
     assert(
       isDefined(route),
-      `No route found for token ${hubTokenAddress.toAddress()} from chain ${hubChainId} to ${dstChainId}`
+      `No route found for token ${hubTokenAddress.toNative()} from chain ${hubChainId} to ${dstChainId}`
     );
 
     super(dstChainId, hubChainId, hubSigner, [route.hubChainIOFTAddress]);
@@ -91,8 +91,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = getOFTEidForChainId(dstChainId);
-    this.l1Bridge = new Contract(route.hubChainIOFTAddress.toAddress(), IOFT_ABI_FULL, hubSigner);
-    this.l2Bridge = new Contract(route.dstIOFTAddress.toAddress(), IOFT_ABI_FULL, dstSignerOrProvider);
+    this.l1Bridge = new Contract(route.hubChainIOFTAddress.toNative(), IOFT_ABI_FULL, hubSigner);
+    this.l2Bridge = new Contract(route.dstIOFTAddress.toNative(), IOFT_ABI_FULL, dstSignerOrProvider);
   }
 
   async constructL1ToL2Txn(
@@ -104,7 +104,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Verify the token matches the one this bridge was constructed for
     assert(
       l1Token.eq(this.hubTokenAddress),
-      `This bridge instance only supports token ${this.hubTokenAddress.toAddress()}, not ${l1Token.toAddress()}`
+      `This bridge instance only supports token ${this.hubTokenAddress.toNative()}, not ${l1Token.toNative()}`
     );
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
@@ -112,7 +112,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const roundedAmount = await this.roundAmountToOftPrecision(amount);
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress.toAddress()),
+      to: oftAddressToBytes32(toAddress.toNative()),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
@@ -148,7 +148,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Fetch `sharedDecimals` if not already fetched
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
     // Same for `tokenDecimals`
-    this.tokenDecimals ??= (await fetchTokenInfo(this.hubTokenAddress.toAddress(), this.l1Bridge.signer)).decimals;
+    this.tokenDecimals ??= (await fetchTokenInfo(this.hubTokenAddress.toNative(), this.l1Bridge.signer)).decimals;
 
     const decimalDifference = this.tokenDecimals - this.sharedDecimals;
 
@@ -177,14 +177,14 @@ export class OFTBridge extends BaseBridgeAdapter {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
     const fromHubEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
         // If the request is for a spoke pool, return `OFTSent` events from hubPool
-        isSpokePool ? this.hubPoolAddress : fromAddress.toAddress()
+        isSpokePool ? this.hubPoolAddress : fromAddress.toNative()
       ),
       eventConfig
     );
@@ -221,7 +221,7 @@ export class OFTBridge extends BaseBridgeAdapter {
       this.l2Bridge.filters.OFTReceived(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // srcEid - not an indexed parameter, should be undefined
-        toAddress.toAddress() // filter by `toAddress`
+        toAddress.toNative() // filter by `toAddress`
       ),
       eventConfig
     );

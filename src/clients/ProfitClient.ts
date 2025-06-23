@@ -193,7 +193,7 @@ export class ProfitClient {
    */
   resolveTokenAddress(token: string): Address {
     if (ethersUtils.isAddress(token)) {
-      return toAddressType(token);
+      return toAddressType(token, CHAIN_IDs.MAINNET);
     }
     const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
     // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
@@ -203,7 +203,11 @@ export class ProfitClient {
       isDefined(address),
       `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
     );
-    return toAddressType(address);
+    // We need to get the chain ID corresponding to the address, but we don't have access to this information in this function, so we instead
+    // infer the chain ID as either an EVM chain ID or an SVM chain ID based on the format of the address (since the tokenSymbolMap should be
+    // well formed).
+    const chainId = ethersUtils.isAddress(address) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
+    return toAddressType(address, chainId);
   }
 
   /**
@@ -349,7 +353,7 @@ export class ProfitClient {
   ): Promise<FillProfit> {
     const { hubPoolClient } = this;
 
-    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken.toAddress(), deposit.originChainId);
+    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken.toNative(), deposit.originChainId);
     const inputTokenPriceUsd = this.getPriceOfToken(inputTokenInfo.symbol);
     const inputTokenScalar = toBNWei(1, 18 - inputTokenInfo.decimals);
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
@@ -358,7 +362,7 @@ export class ProfitClient {
     // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
     // can be any arbitrary token.
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
-      deposit.outputToken.toAddress(),
+      deposit.outputToken.toNative(),
       deposit.destinationChainId
     );
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenSymbol);
@@ -422,7 +426,7 @@ export class ProfitClient {
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
 
-    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken.toAddress(), destinationChainId);
+    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken.toNative(), destinationChainId);
     const tokenPriceInUsd = this.getPriceOfToken(symbol);
 
     // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
@@ -431,7 +435,7 @@ export class ProfitClient {
 
   protected getTokenSymbol(token: Address, chainId: number): string {
     try {
-      const { symbol } = getTokenInfo(token.toAddress(), chainId);
+      const { symbol } = getTokenInfo(token.toNative(), chainId);
       return symbol;
     } catch (e) {
       return "UNKNOWN";
@@ -653,9 +657,9 @@ export class ProfitClient {
     // use the main RL address because it has all supported tokens and approvals in place on all chains.
     const sampleDeposit = {
       depositId: bnZero,
-      depositor: toAddressType(TEST_RECIPIENT),
-      recipient: toAddressType(TEST_RECIPIENT),
-      inputToken: toAddressType(ZERO_ADDRESS), // Not verified by the SpokePool.
+      depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
+      recipient: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
+      inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
       inputAmount: outputAmount.add(bnOne),
       outputToken: "", // SpokePool-specific, overwritten later.
       outputAmount,
@@ -664,7 +668,7 @@ export class ProfitClient {
       quoteTimestamp: currentTime - 60,
       fillDeadline: currentTime + 60,
       exclusivityDeadline: 0,
-      exclusiveRelayer: toAddressType(ZERO_ADDRESS),
+      exclusiveRelayer: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET),
       message: EMPTY_MESSAGE,
       fromLiteChain: false,
       toLiteChain: false,
@@ -674,7 +678,10 @@ export class ProfitClient {
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
         const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
-        const hubToken = toAddressType(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
+        const hubToken = toAddressType(
+          TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId],
+          this.hubPoolClient.chainId
+        );
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
@@ -682,7 +689,7 @@ export class ProfitClient {
         assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
         const deposit = { ...sampleDeposit, destinationChainId, outputToken };
-        const gasCosts = await this._getTotalGasCost(deposit, toAddressType(relayer));
+        const gasCosts = await this._getTotalGasCost(deposit, toAddressType(relayer, destinationChainId));
         // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
         // fills on the destination chain.
         const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);

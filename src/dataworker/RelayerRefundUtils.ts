@@ -9,7 +9,7 @@ export function getAmountToReturnForRelayerRefundLeaf(
   return netSendAmountForLeaf.lt(bnZero) ? netSendAmountForLeaf.mul(-1) : bnZero;
 }
 
-export function sortRefundAddresses(refunds: Refund): Address[] {
+export function sortRefundAddresses(refunds: Refund, chainId: number): Address[] {
   const deepCopy = { ...refunds };
   return [...Object.keys(deepCopy)]
     .sort((addressA, addressB) => {
@@ -26,7 +26,7 @@ export function sortRefundAddresses(refunds: Refund): Address[] {
         throw new Error("Unexpected matching address");
       }
     })
-    .map((address) => toAddressType(address));
+    .map((address) => toAddressType(address, chainId));
 }
 
 // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's

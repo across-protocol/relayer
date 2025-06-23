@@ -74,7 +74,7 @@ export async function polygonFinalizer(
   // but we do need to add in more TokensBridged events so that the call to `getUniqueLogIndex` will work.
   recentTokensBridgedEvents.forEach((e) => {
     if (
-      e.l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_ID])) &&
+      e.l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_ID], chainId)) &&
       e.amountToReturn.gt(CCTP_WITHDRAWAL_LIMIT_WEI)
     ) {
       // Inject one TokensBridged event for each CCTP withdrawal that needs to be processed.
@@ -146,7 +146,7 @@ async function getFinalizableTransactions(
       // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
       // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
       // until after we've computed payloads.
-      if (l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId]))) {
+      if (l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId))) {
         return { status: "USDC_CCTP_L2_WITHDRAWAL" };
       }
 

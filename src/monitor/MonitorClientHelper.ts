@@ -55,8 +55,8 @@ export async function constructMonitorClients(
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
-    toAddressType(signerAddr),
-    toAddressType(hubPoolClient.hubPool.address),
+    toAddressType(signerAddr, hubPoolClient.chainId),
+    toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));

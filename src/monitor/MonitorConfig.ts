@@ -128,7 +128,7 @@ export class MonitorConfig extends CommonConfig {
           return {
             // Required fields:
             chainId,
-            account: toAddressType(account),
+            account: toAddressType(account, chainId),
             target,
             trigger,
             // Optional fields that will set to defaults:
@@ -210,5 +210,5 @@ export class MonitorConfig extends CommonConfig {
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
   const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address)));
+  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address), CHAIN_IDs.MAINNET));
 };

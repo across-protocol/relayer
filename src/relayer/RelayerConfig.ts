@@ -106,10 +106,10 @@ export class RelayerConfig extends CommonConfig {
 
     // Empty means all tokens.
     this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
-      toAddressType(ethers.utils.getAddress(token))
+      toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
     );
     this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) =>
-      toAddressType(ethers.utils.getAddress(depositor))
+      toAddressType(ethers.utils.getAddress(depositor), CHAIN_IDs.MAINNET)
     );
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);

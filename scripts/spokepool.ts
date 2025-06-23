@@ -313,23 +313,23 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     depositId: depositArgs.depositId,
     originChainId,
     destinationChainId,
-    depositor: toAddressType(depositArgs.depositor),
-    recipient: toAddressType(depositArgs.recipient),
-    inputToken: toAddressType(depositArgs.inputToken),
+    depositor: toAddressType(depositArgs.depositor, originChainId),
+    recipient: toAddressType(depositArgs.recipient, destinationChainId),
+    inputToken: toAddressType(depositArgs.inputToken, originChainId),
     inputAmount: depositArgs.inputAmount,
-    outputToken: toAddressType(outputToken),
+    outputToken: toAddressType(outputToken, destinationChainId),
     outputAmount,
     message: depositArgs.message,
     quoteTimestamp: depositArgs.quoteTimestamp,
     fillDeadline: depositArgs.fillDeadline,
     exclusivityDeadline: depositArgs.exclusivityDeadline,
-    exclusiveRelayer: toAddressType(depositArgs.exclusiveRelayer),
+    exclusiveRelayer: toAddressType(depositArgs.exclusiveRelayer, destinationChainId),
     fromLiteChain: false, // Not relevant
     toLiteChain: false, // Not relevant
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
-    : await populateV3Relay(destSpokePool, deposit, toAddressType(relayer));
+    : await populateV3Relay(destSpokePool, deposit, toAddressType(relayer, destinationChainId));
 
   console.group("Fill Txn Info");
   console.log(`to: ${fill.to}`);

@@ -71,9 +71,13 @@ export function getTranslatedTokenAddress(
     ({ symbol, addresses }) =>
       symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token.toEvmAddress()) && addresses[l2ChainId]
   );
-  return toAddressType(bridgedUsdcMapping?.addresses[l2ChainId]);
+  return toAddressType(bridgedUsdcMapping?.addresses[l2ChainId], l2ChainId);
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {
   return ethers.utils.getAddress(tokenAddress) === tokenAddress;
+}
+
+export function toBuffer(address: Address): Buffer {
+  return Buffer.from(address.rawAddress);
 }

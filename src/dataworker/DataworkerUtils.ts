@@ -354,7 +354,7 @@ export function _getRefundLeaves(
   const nonZeroRefunds = Object.fromEntries(Object.entries(refunds).filter(([, refundAmount]) => refundAmount.gt(0)));
   // We need to sort leaves deterministically so that the same root is always produced from the same loadData
   // return value, so sort refund addresses by refund amount (descending) and then address (ascending).
-  const sortedRefundAddresses = sortRefundAddresses(nonZeroRefunds);
+  const sortedRefundAddresses = sortRefundAddresses(nonZeroRefunds, repaymentChainId);
 
   const relayerRefundLeaves: RelayerRefundLeafWithGroup[] = [];
 
