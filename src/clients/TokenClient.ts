@@ -94,7 +94,7 @@ export class TokenClient {
 
     // Deposits are the previous shortfall deposits, appended to this depositId.
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
-    assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
+    assign(this.tokenShortfall, [chainId, token.toBytes32()], { deposits, totalRequirement });
   }
 
   captureTokenShortfallForFill(deposit: Deposit): void {

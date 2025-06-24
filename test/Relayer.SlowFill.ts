@@ -243,11 +243,11 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
     const slowFillRequest = spokePoolClient_2.getSlowFillRequest({
       ...deposit,
-      inputToken: toAddressType(inputToken),
-      outputToken: toAddressType(outputToken),
-      depositor: toAddressType(deposit.depositor),
-      recipient: toAddressType(deposit.recipient),
-      exclusiveRelayer: toAddressType(deposit.exclusiveRelayer),
+      inputToken: toAddressType(inputToken, originChainId),
+      outputToken: toAddressType(outputToken, destinationChainId),
+      depositor: toAddressType(deposit.depositor, originChainId),
+      recipient: toAddressType(deposit.recipient, destinationChainId),
+      exclusiveRelayer: toAddressType(deposit.exclusiveRelayer, destinationChainId),
     });
     expect(slowFillRequest).to.exist;
 

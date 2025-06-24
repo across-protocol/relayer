@@ -158,8 +158,10 @@ describe("TokenClient: Balance and Allowance", async function () {
     expect(alignTokenData(tokenData)).to.deep.equal(expectedData);
 
     // Check some balance/allowances directly.
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(0));
-    expect(tokenClient.getBalance(destinationChainId, toAddressType(weth_2.address))).to.equal(toBNWei(0));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(toBNWei(0));
+    expect(tokenClient.getBalance(destinationChainId, toAddressType(weth_2.address, destinationChainId))).to.equal(
+      toBNWei(0)
+    );
 
     // Mint tokens to the owner. Mint ERC20 on one chain and WETH on the other. See that the client updates accordingly.
     await erc20_1.mint(owner.address, toBNWei(42069));
@@ -181,29 +183,41 @@ describe("TokenClient: Balance and Allowance", async function () {
     const tokenData1 = tokenClient.getAllTokenData();
     expect(alignTokenData(tokenData1)).to.deep.equal(expectedData1);
 
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(42069));
-    expect(tokenClient.getBalance(destinationChainId, toAddressType(weth_2.address))).to.equal(toBNWei(1337));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
+      toBNWei(42069)
+    );
+    expect(tokenClient.getBalance(destinationChainId, toAddressType(weth_2.address, destinationChainId))).to.equal(
+      toBNWei(1337)
+    );
 
     // granting an allowance to a different target should not impact the client as the client only monitors allowance
     // of the owner to the spoke pool.
     await erc20_1.approve(spokePool_2.address, toBNWei(11111)); // erc20_1 should not care about approval on spokePool_2.
     await updateAllClients();
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(42069)); // same as before.
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
+      toBNWei(42069)
+    ); // same as before.
   });
   it("Can modify stored balances synchronously", async function () {
     // During the normal operation of the relayer we should be able to synchronously subtract balance from a given token
     // to track how much is remaining within a given run.
     await updateAllClients();
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(0));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(toBNWei(0));
     await erc20_1.mint(owner.address, toBNWei(42069));
     await updateAllClients();
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(42069));
-    tokenClient.decrementLocalBalance(originChainId, toAddressType(erc20_1.address), toBNWei(69));
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(42000));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
+      toBNWei(42069)
+    );
+    tokenClient.decrementLocalBalance(originChainId, toAddressType(erc20_1.address, originChainId), toBNWei(69));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
+      toBNWei(42000)
+    );
 
     // Send tokens away to ensure that the balance update is reflected during the update.
     await erc20_1.transfer(spokePool_1.address, toBNWei(69)); // send to some random address.
     await updateAllClients();
-    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address))).to.equal(toBNWei(42000));
+    expect(tokenClient.getBalance(originChainId, toAddressType(erc20_1.address, originChainId))).to.equal(
+      toBNWei(42000)
+    );
   });
 });

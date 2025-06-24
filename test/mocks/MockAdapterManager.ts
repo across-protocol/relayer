@@ -25,16 +25,16 @@ export class MockAdapterManager extends AdapterManager {
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
   async sendTokenCrossChain(
-    _address: string,
+    _address: Address,
     chainId: number,
-    l1Token: string,
+    l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<TransactionResponse> {
     if (!this.tokensSentCrossChain[chainId]) {
       this.tokensSentCrossChain[chainId] = {};
     }
     const hash = createRandomBytes32();
-    this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
+    this.tokensSentCrossChain[chainId][l1Token.toBytes32()] = { amount, hash };
     return { hash } as TransactionResponse;
   }
 

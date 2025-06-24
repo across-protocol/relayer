@@ -161,9 +161,9 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.deposit({
-        inputToken: toAddressType(erc20_1.address),
+        inputToken: toAddressType(erc20_1.address, originChainId),
         inputAmount: eventOverride?.inputAmount ?? undefined,
-        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address),
+        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -191,10 +191,11 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         depositor: deposit.depositor,
         recipient: deposit.recipient,
         exclusiveRelayer: deposit.exclusiveRelayer,
-        relayer: toAddressType(_relayer),
+        relayer: toAddressType(_relayer, destinationChainId),
         relayExecutionInfo: {
           updatedRecipient: toAddressType(
-            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress()
+            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+            destinationChainId
           ),
           updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
@@ -265,12 +266,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const { args } = fill;
           const fillWithBlock = {
             ...spreadEventWithBlockNumber(fill),
-            inputToken: toAddressType(args.inputToken),
-            outputToken: toAddressType(args.outputToken),
-            depositor: toAddressType(args.depositor),
-            recipient: toAddressType(args.recipient),
-            exclusiveRelayer: toAddressType(args.exclusiveRelayer),
-            relayer: toAddressType(args.relayer),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -313,7 +314,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           );
           // Check its refunded to correct address:
           expect(
-            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toAddress()
+            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toNative()
           ).to.equal(validRelayerAddress);
         });
 
@@ -355,7 +356,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           );
           // Check its refunded to correct address:
           expect(
-            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toAddress()
+            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toNative()
           ).to.equal(validRelayerAddress);
         });
 
@@ -370,12 +371,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const { args } = invalidFillEvent;
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
-            inputToken: toAddressType(args.inputToken),
-            outputToken: toAddressType(args.outputToken),
-            depositor: toAddressType(args.depositor),
-            recipient: toAddressType(args.recipient),
-            relayer: toAddressType(args.relayer),
-            exclusiveRelayer: toAddressType(args.exclusiveRelayer),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           await mockDestinationSpokePoolClient.update([]);
@@ -452,12 +453,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const { args } = invalidFillEvent;
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
-            inputToken: toAddressType(args.inputToken),
-            outputToken: toAddressType(args.outputToken),
-            depositor: toAddressType(args.depositor),
-            recipient: toAddressType(args.recipient),
-            relayer: toAddressType(args.relayer),
-            exclusiveRelayer: toAddressType(args.exclusiveRelayer),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           await mockDestinationSpokePoolClient.update([]);
@@ -532,12 +533,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         const { args } = fill;
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
-          inputToken: toAddressType(args.inputToken),
-          outputToken: toAddressType(args.outputToken),
-          depositor: toAddressType(args.depositor),
-          recipient: toAddressType(args.recipient),
-          exclusiveRelayer: toAddressType(args.exclusiveRelayer),
-          relayer: toAddressType(args.relayer),
+          inputToken: toAddressType(args.inputToken, originChainId),
+          outputToken: toAddressType(args.outputToken, destinationChainId),
+          depositor: toAddressType(args.depositor, originChainId),
+          recipient: toAddressType(args.recipient, destinationChainId),
+          exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+          relayer: toAddressType(args.relayer, destinationChainId),
           destinationChainId,
         } as FillWithBlock;
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -609,12 +610,12 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         const { args } = fill;
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
-          inputToken: toAddressType(args.inputToken),
-          outputToken: toAddressType(args.outputToken),
-          depositor: toAddressType(args.depositor),
-          recipient: toAddressType(args.recipient),
-          exclusiveRelayer: toAddressType(args.exclusiveRelayer),
-          relayer: toAddressType(args.relayer),
+          inputToken: toAddressType(args.inputToken, originChainId),
+          outputToken: toAddressType(args.outputToken, destinationChainId),
+          depositor: toAddressType(args.depositor, originChainId),
+          recipient: toAddressType(args.recipient, destinationChainId),
+          exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+          relayer: toAddressType(args.relayer, destinationChainId),
           destinationChainId,
         } as FillWithBlock;
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(

@@ -45,7 +45,7 @@ describe("ProfitClient: Price Retrieval", async () => {
     await hubPoolClient.update();
 
     mainnetTokens.forEach((token) => hubPoolClient.addL1Token(token));
-    const relayerAddress = toAddressType(randomAddress());
+    const relayerAddress = toAddressType(randomAddress(), hubPoolClient.chainId);
     profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, bnZero);
   });
 
@@ -59,7 +59,9 @@ describe("ProfitClient: Price Retrieval", async () => {
       .forEach((address) => expect(tokenPrices[toBytes32(address)]).to.not.be.undefined);
     Object.values(tokenPrices).forEach((price) => expect(price.gt(bnZero)).to.be.true);
     Object.keys(tokenPrices).forEach(
-      (token) => expect(profitClient.getPriceOfToken(toAddressType(token).toEvmAddress()).gt(bnZero)).to.be.true
+      (token) =>
+        expect(profitClient.getPriceOfToken(toAddressType(token, hubPoolClient.chainId).toEvmAddress()).gt(bnZero)).to
+          .be.true
     );
   });
 

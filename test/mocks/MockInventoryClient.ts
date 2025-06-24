@@ -111,7 +111,7 @@ export class MockInventoryClient extends InventoryClient {
         ([, mapping]) => mapping[chainId] === l2Token.toEvmAddress()
       );
       if (tokenMapping) {
-        return toAddressType(tokenMapping[0]);
+        return toAddressType(tokenMapping[0], chainId);
       }
     }
     return super.getL1TokenAddress(l2Token, chainId);

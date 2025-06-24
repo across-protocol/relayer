@@ -103,14 +103,14 @@ describe("SlowFill utils", function () {
     const destinationChainId = originChainId + 1;
     const deposit: DepositWithBlock = {
       inputAmount: amountToFill,
-      inputToken: toAddressType(randomAddress()),
+      inputToken: toAddressType(randomAddress(), 1),
       outputAmount: bnOne,
-      outputToken: toAddressType(randomAddress()),
-      depositor: toAddressType(randomAddress()),
+      outputToken: toAddressType(randomAddress(), destinationChainId),
+      depositor: toAddressType(randomAddress(), 1),
       depositId: BigNumber.from(depositId),
       originChainId: 1,
-      recipient: toAddressType(randomAddress()),
-      exclusiveRelayer: toAddressType(ZERO_ADDRESS),
+      recipient: toAddressType(randomAddress(), destinationChainId),
+      exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
       exclusivityDeadline: 0,
       message,
       destinationChainId,
@@ -238,7 +238,7 @@ describe("PoolRebalanceLeaf utils", function () {
             [originToken]: [
               {
                 inputAmount: toWei("1"),
-                inputToken: toAddressType(originToken),
+                inputToken: toAddressType(originToken, originChainId),
                 originChainId,
               },
             ],

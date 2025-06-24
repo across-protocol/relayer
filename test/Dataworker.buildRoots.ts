@@ -337,8 +337,8 @@ describe("Dataworker: Build merkle roots", async function () {
       },
     ];
     expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
-    expect(leaf1Addr.toAddress()).to.eq(erc20_1.address);
-    expect(leaf2Addr.toAddress()).to.eq(l1Token_1.address);
+    expect(leaf1Addr.toNative()).to.eq(erc20_1.address, originChainId);
+    expect(leaf2Addr.toNative()).to.eq(l1Token_1.address, repaymentChainId);
     refundAddresses2.forEach((addr) => expect(addr.toEvmAddress()).to.eq(relayer.address));
   });
   it("All fills are slow fill executions", async function () {
@@ -408,7 +408,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // No leaf for destination chain.
     ];
     expect(expectedLeaves).to.deep.equal(refundRoot.leaves);
-    expect(erc20_1.address).to.eq(refundRoot.leaves[0].l2TokenAddress.toAddress());
+    expect(erc20_1.address).to.eq(refundRoot.leaves[0].l2TokenAddress.toNative());
   });
   it("Adds expired deposit refunds to relayer refund root", async function () {
     const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
@@ -447,11 +447,13 @@ describe("Dataworker: Build merkle roots", async function () {
     // Origin chain running balance starts negative because of the deposit
     // but is cancelled out by the refund such that the running balance is 0
     // and there is no amount to return.
+    const l2TokenAddress = toAddressType(erc20_1.address, originChainId);
+    l2TokenAddress.toNative();
     const expectedLeaves: RelayerRefundLeaf[] = [
       {
         chainId: originChainId,
         amountToReturn: bnZero,
-        l2TokenAddress: toAddressType(erc20_1.address),
+        l2TokenAddress,
         leafId: 0,
         refundAddresses: [deposit.depositor],
         refundAmounts: [deposit.inputAmount],

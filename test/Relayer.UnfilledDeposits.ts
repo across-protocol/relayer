@@ -518,11 +518,11 @@ describe("Relayer: Unfilled Deposits", async function () {
       );
       deposits.push({
         ...deposit,
-        inputToken: toAddressType(deposit.inputToken),
-        outputToken: toAddressType(deposit.outputToken),
-        depositor: toAddressType(deposit.depositor),
-        recipient: toAddressType(deposit.recipient),
-        exclusiveRelayer: toAddressType(deposit.exclusiveRelayer),
+        inputToken: toAddressType(deposit.inputToken, originChainId),
+        outputToken: toAddressType(deposit.outputToken, destinationChainId),
+        depositor: toAddressType(deposit.depositor, originChainId),
+        recipient: toAddressType(deposit.recipient, destinationChainId),
+        exclusiveRelayer: toAddressType(deposit.exclusiveRelayer, destinationChainId),
       });
 
       // Modify the HubPool LP balance to ensure that subsequent deposits will receive a different LP fee.
@@ -583,7 +583,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
     expect(relayerLpFees[lpFeeKey]).not.exist;
 
-    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: toAddressType(randomAddress()) });
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: toAddressType(randomAddress(), originChainId) });
     expect(relayerLpFees[lpFeeKey]).to.not.exist;
 
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });

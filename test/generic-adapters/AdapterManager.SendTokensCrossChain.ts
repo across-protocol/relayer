@@ -95,9 +95,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     let thrown1 = false;
     try {
       await adapterManager.sendTokenCrossChain(
-        toAddressType(relayer.address),
+        toAddressType(relayer.address, CHAIN_IDs.MAINNET),
         42069,
-        toAddressType(mainnetTokens.usdc),
+        toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
         amountToSend
       );
     } catch (error) {
@@ -111,9 +111,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.bal),
+      toAddressType(mainnetTokens.bal, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
@@ -125,12 +125,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
@@ -142,12 +142,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -157,9 +157,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.snx),
+      toAddressType(mainnetTokens.snx, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1OptimismSnxBridge.depositTo).to.have.been.calledWith(
@@ -169,9 +169,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Non- ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.dai),
+      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
       amountToSend
     );
     // Note the target is the L1 dai optimism bridge.
@@ -185,9 +185,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.weth),
+      toAddressType(mainnetTokens.weth, CHAIN_IDs.MAINNET),
       amountToSend
     );
     const bridgeCalldata = l1OptimismBridge.interface.encodeFunctionData("depositETHTo", [
@@ -209,12 +209,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       false,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -225,9 +225,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.dai),
+      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
@@ -237,9 +237,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.wbtc),
+      toAddressType(mainnetTokens.wbtc, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
@@ -250,9 +250,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.weth),
+      toAddressType(mainnetTokens.weth, CHAIN_IDs.MAINNET),
       amountToSend
     );
     const bridgeCalldata = l1PolygonRootChainManager.interface.encodeFunctionData("depositEtherFor", [relayer.address]);
@@ -276,12 +276,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       false,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -292,9 +292,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.wbtc),
+      toAddressType(mainnetTokens.wbtc, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
@@ -306,9 +306,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       transactionSubmissionData // data
     );
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.dai),
+      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
@@ -321,9 +321,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
     // Weth can be bridged like a standard ERC20 token to arbitrum.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.weth),
+      toAddressType(mainnetTokens.weth, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
@@ -350,12 +350,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     };
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       false,
-      toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWith({
       ...bridgeParams,
@@ -366,9 +366,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     });
 
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.wbtc),
+      toAddressType(mainnetTokens.wbtc, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWith({
@@ -382,18 +382,18 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     // Check that value is sent when the bridge hub returns a base cost.
     l1BridgeHub.l2TransactionBaseCost.returns(toBNWei("0.2"));
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.wbtc),
+      toAddressType(mainnetTokens.wbtc, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1BridgeHub.requestL2TransactionTwoBridges).to.have.been.calledWithValue(toBNWei("0.2"));
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.weth),
+      toAddressType(mainnetTokens.weth, CHAIN_IDs.MAINNET),
       amountToSend
     );
     const fee = toBNWei("0.2");
@@ -414,12 +414,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
     //  CCTP tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1CCTPTokenMessager.depositForBurn).to.have.been.calledWith(
       amountToSend, // amount
@@ -430,12 +430,12 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.usdc),
+      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
       amountToSend,
       undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId])
+      toAddressType(TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], CHAIN_IDs.MAINNET)
     );
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
@@ -446,9 +446,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     );
 
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.bal),
+      toAddressType(mainnetTokens.bal, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
@@ -461,9 +461,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // DAI should not be a custom token on base.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.dai),
+      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
@@ -476,9 +476,9 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address),
+      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.weth),
+      toAddressType(mainnetTokens.weth, CHAIN_IDs.MAINNET),
       amountToSend
     );
     const bridgeCalldata = l1BaseBridge.interface.encodeFunctionData("depositETHTo", [

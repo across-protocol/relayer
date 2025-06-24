@@ -187,9 +187,9 @@ describe("Dataworker: Load bundle data", async function () {
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.deposit({
-        inputToken: toAddressType(erc20_1.address),
+        inputToken: toAddressType(erc20_1.address, originChainId),
         inputAmount: eventOverride?.inputAmount ?? undefined,
-        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address),
+        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -217,10 +217,11 @@ describe("Dataworker: Load bundle data", async function () {
         depositor: deposit.depositor,
         recipient: deposit.recipient,
         exclusiveRelayer: deposit.exclusiveRelayer,
-        relayer: toAddressType(_relayer),
+        relayer: toAddressType(_relayer, destinationChainId),
         relayExecutionInfo: {
           updatedRecipient: toAddressType(
-            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress()
+            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+            destinationChainId
           ),
           updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
@@ -245,16 +246,16 @@ describe("Dataworker: Load bundle data", async function () {
       const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillRelay({
         ...args,
-        inputToken: toAddressType(args.inputToken),
-        outputToken: toAddressType(args.outputToken),
-        depositor: toAddressType(args.depositor),
-        recipient: toAddressType(args.recipient),
-        exclusiveRelayer: toAddressType(args.exclusiveRelayer),
-        relayer: toAddressType(_relayer),
+        inputToken: toAddressType(args.inputToken, originChainId),
+        outputToken: toAddressType(args.outputToken, destinationChainId),
+        depositor: toAddressType(args.depositor, originChainId),
+        recipient: toAddressType(args.recipient, destinationChainId),
+        exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+        relayer: toAddressType(_relayer, destinationChainId),
         outputAmount,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          updatedRecipient: toAddressType(depositEvent.args.updatedRecipient ?? args.recipient),
+          updatedRecipient: toAddressType(depositEvent.args.updatedRecipient ?? args.recipient, destinationChainId),
           updatedMessage: depositEvent.args.updatedMessage,
           updatedOutputAmount: updatedOutputAmount,
           fillType,

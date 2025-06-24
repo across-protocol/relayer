@@ -114,7 +114,12 @@ describe("TokenClient: Token shortfall", async function () {
     const depositId = BigNumber.from(1);
     let needed = toBNWei(420);
     let shortfall = needed.sub(balance);
-    tokenClient.captureTokenShortfall(destinationChainId, toAddressType(erc20_2.address), depositId, toBNWei(420));
+    tokenClient.captureTokenShortfall(
+      destinationChainId,
+      toAddressType(erc20_2.address, destinationChainId),
+      depositId,
+      toBNWei(420)
+    );
     const tokenShortFallData = tokenClient.getTokenShortfall()[destinationChainId][toBytes32(erc20_2.address)];
     expect(tokenShortFallData.balance).to.equal(balance);
     expect(tokenShortFallData.needed).to.equal(needed);
@@ -124,7 +129,12 @@ describe("TokenClient: Token shortfall", async function () {
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
     const depositId2 = BigNumber.from(2);
 
-    tokenClient.captureTokenShortfall(destinationChainId, toAddressType(erc20_2.address), depositId2, toBNWei(42));
+    tokenClient.captureTokenShortfall(
+      destinationChainId,
+      toAddressType(erc20_2.address, destinationChainId),
+      depositId2,
+      toBNWei(42)
+    );
     needed = needed.add(toBNWei(42));
     shortfall = needed.sub(balance);
     const tokenShortFallData2 = tokenClient.getTokenShortfall()[destinationChainId][toBytes32(erc20_2.address)];

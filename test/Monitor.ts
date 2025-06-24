@@ -173,7 +173,7 @@ describe("Monitor", async function () {
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
-    relayerAddress = toAddressType(relayer.address);
+    relayerAddress = toAddressType(relayer.address, hubPoolClient.chainId);
 
     const chainIds = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
@@ -203,21 +203,21 @@ describe("Monitor", async function () {
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
       [l2Token.address]: {
         symbol: "L1Token1",
-        address: toAddressType(l1Token.address),
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(destinationChainId, {
       [erc20_2.address]: {
         symbol: "L1Token1",
-        address: toAddressType(l1Token.address),
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(hubPoolClient.chainId, {
       [l1Token.address]: {
         symbol: "L1Token1",
-        address: toAddressType(l1Token.address),
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
@@ -354,8 +354,8 @@ describe("Monitor", async function () {
     // Simulate some pending cross chain transfers.
     crossChainTransferClient.increaseOutstandingTransfer(
       relayerAddress,
-      toAddressType(l1Token.address),
-      toAddressType(erc20_2.address),
+      toAddressType(l1Token.address, hubPoolClient.chainId),
+      toAddressType(erc20_2.address, destinationChainId),
       toBN(5),
       destinationChainId
     );
@@ -395,10 +395,10 @@ describe("Monitor", async function () {
     // Simulate some pending cross chain transfers to SpokePools.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       originChainId,
-      toAddressType(spokePool_1.address),
-      toAddressType(l1Token.address),
+      toAddressType(spokePool_1.address, originChainId),
+      toAddressType(l1Token.address, hubPoolClient.chainId),
       toBN(5),
-      toAddressType(l2Token.address)
+      toAddressType(l2Token.address, originChainId)
     );
     await updateAllClients();
     await monitorInstance.update();

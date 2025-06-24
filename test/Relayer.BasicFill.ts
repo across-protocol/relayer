@@ -593,7 +593,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       );
       const fillAmount = profitClient.getFillAmountInUsd({
         ...deposit1,
-        outputToken: toAddressType(deposit1.outputToken),
+        outputToken: toAddressType(deposit1.outputToken, destinationChainId),
       })!;
       expect(fillAmount).to.exist;
 
@@ -646,7 +646,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       originChainCommitment = relayerInstance.computeOriginChainCommitment(originChainId, 0, Number.MAX_SAFE_INTEGER);
       expect(
         originChainCommitment.eq(
-          getFillAmount({ ...deposit1, outputToken: toAddressType(deposit1.outputToken) }, tokenPrice)
+          getFillAmount(
+            { ...deposit1, outputToken: toAddressType(deposit1.outputToken, destinationChainId) },
+            tokenPrice
+          )
         )
       ).to.be.true;
 
@@ -976,7 +979,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address)).at(-1);
+          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
           expect(fill).to.exist;
           fill = fill!;
 

@@ -56,9 +56,9 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
   function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
     return mockOriginSpokePoolClient.deposit({
-      inputToken: toAddressType(erc20_1.address),
+      inputToken: toAddressType(erc20_1.address, originChainId),
       inputAmount: eventOverride?.inputAmount ?? undefined,
-      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address),
+      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
       message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -86,10 +86,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       depositor: deposit.depositor,
       recipient: deposit.recipient,
       exclusiveRelayer: deposit.exclusiveRelayer,
-      relayer: toAddressType(_relayer),
+      relayer: toAddressType(_relayer, destinationChainId),
       relayExecutionInfo: {
         updatedRecipient: toAddressType(
-          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress()
+          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+          destinationChainId
         ),
         updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
@@ -410,11 +411,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await mockOriginSpokePoolClient.update(["FundsDeposited"]);
     const deposit = mockOriginSpokePoolClient.getDeposits()[0];
     const invalidRelayData = {
-      depositor: toAddressType(randomAddress()),
-      recipient: toAddressType(randomAddress()),
-      exclusiveRelayer: toAddressType(randomAddress()),
-      inputToken: toAddressType(erc20_2.address),
-      outputToken: toAddressType(erc20_1.address),
+      depositor: toAddressType(randomAddress(), originChainId),
+      recipient: toAddressType(randomAddress(), destinationChainId),
+      exclusiveRelayer: toAddressType(randomAddress(), destinationChainId),
+      inputToken: toAddressType(erc20_2.address, originChainId),
+      outputToken: toAddressType(erc20_1.address, destinationChainId),
       inputAmount: deposit.inputAmount.add(1),
       outputAmount: deposit.outputAmount.add(1),
       originChainId: destinationChainId,
@@ -568,11 +569,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     );
     const depositObject = {
       ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken),
-      outputToken: toAddressType(_depositObject.outputToken),
-      depositor: toAddressType(_depositObject.depositor),
-      recipient: toAddressType(_depositObject.recipient),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer),
+      inputToken: toAddressType(_depositObject.inputToken, originChainId),
+      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
+      depositor: toAddressType(_depositObject.depositor, originChainId),
+      recipient: toAddressType(_depositObject.recipient, destinationChainId),
+      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
     };
     await spokePoolClient_1.update();
 
@@ -613,11 +614,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     );
     const depositObject = {
       ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken),
-      outputToken: toAddressType(_depositObject.outputToken),
-      depositor: toAddressType(_depositObject.depositor),
-      recipient: toAddressType(_depositObject.recipient),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer),
+      inputToken: toAddressType(_depositObject.inputToken, originChainId),
+      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
+      depositor: toAddressType(_depositObject.depositor, originChainId),
+      recipient: toAddressType(_depositObject.recipient, destinationChainId),
+      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
     };
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
@@ -659,11 +660,11 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     );
     const depositObject = {
       ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken),
-      outputToken: toAddressType(_depositObject.outputToken),
-      depositor: toAddressType(_depositObject.depositor),
-      recipient: toAddressType(_depositObject.recipient),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer),
+      inputToken: toAddressType(_depositObject.inputToken, originChainId),
+      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
+      depositor: toAddressType(_depositObject.depositor, originChainId),
+      recipient: toAddressType(_depositObject.recipient, destinationChainId),
+      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
     };
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);

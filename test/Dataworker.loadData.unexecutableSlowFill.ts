@@ -52,9 +52,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
   function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
     return mockOriginSpokePoolClient.deposit({
-      inputToken: toAddressType(erc20_1.address),
+      inputToken: toAddressType(erc20_1.address, originChainId),
       inputAmount: eventOverride?.inputAmount ?? undefined,
-      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address),
+      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
       message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -81,10 +81,11 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       depositor: deposit.depositor,
       recipient: deposit.recipient,
       exclusiveRelayer: deposit.exclusiveRelayer,
-      relayer: toAddressType(_relayer),
+      relayer: toAddressType(_relayer, destinationChainId),
       relayExecutionInfo: {
         updatedRecipient: toAddressType(
-          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress()
+          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+          destinationChainId
         ),
         updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,

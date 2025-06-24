@@ -111,7 +111,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
         chainId: hubPoolClient.chainId,
         refundAmounts: [],
         leafId: 0,
-        l2TokenAddress: toAddressType(l1Token_1.address),
+        l2TokenAddress: toAddressType(l1Token_1.address, hubPoolClient.chainId),
         refundAddresses: [],
       },
     ];
@@ -132,7 +132,11 @@ describe("Dataworker: Execute relayer refunds", async function () {
       0
     );
     expect(
-      balanceAllocator.getUsed(hubPoolClient.chainId, toAddressType(l1Token_1.address), toAddressType(hubPool.address))
+      balanceAllocator.getUsed(
+        hubPoolClient.chainId,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId)
+      )
     ).to.equal(toBNWei("-1"));
   });
   describe("Computing refunds for bundles", function () {
@@ -172,9 +176,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getTotalRefund(
           refunds,
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, hubPoolClient.chainId),
           destinationChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.equal(toBN(0));
     });
@@ -197,9 +201,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       const refunds = await bundleDataClient.getPendingRefundsFromValidBundles();
       const totalRefund1 = bundleDataClient.getTotalRefund(
         refunds,
-        toAddressType(relayer.address),
+        toAddressType(relayer.address, destinationChainId),
         destinationChainId,
-        toAddressType(erc20_2.address)
+        toAddressType(erc20_2.address, destinationChainId)
       );
       expect(totalRefund1).to.gt(0);
 
@@ -207,17 +211,17 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getTotalRefund(
           refunds,
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, repaymentChainId),
           repaymentChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, repaymentChainId)
         )
       ).to.equal(toBN(0));
       expect(
         bundleDataClient.getTotalRefund(
           refunds,
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          toAddressType(erc20_1.address)
+          toAddressType(erc20_1.address, destinationChainId)
         )
       ).to.equal(toBN(0));
 
@@ -243,9 +247,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getTotalRefund(
           postExecutionRefunds,
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.equal(toBN(0));
 
@@ -283,9 +287,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getTotalRefund(
           refunds2,
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.gt(0);
     });
@@ -294,9 +298,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getRefundsFor(
           (await bundleDataClient.getNextBundleRefunds())[0],
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.gt(0);
 
@@ -309,9 +313,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getRefundsFor(
           (await bundleDataClient.getNextBundleRefunds())[0],
-          toAddressType(relayer.address),
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          toAddressType(erc20_2.address)
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.gt(0);
 

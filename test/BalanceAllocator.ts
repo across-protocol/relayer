@@ -34,10 +34,10 @@ class TestBalanceAllocator extends BalanceAllocator {
 
 describe("BalanceAllocator", async function () {
   let balanceAllocator: TestBalanceAllocator;
-  const testToken1 = toAddressType(randomAddress());
-  const testToken2 = toAddressType(randomAddress());
+  const testToken1 = toAddressType(randomAddress(), 1);
+  const testToken2 = toAddressType(randomAddress(), 1);
 
-  const testAccount1 = toAddressType(randomAddress());
+  const testAccount1 = toAddressType(randomAddress(), 1);
 
   beforeEach(async function () {
     balanceAllocator = new TestBalanceAllocator();
