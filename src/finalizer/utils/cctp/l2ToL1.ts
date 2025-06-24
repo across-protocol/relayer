@@ -12,14 +12,19 @@ import {
   winston,
   convertFromWei,
   EventSearchConfig,
+  SvmAddress,
+  toPublicKey,
+  chainIsSvm,
 } from "../../../utils";
 import {
-  AttestedCCTPDepositEvent,
+  AttestedCCTPDeposit,
+  cctpBytes32ToAddress,
   CCTPMessageStatus,
-  getAttestationsForCCTPDepositEvents,
+  getAttestedCCTPDeposits,
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { BN, web3 } from "@coral-xyz/anchor";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
@@ -34,8 +39,14 @@ export async function cctpL2toL1Finalizer(
     to: spokePoolClient.latestHeightSearched,
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
-  const outstandingDeposits = await getAttestationsForCCTPDepositEvents(
-    senderAddresses,
+
+  const finalizingFromSolana = chainIsSvm(spokePoolClient.chainId);
+  const augmentedSenderAddresses = finalizingFromSolana
+    ? augmentSendersListForSolana(senderAddresses, spokePoolClient)
+    : senderAddresses;
+
+  const outstandingDeposits = await getAttestedCCTPDeposits(
+    augmentedSenderAddresses,
     spokePoolClient.chainId,
     hubPoolClient.chainId,
     spokePoolClient.chainId,
@@ -76,7 +87,7 @@ export async function cctpL2toL1Finalizer(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDepositEvent, "attestation" | "messageBytes">[]
+  messages: Pick<AttestedCCTPDeposit, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -101,7 +112,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateWithdrawalData(
-  messages: Pick<AttestedCCTPDepositEvent, "amount">[],
+  messages: Pick<AttestedCCTPDeposit, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
@@ -112,4 +123,28 @@ async function generateWithdrawalData(
     originationChainId,
     destinationChainId,
   }));
+}
+
+/**
+ * When finalizing CCTP token transfers from Solana to Ethereum, especially transfers from the SpokePool, it's not enough
+ * to have SpokePool address in the `senderAddresses`. We instead need SpokePool's `statePda` in there, because that is
+ * what gets recorded as `depositor` in the `DepositForBurn` event
+ */
+// TODO: this function is fragile, because it assumes the format of `senderAddresses` and how it gets populated
+// TODO: When we fully move to using the `Address` class, this problem should be alleviated by using `Address.eq` instead
+function augmentSendersListForSolana(senderAddresses: string[], spokePoolClient: SpokePoolClient) {
+  const spokeAddress = spokePoolClient.spokePoolAddress;
+  // This format is taken from `src/finalizer/index.ts`
+  if (senderAddresses.includes(spokeAddress.toEvmAddress())) {
+    const seed = new BN("0"); // Seed is always 0 for the state account PDA in public networks.
+    const [statePda] = web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("state"), seed.toArrayLike(Buffer, "le", 8)],
+      toPublicKey(spokeAddress.toBase58())
+    );
+    // This format has to match format in CCTPUtils.ts >
+    const trimmedStatePda = cctpBytes32ToAddress(SvmAddress.from(statePda.toBase58(), "base58").toBytes32());
+    return [...senderAddresses, trimmedStatePda];
+  } else {
+    return senderAddresses;
+  }
 }
