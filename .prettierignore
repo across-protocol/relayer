@@ -7,3 +7,4 @@ dist
 typechain*
 addresses.json
 *.md
+.claude*
