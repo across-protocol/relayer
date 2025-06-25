@@ -80,7 +80,6 @@ export async function runTransaction(
   nonce: number | null = null,
   retriesRemaining = 1
 ): Promise<TransactionResponse> {
-  console.log("TESATI");
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
 
@@ -129,7 +128,6 @@ export async function runTransaction(
     );
     return await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
-    console.log("TESATI 2");
     if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
