@@ -290,6 +290,27 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
+    it("Ignores deposit with originChain == destinationChain", async function () {
+      const deposit = await depositV3(
+        spokePool_1,
+        originChainId, // Setting originChain == destinationChain
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      await updateAllClients();
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+      expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
+
+      await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+      const fill = spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).at(-1);
+      expect(fill).to.exist;
+    });
+
     it("Internally tracks fill status", async function () {
       const deposit = await depositV3(
         spokePool_1,
