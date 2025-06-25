@@ -1,7 +1,7 @@
 import { clients, interfaces, utils } from "@across-protocol/sdk";
 import { Contract } from "ethers";
 import winston from "winston";
-import { CHAIN_IDs, MakeOptional, EventSearchConfig, assign, isDefined, toBytes32 } from "../utils";
+import { CHAIN_IDs, MakeOptional, EventSearchConfig, assign, isDefined, toBytes32, toAddressType } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
 import { CrossChainContractsSet } from "../interfaces";
 import { zeroAddress } from "viem";
@@ -73,7 +73,7 @@ export class HubPoolClient extends clients.HubPoolClient {
   async update(eventsToQuery?: any): Promise<void> {
     if (isDefined(this.injectedChain)) {
       const dataToAdd: CrossChainContractsSet = {
-        spokePool: this.injectedChain.spokePool,
+        spokePool: toAddressType(this.injectedChain.spokePool, this.injectedChain.chainId),
         blockNumber: this.injectedChain.blockNumber,
         txnRef: toBytes32(zeroAddress),
         logIndex: 0,

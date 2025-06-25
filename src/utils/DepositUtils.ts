@@ -1,14 +1,12 @@
-import { RelayData } from "../interfaces";
-import { utils } from "@across-protocol/sdk";
-const { toBytes32 } = utils;
+import { RelayData, ConvertedRelayData } from "../interfaces";
 
-export function convertRelayDataParamsToBytes32(relayData: RelayData): RelayData {
+export function convertRelayDataParamsToBytes32(relayData: RelayData): ConvertedRelayData {
   return {
     ...relayData,
-    depositor: toBytes32(relayData.depositor),
-    recipient: toBytes32(relayData.recipient),
-    inputToken: toBytes32(relayData.inputToken),
-    outputToken: toBytes32(relayData.outputToken),
-    exclusiveRelayer: toBytes32(relayData.exclusiveRelayer),
+    depositor: relayData.depositor.toBytes32(),
+    recipient: relayData.recipient.toBytes32(),
+    inputToken: relayData.inputToken.toBytes32(),
+    outputToken: relayData.outputToken.toBytes32(),
+    exclusiveRelayer: relayData.exclusiveRelayer.toBytes32(),
   };
 }

@@ -16,6 +16,8 @@ import {
   assert,
   getNetworkName,
   isChainDisabled,
+  EvmAddress,
+  Address,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
@@ -44,8 +46,8 @@ export async function computePoolRebalanceUsdVolume(
 
   const bn10 = toBN(10);
   return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
-    return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
-      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token];
+    return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: EvmAddress, index: number) => {
+      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token.toEvmAddress()];
 
       const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
       const volume = netSendAmount.abs().mul(bn10.pow(18 - decimals)); // Scale volume to 18 decimals.
@@ -84,7 +86,7 @@ export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle)
     `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
     `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
     `\n\tSlowRelay root: ${shortenHexString(pendingRootBundle.slowRelayRoot)}` +
-    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer)}`
+    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer.toEvmAddress())}`
   );
 }
 
@@ -111,16 +113,16 @@ export function generateMarkdownForRootBundle(
     }`;
   });
 
-  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+  const convertTokenListFromWei = (chainId: number, tokenAddresses: Address[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(token.toNative(), chainId);
       return convertFromWei(weiVals[index], decimals);
     });
   };
-  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-    return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) => {
+    return hubPoolClient.getTokenInfoForAddress(tokenAddress.toNative(), chainId).symbol;
   };
-  const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+  const convertL1TokenAddressesToSymbols = (l1Tokens: EvmAddress[]) => {
     return l1Tokens.map((l1Token) => {
       return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
     });
@@ -144,7 +146,7 @@ export function generateMarkdownForRootBundle(
     delete leaf.leafId;
     leaf.amountToReturn = convertFromWei(
       leaf.amountToReturn,
-      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
+      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress.toNative(), leaf.chainId).decimals
     );
     leaf.refundAmounts = convertTokenListFromWei(
       leaf.chainId,
@@ -153,7 +155,7 @@ export function generateMarkdownForRootBundle(
     );
     leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
+    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
@@ -161,7 +163,10 @@ export function generateMarkdownForRootBundle(
   slowRelayLeaves.forEach((leaf, index) => {
     const { outputToken } = leaf.relayData;
     const destinationChainId = leaf.chainId;
-    const outputTokenDecimals = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId).decimals;
+    const outputTokenDecimals = hubPoolClient.getTokenInfoForAddress(
+      outputToken.toNative(),
+      destinationChainId
+    ).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     // Scale amounts to 18 decimals for realizedLpFeePct computation.
@@ -177,8 +182,8 @@ export function generateMarkdownForRootBundle(
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.
     const slowFill = {
       // Shorten select keys for ease of reading from Slack.
-      depositor: shortenHexString(leaf.relayData.depositor),
-      recipient: shortenHexString(leaf.relayData.recipient),
+      depositor: shortenHexString(leaf.relayData.depositor.toBytes32()),
+      recipient: shortenHexString(leaf.relayData.recipient.toBytes32()),
       originChainId: leaf.relayData.originChainId.toString(),
       destinationChainId: destinationChainId.toString(),
       depositId: leaf.relayData.depositId.toString(),

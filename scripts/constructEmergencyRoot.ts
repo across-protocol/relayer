@@ -10,6 +10,8 @@ import {
   toBNWei,
   toBN,
   buildPoolRebalanceLeafTree,
+  toAddressType,
+  EvmAddress,
 } from "../src/utils";
 
 function prettyRelayerRefundLeaf(leaves: RelayerRefundLeaf[]) {
@@ -42,7 +44,7 @@ export async function run(): Promise<void> {
       chainId: 10,
       refundAmounts: [],
       leafId: 0,
-      l2TokenAddress: "0x4200000000000000000000000000000000000006",
+      l2TokenAddress: toAddressType("0x4200000000000000000000000000000000000006", 10),
       refundAddresses: [],
     },
   ];
@@ -73,7 +75,7 @@ export async function run(): Promise<void> {
       runningBalances: [toBN(0)],
       groupIndex: 0,
       leafId: 0,
-      l1Tokens: ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"],
+      l1Tokens: [EvmAddress.from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")],
     },
   ];
   const relayerRefundLeaves2: RelayerRefundLeaf[] = [
@@ -82,8 +84,8 @@ export async function run(): Promise<void> {
       chainId: 1,
       refundAmounts: [toBN("132101928812168900443").sub(toBN("131550274134771935931"))],
       leafId: 0,
-      l2TokenAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-      refundAddresses: ["0x428AB2BA90Eba0a4Be7aF34C9Ac451ab061AC010"],
+      l2TokenAddress: toAddressType("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 1),
+      refundAddresses: [toAddressType("0x428AB2BA90Eba0a4Be7aF34C9Ac451ab061AC010", 1)],
     },
   ];
   const poolRebalanceRoot: MerkleTree<PoolRebalanceLeaf> = buildPoolRebalanceLeafTree(poolRebalanceLeaves);

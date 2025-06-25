@@ -13,6 +13,7 @@ import {
   SvmAddress,
   mapAsync,
   chainIsProd,
+  toKitAddress,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
@@ -809,7 +810,7 @@ async function _getCCTPDepositEventsSvm(
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
     "DepositForBurn",
-    SvmAddress.from(address).toV2Address(),
+    toKitAddress(SvmAddress.from(address)),
     BigInt(sourceEventSearchConfig.from),
     BigInt(sourceEventSearchConfig.to)
   );

@@ -6,6 +6,7 @@ import {
   Contract,
   paginatedEventQuery,
   spreadEventWithBlockNumber,
+  Address,
 } from "../utils";
 import { Log, TokenTransfer, TransfersByChain } from "../interfaces";
 import { Provider } from "@ethersproject/abstract-provider";
@@ -18,16 +19,16 @@ export class TokenTransferClient {
     // We can accept spokePoolClients here instead, but just accepting providers makes it very clear that we dont
     // rely on SpokePoolClient and its cached state.
     readonly providerByChainIds: { [chainId: number]: Provider },
-    readonly monitoredAddresses: string[]
+    readonly monitoredAddresses: Address[]
   ) {}
 
-  getTokenTransfers(address: string): TransfersByChain {
-    return this.tokenTransfersByAddress[address];
+  getTokenTransfers(address: Address): TransfersByChain {
+    return this.tokenTransfersByAddress[address.toBytes32()];
   }
 
   async update(
     searchConfigByChainIds: { [chainId: number]: EventSearchConfig },
-    tokenByChainIds: { [chainId: number]: string[] }
+    tokenByChainIds: { [chainId: number]: Address[] }
   ): Promise<void> {
     this.logger.debug({
       at: "TokenTransferClient",
@@ -38,7 +39,9 @@ export class TokenTransferClient {
     const tokenContractsByChainId = Object.fromEntries(
       Object.entries(tokenByChainIds).map(([chainId, tokens]) => [
         Number(chainId),
-        tokens.map((token: string) => new Contract(token, ERC20.abi, this.providerByChainIds[Number(chainId)])),
+        tokens.map(
+          (token: Address) => new Contract(token.toEvmAddress(), ERC20.abi, this.providerByChainIds[Number(chainId)])
+        ),
       ])
     );
 
@@ -56,13 +59,13 @@ export class TokenTransferClient {
         );
 
         // Create an entry in the cache if not initialized.
-        const tokenTransfers = this.tokenTransfersByAddress[monitoredAddress];
+        const tokenTransfers = this.tokenTransfersByAddress[monitoredAddress.toBytes32()];
         if (tokenTransfers === undefined || tokenTransfers[chainId] === undefined) {
-          assign(this.tokenTransfersByAddress, [monitoredAddress, chainId], {});
+          assign(this.tokenTransfersByAddress, [monitoredAddress.toBytes32(), chainId], {});
         }
 
         // Update outgoing and incoming transfers for current relayer in the cache.
-        const transferCache = this.tokenTransfersByAddress[monitoredAddress][chainId];
+        const transferCache = this.tokenTransfersByAddress[monitoredAddress.toBytes32()][chainId];
         for (const [tokenAddress, events] of Object.entries(transferEventsPerToken)) {
           if (transferCache[tokenAddress] === undefined) {
             transferCache[tokenAddress] = {
@@ -88,8 +91,8 @@ export class TokenTransferClient {
   }
 
   // Returns outgoing and incoming transfers for the specified tokenContract and address.
-  querySendAndReceiveEvents(tokenContract: Contract, address: string, config: EventSearchConfig): Promise<Log[][]> {
-    const eventFilters = [[address], [undefined, address]];
+  querySendAndReceiveEvents(tokenContract: Contract, address: Address, config: EventSearchConfig): Promise<Log[][]> {
+    const eventFilters = [[address.toEvmAddress()], [undefined, address.toEvmAddress()]];
     return Promise.all(
       eventFilters.map((eventFilter) =>
         paginatedEventQuery(tokenContract, tokenContract.filters.Transfer(...eventFilter), config)
