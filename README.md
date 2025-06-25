@@ -96,7 +96,7 @@ use `yalc link @across-protocol/sdk` if you dont want yalc to modify package.jso
 
 4. Making changes to the SDK
 
-After making changes to the SDK, you can run 
+After making changes to the SDK, you can run in the `@across-protocol/sdk` directory:
 
 ```sh
 yalc push
