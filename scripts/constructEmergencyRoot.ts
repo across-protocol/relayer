@@ -11,6 +11,7 @@ import {
   toBN,
   buildPoolRebalanceLeafTree,
   toAddressType,
+  EvmAddress,
 } from "../src/utils";
 
 function prettyRelayerRefundLeaf(leaves: RelayerRefundLeaf[]) {
@@ -74,7 +75,7 @@ export async function run(): Promise<void> {
       runningBalances: [toBN(0)],
       groupIndex: 0,
       leafId: 0,
-      l1Tokens: [toAddressType("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 1)],
+      l1Tokens: [EvmAddress.from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")],
     },
   ];
   const relayerRefundLeaves2: RelayerRefundLeaf[] = [

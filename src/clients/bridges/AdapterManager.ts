@@ -109,13 +109,7 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(
-              chainId,
-              hubChainId,
-              l2Signer,
-              l1Signer,
-              toAddressType(l1Token, hubChainId)
-            );
+            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
@@ -154,7 +148,7 @@ export class AdapterManager {
     return Object.keys(this.adapters).map((chainId) => Number(chainId));
   }
 
-  getOutstandingCrossChainTransfers(chainId: number, l1Tokens: Address[]): Promise<OutstandingTransfers> {
+  getOutstandingCrossChainTransfers(chainId: number, l1Tokens: EvmAddress[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
@@ -187,7 +181,7 @@ export class AdapterManager {
   }
 
   withdrawTokenFromL2(
-    address: Address,
+    address: EvmAddress,
     chainId: number | string,
     l2Token: Address,
     amount: BigNumber,

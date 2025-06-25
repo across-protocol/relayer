@@ -47,6 +47,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     const l1TokenInfo = getTokenInfo(l1Token.toNative(), hubChainId);
     this.l1TokenInfo = {
       ...l1TokenInfo,
+      address: EvmAddress.from(l1TokenInfo.address.toEvmAddress()),
       symbol: l1TokenInfo.symbol === "WETH" ? "ETH" : l1TokenInfo.symbol,
     };
 

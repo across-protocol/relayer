@@ -32,7 +32,6 @@ import {
   ZERO_BYTES,
   isEVMSpokePoolClient,
   EvmAddress,
-  toAddressType,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -315,7 +314,7 @@ export class BaseChainAdapter {
     l2Token: Address
   ): Promise<BigNumber> {
     const l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
-    if (!this.isSupportedL2Bridge(toAddressType(l1Token, this.hubChainId))) {
+    if (!this.isSupportedL2Bridge(EvmAddress.from(l1Token))) {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([

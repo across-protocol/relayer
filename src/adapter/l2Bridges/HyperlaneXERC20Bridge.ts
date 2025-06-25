@@ -45,6 +45,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
     const l2TokenAddressStr = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
+    assert(l2TokenAddressStr.isEVM());
     this.l2Token = l2TokenAddressStr;
 
     const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2TokenAddressStr.toEvmAddress()];

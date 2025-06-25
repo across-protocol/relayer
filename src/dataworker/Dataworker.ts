@@ -1909,7 +1909,7 @@ export class Dataworker {
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
       const currHubPoolLiquidReserves =
         latestLiquidReserves[l1Token] ??
-        this.clients.hubPoolClient.getLpTokenInfoForL1Token(toAddressType(l1Token, hubPoolChainId))?.liquidReserves;
+        this.clients.hubPoolClient.getLpTokenInfoForL1Token(EvmAddress.from(l1Token))?.liquidReserves;
       assert(
         currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0),
         "Liquid reserves should be >= 0"
@@ -1922,9 +1922,7 @@ export class Dataworker {
         return;
       }
 
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(
-        toAddressType(l1Token, hubPoolChainId)
-      )?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(EvmAddress.from(l1Token))?.symbol;
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
@@ -2003,9 +2001,7 @@ export class Dataworker {
     // multiple transactions for the same token.
     if (submitExecution) {
       for (const l1Token of updatedL1Tokens) {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(
-          toAddressType(l1Token, hubPoolChainId)
-        )?.symbol;
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(EvmAddress.from(l1Token))?.symbol;
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,

@@ -239,6 +239,7 @@ export class TokenClient {
         try {
           const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
           // Validate that the remote token is a valid Solana address
+          assert(remoteToken.isSVM());
           return remoteToken;
         } catch (error) {
           // No known deployment for this token on the SpokePool.
@@ -431,9 +432,14 @@ export class TokenClient {
   private _getTokenClientTokens(): L1Token[] {
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
-    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
-      getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId)
-    );
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
+      const l1TokenInfo = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
+      assert(l1TokenInfo.address.isEVM());
+      return {
+        ...l1TokenInfo,
+        address: l1TokenInfo.address,
+      };
+    });
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 

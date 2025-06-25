@@ -26,11 +26,9 @@ import {
   getRedisCache,
   Signer,
   SpokePool,
-  toAddressType,
   SvmAddress,
+  EvmAddress,
   getSvmSignerFromEvmSigner,
-  ethers,
-  CHAIN_IDs,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -82,7 +80,7 @@ export async function constructRelayerClients(
   baseSigner: Signer
 ): Promise<RelayerClients> {
   const _signerAddr = await baseSigner.getAddress();
-  const signerAddr = toAddressType(_signerAddr, config.hubPoolChainId);
+  const signerAddr = EvmAddress.from(_signerAddr);
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
   // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
   // almost all cases. Look back to genesis on testnets.
@@ -133,13 +131,7 @@ export async function constructRelayerClients(
 
   const relayerTokens = sdkUtils.dedupArray([
     ...config.relayerTokens,
-    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => {
-      // We need to pass in a chain ID to `toAddressType` so that it may construct either an EVM or SVM address from the token address. Since we
-      // don't know the chain ID from config alone, we assume that the config is instantiated correctly and infer the chain ID based on the format
-      // of the address. That is, a hex string means and EVM address and a base58 string means a Solana address.
-      const chainId = ethers.utils.isHexString(token) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
-      return toAddressType(token, chainId);
-    }),
+    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)),
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);

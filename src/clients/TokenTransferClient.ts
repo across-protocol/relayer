@@ -7,7 +7,6 @@ import {
   paginatedEventQuery,
   spreadEventWithBlockNumber,
   Address,
-  EvmAddress,
 } from "../utils";
 import { Log, TokenTransfer, TransfersByChain } from "../interfaces";
 import { Provider } from "@ethersproject/abstract-provider";
@@ -92,7 +91,7 @@ export class TokenTransferClient {
   }
 
   // Returns outgoing and incoming transfers for the specified tokenContract and address.
-  querySendAndReceiveEvents(tokenContract: Contract, address: EvmAddress, config: EventSearchConfig): Promise<Log[][]> {
+  querySendAndReceiveEvents(tokenContract: Contract, address: Address, config: EventSearchConfig): Promise<Log[][]> {
     const eventFilters = [[address.toEvmAddress()], [undefined, address.toEvmAddress()]];
     return Promise.all(
       eventFilters.map((eventFilter) =>

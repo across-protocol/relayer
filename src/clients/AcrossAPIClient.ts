@@ -10,9 +10,7 @@ import {
   CHAIN_IDs,
   getRedisCache,
   bnUint256Max as uint256Max,
-  Address,
   EvmAddress,
-  toAddressType,
   isDefined,
 } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
@@ -40,7 +38,7 @@ export class AcrossApiClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     chainIds: number[],
-    readonly tokensQuery: Address[] = [],
+    readonly tokensQuery: EvmAddress[] = [],
     readonly timeout: number = 3000
   ) {
     const hubChainId = hubPoolClient.chainId;
@@ -49,7 +47,7 @@ export class AcrossApiClient {
       this.tokensQuery = dedupArray(
         Object.values(TOKEN_SYMBOLS_MAP)
           .map(({ addresses }) =>
-            isDefined(addresses[hubChainId]) ? toAddressType(addresses[hubChainId], hubChainId) : undefined
+            isDefined(addresses[hubChainId]) ? EvmAddress.from(addresses[hubChainId]) : undefined
           )
           .filter(isDefined)
       );

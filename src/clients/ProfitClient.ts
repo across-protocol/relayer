@@ -678,10 +678,7 @@ export class ProfitClient {
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
         const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
-        const hubToken = toAddressType(
-          TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId],
-          this.hubPoolClient.chainId
-        );
+        const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =
           destinationChainId === hubPoolClient.chainId
             ? hubToken
@@ -727,9 +724,14 @@ export class ProfitClient {
   private _getL1Tokens(): L1Token[] {
     // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
-    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
-      getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId)
-    );
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
+      const l1TokenInfo = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
+      assert(l1TokenInfo.address.isEVM());
+      return {
+        ...l1TokenInfo,
+        address: l1TokenInfo.address,
+      };
+    });
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 

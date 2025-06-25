@@ -69,7 +69,7 @@ export class InventoryClient {
   private profiler: InstanceType<typeof Profiler>;
 
   constructor(
-    readonly relayer: Address,
+    readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
     readonly inventoryConfig: InventoryConfig,
     readonly tokenClient: TokenClient,
@@ -272,9 +272,8 @@ export class InventoryClient {
 
   getL1Tokens(): EvmAddress[] {
     return (
-      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) =>
-        toAddressType(token, this.hubPoolClient.chainId)
-      ) || this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
+      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
+      this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
     );
   }
 
@@ -402,7 +401,7 @@ export class InventoryClient {
   }
 
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    return toAddressType(getL1TokenAddress(l2Token.toNative(), chainId), chainId);
+    return EvmAddress.from(getL1TokenAddress(l2Token.toNative(), chainId));
   }
 
   /**
@@ -1120,10 +1119,7 @@ export class InventoryClient {
     const executedTransactions: ExecutedUnwrap[] = [];
 
     try {
-      const l1Weth = toAddressType(
-        TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId],
-        this.hubPoolClient.chainId
-      );
+      const l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubPoolClient.chainId]);
       const chains = await Promise.all(
         this.getEnabledChains()
           .map((chainId) => {
@@ -1441,9 +1437,7 @@ export class InventoryClient {
       }
       const { symbol, decimals } = tokenInfo;
       const formatter = createFormatFunction(2, 4, false, decimals);
-      cumulativeBalances[symbol] = formatter(
-        this.getCumulativeBalance(toAddressType(l1Token, this.hubPoolClient.chainId)).toString()
-      );
+      cumulativeBalances[symbol] = formatter(this.getCumulativeBalance(EvmAddress.from(l1Token)).toString());
       logData[symbol] ??= {};
 
       Object.keys(distributionForToken).forEach((_chainId) => {
@@ -1454,15 +1448,12 @@ export class InventoryClient {
           const l2Token = toAddressType(_l2Token, chainId);
           const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token.toNative(), chainId);
           const l2Formatter = createFormatFunction(2, 4, false, l2TokenDecimals);
-          const balanceOnChain = this.getBalanceOnChain(
-            chainId,
-            toAddressType(l1Token, this.hubPoolClient.chainId),
-            l2Token
-          );
+          const l1TokenAddr = EvmAddress.from(l1Token);
+          const balanceOnChain = this.getBalanceOnChain(chainId, l1TokenAddr, l2Token);
           const transfers = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
             this.relayer,
             chainId,
-            toAddressType(l1Token, this.hubPoolClient.chainId),
+            l1TokenAddr,
             l2Token
           );
           const actualBalanceOnChain = this.tokenClient.getBalance(chainId, l2Token);

@@ -51,6 +51,8 @@ import {
   isSVMSpokePoolClient,
   toAddressType,
   Address,
+  EvmAddress,
+  assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
 } from "../utils";
@@ -282,9 +284,14 @@ export class Monitor {
   }
 
   getL1TokensForRelayerBalancesReport(): L1Token[] {
-    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) =>
-      getTokenInfo(l1Token, this.clients.hubPoolClient.chainId)
-    );
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
+      const l1TokenInfo = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId);
+      assert(l1TokenInfo.address.isEVM());
+      return {
+        ...l1TokenInfo,
+        address: l1TokenInfo.address,
+      };
+    });
     const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens(), ...additionalL1Tokens].map(
       ({ symbol, ...tokenInfo }) => {
         return {
@@ -300,10 +307,7 @@ export class Monitor {
     if (indexOfUsdc > -1 && TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]) {
       allL1Tokens.splice(indexOfUsdc, 0, {
         symbol: "USDC.e",
-        address: toAddressType(
-          TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId],
-          this.clients.hubPoolClient.chainId
-        ),
+        address: EvmAddress.from(TOKEN_SYMBOLS_MAP["USDC.e"].addresses[this.clients.hubPoolClient.chainId]),
         decimals: 6,
       });
     }
@@ -1193,7 +1197,7 @@ export class Monitor {
     }
   }
 
-  protected getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
+  protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number | string): Address | undefined {
     return chainId === this.clients.hubPoolClient.chainId
       ? l1Token
       : getRemoteTokenForL1Token(l1Token, chainId, this.clients.hubPoolClient.chainId);
