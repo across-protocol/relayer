@@ -92,7 +92,7 @@ yalc publish
 ```sh
 yalc add @across-protocol/sdk
 ```
-use `yalc link @across-protocol/sdk` if you dont want yalc to no modify package.json file
+use `yalc link @across-protocol/sdk` if you dont want yalc to modify package.json file
 
 4. Making changes to the SDK
 
