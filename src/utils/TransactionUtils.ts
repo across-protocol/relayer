@@ -31,7 +31,7 @@ export type TransactionSimulationResult = {
   data?: any;
 };
 
-const { isError, isEthersError } = typeguards;
+const { isError, isEthersError, isViemError } = typeguards;
 
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
@@ -48,6 +48,16 @@ const txnRetryable = (error?: unknown): boolean => {
   }
 
   return expectedRpcErrorMessages.has((error as Error)?.message);
+};
+
+// 0x8f260c60 = keccak256("RelayFilled()")[:4]
+const expectedRevertData = new Set(["0x8f260c60"]);
+const isExpectedViemError = (error: unknown): boolean => {
+  if (isViemError(error)) {
+    const revertData = (error as any).data as `0x${string}`;
+    return expectedRevertData.has(revertData.toLowerCase());
+  }
+  return false;
 };
 
 export function getNetworkError(err: unknown): string {
@@ -70,6 +80,7 @@ export async function runTransaction(
   nonce: number | null = null,
   retriesRemaining = 1
 ): Promise<TransactionResponse> {
+  console.log("TESATI");
   const { provider } = contract;
   const { chainId } = await provider.getNetwork();
 
@@ -118,6 +129,7 @@ export async function runTransaction(
     );
     return await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
+    console.log("TESATI 2");
     if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
       retriesRemaining -= 1;
@@ -158,7 +170,7 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) ? "warn" : "error"]({
+        logger[txnRetryable(error) || isExpectedViemError(error) ? "warn" : "error"]({
           ...commonFields,
           error: stringifyThrownValue(error),
         });
