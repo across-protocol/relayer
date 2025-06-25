@@ -92,7 +92,7 @@ yalc publish
 ```sh
 yalc add @across-protocol/sdk
 ```
-use `yalc link @across-protocol/sdk` if you dont want yalc to update package.json file
+use `yalc link @across-protocol/sdk` if you dont want yalc to no modify package.json file
 
 4. Making changes to the SDK
 
@@ -102,7 +102,7 @@ After making changes to the SDK, you can run
 yalc push
 ```
 
-this will publish the SDK changes and update all the yalc sdk usages.
+this will publish the SDK changes and update all the yalc SDK usages.
 
 Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
 
