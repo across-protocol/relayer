@@ -87,13 +87,22 @@ npm install -g yalc
 yalc publish
 ```
 
-3. Link the local SDK in this repository:
+3. Add/Link the local SDK in this repository:
 
 ```sh
 yalc add @across-protocol/sdk
 ```
+use `yalc link @across-protocol/sdk` if you dont want yalc to update package.json file
 
-To make updates to the SDK, you can run `yalc update @across-protocol/sdk` in this repository.
+4. Making changes to the SDK
+
+After making changes to the SDK, you can run 
+
+```sh
+yalc push
+```
+
+this will publish the SDK changes and update all the yalc sdk usages.
 
 Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
 
