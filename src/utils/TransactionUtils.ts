@@ -19,6 +19,7 @@ import {
   CHAIN_IDs,
   EvmGasPriceEstimate,
 } from "../utils";
+import { BaseError } from "viem";
 dotenv.config();
 
 // Define chains that require legacy (type 0) transactions
@@ -31,7 +32,7 @@ export type TransactionSimulationResult = {
   data?: any;
 };
 
-const { isError, isEthersError, isViemError } = typeguards;
+const { isError, isEthersError } = typeguards;
 
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
@@ -50,14 +51,20 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-// 0x8f260c60 = keccak256("RelayFilled()")[:4]
-const expectedRevertData = new Set(["0x8f260c60"]);
-const isExpectedViemError = (error: unknown): boolean => {
-  if (isViemError(error)) {
-    const revertData = (error as any).data as `0x${string}`;
-    return expectedRevertData.has(revertData.toLowerCase());
-  }
-  return false;
+// Linea has a special method linea_estimateGas that doesn't return a revert reason.
+// So we need to check the stack to see if it's a linea estimateGas error.
+const isLineaViemError = (error: unknown): boolean => {
+  const lineaEstimateGasPath = "viem/_cjs/linea/actions/estimateGas.js";
+  const fillRelaySelector = "0xdeff4b24";
+  const multicallSelector = "0xac9650d8";
+
+  const errorStack = (error as Error).stack;
+  const isLineaEstimateGasError = errorStack?.includes(lineaEstimateGasPath);
+  const isFillRelayError = errorStack?.includes(fillRelaySelector);
+  const isMulticallError = errorStack?.includes(multicallSelector);
+  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
+
+  return isLineaEstimateGasError && isFillRelayError && isFillRelayInMulticallError;
 };
 
 export function getNetworkError(err: unknown): string {
@@ -168,7 +175,7 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) || isExpectedViemError(error) ? "warn" : "error"]({
+        logger[txnRetryable(error) || isLineaViemError(error) ? "warn" : "error"]({
           ...commonFields,
           error: stringifyThrownValue(error),
         });
