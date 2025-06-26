@@ -90,8 +90,8 @@ import {
   fetchEncodedAccount,
   type KeyPairSigner,
 } from "@solana/kit";
-import { TOKEN_PROGRAM_ADDRESS, getMintSize, getInitializeMintInstruction, fetchMint } from "@solana-program/token";
-import { getCreateAccountInstruction } from "@solana-program/system";
+import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
@@ -100,6 +100,10 @@ import { SvmSpokeClient } from "@across-protocol/contracts";
 // level log for.
 const IGNORE_DISPUTE_REASONS = new Set(["bundle-end-block-buffer"]);
 const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-of-date-config-store-version"]);
+
+// When executing Solana leaves, we need to write data to the `instruction_params` PDA. Empirically, the maximum amount we can write per
+// instruction is 900 bytes.
+const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
 const { getAddress } = ethersUtils;
@@ -2741,12 +2745,19 @@ export class Dataworker {
     });
 
     // Then add an instruction which populates that initialized PDA with the data of the relayer refund leaf.
-    const writeInstructionParamsFragmentIx = SvmSpokeClient.getWriteInstructionParamsFragmentInstruction({
-      signer: kitKeypair,
-      instructionParams: instructionParamsPda,
-      offset: 0, // @todo
-      fragment: relayerRefundLeafBytes,
-    });
+    const writeInstructionParamsFragmentIx = [];
+    for (let i = 0; i < relayerRefundLeafBytes.length / INSTRUCTION_PARAMS_MAX_WRITE_SIZE; ++i) {
+      const offset = i * INSTRUCTION_PARAMS_MAX_WRITE_SIZE;
+      const offsetEnd = Math.min(offset + INSTRUCTION_PARAMS_MAX_WRITE_SIZE, relayerRefundLeafBytes.length) + 1;
+      writeInstructionParamsFragmentIx.push(
+        SvmSpokeClient.getWriteInstructionParamsFragmentInstruction({
+          signer: kitKeypair,
+          instructionParams: instructionParamsPda,
+          offset,
+          fragment: relayerRefundLeafBytes.slice(offset, offsetEnd),
+        })
+      );
+    }
 
     // There are two modes of refunding relayers on SVM:
     // Case 1: All relayers have an initialized ATA, so we call the spoke pool's `executeRelayerRefundLeaf` instruction.
@@ -2776,7 +2787,7 @@ export class Dataworker {
             : tx,
         (tx) =>
           appendTransactionMessageInstructions(
-            [initializeInstructionParamsIx, writeInstructionParamsFragmentIx, executeRelayerRefundLeafIx],
+            [initializeInstructionParamsIx, ...writeInstructionParamsFragmentIx, executeRelayerRefundLeafIx],
             tx
           )
       );
@@ -2804,7 +2815,7 @@ export class Dataworker {
             : tx,
         (tx) =>
           appendTransactionMessageInstructions(
-            [initializeInstructionParamsIx, writeInstructionParamsFragmentIx, executeRelayerRefundLeafDeferredIx],
+            [initializeInstructionParamsIx, ...writeInstructionParamsFragmentIx, executeRelayerRefundLeafDeferredIx],
             tx
           )
       );
@@ -2861,27 +2872,17 @@ export class Dataworker {
     });
 
     // Check whether the recipient on Solana has an ATA for the output token. If they do not, then create one and include that in the instruction set.
-    let recipientCreateTokenAccountInstructions;
-    const [associatedTokenAccountExists, mintInfo] = await Promise.all([
-      (await fetchEncodedAccount(provider, recipientTokenAccount)).exists,
-      fetchMint(provider, l2TokenAddress),
-    ]);
+    let recipientCreateTokenAccountInstruction;
+    const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
-      const space = BigInt(getMintSize());
-      const rent = await provider.getMinimumBalanceForRentExemption(space).send();
-      const createAccountIx = getCreateAccountInstruction({
+      recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
-        newAccount: kitKeypair, // @todo
-        lamports: rent,
-        space,
-        programAddress: TOKEN_PROGRAM_ADDRESS,
-      });
-      const initializeMintIx = getInitializeMintInstruction({
+        owner: statePda,
         mint: l2TokenAddress,
-        decimals: mintInfo.data.decimals,
-        mintAuthority: recipient,
+        ata: recipientTokenAccount,
+        systemProgram: SYSTEM_PROGRAM_ADDRESS,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
       });
-      recipientCreateTokenAccountInstructions = [createAccountIx, initializeMintIx];
     }
 
     // Build the slow fill transaction. If there are instructions to create a new token account, then add those instructions to the slow fill transaction. Otherwise,
@@ -2891,8 +2892,8 @@ export class Dataworker {
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
       (tx) =>
-        isDefined(recipientCreateTokenAccountInstructions)
-          ? appendTransactionMessageInstructions(recipientCreateTokenAccountInstructions, tx)
+        isDefined(recipientCreateTokenAccountInstruction)
+          ? appendTransactionMessageInstructions([recipientCreateTokenAccountInstruction], tx)
           : tx,
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
