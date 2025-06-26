@@ -1366,13 +1366,13 @@ export class Dataworker {
           });
         } else {
           assert(isSVMSpokePoolClient(client));
-          const _signature = await this._executeSlowFillLeafSvm(
+          const signature = await this._executeSlowFillLeafSvm(
             client,
             leaf,
             rootBundleId,
             slowRelayTree.getHexProof(leaf)
-          ); // @todo
-          _signature;
+          );
+          this.logger.info({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn, signature });
         }
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
@@ -2425,13 +2425,17 @@ export class Dataworker {
             canFailInSimulation: leaf.chainId === this.clients.hubPoolClient.chainId,
           });
         } else if (isSVMSpokePoolClient(client)) {
-          const _signature = await this._executeRelayerRefundLeafSvm(
+          const signature = await this._executeRelayerRefundLeafSvm(
             client,
             leaf,
             rootBundleId,
             relayerRefundTree.getHexProof(leaf)
-          ); // @todo
-          _signature;
+          );
+          this.logger.info({
+            at: "Dataworker#_executeRelayerRefundLeaves",
+            message: mrkdwn,
+            signature,
+          });
         }
       } else {
         this.logger.debug({ at: "Dataworker#_executeRelayerRefundLeaves", message: mrkdwn });
@@ -2721,11 +2725,28 @@ export class Dataworker {
       getInstructionParamsPda(spokePoolProgramId, kitKeypair.address),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.l2TokenAddress),
     ]);
+    this.logger.debug({
+      at: "Dataworker#executeRelayerRefundLeafSvm",
+      message: "Relayer refund leaf accounts",
+      leaf,
+      rootBundleId,
+      eventAuthority,
+      statePda,
+      transferLiabilityPda,
+      rootBundlePda,
+      instructionParamsPda,
+      vault,
+    });
     // Optionally close the existing instruction params account and add an instruction which loads new data into the instruction params PDA.
     const instructionParamsAccount = await fetchEncodedAccount(provider, instructionParamsPda);
     let closeInstructionParamsIx;
     // If the account exists, define the instruction needed to close the instruction account.
     if (instructionParamsAccount.exists) {
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Need to close existing instruction params account",
+        instructionParamsAccount,
+      });
       closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
         instructionParams: instructionParamsPda,
@@ -2744,19 +2765,47 @@ export class Dataworker {
       totalSize: relayerRefundLeafBytes.length,
     });
 
+    const initInstructionParamsTx = pipe(
+      createTransactionMessage({ version: 0 }),
+      (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+      (tx) =>
+        isDefined(closeInstructionParamsIx) ? appendTransactionMessageInstructions([closeInstructionParamsIx], tx) : tx,
+      (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
+    );
+    let txSignature = runTransactionSvm(initInstructionParamsTx, kitKeypair, provider);
+    this.logger.debug({
+      at: "Dataworker#executeRelayerRefundLeafSvm",
+      message: "Initialized instruction params account",
+      instructionParamsAccount,
+      allocatedMemory: relayerRefundLeafBytes.length,
+      txSignature,
+    });
+
     // Then add an instruction which populates that initialized PDA with the data of the relayer refund leaf.
-    const writeInstructionParamsFragmentIx = [];
-    for (let i = 0; i < relayerRefundLeafBytes.length / INSTRUCTION_PARAMS_MAX_WRITE_SIZE; ++i) {
+    for (let i = 0; i <= relayerRefundLeafBytes.length / INSTRUCTION_PARAMS_MAX_WRITE_SIZE; ++i) {
       const offset = i * INSTRUCTION_PARAMS_MAX_WRITE_SIZE;
       const offsetEnd = Math.min(offset + INSTRUCTION_PARAMS_MAX_WRITE_SIZE, relayerRefundLeafBytes.length) + 1;
-      writeInstructionParamsFragmentIx.push(
-        SvmSpokeClient.getWriteInstructionParamsFragmentInstruction({
-          signer: kitKeypair,
-          instructionParams: instructionParamsPda,
-          offset,
-          fragment: relayerRefundLeafBytes.slice(offset, offsetEnd),
-        })
+      const fragment = relayerRefundLeafBytes.slice(offset, offsetEnd);
+      const writeInstructionParamsIx = SvmSpokeClient.getWriteInstructionParamsFragmentInstruction({
+        signer: kitKeypair,
+        instructionParams: instructionParamsPda,
+        offset,
+        fragment,
+      });
+      const writeInstructionParamsTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+        (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
+      txSignature = runTransactionSvm(writeInstructionParamsTx, kitKeypair, provider);
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Wrote relayer refund leaf data to instruction params account",
+        fragment,
+        writeNumber: i,
+      });
     }
 
     // There are two modes of refunding relayers on SVM:
@@ -2781,15 +2830,7 @@ export class Dataworker {
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         // @dev This RPC response returns an unknown, so we need to cast it to the proper return type.
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
-        (tx) =>
-          isDefined(closeInstructionParamsIx)
-            ? appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
-            : tx,
-        (tx) =>
-          appendTransactionMessageInstructions(
-            [initializeInstructionParamsIx, ...writeInstructionParamsFragmentIx, executeRelayerRefundLeafIx],
-            tx
-          )
+        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx)
       );
       return runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
     } catch (e) {
@@ -2809,15 +2850,7 @@ export class Dataworker {
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
-        (tx) =>
-          isDefined(closeInstructionParamsIx)
-            ? appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
-            : tx,
-        (tx) =>
-          appendTransactionMessageInstructions(
-            [initializeInstructionParamsIx, ...writeInstructionParamsFragmentIx, executeRelayerRefundLeafDeferredIx],
-            tx
-          )
+        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx)
       );
       return runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
     }
@@ -2850,6 +2883,16 @@ export class Dataworker {
       getAssociatedTokenAddress(SvmAddress.from(recipient.toString()), leaf.relayData.outputToken),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.relayData.outputToken),
     ]);
+    this.logger.debug({
+      at: "Dataworker#executeSlowFillLeafSvm",
+      message: "Slow fill leaf accounts",
+      eventAuthority,
+      statePda,
+      fillStatusPda,
+      rootBundlePda,
+      recipientTokenAccount,
+      vault,
+    });
 
     // Get the slow fill information.
     const relayDataHash = getRelayDataHash(leaf.relayData, leaf.chainId);
