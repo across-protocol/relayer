@@ -41,6 +41,7 @@ import {
   Address,
   toAddressType,
   toBytes32,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -199,10 +200,16 @@ export class ProfitClient {
     // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
     // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
     const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
-    assert(
-      isDefined(address),
-      `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
-    );
+    // If address is undefined, then the token is neither a symbol in the token map nor an EVM address, so assume it is an SVM base58 encoded address.
+    if (!isDefined(address)) {
+      try {
+        return toAddressType(token, CHAIN_IDs.SOLANA);
+      } catch {
+        throw new Error(
+          `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
+        );
+      }
+    }
     // We need to get the chain ID corresponding to the address, but we don't have access to this information in this function, so we instead
     // infer the chain ID as either an EVM chain ID or an SVM chain ID based on the format of the address (since the tokenSymbolMap should be
     // well formed).
@@ -550,7 +557,7 @@ export class ProfitClient {
     const l1Tokens = this._getL1Tokens();
     // Generate list of tokens to retrieve. Map by symbol because tokens like
     // ETH/WETH refer to the same mainnet contract address.
-    const tokens: { [_symbol: string]: string } = Object.fromEntries(
+    const tokens: { [_symbol: string]: Address } = Object.fromEntries(
       l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
@@ -573,7 +580,10 @@ export class ProfitClient {
           if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(address)) {
             address = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
           }
-          return [symbol, address];
+          if (!isDefined(address)) {
+            return [symbol, undefined];
+          }
+          return [symbol, toAddressType(address, CHAIN_IDs.MAINNET)];
         })
         .filter(([symbol, address]) => isDefined(address) && isDefined(symbol))
     );
@@ -596,32 +606,41 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[this._getNativeTokenNetwork(symbol)];
+      const nativeTokenNetwork = this._getNativeTokenNetwork(symbol);
+      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[nativeTokenNetwork];
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
         nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
       }
-      tokens[symbol] ??= nativeTokenAddress;
+      tokens[symbol] ??= toAddressType(nativeTokenAddress, nativeTokenNetwork);
     });
 
     this.logger.debug({ at: "ProfitClient", message: "Updating Profit client", tokens });
 
     // Pre-populate any new addresses.
     Object.entries(tokens).forEach(([symbol, address]) => {
-      this.tokenSymbolMap[symbol] ??= address;
-      this.tokenPrices[toBytes32(address)] ??= bnZero;
+      this.tokenSymbolMap[symbol] ??= address.toNative();
+      this.tokenPrices[address.toBytes32()] ??= bnZero;
     });
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
-      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[toBytes32(address)] = toBNWei(price)));
+      const tokenPrices = await this.priceClient.getPricesByAddress(
+        tokenAddrs.map((addr) => addr.toNative()),
+        "usd"
+      );
+      tokenPrices.forEach(({ address, price }) => {
+        const decodedAddress = ethersUtils.isHexString(address)
+          ? address
+          : toAddressType(address, CHAIN_IDs.SOLANA).toBytes32();
+        this.tokenPrices[toBytes32(decodedAddress)] = toBNWei(price);
+      });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
       let mrkdwn = `${errMsg}:\n`;
       Object.entries(tokens).forEach(([symbol, address]) => {
-        mrkdwn += `- Using last known ${symbol} price of ${this.getPriceOfToken(address)}.\n`;
+        mrkdwn += `- Using last known ${symbol} price of ${this.getPriceOfToken(address.toNative())}.\n`;
       });
       this.logger.warn({ at: "ProfitClient", message: "Could not fetch all token prices 💳", mrkdwn });
       throw new Error(errMsg);
@@ -649,34 +668,35 @@ export class ProfitClient {
       [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
       [CHAIN_IDs.TATARA]: "WETH",
     };
-    const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
-    const [defaultTestSymbol, relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
-
-    // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
-    // use the main RL address because it has all supported tokens and approvals in place on all chains.
-    const sampleDeposit = {
-      depositId: bnZero,
-      depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-      recipient: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-      inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
-      inputAmount: outputAmount.add(bnOne),
-      outputToken: "", // SpokePool-specific, overwritten later.
-      outputAmount,
-      originChainId: 0, // Not verified by the SpokePool.
-      destinationChainId: 0, // SpokePool-specific, overwritten later.
-      quoteTimestamp: currentTime - 60,
-      fillDeadline: currentTime + 60,
-      exclusivityDeadline: 0,
-      exclusiveRelayer: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET),
-      message: EMPTY_MESSAGE,
-      fromLiteChain: false,
-      toLiteChain: false,
-    };
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+        const sampleDeposit = {
+          depositId: bnZero,
+          depositor: toAddressType(TEST_RECIPIENT, destinationChainId),
+          recipient: chainIsEvm(destinationChainId)
+            ? toAddressType(TEST_RECIPIENT, destinationChainId)
+            : toAddressType(DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM, destinationChainId),
+          inputToken: toAddressType(ZERO_ADDRESS, destinationChainId), // Not verified by the SpokePool.
+          inputAmount: outputAmount.add(bnOne),
+          outputToken: "", // SpokePool-specific, overwritten later.
+          outputAmount,
+          originChainId: 0, // Not verified by the SpokePool.
+          destinationChainId: 0, // SpokePool-specific, overwritten later.
+          quoteTimestamp: currentTime - 60,
+          fillDeadline: currentTime + 60,
+          exclusivityDeadline: 0,
+          exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
+          message: EMPTY_MESSAGE,
+          fromLiteChain: false,
+          toLiteChain: false,
+        };
+        const evmRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
+        const _relayer = chainIsEvm(destinationChainId) ? evmRelayer : DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM;
+        const [defaultTestSymbol, relayer] =
+          this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", _relayer] : ["WETH", TEST_RELAYER];
+
         const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
         const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =
