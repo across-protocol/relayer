@@ -53,17 +53,17 @@ const txnRetryable = (error?: unknown): boolean => {
 // Linea has a special method linea_estimateGas that doesn't return a revert reason.
 // So we need to check the stack to see if it's a linea estimateGas error.
 const isLineaViemError = (error: unknown): boolean => {
-  const lineaEstimateGasPath = "viem/_cjs/linea/actions/estimateGas.js";
+  const lineaViemPath = "viem/_cjs/linea";
   const fillRelaySelector = "0xdeff4b24"; // keccak256("fillRelay()")[:4]
   const multicallSelector = "0xac9650d8"; // keccak256("multicall()")[:4]
 
   const errorStack = (error as Error).stack;
-  const isLineaEstimateGasError = errorStack?.includes(lineaEstimateGasPath);
+  const isLineaViemError = errorStack?.includes(lineaViemPath);
   const isFillRelayError = errorStack?.includes(fillRelaySelector);
   const isMulticallError = errorStack?.includes(multicallSelector);
   const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
 
-  return isLineaEstimateGasError && isFillRelayError && isFillRelayInMulticallError;
+  return isLineaViemError && isFillRelayError && isFillRelayInMulticallError;
 };
 
 export function getNetworkError(err: unknown): string {
