@@ -19,7 +19,6 @@ import {
   CHAIN_IDs,
   EvmGasPriceEstimate,
 } from "../utils";
-import { BaseError } from "viem";
 dotenv.config();
 
 // Define chains that require legacy (type 0) transactions
