@@ -54,8 +54,8 @@ const txnRetryable = (error?: unknown): boolean => {
 // So we need to check the stack to see if it's a linea estimateGas error.
 const isLineaViemError = (error: unknown): boolean => {
   const lineaEstimateGasPath = "viem/_cjs/linea/actions/estimateGas.js";
-  const fillRelaySelector = "0xdeff4b24";
-  const multicallSelector = "0xac9650d8";
+  const fillRelaySelector = "0xdeff4b24"; // keccak256("fillRelay()")[:4]
+  const multicallSelector = "0xac9650d8"; // keccak256("multicall()")[:4]
 
   const errorStack = (error as Error).stack;
   const isLineaEstimateGasError = errorStack?.includes(lineaEstimateGasPath);
