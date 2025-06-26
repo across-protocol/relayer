@@ -22,7 +22,7 @@ import {
   buildSlowRelayTree,
   fixedPointAdjustment,
   getRefundsFromBundle,
-  getTimestampsForBundleEndBlocks,
+  getTimestampsForBundleStartBlocks,
   isDefined,
   MerkleTree,
   Profiler,
@@ -53,15 +53,30 @@ export async function blockRangesAreInvalidForSpokeClients(
   isV3 = false
 ): Promise<InvalidBlockRange[]> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
-  let endBlockTimestamps: { [chainId: number]: number } | undefined;
+  let earliestStartBlockTimestamp: { timestamp: number; chainId: number } | undefined = undefined;
   if (isV3) {
-    endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+    const startBlockTimestamps = await getTimestampsForBundleStartBlocks(
       spokePoolClients,
       blockRanges,
       chainIdListForBundleEvaluationBlockNumbers
     );
     // There should be a spoke pool client instantiated for every bundle timestamp.
-    assert(!Object.keys(endBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
+    assert(!Object.keys(startBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
+    earliestStartBlockTimestamp = Object.entries(startBlockTimestamps).reduce(
+      (currMax, [chainId, timestamp]) => {
+        if (timestamp < currMax.timestamp) {
+          currMax = {
+            chainId: Number(chainId),
+            timestamp,
+          };
+        }
+        return currMax;
+      },
+      {
+        timestamp: Object.values(startBlockTimestamps)[0],
+        chainId: Number(Object.keys(startBlockTimestamps)[0]),
+      }
+    );
   }
 
   // Return an undefined object if the block ranges are valid
@@ -114,7 +129,7 @@ export async function blockRangesAreInvalidForSpokeClients(
         };
       }
 
-      if (endBlockTimestamps !== undefined) {
+      if (earliestStartBlockTimestamp !== undefined) {
         const maxFillDeadlineBufferInBlockRange = await spokePoolClient.getMaxFillDeadlineInRange(
           bundleRangeFromBlock,
           end
@@ -131,13 +146,14 @@ export async function blockRangesAreInvalidForSpokeClients(
           // maximum time it takes for a newly expired deposit to be included in a bundle. A conservative value for
           // this bundle time is 3 hours. This `conservativeBundleFrequencySeconds` buffer also ensures that all deposits
           // that are technically "expired", but have fills in the bundle, are also included. This can happen if a fill
-          // is sent pretty late into the deposit's expiry period.
+          // is sent pretty late into the deposit's expiry period. We make sure that the earliest timestamp across
+          // all chains in this bundle is at least more than this maximum lookback window into the past.
           const oldestTime = await spokePoolClient.getTimeAt(spokePoolClient.eventSearchConfig.from);
-          const expiryWindow = endBlockTimestamps[chainId] - oldestTime;
+          const expiryWindow = earliestStartBlockTimestamp.timestamp - oldestTime;
           const safeExpiryWindow = maxFillDeadlineBufferInBlockRange + conservativeBundleFrequencySeconds;
           if (expiryWindow < safeExpiryWindow) {
             return {
-              reason: `cannot evaluate all possible expired deposits; endBlockTimestamp ${endBlockTimestamps[chainId]} - spokePoolClient.eventSearchConfig.from timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
+              reason: `cannot evaluate all possible expired deposits; earliestStartBlockTimestamp ${earliestStartBlockTimestamp.timestamp} (set by chain ${earliestStartBlockTimestamp.chainId}) - spokePoolClient.eventSearchConfig.from timestamp ${oldestTime} < maxFillDeadlineBufferInBlockRange ${maxFillDeadlineBufferInBlockRange} + conservativeBundleFrequencySeconds ${conservativeBundleFrequencySeconds}`,
               chainId,
             };
           }
