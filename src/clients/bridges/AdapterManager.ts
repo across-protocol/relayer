@@ -11,6 +11,7 @@ import {
 import { InventoryConfig, OutstandingTransfers } from "../../interfaces";
 import {
   BigNumber,
+  chainIsEvm,
   isDefined,
   winston,
   Signer,
@@ -22,6 +23,9 @@ import {
   toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
   getRemoteTokenForL1Token,
+  getTokenInfo,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -46,7 +50,9 @@ export class AdapterManager {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePool.address);
+    const spokePoolAddresses = Object.values(spokePoolClients)
+      .filter(({ chainId }) => chainIsEvm(chainId))
+      .map((client) => client.spokePoolAddress.toEvmAddress());
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -54,23 +60,36 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           this.hubPoolClient.hubPool.address === address ||
-          this.spokePoolClients[chainId].spokePool.address === address ||
+          this.spokePoolClients[chainId].spokePoolAddress.toEvmAddress() === address ||
           !spokePoolAddresses.includes(address)
       );
     };
 
     const hubChainId = hubPoolClient.chainId;
-    const l1Signer = spokePoolClients[hubChainId].spokePool.signer;
+    const l1Signer = hubPoolClient.hubPool.signer;
     const constructBridges = (chainId: number) => {
       if (chainId === hubChainId) {
         return {};
       } // Special case for the EthereumAdapter
+
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const l2Signer = spokePoolClients[chainId].spokePool.signer;
+          const spokePoolClient = spokePoolClients[chainId];
+          let l2SignerOrProvider;
+          if (isEVMSpokePoolClient(spokePoolClient)) {
+            l2SignerOrProvider = spokePoolClient.spokePool.signer;
+          } else if (isSVMSpokePoolClient(spokePoolClient)) {
+            l2SignerOrProvider = spokePoolClient.svmEventsClient.getRpc();
+          }
           const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
           const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-          const bridge = new bridgeConstructor(chainId, hubChainId, l1Signer, l2Signer, EvmAddress.from(l1Token));
+          const bridge = new bridgeConstructor(
+            chainId,
+            hubChainId,
+            l1Signer,
+            l2SignerOrProvider,
+            EvmAddress.from(l1Token)
+          );
           return [l1Token, bridge];
         }) ?? []
       );
@@ -79,31 +98,32 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       }
-      const l2Signer = spokePoolClients[chainId].spokePool.signer;
+      const spokePoolClient = spokePoolClients[chainId];
+      let l2Signer;
+      if (isEVMSpokePoolClient(spokePoolClient)) {
+        l2Signer = spokePoolClient.spokePool.signer;
+      }
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
           ?.map((symbol) => {
             const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-            const canonicalBridge = CANONICAL_L2_BRIDGE[chainId];
-            if (!isDefined(canonicalBridge)) {
+            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
+            if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridgeConstructor = CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? canonicalBridge;
             const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
       );
     };
-    Object.keys(this.spokePoolClients).map((_chainId) => {
-      const chainId = Number(_chainId);
-      assert(chainId.toString() === _chainId);
+    Object.values(this.spokePoolClients).map(({ chainId }) => {
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,
         chainId,
         hubChainId,
-        filterMonitoredAddresses(chainId).map((address) => toAddressType(address, chainId)),
+        filterMonitoredAddresses(chainId).map((address) => toAddressType(address)),
         logger,
         SUPPORTED_TOKENS[chainId] ?? [],
         constructBridges(chainId),
@@ -130,11 +150,11 @@ export class AdapterManager {
     return Object.keys(this.adapters).map((chainId) => Number(chainId));
   }
 
-  getOutstandingCrossChainTokenTransferAmount(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
+  getOutstandingCrossChainTransfers(chainId: number, l1Tokens: string[]): Promise<OutstandingTransfers> {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
-      const tokenSymbol = this.hubPoolClient.getTokenInfoForL1Token(token).symbol;
+      const tokenSymbol = getTokenInfo(token, this.hubPoolClient.chainId).symbol;
       return (
         adapter.supportedTokens.includes(tokenSymbol) ||
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])
@@ -162,9 +182,9 @@ export class AdapterManager {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
     return this.adapters[chainId].sendTokenToTargetChain(
-      toAddressType(address, chainId),
+      toAddressType(address),
       EvmAddress.from(l1Token),
-      toAddressType(l2Token, chainId),
+      toAddressType(l2Token),
       amount,
       simMode
     );
@@ -187,7 +207,7 @@ export class AdapterManager {
     });
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(
       EvmAddress.from(address),
-      toAddressType(l2Token, chainId),
+      toAddressType(l2Token),
       amount,
       simMode
     );
@@ -203,8 +223,8 @@ export class AdapterManager {
     chainId = Number(chainId);
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(
       lookbackPeriodSeconds,
-      toAddressType(fromAddress, chainId),
-      toAddressType(l2Token, chainId)
+      toAddressType(fromAddress),
+      toAddressType(l2Token)
     );
   }
 
@@ -231,7 +251,9 @@ export class AdapterManager {
   }
 
   getSigner(chainId: number): Signer {
-    return this.spokePoolClients[chainId].spokePool.signer;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    return spokePoolClient.spokePool.signer;
   }
 
   l2TokenForL1Token(l1Token: string, chainId: number): string {
@@ -240,7 +262,7 @@ export class AdapterManager {
     try {
       // That the line below is critical. if the hubpoolClient returns the wrong destination token for the L1 token then
       // the bot can irrecoverably send the wrong token to the chain and loose money. It should crash if this is detected.
-      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient);
+      const l2TokenForL1Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
@@ -260,7 +282,7 @@ export class AdapterManager {
     }
   }
 
-  async setL1TokenApprovals(l1Tokens: string[]): Promise<void> {
+  async setTokenApprovals(l1Tokens: string[]): Promise<void> {
     // Each of these calls must happen sequentially or we'll have collisions within the TransactionUtil. This should
     // be refactored in a follow on PR to separate out by nonce increment by making the transaction util stateful.
     for (const chainId of this.supportedChains()) {
@@ -275,7 +297,7 @@ export class AdapterManager {
   }
 
   l2TokenExistForL1Token(l1Token: string, l2ChainId: number): boolean {
-    return this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, l2ChainId);
+    return isDefined(getRemoteTokenForL1Token(l1Token, l2ChainId, this.hubPoolClient.chainId));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function

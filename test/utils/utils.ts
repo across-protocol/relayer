@@ -20,6 +20,7 @@ import {
   utf8ToHex,
   ZERO_ADDRESS,
   getMessageHash,
+  toBytes32,
 } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -46,7 +47,6 @@ export const {
   buildSlowRelayTree,
   buildV3SlowRelayTree,
   createRandomBytes32,
-  enableRoutes,
   getContractFactory,
   getUpdatedV3DepositSignature,
   hubPoolFixture,
@@ -109,22 +109,11 @@ export function createSpyLogger(): SpyLoggerResult {
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithToken(
-  fromChainId = 0,
-  toChainId = 0,
-  enableRoute = true
-): Promise<SpokePoolDeploymentResult> {
+export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
   const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
-
-  if (enableRoute) {
-    await utils.enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-      { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-    ]);
-  }
   return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
@@ -227,13 +216,6 @@ export async function deployNewTokenMapping(
   ).deploy("L2 Token Destination", "L2", 18);
   await l2TokenDestination.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
 
-  await utils.enableRoutes(spokePoolDestination, [
-    { originToken: l2TokenDestination.address, destinationChainId: spokePoolChainId },
-  ]);
-  await utils.enableRoutes(spokePool, [
-    { originToken: l2Token.address, destinationChainId: spokePoolDestinationChainId },
-  ]);
-
   // Deploy L1 token and set as counterpart for L2 token:
   const l1Token = await (await utils.getContractFactory("ExpandedERC20", l1TokenHolder)).deploy("L1 Token", "L1", 18);
   await l1Token.addMember(TokenRolesEnum.MINTER, l1TokenHolder.address);
@@ -322,15 +304,15 @@ export async function depositV3(
           )
       : spokePool
           .connect(signer)
-          .depositV3(
-            depositor,
-            recipient,
-            inputToken,
-            outputToken,
+          .deposit(
+            toBytes32(depositor),
+            toBytes32(recipient),
+            toBytes32(inputToken),
+            toBytes32(outputToken),
             inputAmount,
             outputAmount,
             destinationChainId,
-            exclusiveRelayer,
+            toBytes32(exclusiveRelayer),
             quoteTimestamp,
             fillDeadline,
             exclusivityDeadline,
@@ -347,12 +329,13 @@ export async function depositV3(
   const { logIndex } = eventLog;
 
   const depositObject = {
-    originChainId: Number(originChainId),
     blockNumber,
     txnRef,
     txnIndex,
     logIndex,
-    ...spreadEvent(args),
+    ...(spreadEvent(args) as Deposit),
+    originChainId: Number(originChainId),
+    quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
   };
   if (isLegacyDeposit) {
@@ -402,7 +385,18 @@ export async function fillV3Relay(
   const destinationChainId = Number(await spokePool.chainId());
   assert.notEqual(deposit.originChainId, destinationChainId);
 
-  await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
+  await spokePool.connect(signer).fillRelay(
+    {
+      ...deposit,
+      depositor: toBytes32(deposit.depositor),
+      recipient: toBytes32(deposit.recipient),
+      inputToken: toBytes32(deposit.inputToken),
+      outputToken: toBytes32(deposit.outputToken),
+      exclusiveRelayer: toBytes32(deposit.exclusiveRelayer),
+    },
+    repaymentChainId ?? destinationChainId,
+    toBytes32(await signer.getAddress())
+  );
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);

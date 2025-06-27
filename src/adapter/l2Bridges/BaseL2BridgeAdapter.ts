@@ -18,7 +18,7 @@ export abstract class BaseL2BridgeAdapter {
     l2Token: Address,
     l1Token: EvmAddress,
     amount: BigNumber
-  ): AugmentedTransaction[];
+  ): Promise<AugmentedTransaction[]>;
 
   abstract getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,
@@ -26,4 +26,10 @@ export abstract class BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber>;
+
+  // Note: Returns `EvmAddress`es since upstream BaseChainAdapter impl. performs evm-style approvals
+  // Bridges that require specific approvals should override this method.
+  public requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
+    return [];
+  }
 }

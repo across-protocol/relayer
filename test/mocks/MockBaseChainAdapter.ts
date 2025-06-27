@@ -18,8 +18,8 @@ export class MockBaseChainAdapter extends BaseChainAdapter {
       0
     );
   }
-  getSearchConfig(): MakeOptional<EventSearchConfig, "toBlock"> {
-    return { fromBlock: 0 };
+  getSearchConfig(): MakeOptional<EventSearchConfig, "to"> {
+    return { from: 0 };
   }
   isSupportedL2Bridge(): boolean {
     return true;

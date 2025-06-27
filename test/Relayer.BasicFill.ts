@@ -1,16 +1,23 @@
-import { clients, constants, utils as sdkUtils } from "@across-protocol/sdk";
+import { clients, constants, utils as sdkUtils, arch } from "@across-protocol/sdk";
 import hre from "hardhat";
-import { AcrossApiClient, ConfigStoreClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  EVMSpokePoolClient,
+} from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
-  averageBlockTime,
   bnZero,
   bnOne,
   bnUint256Max,
   getNetworkName,
   getAllUnfilledDeposits,
   getMessageHash,
+  EvmAddress,
+  SvmAddress,
 } from "../src/utils";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -120,7 +127,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     configStoreClient = new MockConfigStoreClient(
       spyLogger,
       configStore,
-      { fromBlock: 0 },
+      { from: 0 },
       CONFIG_STORE_VERSION,
       [originChainId, destinationChainId],
       originChainId,
@@ -134,14 +141,14 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -159,7 +166,16 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
@@ -509,7 +525,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     });
 
     it("Correctly defers destination chain fills", async function () {
-      const { average: avgBlockTime } = await averageBlockTime(spokePool_2.provider);
+      const { average: avgBlockTime } = await arch.evm.averageBlockTime(spokePool_2.provider);
       const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
       const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
@@ -765,7 +781,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the initial deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit1.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit1.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,
@@ -795,7 +811,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       // Make an invalid fills to crank the chain forward until the 2nd deposit has enough confirmations.
       while (
         originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestBlockSearched - deposit2.blockNumber
+        spokePoolClient_2.latestHeightSearched - deposit2.blockNumber
       ) {
         await fillV3Relay(
           spokePool_2,

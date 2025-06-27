@@ -138,7 +138,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockSearched;
+      clients.hubPoolClient.latestHeightSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -179,7 +179,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           ];
         logs.push(`- Bundle end block for chain: ${bundleEndBlockForChain.toNumber()}`);
         let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
-          spokePoolClients[leaf.chainId].spokePool.address,
+          spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
           {
             blockTag: bundleEndBlockForChain.toNumber(),
           }
@@ -227,7 +227,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockSearched;
+              clients.hubPoolClient.latestHeightSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -244,7 +244,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                 previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
               logs.push(`- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
               if (previousNetSendAmount.gt(bnZero)) {
-                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress();
                 let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
@@ -265,9 +265,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
@@ -279,9 +279,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       l2TokenContract,
                       l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args.value.eq(previousNetSendAmount));

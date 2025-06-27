@@ -1,4 +1,4 @@
-import { ConfigStoreClient, SpokePoolClient, TokenDataType } from "../src/clients"; // Tested
+import { ConfigStoreClient, SpokePoolClient, TokenDataType, EVMSpokePoolClient } from "../src/clients"; // Tested
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import { MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 import {
@@ -15,6 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet } from "../src/utils";
 
 describe("TokenClient: Balance and Allowance", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -62,7 +63,7 @@ describe("TokenClient: Balance and Allowance", async function () {
       ZERO_ADDRESS
     );
     const { configStore } = await deployConfigStore(owner, [hubERC20, hubWeth]);
-    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, 0);
+    const configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, 0);
     await configStoreClient.update();
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -84,14 +85,14 @@ describe("TokenClient: Balance and Allowance", async function () {
     const l1Tokens = hubPoolClient.getL1Tokens();
     expect(l1Tokens.length).to.equal(2);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
@@ -104,7 +105,21 @@ describe("TokenClient: Balance and Allowance", async function () {
     // Deploy Multicall3 to the hardhat test networks.
     await deployMulticall3(owner);
 
-    tokenClient = new SimpleMockTokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(owner)) {
+      const svmSigner = getSvmSignerFromEvmSigner(owner);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(owner.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([], {
       [originChainId]: [erc20_1, weth_1],
       [destinationChainId]: [erc20_2, weth_2],

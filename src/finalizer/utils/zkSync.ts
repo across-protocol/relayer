@@ -1,5 +1,5 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
-import { Contract, Wallet, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { groupBy } from "lodash";
 import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -8,12 +8,15 @@ import {
   convertFromWei,
   getBlockForTimestamp,
   getCurrentTime,
-  getL1TokenInfo,
   getRedisCache,
+  getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
   winston,
   zkSync as zkSyncUtils,
+  assert,
+  isEVMSpokePoolClient,
+  isSignerWallet,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -27,6 +30,11 @@ type zkSyncWithdrawalData = {
   sender: string;
   proof: string[];
 };
+
+const IGNORED_WITHDRAWALS = [
+  "0xe93642e22eec21ead2abb20f23a1dc3033b41274cdfe7439cf3ada3dfa1dff06", // Lens USDC 2025-06-13 @todo remove
+];
+
 /**
  * @returns Withdrawal finalizaton calldata and metadata.
  */
@@ -36,12 +44,14 @@ export async function zkSyncFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
-  const wallet = new zkWallet((signer as Wallet).privateKey, l2Provider, l1Provider);
+  assert(isSignerWallet(signer), "Signer is not a Wallet");
+  const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
   // Zksync takes ~6 hours to finalize so ignore any events
   // earlier than that.
@@ -55,7 +65,8 @@ export async function zkSyncFinalizer(
   });
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
+    .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l2Finalized);
@@ -63,11 +74,11 @@ export async function zkSyncFinalizer(
   const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
-    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: l2ChainId,
-      l1TokenSymbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
       destinationChainId: hubPoolClient.chainId,

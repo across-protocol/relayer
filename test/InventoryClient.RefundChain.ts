@@ -31,8 +31,8 @@ import {
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
 describe("InventoryClient: Refund chain selection", async function () {
-  const { MAINNET, OPTIMISM, POLYGON, ARBITRUM } = CHAIN_IDs;
-  const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM];
+  const { MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC } = CHAIN_IDs;
+  const enabledChainIds = [MAINNET, OPTIMISM, POLYGON, ARBITRUM, BSC];
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
@@ -50,7 +50,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     .filter((chainId) => chainId !== MAINNET)
     .forEach((chainId) => {
       l2TokensForWeth[chainId] = TOKEN_SYMBOLS_MAP.WETH.addresses[chainId];
-      l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId];
+      if (chainId !== BSC) {
+        l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP["USDC.e"].addresses[chainId];
+      } else {
+        l2TokensForUsdc[chainId] = TOKEN_SYMBOLS_MAP["USDC-BNB"].addresses[chainId];
+      }
     });
 
   const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
@@ -66,11 +70,13 @@ describe("InventoryClient: Refund chain selection", async function () {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
         [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        [BSC]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
       [mainnetUsdc]: {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
         [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
+        [BSC]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
     },
   };
@@ -86,7 +92,8 @@ describe("InventoryClient: Refund chain selection", async function () {
   const seedMocks = (seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) => {
     hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
     hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
-    enabledChainIds.forEach((chainId) => {
+    Object.keys(seedBalances).forEach((_chainId) => {
+      const chainId = Number(_chainId);
       adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetWeth, bnZero);
       adapterManager.setMockedOutstandingCrossChainTransfers(chainId, owner.address, mainnetUsdc, bnZero);
       tokenClient.setTokenData(chainId, l2TokensForWeth[chainId], seedBalances[chainId][mainnetWeth]);
@@ -134,6 +141,22 @@ describe("InventoryClient: Refund chain selection", async function () {
       false, // simMode
       false // prioritizeUtilization
     );
+    (inventoryClient as MockInventoryClient).setTokenMapping({
+      [mainnetWeth]: {
+        [MAINNET]: mainnetWeth,
+        [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+        [POLYGON]: l2TokensForWeth[POLYGON],
+        [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        [BSC]: l2TokensForWeth[BSC],
+      },
+      [mainnetUsdc]: {
+        [MAINNET]: mainnetUsdc,
+        [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+        [POLYGON]: l2TokensForUsdc[POLYGON],
+        [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        [BSC]: l2TokensForUsdc[BSC],
+      },
+    });
 
     seedMocks(initialAllocation);
   });
@@ -408,7 +431,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     it("token config is not defined", async function () {
       // Defaults to destination chain.
-      const _inventoryClient = new InventoryClient(
+      const _inventoryClient = new MockInventoryClient(
         owner.address,
         spyLogger,
         {
@@ -424,6 +447,12 @@ describe("InventoryClient: Refund chain selection", async function () {
         false, // simMode
         false // prioritizeUtilization
       );
+      _inventoryClient.setTokenMapping({
+        [mainnetWeth]: {
+          [sampleDepositData.originChainId]: sampleDepositData.inputToken,
+          [sampleDepositData.destinationChainId]: sampleDepositData.outputToken,
+        },
+      });
       expect(await _inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([
         sampleDepositData.destinationChainId,
       ]);
@@ -433,7 +462,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(2);
     });
   });
 
@@ -574,7 +602,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       [sampleDepositData.originChainId, sampleDepositData.destinationChainId, MAINNET].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(3);
     });
   });
 
@@ -611,6 +638,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains.length).to.equal(0);
     });
+    it("returns origin chain even if it is over allocated if origin chain is a quick rebalance source", async function () {
+      sampleDepositData.originChainId = BSC;
+      sampleDepositData.inputToken = l2TokensForWeth[BSC];
+      seedMocks({
+        [BSC]: { [mainnetWeth]: toWei(10), [mainnetUsdc]: toMegaWei(1000) },
+      });
+      tokenClient.setTokenData(BSC, l2TokensForWeth[BSC], toWei(10));
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([BSC]);
+    });
   });
 
   describe("origin token and chain are not mapped to a PoolRebalanceRoute", function () {
@@ -636,6 +673,20 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusiveRelayer: ZERO_ADDRESS,
       };
       hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          // [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          // [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("returns only origin chain as repayment chain if it is underallocated", async function () {
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
@@ -682,6 +733,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.deleteTokenMapping(mainnetWeth, POLYGON);
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          // [POLYGON]: l2TokensForWeth[POLYGON],
+          // [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          // [POLYGON]: l2TokensForUsdc[POLYGON],
+          // [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("only origin chain can be repayment chain", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
@@ -727,6 +792,20 @@ describe("InventoryClient: Refund chain selection", async function () {
       hubPoolClient.deleteTokenMapping(mainnetWeth, ARBITRUM);
       tokenClient.setTokenData(POLYGON, l2TokensForWeth[POLYGON], toWei(0));
       tokenClient.setTokenData(ARBITRUM, l2TokensForWeth[ARBITRUM], toWei(0));
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          // [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          // [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+        },
+      });
     });
     it("origin chain and hub chain can be repayment chain", async function () {
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);

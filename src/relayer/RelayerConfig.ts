@@ -4,6 +4,7 @@ import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,
+  chainIsSvm,
   CHAIN_IDs,
   dedupArray,
   toBNWei,
@@ -221,9 +222,16 @@ export class RelayerConfig extends CommonConfig {
       Object.keys(rawTokenConfigs).forEach((l1Token) => {
         // If the l1Token is a symbol, resolve the correct address.
         const effectiveL1Token = ethersUtils.isAddress(l1Token)
-          ? l1Token
+          ? ethersUtils.getAddress(l1Token)
           : TOKEN_SYMBOLS_MAP[l1Token].addresses[this.hubPoolChainId];
         assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
+
+        // Filter inventory configuration by supported tokens, if specified.
+        const known = this.relayerTokens.includes(effectiveL1Token) || this.relayerTokens.length === 0;
+        if (!known) {
+          delete rawTokenConfigs[l1Token];
+          return;
+        }
 
         tokenConfigs[effectiveL1Token] ??= {};
         const hubTokenConfig = rawTokenConfigs[l1Token];
@@ -349,9 +357,11 @@ export class RelayerConfig extends CommonConfig {
       });
     }
 
-    const { RELAYER_SPOKEPOOL_LISTENER_PATH = Constants.RELAYER_DEFAULT_SPOKEPOOL_LISTENER } = process.env;
-
     chainIds.forEach((chainId) => {
+      const defaultPath = chainIsSvm(chainId)
+        ? Constants.RELAYER_SPOKEPOOL_LISTENER_SVM
+        : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
+      const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;

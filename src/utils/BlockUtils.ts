@@ -1,11 +1,19 @@
 import { interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
-import { BlockFinder, BlockFinderHints } from "./SDKUtils";
-import { getProvider } from "./ProviderUtils";
+import {
+  BlockFinderHints,
+  EVMBlockFinder,
+  isEVMSpokePoolClient,
+  isSVMSpokePoolClient,
+  SVMBlockFinder,
+  chainIsEvm,
+} from "./SDKUtils";
+import { getProvider, getSvmProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
 import { SpokePoolClientsByChain } from "../interfaces/SpokePool";
 
-const blockFinders: { [chainId: number]: BlockFinder } = {};
+const evmBlockFinders: { [chainId: number]: EVMBlockFinder } = {};
+let svmBlockFinder: SVMBlockFinder;
 
 /**
  * @notice Return block finder for chain. Loads from in memory blockFinder cache if this function was called before
@@ -13,12 +21,14 @@ const blockFinders: { [chainId: number]: BlockFinder } = {};
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
-  if (!isDefined(blockFinders[chainId])) {
-    const providerForChain = await getProvider(chainId);
-    blockFinders[chainId] = new BlockFinder(providerForChain);
+export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder<utils.Block>> {
+  if (chainIsEvm(chainId)) {
+    evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
+    return evmBlockFinders[chainId];
   }
-  return blockFinders[chainId];
+  const provider = getSvmProvider();
+  svmBlockFinder ??= new SVMBlockFinder(provider);
+  return svmBlockFinder;
 }
 
 /**
@@ -33,7 +43,7 @@ export async function getBlockFinder(chainId: number): Promise<BlockFinder> {
 export async function getBlockForTimestamp(
   chainId: number,
   timestamp: number,
-  blockFinder?: BlockFinder,
+  blockFinder?: utils.BlockFinder<utils.Block>,
   redisCache?: interfaces.CachingMechanismInterface,
   hints: BlockFinderHints = {}
 ): Promise<number> {
@@ -42,20 +52,37 @@ export async function getBlockForTimestamp(
   return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
 
-export async function getTimestampsForBundleEndBlocks(
+export async function getTimestampsForBundleStartBlocks(
   spokePoolClients: SpokePoolClientsByChain,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[]
 ): Promise<{ [chainId: number]: number }> {
   return Object.fromEntries(
     (
-      await utils.mapAsync(blockRanges, async ([, endBlock], index) => {
+      await utils.mapAsync(blockRanges, async ([startBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
         if (spokePoolClient === undefined) {
           return;
         }
-        return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: endBlock })).toNumber()];
+        // If a block range starts before a spoke pool's deployment block, use the deployment block timestamp.
+        // This is a simplification we can make because we know that the results of this function, the start of bundle
+        // timestamps, are compared against spoke pool client search config fromBlock timestamps. So if a fromBlock
+        // is lower than a deployment block, than we know that all possible spoke pool clients can be found by the
+        // spoke pool client. In other words, the spoke pool's deployment timestamp is the earliest timestamp we
+        // should care about.
+        const startBlockToQuery = Math.max(spokePoolClient.deploymentBlock, startBlock);
+        if (isEVMSpokePoolClient(spokePoolClient)) {
+          return [
+            chainId,
+            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
+          ];
+        } else if (isSVMSpokePoolClient(spokePoolClient)) {
+          return [
+            chainId,
+            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlockToQuery)).send()),
+          ];
+        }
       })
     ).filter(isDefined)
   );

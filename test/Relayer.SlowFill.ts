@@ -5,6 +5,7 @@ import {
   MultiCallerClient,
   SpokePoolClient,
   TokenClient,
+  EVMSpokePoolClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import {
@@ -37,6 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { SvmAddress, EvmAddress } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -104,7 +106,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       CHAIN_ID_TEST_LIST
     ));
 
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -113,14 +115,14 @@ describe("Relayer: Initiates slow fill requests", async function () {
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -128,7 +130,16 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new TokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, [], relayer.address);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);

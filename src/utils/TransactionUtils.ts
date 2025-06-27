@@ -16,8 +16,13 @@ import {
   toBNWei,
   winston,
   stringifyThrownValue,
+  CHAIN_IDs,
+  EvmGasPriceEstimate,
 } from "../utils";
 dotenv.config();
+
+// Define chains that require legacy (type 0) transactions
+export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -81,12 +86,17 @@ export async function runTransaction(
       Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
       DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-    const gas = await getGasPrice(
+    let gas = await getGasPrice(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
       await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
+
+    // Check if the chain requires legacy transactions
+    if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+      gas = { gasPrice: gas.maxFeePerGas };
+    }
 
     logger.debug({
       at: "TxUtil",
@@ -170,12 +180,12 @@ export async function getGasPrice(
   priorityScaler = Math.max(1, priorityScaler);
   const { chainId } = await provider.getNetwork();
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
+  const feeData = (await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
-  });
+  })) as EvmGasPriceEstimate;
 
   // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
   // the priority fee will be 0.
@@ -195,7 +205,7 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   const args = transaction.value ? [...transaction.args, { value: transaction.value }] : transaction.args;
 
   // First callStatic, which will surface a custom error if the transaction would fail.
-  // This is useful for surfacing custom error revert reasons like RelayFilled in the V3 SpokePool but
+  // This is useful for surfacing custom error revert reasons like RelayFilled in the SpokePool but
   // it does incur an extra RPC call. We do this because estimateGas is a provider function that doesn't
   // relay custom errors well: https://github.com/ethers-io/ethers.js/discussions/3291#discussion-4314795
   let data;

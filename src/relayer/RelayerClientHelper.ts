@@ -1,8 +1,10 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
   BundleDataClient,
+  EVMSpokePoolClient,
+  SVMSpokePoolClient,
   HubPoolClient,
   InventoryClient,
   ProfitClient,
@@ -10,7 +12,7 @@ import {
   MultiCallerClient,
   TryMulticallClient,
 } from "../clients";
-import { IndexedSpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
+import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
   Clients,
   constructClients,
@@ -19,7 +21,19 @@ import {
   updateClients,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { getBlockForTimestamp, getCurrentTime, getProvider, getRedisCache, Signer, SpokePool } from "../utils";
+import {
+  chainIsEvm,
+  getBlockForTimestamp,
+  getCurrentTime,
+  getProvider,
+  getRedisCache,
+  getSvmProvider,
+  Signer,
+  SpokePool,
+  SvmAddress,
+  EvmAddress,
+  getSvmSignerFromEvmSigner,
+} from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
 
@@ -37,7 +51,7 @@ async function indexedSpokePoolClient(
   hubPoolClient: HubPoolClient,
   chainId: number,
   opts: IndexerOpts & { lookback: number; blockRange: number }
-): Promise<IndexedSpokePoolClient> {
+): Promise<SpokePoolClient> {
   const { logger } = hubPoolClient;
 
   // Set up Spoke signers and connect them to spoke pool contract objects.
@@ -46,22 +60,44 @@ async function indexedSpokePoolClient(
 
   const blockFinder = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
-  const [activationBlock, fromBlock] = await Promise.all([
+  const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
     getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
   ]);
+  const searchConfig = { from, maxLookBack: opts.blockRange };
 
-  const spokePoolClient = new IndexedSpokePoolClient(
-    logger,
-    SpokePool.connect(spokePoolAddr, signer),
-    hubPoolClient,
-    chainId,
-    activationBlock,
-    { fromBlock, maxBlockLookBack: opts.blockRange },
-    opts
-  );
-
-  return spokePoolClient;
+  if (chainIsEvm(chainId)) {
+    const contract = SpokePool.connect(spokePoolAddr, signer);
+    const SpokePoolClient = SpokeListener(EVMSpokePoolClient);
+    const spokePoolClient = new SpokePoolClient(
+      logger,
+      contract,
+      hubPoolClient,
+      chainId,
+      activationBlock,
+      searchConfig
+    );
+    spokePoolClient.init(opts);
+    return spokePoolClient;
+  } else {
+    const provider = getSvmProvider();
+    const svmEventsClient = await arch.svm.SvmCpiEventsClient.create(provider);
+    const programId = svmEventsClient.getProgramAddress();
+    const statePda = await arch.svm.getStatePda(programId);
+    const SpokePoolClient = SpokeListener(SVMSpokePoolClient);
+    const spokePoolClient = new SpokePoolClient(
+      logger,
+      hubPoolClient,
+      chainId,
+      BigInt(activationBlock),
+      searchConfig,
+      svmEventsClient,
+      programId,
+      statePda
+    );
+    spokePoolClient.init(opts);
+    return spokePoolClient;
+  }
 }
 
 export async function constructRelayerClients(
@@ -118,7 +154,20 @@ export async function constructRelayerClients(
       : Object.values(spokePoolClients).map(({ chainId }) => chainId);
   const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
-  const tokenClient = new TokenClient(logger, signerAddr, spokePoolClients, hubPoolClient);
+  const relayerTokens = sdkUtils.dedupArray([
+    ...config.relayerTokens,
+    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
+  ]);
+
+  const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+  const tokenClient = new TokenClient(
+    logger,
+    EvmAddress.from(signerAddr),
+    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    spokePoolClients,
+    hubPoolClient,
+    relayerTokens
+  );
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
@@ -136,7 +185,8 @@ export async function constructRelayerClients(
     config.debugProfitability,
     config.relayerGasMultiplier,
     config.relayerMessageGasMultiplier,
-    config.relayerGasPadding
+    config.relayerGasPadding,
+    relayerTokens
   );
   await profitClient.update();
 

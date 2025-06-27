@@ -3,7 +3,7 @@ import { providers as sdkProviders } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import winston from "winston";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
-import { delay, getOriginFromURL, Logger } from "./";
+import { delay, getOriginFromURL, Logger, SVMProvider } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 import * as viem from "viem";
@@ -161,7 +161,7 @@ export async function getProvider(
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
-      // Implement a slightly aggressive expontential backoff to account for fierce parallelism.
+      // Implement a slightly aggressive exponential backoff to account for fierce parallelism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
       const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
       const delayMs = baseDelay + baseDelay * Math.random();
@@ -257,6 +257,24 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
   quorum ??= getChainQuorum(chainId);
   const urls = getNodeUrlList(chainId, quorum, "wss");
   return Object.values(urls).map((url) => new ethers.providers.WebSocketProvider(url));
+}
+
+/**
+ * @notice Returns a cached SVMProvider.
+ */
+export function getSvmProvider(): SVMProvider {
+  const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
+  const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
+  const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
+    namespace,
+    undefined,
+    10,
+    0,
+    undefined,
+    Object.values(nodeUrlList)[0],
+    MAINNET_CHAIN_IDs.SOLANA
+  );
+  return providerFactory.createRpcClient();
 }
 
 export function getNodeUrlList(

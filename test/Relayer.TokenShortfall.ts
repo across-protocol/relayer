@@ -1,4 +1,11 @@
-import { AcrossApiClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  EVMSpokePoolClient,
+} from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -36,6 +43,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
+import { EvmAddress, SvmAddress } from "../src/utils";
 
 describe("Relayer: Token balance shortfall", async function () {
   const noSlowRelays = false; // Don't send slow fills.
@@ -104,7 +112,7 @@ describe("Relayer: Token balance shortfall", async function () {
       undefined,
       CHAIN_ID_TEST_LIST
     ));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -113,14 +121,14 @@ describe("Relayer: Token balance shortfall", async function () {
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -128,7 +136,16 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {

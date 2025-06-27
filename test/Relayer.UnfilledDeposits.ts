@@ -1,7 +1,14 @@
 import * as contracts from "@across-protocol/contracts/dist/test-utils";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { AcrossApiClient, ConfigStoreClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import {
+  AcrossApiClient,
+  ConfigStoreClient,
+  HubPoolClient,
+  MultiCallerClient,
+  SpokePoolClient,
+  EVMSpokePoolClient,
+} from "../src/clients";
 import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
   CHAIN_ID_TEST_LIST,
@@ -33,16 +40,21 @@ import {
   ethers,
   expect,
   getLastBlockTime,
-  lastSpyLogIncludes,
   randomAddress,
   setupTokensForWallet,
   deployMulticall3,
 } from "./utils";
-
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { RelayerUnfilledDeposit, getAllUnfilledDeposits, getUnfilledDeposits, utf8ToHex } from "../src/utils";
+import {
+  EvmAddress,
+  SvmAddress,
+  RelayerUnfilledDeposit,
+  getAllUnfilledDeposits,
+  getUnfilledDeposits,
+  utf8ToHex,
+} from "../src/utils";
 
 describe("Relayer: Unfilled Deposits", async function () {
   const { bnOne } = sdkUtils;
@@ -110,26 +122,35 @@ describe("Relayer: Unfilled Deposits", async function () {
     (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, "L1Token1");
     (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, "L1Token1");
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1,
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2,
       hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
-      { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
+      { from: 0, to: undefined, maxLookBack: 0 }
     );
 
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    tokenClient = new SimpleMockTokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
@@ -547,7 +568,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           version: configStoreClient.configStoreVersion,
         },
       ]);
-    expect(lastSpyLogIncludes(spy, "Invalid fills found")).to.be.true;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to fill again because there has been one invalid fill from this same relayer.

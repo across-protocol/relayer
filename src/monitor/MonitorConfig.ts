@@ -1,6 +1,6 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { ethers, getNativeTokenAddressForChain, isDefined } from "../utils";
+import { CHAIN_IDs, ethers, getNativeTokenAddressForChain, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -11,6 +11,7 @@ export interface BotModes {
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
+  binanceWithdrawalLimitsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -43,10 +44,9 @@ export class MonitorConfig extends CommonConfig {
     account: string;
     token: string;
   }[] = [];
-
-  // TODO: Remove this config once we fully migrate to generic adapters.
-  readonly useGenericAdapter: boolean;
-
+  readonly additionalL1NonLpTokens: string[] = [];
+  readonly binanceWithdrawWarnThreshold: number;
+  readonly binanceWithdrawAlertThreshold: number;
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -69,7 +69,10 @@ export class MonitorConfig extends CommonConfig {
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
+      MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
+      BINANCE_WITHDRAW_WARN_THRESHOLD,
+      BINANCE_WITHDRAW_ALERT_THRESHOLD,
     } = env;
 
     this.botModes = {
@@ -80,6 +83,8 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      binanceWithdrawalLimitsEnabled:
+        isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
@@ -92,7 +97,13 @@ export class MonitorConfig extends CommonConfig {
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
     this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-
+    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
+      if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
+        return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
+      }
+    });
+    this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
+    this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(

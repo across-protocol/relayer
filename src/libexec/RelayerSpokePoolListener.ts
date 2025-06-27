@@ -61,7 +61,7 @@ const _chains = {
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Constract instance.
+ * @param spokePool Ethers Contract instance.
  * @param eventNames The array of events to be queried.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
@@ -80,7 +80,7 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
 /**
  * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
  * Periodically transmit received events to the parent process (if defined).
- * @param eventMgr Ethers Constract instance.
+ * @param eventMgr Ethers Contract instance.
  * @param eventName The name of the event to be filtered.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
@@ -110,7 +110,9 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
     const events = eventMgr.tick();
-    postEvents(blockNumber, currentTime, events);
+    if (!postEvents(blockNumber, currentTime, events)) {
+      stop = true;
+    }
   };
 
   const blockError = (error: Error, provider: string) => {
@@ -280,6 +282,6 @@ if (require.main === module) {
     .finally(async () => {
       await disconnectRedisClients();
       logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
-      exit(process.exitCode);
+      exit(Number(process.exitCode));
     });
 }

@@ -12,6 +12,9 @@ import {
   Multicall2Call,
   winston,
   convertFromWei,
+  getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -45,6 +48,7 @@ export async function scrollFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId, targetAddress] = [
     hubPoolClient.chainId,
     spokePoolClient.chainId,
@@ -172,7 +176,7 @@ function populateClaimWithdrawal(
   l2ChainId: number,
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
-  const l1Token = hubPoolClient.getTokenInfoForL1Token(claim.l1Token);
+  const l1Token = getTokenInfo(claim.l1Token, hubPoolClient.chainId);
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,
