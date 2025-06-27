@@ -202,13 +202,13 @@ export class ProfitClient {
     const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
     // If address is undefined, then the token is neither a symbol in the token map nor an EVM address, so assume it is an SVM base58 encoded address.
     if (!isDefined(address)) {
-      try {
+      const bs58Validator = new RegExp("[1-9A-HJ-NP-Za-km-z]{32,44}");
+      if (bs58Validator.test(token)) {
         return toAddressType(token, CHAIN_IDs.SOLANA);
-      } catch {
-        throw new Error(
-          `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
-        );
       }
+      throw new Error(
+        `ProfitClient#resolveTokenAddress: Unable to resolve address for token ${token} (using remapped symbol ${remappedTokenSymbol})`
+      );
     }
     // We need to get the chain ID corresponding to the address, but we don't have access to this information in this function, so we instead
     // infer the chain ID as either an EVM chain ID or an SVM chain ID based on the format of the address (since the tokenSymbolMap should be
@@ -689,6 +689,8 @@ export class ProfitClient {
           exclusivityDeadline: 0,
           exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
           message: EMPTY_MESSAGE,
+          fromLiteChain: false,
+          toLiteChain: false,
         };
         const evmRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
         const _relayer = chainIsEvm(destinationChainId) ? evmRelayer : DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM;
