@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
@@ -31,7 +31,6 @@ import {
   SvmAddress,
   SVMProvider,
   EvmAddress,
-  toKitAddress,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -449,8 +448,8 @@ export class TokenClient {
     tokenMint: SvmAddress
   ): Promise<BigNumber> {
     // Convert addresses to the correct format for SVM provider
-    const ownerPubkey = toKitAddress(walletAddress);
-    const mintPubkey = toKitAddress(tokenMint);
+    const ownerPubkey = arch.svm.toAddress(walletAddress);
+    const mintPubkey = arch.svm.toAddress(tokenMint);
 
     // Get token accounts owned by the wallet for this specific mint
     const tokenAccountsByOwner = await provider
