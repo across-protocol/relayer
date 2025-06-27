@@ -317,7 +317,6 @@ export class TokenClient {
     // Remove allowance from token data when logging.
     const balanceData = Object.fromEntries(
       Object.entries(this.tokenData).map(([chainId, tokenData]) => {
-        console.log(`xxx chainId ${chainId} tokenData: ${JSON.stringify(tokenData, null, 2)}`);
         return [
           chainId,
           Object.fromEntries(
