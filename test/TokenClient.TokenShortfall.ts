@@ -15,13 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import {
-  EvmAddress,
-  getSvmSignerFromEvmSigner,
-  SvmAddress,
-  isSignerWallet,
-  toAddressType,
-} from "../src/utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
 describe("TokenClient: Token shortfall", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -144,8 +138,6 @@ describe("TokenClient: Token shortfall", async function () {
 
     // Updating the client should not impact anything.
     await updateAllClients();
-    expect(tokenShortFallData2).to.deep.equal(
-      tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address]
-    );
+    expect(tokenShortFallData2).to.deep.equal(tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address]);
   });
 });

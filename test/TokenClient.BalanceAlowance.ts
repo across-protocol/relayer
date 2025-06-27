@@ -15,13 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import {
-  EvmAddress,
-  getSvmSignerFromEvmSigner,
-  SvmAddress,
-  isSignerWallet,
-  toAddressType,
-} from "../src/utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
 describe("TokenClient: Balance and Allowance", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
