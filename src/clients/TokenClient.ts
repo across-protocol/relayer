@@ -308,8 +308,8 @@ export class TokenClient {
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
       for (const _token of Object.keys(tokenData)) {
-        const token = toAddressType(_token, chainId);
-        assign(this.tokenData, [chainId, token.toNative()], tokenData[token.toNative()]);
+        const tokenAddr = toAddressType(_token, chainId).toNative();
+        assign(this.tokenData, [chainId, tokenAddr], tokenData[tokenAddr]);
       }
     });
 
