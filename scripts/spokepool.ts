@@ -22,6 +22,7 @@ import {
   toBN,
   toBytes32,
   toAddressType,
+  EvmAddress,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -314,10 +315,10 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     originChainId,
     destinationChainId,
     depositor: toAddressType(depositArgs.depositor, originChainId),
-    recipient: toAddressType(depositArgs.recipient, destinationChainId),
+    recipient: EvmAddress.from(depositArgs.recipient),
     inputToken: toAddressType(depositArgs.inputToken, originChainId),
     inputAmount: depositArgs.inputAmount,
-    outputToken: toAddressType(outputToken, destinationChainId),
+    outputToken: EvmAddress.from(outputToken),
     outputAmount,
     message: depositArgs.message,
     quoteTimestamp: depositArgs.quoteTimestamp,

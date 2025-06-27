@@ -2712,13 +2712,14 @@ export class Dataworker {
     const proof = relayerRefundLeafHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Derive static accounts.
-    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda, recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, transferLiabilityPda, _recentBlockhash] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getTransferLiabilityPda(spokePoolProgramId, l2TokenAddress),
       provider.getLatestBlockhash().send(),
     ]);
+    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
@@ -2768,7 +2769,7 @@ export class Dataworker {
     const initInstructionParamsTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) =>
         isDefined(closeInstructionParamsIx) ? appendTransactionMessageInstructions([closeInstructionParamsIx], tx) : tx,
       (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
@@ -2796,7 +2797,7 @@ export class Dataworker {
       const writeInstructionParamsTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
       txSignature = runTransactionSvm(writeInstructionParamsTx, kitKeypair, provider);
@@ -2829,7 +2830,7 @@ export class Dataworker {
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         // @dev This RPC response returns an unknown, so we need to cast it to the proper return type.
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx)
       );
       return runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
@@ -2849,7 +2850,7 @@ export class Dataworker {
       const executeRelayerRefundLeafDeferredTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx)
       );
       return runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
@@ -2870,13 +2871,14 @@ export class Dataworker {
     const proof = slowFillHexProof.map((hexLeaf) => Uint8Array.from(Buffer.from(hexLeaf.slice(2), "hex")));
 
     // Gather the PDAs required to execute the slow fill leaf.
-    const [kitKeypair, eventAuthority, statePda, fillStatusPda, recentBlockhash] = await Promise.all([
+    const [kitKeypair, eventAuthority, statePda, fillStatusPda, _recentBlockhash] = await Promise.all([
       this._getKitKeypair(),
       getEventAuthority(spokePoolProgramId),
       getStatePda(spokePoolProgramId),
       getFillStatusPda(spokePoolProgramId, leaf.relayData, leaf.chainId),
       provider.getLatestBlockhash().send(),
     ]);
+    const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
       getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
@@ -2933,7 +2935,7 @@ export class Dataworker {
     const executeSlowFillTx = pipe(
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash as LatestBlockhash, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) =>
         isDefined(recipientCreateTokenAccountInstruction)
           ? appendTransactionMessageInstructions([recipientCreateTokenAccountInstruction], tx)
