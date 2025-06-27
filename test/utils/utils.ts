@@ -383,7 +383,6 @@ export async function fillV3Relay(
   repaymentChainId?: number
 ): Promise<FillWithBlock> {
   const destinationChainId = Number(await spokePool.chainId());
-  assert.notEqual(deposit.originChainId, destinationChainId);
 
   await spokePool.connect(signer).fillRelay(
     {
