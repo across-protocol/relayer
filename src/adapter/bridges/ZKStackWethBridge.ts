@@ -66,7 +66,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
           0,
           this.l2GasLimit,
           this.gasPerPubdataLimit,
-          toAddress.toAddress(),
+          toAddress.toNative(),
           this.sharedBridge.address,
           amount,
           this._secondBridgeCalldata(toAddress, ETH_TOKEN_ADDRESS, bnZero),
@@ -79,13 +79,13 @@ export class ZKStackWethBridge extends ZKStackBridge {
         [
           this.l2chainId,
           txBaseCost.add(amount),
-          toAddress.toAddress(),
+          toAddress.toNative(),
           amount,
           "0x",
           this.l2GasLimit,
           this.gasPerPubdataLimit,
           [],
-          toAddress.toAddress(), // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
+          toAddress.toNative(), // This is the L2 refund address. It is safe to use toAddress here since it is an EOA.
         ],
       ]);
       netValue = amount.add(txBaseCost);
@@ -108,25 +108,25 @@ export class ZKStackWethBridge extends ZKStackBridge {
     // If the fromAddress is the hub pool then ignore the query. This is because for calculating cross-chain
     // transfers, we query both the hub pool outstanding transfers *and* the spoke pool outstanding transfers,
     // meaning that querying this function for the hub pool as well would effectively double count the outstanding transfer amount.
-    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toNative(), this.hubPool.address)) {
       return {};
     }
 
-    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
     let processedEvents;
     if (isL2Contract) {
       processedEvents = (await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig))
         .filter(
           (e) =>
-            compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
-            compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
+            compareAddressesSimple(e.args.to, toAddress.toNative()) &&
+            compareAddressesSimple(e.args.l1Token, l1Token.toNative())
         )
         .map((e) => processEvent(e, "amount"));
     } else {
       // This means we are bridging via an EOA, so we should just look for atomic weth deposits.
       const events = await paginatedEventQuery(
         this.getAtomicDepositor(),
-        this.getAtomicDepositor().filters.AtomicWethDepositInitiated(fromAddress.toAddress(), this.l2chainId),
+        this.getAtomicDepositor().filters.AtomicWethDepositInitiated(fromAddress.toNative(), this.l2chainId),
         eventConfig
       );
       processedEvents = events.map((e) => processEvent(e, "amount"));
@@ -143,10 +143,10 @@ export class ZKStackWethBridge extends ZKStackBridge {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Ignore hub pool queries for the same reason as above.
-    if (compareAddressesSimple(fromAddress.toAddress(), this.hubPool.address)) {
+    if (compareAddressesSimple(fromAddress.toNative(), this.hubPool.address)) {
       return {};
     }
-    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
     const usingCustomGasToken = isDefined(this.gasToken);
 
     let processedEvents;
@@ -157,7 +157,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
         // Assume the transfer came from the hub pool if the L2 toAddress is a contract.
         processedEvents = await paginatedEventQuery(
           this.l2Eth,
-          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toAddress()),
+          this.l2Eth.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
           eventConfig
         );
       } else {
@@ -167,13 +167,13 @@ export class ZKStackWethBridge extends ZKStackBridge {
             this.l2Eth,
             this.l2Eth.filters.Transfer(
               zksync.utils.applyL1ToL2Alias(this.getAtomicDepositor().address),
-              toAddress.toAddress()
+              toAddress.toNative()
             ),
             eventConfig
           ),
           paginatedEventQuery(
             this.l2Weth,
-            this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+            this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toNative()),
             eventConfig
           ),
         ]);
@@ -182,7 +182,7 @@ export class ZKStackWethBridge extends ZKStackBridge {
     } else {
       processedEvents = await paginatedEventQuery(
         this.l2Weth,
-        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toAddress()),
+        this.l2Weth.filters.Transfer(ZERO_ADDRESS, toAddress.toNative()),
         eventConfig
       );
     }

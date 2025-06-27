@@ -71,7 +71,7 @@ class TestZkSyncWethBridge extends ZKStackWethBridge {
   }
 
   override resolveL2TokenAddress(l1Token: EvmAddress) {
-    return l1Token.toAddress() === l1Weth ? l2Weth.address : super.resolveL2TokenAddress(l1Token);
+    return l1Token.toNative() === l1Weth ? l2Weth.address : super.resolveL2TokenAddress(l1Token);
   }
 
   public setHubPool(hubPool: Contract) {

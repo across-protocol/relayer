@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk";
+import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
@@ -809,7 +809,7 @@ async function _getCCTPDepositEventsSvm(
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
     "DepositForBurn",
-    SvmAddress.from(address).toV2Address(),
+    arch.svm.toAddress(SvmAddress.from(address)),
     BigInt(sourceEventSearchConfig.from),
     BigInt(sourceEventSearchConfig.to)
   );
