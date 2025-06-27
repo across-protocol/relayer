@@ -21,7 +21,6 @@ import {
   SvmAddress,
   isSignerWallet,
   toAddressType,
-  toBytes32,
 } from "../src/utils";
 
 describe("TokenClient: Balance and Allowance", async function () {
@@ -48,13 +47,13 @@ describe("TokenClient: Balance and Allowance", async function () {
       erc20: erc20_1,
       weth: weth_1,
       deploymentBlock: spokePool1DeploymentBlock,
-    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    } = await deploySpokePoolWithToken(originChainId));
     ({
       spokePool: spokePool_2,
       erc20: erc20_2,
       weth: weth_2,
       deploymentBlock: spokePool2DeploymentBlock,
-    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    } = await deploySpokePoolWithToken(destinationChainId));
 
     const {
       hubPool,
@@ -78,7 +77,7 @@ describe("TokenClient: Balance and Allowance", async function () {
 
     for (const token of [hubERC20, hubWeth]) {
       hubPoolClient.addL1Token({
-        address: token.address,
+        address: EvmAddress.from(token.address),
         symbol: await token.symbol(),
         decimals: await token.decimals(),
       });
@@ -146,12 +145,12 @@ describe("TokenClient: Balance and Allowance", async function () {
     await updateAllClients();
     const expectedData = {
       [originChainId]: {
-        [toBytes32(erc20_1.address)]: { balance: toBNWei(0), allowance: toBNWei(0) },
-        [toBytes32(weth_1.address)]: { balance: toBNWei(0), allowance: toBNWei(0) },
+        [erc20_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
+        [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
       [destinationChainId]: {
-        [toBytes32(erc20_2.address)]: { balance: toBNWei(0), allowance: toBNWei(0) },
-        [toBytes32(weth_2.address)]: { balance: toBNWei(0), allowance: toBNWei(0) },
+        [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
+        [weth_2.address]: { balance: toBNWei(0), allowance: toBNWei(0) },
       },
     };
     const tokenData = tokenClient.getAllTokenData();
@@ -172,12 +171,12 @@ describe("TokenClient: Balance and Allowance", async function () {
 
     const expectedData1 = {
       [originChainId]: {
-        [toBytes32(erc20_1.address)]: { balance: toBNWei(42069), allowance: toBNWei(0) },
-        [toBytes32(weth_1.address)]: { balance: toBNWei(0), allowance: toBNWei(420420) },
+        [erc20_1.address]: { balance: toBNWei(42069), allowance: toBNWei(0) },
+        [weth_1.address]: { balance: toBNWei(0), allowance: toBNWei(420420) },
       },
       [destinationChainId]: {
-        [toBytes32(erc20_2.address)]: { balance: toBNWei(0), allowance: toBNWei(6969) },
-        [toBytes32(weth_2.address)]: { balance: toBNWei(1337), allowance: toBNWei(0) },
+        [erc20_2.address]: { balance: toBNWei(0), allowance: toBNWei(6969) },
+        [weth_2.address]: { balance: toBNWei(1337), allowance: toBNWei(0) },
       },
     };
     const tokenData1 = tokenClient.getAllTokenData();
