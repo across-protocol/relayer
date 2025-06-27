@@ -689,8 +689,6 @@ export class ProfitClient {
           exclusivityDeadline: 0,
           exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
           message: EMPTY_MESSAGE,
-          fromLiteChain: false,
-          toLiteChain: false,
         };
         const evmRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
         const _relayer = chainIsEvm(destinationChainId) ? evmRelayer : DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM;

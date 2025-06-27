@@ -363,7 +363,7 @@ export class TokenClient {
       await sdkUtils.mapAsync(solanaTokens, async (tokenMint) => {
         const balance = await this._getSolanaTokenBalance(provider, this.relayerSvmAddress, tokenMint);
         // Solana doesn't require allowances like EVM chains
-        return [tokenMint.toNative(), { balance, allowance: toBN(0) }];
+        return [tokenMint.toBytes32(), { balance, allowance: toBN(0) }];
       })
     );
 
