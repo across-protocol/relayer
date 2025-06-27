@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
@@ -30,7 +30,6 @@ import {
   SVMProvider,
   EvmAddress,
 } from "../utils";
-import { arch } from "@across-protocol/sdk";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
 type TokenShortfallType = {

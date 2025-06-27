@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk";
+import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
@@ -21,7 +21,6 @@ import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
 import { assert, Provider } from ".";
 import { BN, web3 } from "@coral-xyz/anchor";
-import { arch } from "@across-protocol/sdk";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
