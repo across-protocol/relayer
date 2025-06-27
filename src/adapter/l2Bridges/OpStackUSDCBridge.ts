@@ -46,10 +46,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const { l2chainId: chainId, l2Bridge } = this;
 
     const txns: AugmentedTransaction[] = [];
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
+    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
     const formattedAmount = formatter(amount.toString());
     const chain = getNetworkName(chainId);
     const nonMulticall = true;
@@ -72,7 +72,7 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
         chainId,
         contract: l2Bridge,
         method: "sendMessage",
-        args: [to.toAddress(), amount.toString(), this.minGasLimit],
+        args: [to.toNative(), amount.toString(), this.minGasLimit],
         nonMulticall,
         unpermissioned,
         message: `🎰 Withdrew ${formattedAmount} Circle Bridged (upgradable) ${symbol} from ${chain} to L1`,
@@ -90,8 +90,8 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     _l2Token; // unused
 
-    const sentFilter = this.l2Bridge.filters.MessageSent(from.toAddress());
-    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toAddress());
+    const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
+    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
 
     const [l2Events, l1Events] = await Promise.all([
       paginatedEventQuery(this.l2Bridge, sentFilter, l2EventConfig),

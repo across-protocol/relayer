@@ -100,7 +100,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         eventSearchConfig: { from, maxLookBack: blockrange },
         spokePoolAddress: spokepool,
       } = this;
-      const opts = { spokepool: spokepool.toAddress(), blockrange, lookback: `@${from}` };
+      const opts = { spokepool: spokepool.toNative(), blockrange, lookback: `@${from}` };
 
       const args = Object.entries(opts)
         .map(([k, v]) => [`--${k}`, `${v}`])

@@ -21,6 +21,7 @@ import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
 import { assert, Provider } from ".";
 import { BN, web3 } from "@coral-xyz/anchor";
+import { arch } from "@across-protocol/sdk";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -809,7 +810,7 @@ async function _getCCTPDepositEventsSvm(
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
     "DepositForBurn",
-    SvmAddress.from(address).toV2Address(),
+    arch.svm.toAddress(SvmAddress.from(address)),
     BigInt(sourceEventSearchConfig.from),
     BigInt(sourceEventSearchConfig.to)
   );

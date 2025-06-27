@@ -41,6 +41,7 @@ import {
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { arch } from "@across-protocol/sdk";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -228,7 +229,7 @@ async function finalizeSvmMessages(
     const cctpMessageReceiver = isDepositForBurnEvent(message) ? tokenMessengerMinter : svmSpokeProgram.programId;
 
     const [authorityPda] = web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("message_transmitter_authority"), cctpMessageReceiver.toBuffer()],
+      [Buffer.from("message_transmitter_authority"), Buffer.from(cctpMessageReceiver.toBytes())],
       messageTransmitter
     );
 
@@ -283,7 +284,7 @@ async function getAccountMetasForDepositMessage(
   );
   const [tokenMinterPda] = web3.PublicKey.findProgramAddressSync([Buffer.from("token_minter")], tokenMessengerMinter);
   const [localTokenPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("local_token"), l2Usdc.toBuffer()],
+    [Buffer.from("local_token"), Buffer.from(arch.svm.toAddress(l2Usdc))],
     tokenMessengerMinter
   );
   const [tokenMessengerEventAuthorityPda] = web3.PublicKey.findProgramAddressSync(
@@ -291,7 +292,7 @@ async function getAccountMetasForDepositMessage(
     tokenMessengerMinter
   );
   const [custodyTokenAccountPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("custody"), l2Usdc.toBuffer()],
+    [Buffer.from("custody"), Buffer.from(arch.svm.toAddress(l2Usdc))],
     tokenMessengerMinter
   );
   const tokenAccount = await getAssociatedTokenAddress(SvmAddress.from(svmSigner.publicKey.toBase58()), l2Usdc);
