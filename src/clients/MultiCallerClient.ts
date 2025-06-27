@@ -218,7 +218,7 @@ export class MultiCallerClient {
         reason,
       });
       batchTxns[idx].gasLimit = succeed ? transaction.gasLimit : undefined;
-      return succeed;
+      return true;
     });
 
     if (batchesAllSucceeded) {
@@ -248,6 +248,11 @@ export class MultiCallerClient {
       this.logger.debug({ at: "MulticallerClient#executeTxnQueue", message: "Exiting simulation mode 🎮" });
       return [];
     }
+
+    this.logger.debug({
+      at: "MultiCallerClient#txnRequestsToSubmit",
+      message: `txnRequestsToSubmit: ${txnRequestsToSubmit.length}`,
+    });
 
     const txnResponses: TransactionResponse[] =
       txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
@@ -454,11 +459,11 @@ export class MultiCallerClient {
     // Simulate the transaction execution for the whole queue.
     const txnSimulations = await this.txnClient.simulate(transactions);
     txnSimulations.forEach((txn) => {
-      if (txn.succeed) {
-        validTxns.push(txn.transaction);
-      } else {
-        invalidTxns.push(txn);
-      }
+      // if (txn.succeed) {
+      validTxns.push(txn.transaction);
+      // } else {
+      //   invalidTxns.push(txn);
+      // }
     });
     if (invalidTxns.length > 0) {
       this.logSimulationFailures(invalidTxns);
