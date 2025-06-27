@@ -1309,6 +1309,7 @@ export class Monitor {
         if (this.balanceCache[chainId]?.[token]?.[account]) {
           return this.balanceCache[chainId][token][account];
         }
+        // @TODO This can throw an runtime error if chainId is wrong.
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
@@ -1344,6 +1345,7 @@ export class Monitor {
           return this.decimals[chainId][token];
         }
         let decimals: number;
+        // @TODO This can throw an runtime error if chainId is wrong.
         const spokePoolClient = this.clients.spokePoolClients[chainId];
         if (isEVMSpokePoolClient(spokePoolClient)) {
           decimals = await new Contract(token, ERC20.abi, spokePoolClient.spokePool.provider).decimals();

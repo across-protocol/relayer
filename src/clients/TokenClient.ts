@@ -193,6 +193,9 @@ export class TokenClient {
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // Current use of resolveRemoteTokens is okey, will not throw an error.
+    // But there can be problems if resolveRemoteTokens is used in a different context.
     const spokePoolClient = this.spokePoolClients[chainId];
     assert(isEVMSpokePoolClient(spokePoolClient));
     const signer = spokePoolClient.spokePool.signer;
@@ -248,6 +251,9 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // Current use of updateChain is okey, will not throw an error.
+    // But there can be problems if updateChain is used in a different context.
     const spokePoolClient = this.spokePoolClients[chainId];
 
     if (isEVMSpokePoolClient(spokePoolClient)) {
@@ -326,6 +332,9 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // Current use of fetchTokenData is okey, will not throw an error.
+    // But there can be problems if fetchTokenData is used in a different context.
     const spokePoolClient = this.spokePoolClients[chainId];
     assert(isEVMSpokePoolClient(spokePoolClient));
 

@@ -82,6 +82,9 @@ export class BaseChainAdapter {
   }
 
   protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "to"> {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // Current use of getSearchConfig is okey, will not throw an error.
+    // But there can be problems if getSearchConfig is used in a different context.
     return { ...this.spokePoolClients[chainId].eventSearchConfig };
   }
 

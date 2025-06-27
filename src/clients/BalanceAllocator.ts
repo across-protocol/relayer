@@ -155,6 +155,9 @@ export class BalanceAllocator {
 
   // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // Current use of _queryBalance is okey, will not throw an error.
+    // But there can be problems if _queryBalance is used in a different context.
     return getNativeTokenAddressForChain(chainId).toLowerCase() === token.toLowerCase()
       ? await this.providers[chainId].getBalance(holder)
       : await ERC20.connect(token, this.providers[chainId]).balanceOf(holder);

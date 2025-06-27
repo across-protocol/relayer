@@ -240,6 +240,9 @@ export class OFTBridge extends BaseBridgeAdapter {
 
 // Retrieves the OFT EID for a given chainId.
 export function getOFTEidForChainId(chainId: number): number {
+  // @TODO This can throw an runtime error if chainId is wrong.
+  // Current use of getOFTEidForChainId is okey, will not throw an error.
+  // But there can be problems if getOFTEidForChainId is used in a different context.
   const eid = PUBLIC_NETWORKS[chainId].oftEid;
   if (!isDefined(eid)) {
     throw new Error(`No OFT domain found for chainId: ${chainId}`);

@@ -194,6 +194,7 @@ export class Relayer {
   }
 
   fillIsExclusive(deposit: Deposit): boolean {
+    // @TODO This can throw an runtime error if chainId is wrong.
     const currentTime = this.clients.spokePoolClients[deposit.destinationChainId].getCurrentTime();
     return deposit.exclusivityDeadline >= currentTime;
   }
@@ -355,6 +356,7 @@ export class Relayer {
     }
 
     // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+    // @TODO This can throw an runtime error if chainId is wrong.
     const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
     if (deposit.fillDeadline <= currentTime) {
       return ignoreDeposit();
@@ -491,6 +493,9 @@ export class Relayer {
    * @returns An index into the limits array.
    */
   originChainOvercommitted(originChainId: number, amount = bnZero, limitIdx = 0): boolean {
+    // @TODO This can throw an runtime error if chainId is wrong.
+    // It looks like current use of originChainOvercommitted is okey, will not throw an error.
+    // But there can be problems if originChainOvercommitted is used in a different context.
     const fillLimits = this.fillLimits[originChainId].slice(limitIdx);
     return fillLimits?.some(({ limit }) => limit.sub(amount).lt(bnZero)) ?? true;
   }
@@ -935,6 +940,7 @@ export class Relayer {
 
       const destinationChainId = Number(chainId);
       const deposits = _deposits.map(({ deposit }) => deposit);
+      // @TODO This can throw an runtime error if chainId is wrong.
       const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
 
       // In looping mode, limit the number of deposits per chain per loop. This is an anti-spam mechanism that avoids
@@ -989,6 +995,7 @@ export class Relayer {
    * @param status Fill status (Unfilled, Filled, RequestedSlowFill).
    */
   protected setFillStatus(deposit: Deposit, status: number): void {
+    // @TODO This can throw an runtime error if chainId is wrong.
     const depositHash = this.clients.spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
     this.fillStatus[depositHash] = status;
   }
@@ -1018,6 +1025,7 @@ export class Relayer {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const { originChainId, destinationChainId, depositId, outputToken } = deposit;
     const multiCallerClient = this.getMulticaller(destinationChainId);
+    // @TODO This can throw an runtime error if chainId is wrong.
     const spokePoolClient = spokePoolClients[destinationChainId];
     const slowFillRequest = spokePoolClient.getSlowFillRequest(deposit);
     if (isDefined(slowFillRequest)) {
@@ -1082,6 +1090,7 @@ export class Relayer {
       realizedLpFeePct,
     });
 
+    // @TODO This can throw an runtime error if chainId is wrong.
     const spokePoolClient = spokePoolClients[deposit.destinationChainId];
     if (isEVMSpokePoolClient(spokePoolClient)) {
       const [method, messageModifier, args] = !isDepositSpedUp(deposit)

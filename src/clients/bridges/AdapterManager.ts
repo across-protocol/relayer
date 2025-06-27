@@ -166,6 +166,7 @@ export class AdapterManager {
       adapterSupportedL1Tokens,
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
+    // @TODO This can throw an runtime error if chainId is wrong.
     return this.adapters[chainId].getOutstandingCrossChainTransfers(
       adapterSupportedL1Tokens.map((l1Token) => EvmAddress.from(l1Token))
     );
@@ -181,6 +182,7 @@ export class AdapterManager {
   ): Promise<TransactionResponse> {
     this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
+    // @TODO This can throw an runtime error if chainId is wrong.
     return this.adapters[chainId].sendTokenToTargetChain(
       toAddressType(address),
       EvmAddress.from(l1Token),
@@ -205,6 +207,7 @@ export class AdapterManager {
       l2Token,
       amount,
     });
+    // @TODO This can throw an runtime error if chainId is wrong.
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(
       EvmAddress.from(address),
       toAddressType(l2Token),
@@ -221,6 +224,7 @@ export class AdapterManager {
     l2Token: string
   ): Promise<BigNumber> {
     chainId = Number(chainId);
+    // @TODO This can throw an runtime error if chainId is wrong.
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(
       lookbackPeriodSeconds,
       toAddressType(fromAddress),
