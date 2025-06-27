@@ -305,27 +305,28 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
 
   const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
+  const rawOutputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
   const relayer = await signer.getAddress();
+  const recipient = sdkUtils.EvmAddress.from(depositArgs.recipient);
+  const outputToken = sdkUtils.EvmAddress.from(rawOutputToken);
+
   const deposit = {
     depositId: depositArgs.depositId,
     originChainId,
     destinationChainId,
     depositor: toAddressType(depositArgs.depositor, originChainId),
-    recipient: toAddressType(depositArgs.recipient, destinationChainId),
+    recipient,
     inputToken: toAddressType(depositArgs.inputToken, originChainId),
     inputAmount: depositArgs.inputAmount,
-    outputToken: toAddressType(outputToken, destinationChainId),
+    outputToken,
     outputAmount,
     message: depositArgs.message,
     quoteTimestamp: depositArgs.quoteTimestamp,
     fillDeadline: depositArgs.fillDeadline,
     exclusivityDeadline: depositArgs.exclusivityDeadline,
     exclusiveRelayer: toAddressType(depositArgs.exclusiveRelayer, destinationChainId),
-    fromLiteChain: false, // Not relevant
-    toLiteChain: false, // Not relevant
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
@@ -348,7 +349,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     const destProvider = await getProvider(destinationChainId);
     const destSigner = signer.connect(destProvider);
 
-    const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
+    const erc20 = new Contract(outputToken.toNative(), ERC20.abi, destSigner);
     const allowance = await erc20.allowance(sender, destSpokePool.address);
     if (outputAmount.gt(allowance)) {
       const approvalAmount = outputAmount.mul(5);
