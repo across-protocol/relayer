@@ -158,6 +158,13 @@ export class InventoryClient {
     return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
   }
 
+  private getBalanceOnChainWithOutstandingTransfers(chainId: number, l1Token: string, l2Token: string): BigNumber {
+    const balance = this.getBalanceOnChain(chainId, l1Token, l2Token);
+    return balance.sub(
+      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
+    );
+  }
+
   /**
    * Determine the allocation of an l1 token across all configured remote chain IDs.
    * @param l1Token L1 token to query.
@@ -1261,6 +1268,11 @@ export class InventoryClient {
           }
 
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          const balanceOnChainWithOutstandingTransfers = this.getBalanceOnChainWithOutstandingTransfers(
+            chainId,
+            l1Token,
+            l2Token
+          );
 
           // We apply a discount on the effective target % because the repayment chain choice
           // algorithm should never allow the inventory to get above the target pct * target overage buffer.
@@ -1274,10 +1286,12 @@ export class InventoryClient {
           );
           const excessWithdrawThresholdPct = targetPct.mul(targetPctMultiplier).div(this.scalar);
 
-          const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
           const cumulativeBalanceInL2TokenDecimals = l2BalanceFromL1Decimals(cumulativeBalance);
           const desiredWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
+          const shouldWithdrawExcess =
+            currentAllocPct.gte(excessWithdrawThresholdPct) &&
+            balanceOnChainWithOutstandingTransfers.gte(desiredWithdrawalAmount);
 
           this.log(
             `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
