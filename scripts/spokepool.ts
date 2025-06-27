@@ -305,7 +305,8 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
 
   const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const rawOutputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
+  const rawOutputToken =
+    depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
   const relayer = await signer.getAddress();
