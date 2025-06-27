@@ -63,15 +63,15 @@ export class TokenClient {
     if (!this._hasTokenPairData(chainId, token)) {
       return bnZero;
     }
-    return this.tokenData[chainId][token.toBytes32()].balance;
+    return this.tokenData[chainId][token.toNative()].balance;
   }
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
-    this.tokenData[chainId][token.toBytes32()].balance = this.tokenData[chainId][token.toBytes32()].balance.sub(amount);
+    this.tokenData[chainId][token.toNative()].balance = this.tokenData[chainId][token.toNative()].balance.sub(amount);
   }
 
   getShortfallTotalRequirement(chainId: number, token: Address): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.totalRequirement ?? bnZero;
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.totalRequirement ?? bnZero;
   }
 
   getTokensNeededToCoverShortfall(chainId: number, token: Address): BigNumber {
@@ -79,7 +79,7 @@ export class TokenClient {
   }
 
   getShortfallDeposits(chainId: number, token: Address): BigNumber[] {
-    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.deposits || [];
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.deposits || [];
   }
 
   hasBalanceForFill(deposit: Deposit): boolean {
@@ -94,7 +94,7 @@ export class TokenClient {
 
     // Deposits are the previous shortfall deposits, appended to this depositId.
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
-    assign(this.tokenShortfall, [chainId, token.toBytes32()], { deposits, totalRequirement });
+    assign(this.tokenShortfall, [chainId, token.toNative()], { deposits, totalRequirement });
   }
 
   captureTokenShortfallForFill(deposit: Deposit): void {
@@ -279,7 +279,7 @@ export class TokenClient {
       const balanceInfo = Object.fromEntries(
         balances.map(({ contract: { address } }, idx) => {
           return [
-            toAddressType(address, chainId).toBytes32(),
+            toAddressType(address, chainId).toNative(),
             { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
           ];
         })
@@ -310,13 +310,14 @@ export class TokenClient {
       const chainId = chainIds[idx];
       for (const _token of Object.keys(tokenData)) {
         const token = toAddressType(_token, chainId);
-        assign(this.tokenData, [chainId, token.toBytes32()], tokenData[token.toBytes32()]);
+        assign(this.tokenData, [chainId, token.toNative()], tokenData[token.toNative()]);
       }
     });
 
     // Remove allowance from token data when logging.
     const balanceData = Object.fromEntries(
       Object.entries(this.tokenData).map(([chainId, tokenData]) => {
+        console.log(`xxx chainId ${chainId} tokenData: ${JSON.stringify(tokenData, null, 2)}`);
         return [
           chainId,
           Object.fromEntries(
@@ -342,7 +343,7 @@ export class TokenClient {
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
         const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toNative());
         const allowance = await this._getAllowance(spokePoolClient, token);
-        return [toAddressType(token.address, chainId).toBytes32(), { balance, allowance }];
+        return [toAddressType(token.address, chainId).toNative(), { balance, allowance }];
       })
     );
 
@@ -419,7 +420,7 @@ export class TokenClient {
   }
 
   private _hasTokenPairData(chainId: number, token: Address) {
-    const hasData = !!this.tokenData?.[chainId]?.[token.toBytes32()];
+    const hasData = !!this.tokenData?.[chainId]?.[token.toNative()];
     if (!hasData) {
       this.logger.warn({
         at: "TokenBalanceClient",
