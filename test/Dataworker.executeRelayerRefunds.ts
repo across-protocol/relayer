@@ -1,5 +1,5 @@
 import { BundleDataClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBN, toBNWei } from "../src/utils";
+import { buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBN, toBNWei, toAddressType } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -111,7 +111,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
         chainId: hubPoolClient.chainId,
         refundAmounts: [],
         leafId: 0,
-        l2TokenAddress: l1Token_1.address,
+        l2TokenAddress: toAddressType(l1Token_1.address, hubPoolClient.chainId),
         refundAddresses: [],
       },
     ];
@@ -131,7 +131,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
       true,
       0
     );
-    expect(balanceAllocator.getUsed(hubPoolClient.chainId, l1Token_1.address, hubPool.address)).to.equal(toBNWei("-1"));
+    expect(
+      balanceAllocator.getUsed(
+        hubPoolClient.chainId,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId)
+      )
+    ).to.equal(toBNWei("-1"));
   });
   describe("Computing refunds for bundles", function () {
     let relayer: SignerWithAddress;
@@ -167,9 +173,14 @@ describe("Dataworker: Execute relayer refunds", async function () {
 
       // No bundle is validated so no refunds.
       const refunds = await bundleDataClient.getPendingRefundsFromValidBundles();
-      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_2.address)).to.equal(
-        toBN(0)
-      );
+      expect(
+        bundleDataClient.getTotalRefund(
+          refunds,
+          toAddressType(relayer.address, hubPoolClient.chainId),
+          destinationChainId,
+          toAddressType(erc20_2.address, destinationChainId)
+        )
+      ).to.equal(toBN(0));
     });
     it("Get refunds from validated bundles", async function () {
       await updateAllClients();
@@ -190,19 +201,29 @@ describe("Dataworker: Execute relayer refunds", async function () {
       const refunds = await bundleDataClient.getPendingRefundsFromValidBundles();
       const totalRefund1 = bundleDataClient.getTotalRefund(
         refunds,
-        relayer.address,
+        toAddressType(relayer.address, destinationChainId),
         destinationChainId,
-        erc20_2.address
+        toAddressType(erc20_2.address, destinationChainId)
       );
       expect(totalRefund1).to.gt(0);
 
       // Test edge cases of `getTotalRefund` that should return BN(0)
-      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, repaymentChainId, erc20_2.address)).to.equal(
-        toBN(0)
-      );
-      expect(bundleDataClient.getTotalRefund(refunds, relayer.address, destinationChainId, erc20_1.address)).to.equal(
-        toBN(0)
-      );
+      expect(
+        bundleDataClient.getTotalRefund(
+          refunds,
+          toAddressType(relayer.address, repaymentChainId),
+          repaymentChainId,
+          toAddressType(erc20_2.address, repaymentChainId)
+        )
+      ).to.equal(toBN(0));
+      expect(
+        bundleDataClient.getTotalRefund(
+          refunds,
+          toAddressType(relayer.address, destinationChainId),
+          destinationChainId,
+          toAddressType(erc20_1.address, destinationChainId)
+        )
+      ).to.equal(toBN(0));
 
       // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
       const rootBundle = validatedRootBundles[0];
@@ -224,7 +245,12 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await bundleDataClient.getPendingRefundsFromValidBundles();
       const postExecutionRefunds = await bundleDataClient.getPendingRefundsFromValidBundles();
       expect(
-        bundleDataClient.getTotalRefund(postExecutionRefunds, relayer.address, destinationChainId, erc20_2.address)
+        bundleDataClient.getTotalRefund(
+          postExecutionRefunds,
+          toAddressType(relayer.address, destinationChainId),
+          destinationChainId,
+          toAddressType(erc20_2.address, destinationChainId)
+        )
       ).to.equal(toBN(0));
 
       // Submit fill2 and propose another bundle:
@@ -258,16 +284,23 @@ describe("Dataworker: Execute relayer refunds", async function () {
       // Should include refunds for most recently validated bundle but not count first one
       // since they were already refunded.
       const refunds2 = await bundleDataClient.getPendingRefundsFromValidBundles();
-      expect(bundleDataClient.getTotalRefund(refunds2, relayer.address, destinationChainId, erc20_2.address)).to.gt(0);
+      expect(
+        bundleDataClient.getTotalRefund(
+          refunds2,
+          toAddressType(relayer.address, destinationChainId),
+          destinationChainId,
+          toAddressType(erc20_2.address, destinationChainId)
+        )
+      ).to.gt(0);
     });
     it("Refunds in next bundle", async function () {
       // Before proposal should show refunds:
       expect(
         bundleDataClient.getRefundsFor(
           (await bundleDataClient.getNextBundleRefunds())[0],
-          relayer.address,
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          erc20_2.address
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.gt(0);
 
@@ -280,9 +313,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getRefundsFor(
           (await bundleDataClient.getNextBundleRefunds())[0],
-          relayer.address,
+          toAddressType(relayer.address, destinationChainId),
           destinationChainId,
-          erc20_2.address
+          toAddressType(erc20_2.address, destinationChainId)
         )
       ).to.gt(0);
 

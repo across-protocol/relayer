@@ -1,7 +1,7 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { BundleDataClient, HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber } from "../../src/utils";
+import { BigNumber, EvmAddress, toAddressType } from "../../src/utils";
 import winston from "winston";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
@@ -49,8 +49,8 @@ export class MockInventoryClient extends InventoryClient {
     this.excessRunningBalancePcts[l1Token] = balances;
   }
 
-  async getExcessRunningBalancePcts(l1Token: string): Promise<{ [chainId: number]: BigNumber }> {
-    return Promise.resolve(this.excessRunningBalancePcts[l1Token]);
+  async getExcessRunningBalancePcts(l1Token: Address): Promise<{ [chainId: number]: BigNumber }> {
+    return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()]);
   }
 
   addPossibleRebalance(rebalance: Rebalance): void {
@@ -85,10 +85,10 @@ export class MockInventoryClient extends InventoryClient {
     }
     if (this.tokenMappings) {
       const hasOriginChainMapping = Object.values(this.tokenMappings).some(
-        (mapping) => mapping[deposit.originChainId] === deposit.inputToken
+        (mapping) => mapping[deposit.originChainId] === deposit.inputToken.toEvmAddress()
       );
       const hasDestinationChainMapping = Object.values(this.tokenMappings).some(
-        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken
+        (mapping) => mapping[deposit.destinationChainId] === deposit.outputToken.toEvmAddress()
       );
       return hasOriginChainMapping && hasDestinationChainMapping;
     }
@@ -105,11 +105,13 @@ export class MockInventoryClient extends InventoryClient {
     return super.getRemoteTokenForL1Token(l1Token, chainId);
   }
 
-  override getL1TokenAddress(l2Token: string, chainId: number): string {
+  override getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
     if (this.tokenMappings) {
-      const tokenMapping = Object.entries(this.tokenMappings).find(([, mapping]) => mapping[chainId] === l2Token);
+      const tokenMapping = Object.entries(this.tokenMappings).find(
+        ([, mapping]) => mapping[chainId] === l2Token.toEvmAddress()
+      );
       if (tokenMapping) {
-        return tokenMapping[0];
+        return toAddressType(tokenMapping[0], chainId);
       }
     }
     return super.getL1TokenAddress(l2Token, chainId);

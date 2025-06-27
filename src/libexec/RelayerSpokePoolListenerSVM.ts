@@ -2,6 +2,7 @@ import assert from "assert";
 import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch } from "@across-protocol/sdk";
+import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
 import {
@@ -112,7 +113,7 @@ async function listen(
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
-  const eventAuthority = await arch.svm.getEventAuthority();
+  const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url));

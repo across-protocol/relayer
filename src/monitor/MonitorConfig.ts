@@ -1,6 +1,14 @@
 import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
-import { CHAIN_IDs, ethers, getNativeTokenAddressForChain, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
+import {
+  CHAIN_IDs,
+  ethers,
+  getNativeTokenAddressForChain,
+  isDefined,
+  TOKEN_SYMBOLS_MAP,
+  Address,
+  toAddressType,
+} from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -21,19 +29,19 @@ export class MonitorConfig extends CommonConfig {
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
   readonly stuckRebalancesEnabled: boolean;
-  readonly monitoredRelayers: string[];
+  readonly monitoredRelayers: Address[];
   readonly monitoredSpokePoolChains: number[];
   readonly monitoredTokenSymbols: string[];
-  readonly whitelistedDataworkers: string[];
-  readonly whitelistedRelayers: string[];
-  readonly knownV1Addresses: string[];
+  readonly whitelistedDataworkers: Address[];
+  readonly whitelistedRelayers: Address[];
+  readonly knownV1Addresses: Address[];
   readonly bundlesCount: number;
   readonly botModes: BotModes;
   readonly refillEnabledBalances: {
     chainId: number;
     isHubPool: boolean;
-    account: string;
-    token: string;
+    account: Address;
+    token: Address;
     target: number;
     trigger: number;
   }[] = [];
@@ -41,8 +49,8 @@ export class MonitorConfig extends CommonConfig {
     chainId: number;
     warnThreshold: number | null;
     errorThreshold: number | null;
-    account: string;
-    token: string;
+    account: Address;
+    token: Address;
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
@@ -120,7 +128,7 @@ export class MonitorConfig extends CommonConfig {
           return {
             // Required fields:
             chainId,
-            account,
+            account: toAddressType(account, chainId),
             target,
             trigger,
             // Optional fields that will set to defaults:
@@ -200,7 +208,7 @@ export class MonitorConfig extends CommonConfig {
   }
 }
 
-const parseAddressesOptional = (addressJson?: string): string[] => {
+const parseAddressesOptional = (addressJson?: string): Address[] => {
   const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => ethers.utils.getAddress(address));
+  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address), CHAIN_IDs.MAINNET));
 };

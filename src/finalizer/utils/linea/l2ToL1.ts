@@ -17,6 +17,7 @@ import {
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
+  toAddressType,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -209,7 +210,7 @@ export async function lineaL2ToL1Finalizer(
       ({ blockNumber, l2TokenAddress }) =>
         blockNumber >= l2FromBlock &&
         blockNumber <= l2ToBlock &&
-        l2TokenAddress !== TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId]
+        l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId], l2ChainId))
     );
 
   // Get Linea's MessageSent events for each src event
@@ -269,7 +270,7 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress.toEvmAddress(), l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,

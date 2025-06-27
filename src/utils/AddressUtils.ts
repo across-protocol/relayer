@@ -1,5 +1,13 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { Address, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
+import {
+  compareAddressesSimple,
+  ethers,
+  getRemoteTokenForL1Token,
+  isDefined,
+  Address,
+  EvmAddress,
+  toAddressType,
+} from ".";
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
@@ -45,25 +53,25 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
  * @returns L2 token address
  */
 export function getTranslatedTokenAddress(
-  l1Token: string,
+  l1Token: EvmAddress,
   hubChainId: number,
   l2ChainId: number,
   isNativeUsdc = false
-): string {
+): Address {
   // Base Case
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
   // Native USDC or not USDC, we can just look up in the token map directly.
-  if (isNativeUsdc || !compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
+  if (isNativeUsdc || !compareAddressesSimple(l1Token.toEvmAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
     return getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
   }
   // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
   const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
     ({ symbol, addresses }) =>
-      symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token) && addresses[l2ChainId]
+      symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token.toEvmAddress()) && addresses[l2ChainId]
   );
-  return bridgedUsdcMapping?.addresses[l2ChainId];
+  return toAddressType(bridgedUsdcMapping?.addresses[l2ChainId], l2ChainId);
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {

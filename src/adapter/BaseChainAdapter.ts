@@ -25,13 +25,13 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
-  EvmAddress,
   Address,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
+  EvmAddress,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -122,8 +122,8 @@ export class BaseChainAdapter {
   }
 
   // @todo: Only take `EvmAddress` objects as input once the SDK clients do not output strings for addresses.
-  isSupportedL2Bridge(l1Token: string): boolean {
-    return isDefined(this.l2Bridges[l1Token]);
+  isSupportedL2Bridge(l1Token: EvmAddress): boolean {
+    return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
 
   filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
@@ -274,7 +274,7 @@ export class BaseChainAdapter {
   ): Promise<string[]> {
     const _l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
     const l1Token = EvmAddress.from(_l1Token);
-    if (!this.isSupportedL2Bridge(l1Token.toNative())) {
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
     let txnsToSend: AugmentedTransaction[];
@@ -314,7 +314,7 @@ export class BaseChainAdapter {
     l2Token: Address
   ): Promise<BigNumber> {
     const l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
-    if (!this.isSupportedL2Bridge(l1Token)) {
+    if (!this.isSupportedL2Bridge(EvmAddress.from(l1Token))) {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
@@ -419,7 +419,7 @@ export class BaseChainAdapter {
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
-    const contract = new Contract(nativeTokenAddress, WETH_ABI, l2Signer);
+    const contract = new Contract(nativeTokenAddress.toEvmAddress(), WETH_ABI, l2Signer);
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.

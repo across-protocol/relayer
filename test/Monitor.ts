@@ -13,7 +13,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, L1Token, V3DepositWithBlock } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, getNetworkName, toBN } from "../src/utils";
+import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, toBytes32 } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -45,9 +45,9 @@ class TestMonitor extends Monitor {
     return this.overriddenTokenMap[chainId] ?? super.getL2ToL1TokenMap(l1Tokens, chainId);
   }
 
-  getRemoteTokenForL1Token(l1Token: string, chainId: number | string): string | undefined {
+  getRemoteTokenForL1Token(l1Token: Address, chainId: number | string): Address | undefined {
     Object.values(this.overriddenTokenMap).forEach((tokenMap: TokenMap) => {
-      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1TokenObject.address === l1Token);
+      const matchedToken = Object.entries(tokenMap).find(([, l1TokenObject]) => l1Token.eq(l1TokenObject.address));
       if (matchedToken) {
         return matchedToken[0];
       }
@@ -76,6 +76,7 @@ describe("Monitor", async function () {
   let adapterManager: MockAdapterManager;
   let defaultMonitorEnvVars: Record<string, string>;
   let updateAllClients: () => Promise<void>;
+  let relayerAddress;
   const { spy, spyLogger } = createSpyLogger();
 
   const executeBundle = async (hubPool: Contract) => {
@@ -91,7 +92,7 @@ describe("Monitor", async function () {
         leaf.netSendAmounts,
         leaf.runningBalances,
         leaf.leafId,
-        leaf.l1Tokens,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
         expectedPoolRebalanceRoot.tree.getHexProof(leaf)
       );
     }
@@ -172,6 +173,7 @@ describe("Monitor", async function () {
 
     // Set the config store version to 0 to match the default version in the ConfigStoreClient.
     process.env.CONFIG_STORE_VERSION = "0";
+    relayerAddress = toAddressType(relayer.address, hubPoolClient.chainId);
 
     const chainIds = [hubPoolClient.chainId, repaymentChainId, originChainId, destinationChainId];
     bundleDataClient = new BundleDataClient(
@@ -184,7 +186,7 @@ describe("Monitor", async function () {
     const providers = Object.fromEntries(
       Object.entries(spokePoolClients).map(([chainId, client]) => [chainId, client.spokePool.provider])
     );
-    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [relayer.address]);
+    tokenTransferClient = new TokenTransferClient(spyLogger, providers, [relayerAddress]);
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     adapterManager.setSupportedChains(chainIds);
@@ -201,21 +203,21 @@ describe("Monitor", async function () {
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(originChainId, {
       [l2Token.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(destinationChainId, {
       [erc20_2.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
     (monitorInstance as TestMonitor).setL2ToL1TokenMap(hubPoolClient.chainId, {
       [l1Token.address]: {
         symbol: "L1Token1",
-        address: l1Token.address,
+        address: toAddressType(l1Token.address, hubPoolClient.chainId),
         decimals: 18,
       },
     });
@@ -259,9 +261,9 @@ describe("Monitor", async function () {
 
     // setupDataworker seeds relayer with 10 * 1500 erc20_2, erc20_1, and l1Token_1 tokens on two different
     // spoke pools, adding to a total of 6 * 10 * 1500 = 90,000 tokens.
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
-      "90000000000000000000000"
-    );
+    expect(
+      reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()
+    ).to.be.equal("90000000000000000000000");
   });
 
   it("Monitor should get relayer refunds", async function () {
@@ -296,10 +298,12 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     const relayerRefund = await computeRelayerRefund({ ...deposit, paymentChainId: fill.repaymentChainId });
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(relayerRefund);
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(
+      relayerRefund
+    );
 
     // Execute pool rebalance leaves.
     await executeBundle(hubPool);
@@ -313,8 +317,10 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(relayerRefund);
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
+      relayerRefund
+    );
 
     // Manually relay the roots to spoke pools since adapter is a dummy and won't actually relay messages.
     const validatedRootBundles = hubPoolClient.getValidatedRootBundles();
@@ -342,20 +348,20 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
-    expect(reports[relayer.address]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.NEXT]).to.be.equal(toBN(0));
+    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(toBN(0));
 
     // Simulate some pending cross chain transfers.
     crossChainTransferClient.increaseOutstandingTransfer(
-      relayer.address,
-      l1Token.address,
-      erc20_2.address,
+      relayerAddress,
+      toAddressType(l1Token.address, hubPoolClient.chainId),
+      toAddressType(erc20_2.address, destinationChainId),
       toBN(5),
       destinationChainId
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
-      reports[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reports[toBytes32(relayer.address)]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
   });
 
@@ -389,15 +395,16 @@ describe("Monitor", async function () {
     // Simulate some pending cross chain transfers to SpokePools.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       originChainId,
-      spokePool_1.address,
-      l1Token.address,
+      toAddressType(spokePool_1.address, originChainId),
+      toAddressType(l1Token.address, hubPoolClient.chainId),
       toBN(5),
-      l2Token.address
+      toAddressType(l2Token.address, originChainId)
     );
     await updateAllClients();
     await monitorInstance.update();
     await monitorInstance.checkStuckRebalances();
 
+    // console.log(spy.getCalls());
     const stuckTransfer = spy.getCalls().find((call) => call.lastArg.message.includes("rebalances stuck"));
     const stuckRootRelay = spy.getCalls().find((call) => call.lastArg.message.includes("root bundle relay stuck"));
     expect(stuckTransfer).to.not.be.undefined;

@@ -54,6 +54,7 @@ import {
   getAllUnfilledDeposits,
   getUnfilledDeposits,
   utf8ToHex,
+  toAddressType,
 } from "../src/utils";
 
 describe("Relayer: Unfilled Deposits", async function () {
@@ -228,7 +229,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+            outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+            depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+            recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+            exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+          },
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         [...deposits]
@@ -268,7 +283,21 @@ describe("Relayer: Unfilled Deposits", async function () {
     fillStatus[depositHash] = FillStatus.Filled;
 
     unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+            outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+            depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+            recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+            exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+          },
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         deposits
@@ -302,7 +331,36 @@ describe("Relayer: Unfilled Deposits", async function () {
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     await updateAllClients();
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+            outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+            depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+            recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+            exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+          },
+          invalidFills: [
+            {
+              ...unfilledDeposit.invalidFills[0],
+              inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+              outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+              depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+              recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+              relayer: unfilledDeposit.invalidFills[0].relayer.toEvmAddress(),
+              relayExecutionInfo: {
+                ...unfilledDeposit.invalidFills[0].relayExecutionInfo,
+                updatedRecipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              },
+            },
+          ],
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
@@ -458,7 +516,14 @@ describe("Relayer: Unfilled Deposits", async function () {
         outputAmount,
         { quoteTimestamp }
       );
-      deposits.push(deposit);
+      deposits.push({
+        ...deposit,
+        inputToken: toAddressType(deposit.inputToken, originChainId),
+        outputToken: toAddressType(deposit.outputToken, destinationChainId),
+        depositor: toAddressType(deposit.depositor, originChainId),
+        recipient: toAddressType(deposit.recipient, destinationChainId),
+        exclusiveRelayer: toAddressType(deposit.exclusiveRelayer, destinationChainId),
+      });
 
       // Modify the HubPool LP balance to ensure that subsequent deposits will receive a different LP fee.
       const lpTokenBalance = await lpToken.balanceOf(owner.address);
@@ -518,7 +583,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
     expect(relayerLpFees[lpFeeKey]).not.exist;
 
-    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: randomAddress() });
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: toAddressType(randomAddress(), originChainId) });
     expect(relayerLpFees[lpFeeKey]).to.not.exist;
 
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });
@@ -550,7 +615,36 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+            outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+            depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+            recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+            exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+          },
+          invalidFills: [
+            {
+              ...unfilledDeposit.invalidFills[0],
+              inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+              outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+              depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+              recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+              relayer: unfilledDeposit.invalidFills[0].relayer.toEvmAddress(),
+              relayExecutionInfo: {
+                ...unfilledDeposit.invalidFills[0].relayExecutionInfo,
+                updatedRecipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              },
+            },
+          ],
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {

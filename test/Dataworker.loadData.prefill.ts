@@ -23,6 +23,8 @@ import {
   bnZero,
   TransactionResponse,
   spreadEventWithBlockNumber,
+  toAddressType,
+  toBytes32,
 } from "../src/utils";
 import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
@@ -89,8 +91,10 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         // The bundle data client should create a refund for the pre fill
         const bundleBlockRanges = getDefaultBlockRange(5);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(deposit.depositId);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills[0].depositId).to.equal(
+          deposit.depositId
+        );
       });
     });
   });
@@ -157,9 +161,10 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.deposit({
-        inputToken: erc20_1.address,
-        outputToken: eventOverride?.outputToken ?? erc20_2.address,
-        message: "0x",
+        inputToken: toAddressType(erc20_1.address, originChainId),
+        inputAmount: eventOverride?.inputAmount ?? undefined,
+        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
+        message: eventOverride?.message ?? "0x",
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
         destinationChainId,
@@ -181,8 +186,17 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       const fill = {
         ...fillObject,
         message,
+        inputToken: deposit.inputToken,
+        outputToken: deposit.outputToken,
+        depositor: deposit.depositor,
+        recipient: deposit.recipient,
+        exclusiveRelayer: deposit.exclusiveRelayer,
+        relayer: toAddressType(_relayer, destinationChainId),
         relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedRecipient: toAddressType(
+            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+            destinationChainId
+          ),
           updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
@@ -202,6 +216,11 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
       return mockDestinationSpokePoolClient.requestSlowFill({
         ...relayData,
+        inputToken: deposit.inputToken,
+        outputToken: deposit.outputToken,
+        depositor: deposit.depositor,
+        recipient: deposit.recipient,
+        exclusiveRelayer: deposit.exclusiveRelayer,
         blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestHeightSearched gets set to the same value.
       } as interfaces.SlowFillRequestWithBlock);
@@ -229,8 +248,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         // The fill is a pre-fill because its earlier than the bundle block range. Because its corresponding
         // deposit is in the block range, we should refund it.
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills[0].depositId).to.equal(
           fill.args.depositId
         );
       });
@@ -244,8 +263,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           // Submit fill that we won't include in the bundle block range. Make sure its relayer address is invalid
           // so that the bundle data client is forced to overwrite the refund recipient.
           const fill = generateV3FillFromDeposit(deposits[0], {}, createRandomBytes32());
+          const { args } = fill;
           const fillWithBlock = {
             ...spreadEventWithBlockNumber(fill),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -282,14 +308,14 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
             getDefaultBlockRange(5),
             spokePoolClients
           );
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills.length).to.equal(1);
+          expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].depositId).to.equal(
             fill.args.depositId
           );
           // Check its refunded to correct address:
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].relayer).to.equal(
-            validRelayerAddress
-          );
+          expect(
+            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toNative()
+          ).to.equal(validRelayerAddress);
         });
 
         it("Refunds fill to msg.sender if fill is in-memory and repayment info is invalid", async function () {
@@ -324,14 +350,14 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
             getDefaultBlockRange(5),
             spokePoolClients
           );
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
+          expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills.length).to.equal(1);
+          expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].depositId).to.equal(
             fill.args.depositId
           );
           // Check its refunded to correct address:
-          expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].relayer).to.equal(
-            validRelayerAddress
-          );
+          expect(
+            data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].relayer.toNative()
+          ).to.equal(validRelayerAddress);
         });
 
         it("Does not refund fill to msg.sender if fill is not in-memory and repayment address and msg.sender are invalid for repayment chain", async function () {
@@ -340,10 +366,17 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
           // Send fill with invalid repayment address
-          const invalidRelayer = ethers.utils.randomBytes(32);
+          const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
           const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+          const { args } = invalidFillEvent;
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           await mockDestinationSpokePoolClient.update([]);
@@ -384,7 +417,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
           // Send fill with invalid repayment address
-          const invalidRelayer = ethers.utils.randomBytes(32);
+          const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
           const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           await mockDestinationSpokePoolClient.update(["FilledRelay"]);
 
@@ -415,10 +448,17 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
           // Fill deposits from different relayers
-          const invalidRelayer = ethers.utils.randomBytes(32);
+          const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
           const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+          const { args } = invalidFillEvent;
           const invalidFill = {
             ...spreadEventWithBlockNumber(invalidFillEvent),
+            inputToken: toAddressType(args.inputToken, originChainId),
+            outputToken: toAddressType(args.outputToken, destinationChainId),
+            depositor: toAddressType(args.depositor, originChainId),
+            recipient: toAddressType(args.recipient, destinationChainId),
+            relayer: toAddressType(args.relayer, destinationChainId),
+            exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
             destinationChainId,
           } as FillWithBlock;
           await mockDestinationSpokePoolClient.update([]);
@@ -458,7 +498,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           const deposits = mockOriginSpokePoolClient.getDeposits();
 
           // Fill deposits from different relayers
-          const invalidRelayer = ethers.utils.randomBytes(32);
+          const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
           const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
           await mockDestinationSpokePoolClient.update(["FilledRelay"]);
           // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
@@ -490,8 +530,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
         // Submit fill that we won't include in the bundle block range.
         const fill = generateV3FillFromDeposit(deposits[0], {}, undefined, undefined, interfaces.FillType.SlowFill);
+        const { args } = fill;
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
+          inputToken: toAddressType(args.inputToken, originChainId),
+          outputToken: toAddressType(args.outputToken, destinationChainId),
+          depositor: toAddressType(args.depositor, originChainId),
+          recipient: toAddressType(args.recipient, destinationChainId),
+          exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+          relayer: toAddressType(args.relayer, destinationChainId),
           destinationChainId,
         } as FillWithBlock;
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -515,7 +562,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         );
         expect(data1.bundleFillsV3).to.deep.equal({});
         // Should refund the deposit:
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+        expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
       });
 
       it("Refunds pre-fills in-memory for duplicate deposits", async function () {
@@ -543,8 +590,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
         // This should return one refund for each pre-fill.
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(3);
         // Duplicate deposits should not be refunded to depositor
         expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       });
@@ -560,8 +607,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
 
         // Submit fill that we won't include in the bundle block range
         const fill = generateV3FillFromDeposit(deposits[0], {});
+        const { args } = fill;
         const fillWithBlock = {
           ...spreadEventWithBlockNumber(fill),
+          inputToken: toAddressType(args.inputToken, originChainId),
+          outputToken: toAddressType(args.outputToken, destinationChainId),
+          depositor: toAddressType(args.depositor, originChainId),
+          recipient: toAddressType(args.recipient, destinationChainId),
+          exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+          relayer: toAddressType(args.relayer, destinationChainId),
           destinationChainId,
         } as FillWithBlock;
         (dataworkerInstance.clients.bundleDataClient as MockBundleDataClient).setMatchingFillEvent(
@@ -583,8 +637,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
           getDefaultBlockRange(5),
           spokePoolClients
         );
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(3);
         expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       });
 
@@ -637,7 +691,7 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
         expect(data1.bundleFillsV3).to.deep.equal({});
         // Should refund the deposit:
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+        expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
       });
     });
 
@@ -662,8 +716,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)][0].depositId).to.equal(
           request.args.depositId
         );
       });
@@ -691,15 +745,15 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         expect(mockDestinationSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
 
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)][0].depositId).to.equal(
           deposit.args.depositId
         );
 
         // The first deposit should be matched which is important because the quote timestamp of the deposit is not
         // in the relay data hash so it can change between duplicate deposits.
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].txnRef).to.equal(
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)][0].txnRef).to.equal(
           deposit.transactionHash
         );
       });
@@ -753,8 +807,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         // Check that bundle slow fills includes leaf.
         const bundleBlockRanges = getDefaultBlockRange(5);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address].length).to.equal(1);
-        expect(data1.bundleSlowFillsV3[destinationChainId][erc20_2.address][0].depositId).to.equal(
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
+        expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)][0].depositId).to.equal(
           deposit.args.depositId
         );
       });

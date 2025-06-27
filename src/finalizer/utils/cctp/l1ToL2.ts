@@ -30,9 +30,9 @@ import {
   EvmAddress,
   ethers,
   chainIsProd,
+  toBuffer,
   isSVMSpokePoolClient,
   getTypedAnchorProgram,
-  toBuffer,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,

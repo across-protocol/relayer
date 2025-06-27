@@ -40,9 +40,9 @@ import {
   bnZero,
   forEachAsync,
   getTokenInfo,
-  compareAddressesSimple,
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
+  toAddressType,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -129,7 +129,7 @@ export async function opStackFinalizer(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(l2TokenAddress, USDC.addresses[chainId]) || !(getCctpDomainForChainId(chainId) > 0)
+        l2TokenAddress.eq(toAddressType(USDC.addresses[chainId], chainId)) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
@@ -158,7 +158,7 @@ export async function opStackFinalizer(
       amountToReturn: event.args.amount,
       chainId,
       leafId: 0,
-      l2TokenAddress: event.l2TokenAddress,
+      l2TokenAddress: toAddressType(event.l2TokenAddress, chainId),
       txnRef: transactionHash,
       txnIndex: transactionIndex,
     };
@@ -378,7 +378,7 @@ async function viem_multicallOptimismFinalizations(
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
-    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
+    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress.toEvmAddress(), chainId);
     const amountFromWei = convertFromWei(event.amountToReturn.toString(), decimals);
 
     const receipt = await publicClientL2.getTransactionReceipt({
@@ -714,7 +714,7 @@ async function multicallOptimismFinalizations(
     if (!isDefined(_callData)) {
       return;
     }
-    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress.toEvmAddress(), chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
@@ -742,7 +742,8 @@ async function multicallOptimismFinalizations(
   // one WithdrawRequest with a unique requestId.
   const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    ({ event, status }) => status === statusRelayed && event.l2TokenAddress === USDB.addresses[chainId]
+    ({ event, status }) =>
+      status === statusRelayed && event.l2TokenAddress.eq(toAddressType(USDB.addresses[chainId], chainId))
   );
   if (claimableUSDBMessages.length === 0) {
     return {
@@ -906,7 +907,7 @@ async function multicallOptimismL1Proofs(
     provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
-    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress.toEvmAddress(), chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const proof: CrossChainMessage = {
       originationChainId: chainId,

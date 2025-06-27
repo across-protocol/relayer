@@ -38,7 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { SvmAddress, EvmAddress } from "../src/utils";
+import { SvmAddress, EvmAddress, toAddressType } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -241,7 +241,14 @@ describe("Relayer: Initiates slow fill requests", async function () {
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-    const slowFillRequest = spokePoolClient_2.getSlowFillRequest(deposit);
+    const slowFillRequest = spokePoolClient_2.getSlowFillRequest({
+      ...deposit,
+      inputToken: toAddressType(inputToken, originChainId),
+      outputToken: toAddressType(outputToken, destinationChainId),
+      depositor: toAddressType(deposit.depositor, originChainId),
+      recipient: toAddressType(deposit.recipient, destinationChainId),
+      exclusiveRelayer: toAddressType(deposit.exclusiveRelayer, destinationChainId),
+    });
     expect(slowFillRequest).to.exist;
 
     const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();

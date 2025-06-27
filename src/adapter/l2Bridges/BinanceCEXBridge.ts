@@ -42,11 +42,12 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     }
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
-    const l2Token = getTranslatedTokenAddress(l1Token.toNative(), hubChainId, l2chainId);
-    this.l2Bridge = new Contract(l2Token, ERC20_ABI, l2Signer);
+    const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
+    this.l2Bridge = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);
     const l1TokenInfo = getTokenInfo(l1Token.toNative(), hubChainId);
     this.l1TokenInfo = {
       ...l1TokenInfo,
+      address: EvmAddress.from(l1TokenInfo.address.toEvmAddress()),
       symbol: l1TokenInfo.symbol === "WETH" ? "ETH" : l1TokenInfo.symbol,
     };
 
