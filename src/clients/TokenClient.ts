@@ -66,7 +66,8 @@ export class TokenClient {
   }
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
-    this.tokenData[chainId][token.toNative()].balance = this.tokenData[chainId][token.toNative()].balance.sub(amount);
+    const tokenAddr = token.toNative();
+    this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 
   getShortfallTotalRequirement(chainId: number, token: Address): BigNumber {
