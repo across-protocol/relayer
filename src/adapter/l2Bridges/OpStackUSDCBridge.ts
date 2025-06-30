@@ -46,7 +46,7 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const { l2chainId: chainId, l2Bridge } = this;
 
     const txns: AugmentedTransaction[] = [];
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);

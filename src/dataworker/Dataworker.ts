@@ -2220,7 +2220,7 @@ export class Dataworker {
 
   protected getTokenInfo(l2Token: Address, chainId: number): string {
     try {
-      return getTokenInfo(l2Token.toNative(), chainId).symbol;
+      return getTokenInfo(l2Token, chainId).symbol;
     } catch (e) {
       return "UNKNOWN";
     }

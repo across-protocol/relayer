@@ -41,7 +41,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
     const weth = new Contract(l2Token.toNative(), WETH_ABI, this.l2Signer);
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const unwrapTxn: AugmentedTransaction = {
       contract: weth,

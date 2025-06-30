@@ -88,7 +88,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token constructWithdrawToL1Txns was called with: ${this.l2Token} != ${l2Token}`
     );
 
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);

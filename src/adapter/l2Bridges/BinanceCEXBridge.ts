@@ -44,7 +44,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
 
     const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Bridge = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);
-    const l1TokenInfo = getTokenInfo(l1Token.toNative(), hubChainId);
+    const l1TokenInfo = getTokenInfo(l1Token, hubChainId);
     this.l1TokenInfo = {
       ...l1TokenInfo,
       address: l1Token,
@@ -61,7 +61,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
     const binanceApiClient = await this.getBinanceClient();
-    const l2TokenInfo = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
     const depositAddress = await binanceApiClient.depositAddress({
       coin: this.l1TokenInfo.symbol,
       network: "BSC",
@@ -93,7 +93,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     l2Token: EvmAddress
   ): Promise<BigNumber> {
     const binanceApiClient = await this.getBinanceClient();
-    const l2TokenInfo = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
       binanceApiClient.depositHistory({

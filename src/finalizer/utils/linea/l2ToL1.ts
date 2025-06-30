@@ -270,7 +270,7 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const { decimals, symbol } = getTokenInfo(l2TokenAddress.toEvmAddress(), l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,

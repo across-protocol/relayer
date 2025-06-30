@@ -433,7 +433,7 @@ export class TokenClient {
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
       return {
         ...l1TokenInfo,

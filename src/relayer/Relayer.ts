@@ -1031,7 +1031,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken.toNative(), destinationChainId);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1412,7 +1412,7 @@ export class Relayer {
     chainId: number,
     tokenAddress: Address
   ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress.toNative(), chainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
@@ -1500,7 +1500,7 @@ export class Relayer {
 
     if (isDepositSpedUp(deposit)) {
       const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken.toNative(),
+        deposit.outputToken,
         deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
@@ -1512,7 +1512,7 @@ export class Relayer {
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-      deposit.inputToken.toNative(),
+      deposit.inputToken,
       deposit.originChainId
     );
     const srcChain = getNetworkName(deposit.originChainId);
@@ -1528,7 +1528,7 @@ export class Relayer {
       .div(deposit.inputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
-      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken.toNative(), deposit.destinationChainId);
+      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +

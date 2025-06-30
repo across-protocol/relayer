@@ -966,6 +966,9 @@ describe("Dataworker: Load bundle data", async function () {
           bundleFillsV3[fill.originChainId] ??= {};
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)] ??= {};
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["refunds"] ??= {
+            [randomAddress()]: bnZero,
+          };
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)].fills.push(fill);
         });
         const mockArweaveData = [
@@ -1017,6 +1020,9 @@ describe("Dataworker: Load bundle data", async function () {
           bundleFillsV3[fill.originChainId] ??= {};
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)] ??= {};
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["refunds"] ??= {
+            [randomAddress()]: bnZero,
+          };
           bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)].fills.push(fill);
         });
         const mockArweaveData = [
