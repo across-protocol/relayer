@@ -129,7 +129,7 @@ export async function opStackFinalizer(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        l2TokenAddress.eq(toAddressType(USDC.addresses[chainId], chainId)) || !(getCctpDomainForChainId(chainId) > 0)
+        !l2TokenAddress.eq(toAddressType(USDC.addresses[chainId], chainId)) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
