@@ -1520,15 +1520,18 @@ export class Relayer {
     const depositor = blockExplorerLink(deposit.depositor.toNative(), deposit.originChainId);
     const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
-    let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
-    const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-    const _totalFeePct = deposit.inputAmount
-      .sub(deposit.outputAmount)
-      .mul(fixedPointAdjustment)
-      .div(deposit.inputAmount);
-    const totalFeePct = formatFeePct(_totalFeePct);
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
       this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+
+    let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
+    const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
+    const adjustedInputAmount = sdkUtils.ConvertDecimals(decimals, outputTokenDecimals)(deposit.inputAmount);
+    const _totalFeePct = adjustedInputAmount
+      .sub(deposit.outputAmount)
+      .mul(fixedPointAdjustment)
+      .div(adjustedInputAmount);
+    const totalFeePct = formatFeePct(_totalFeePct);
+
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
