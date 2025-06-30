@@ -57,7 +57,7 @@ export class AdapterManager {
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          toAddressType(this.hubPoolClient.hubPool.address, this.hubPoolClient.chainId).eq(address) ||
+          EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
           this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
@@ -86,7 +86,7 @@ export class AdapterManager {
             hubChainId,
             l1Signer,
             l2SignerOrProvider,
-            toAddressType(l1Token, hubChainId)
+            EvmAddress.from(l1Token)
           );
           return [l1Token, bridge];
         }) ?? []

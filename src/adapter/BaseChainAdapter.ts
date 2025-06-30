@@ -121,7 +121,6 @@ export class BaseChainAdapter {
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
-  // @todo: Only take `EvmAddress` objects as input once the SDK clients do not output strings for addresses.
   isSupportedL2Bridge(l1Token: EvmAddress): boolean {
     return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
