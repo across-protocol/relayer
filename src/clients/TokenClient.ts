@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
@@ -259,11 +259,11 @@ export class TokenClient {
       const balances: sdkUtils.Call3[] = [];
       const allowances: sdkUtils.Call3[] = [];
       this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-        balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toAddress()] });
+        balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toNative()] });
         allowances.push({
           contract: token,
           method: "allowance",
-          args: [this.relayerEvmAddress.toAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
+          args: [this.relayerEvmAddress.toNative(), spokePoolClient.spokePoolAddress.toEvmAddress()],
         });
       });
 
@@ -331,7 +331,7 @@ export class TokenClient {
 
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
-        const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toAddress());
+        const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toNative());
         const allowance = await this._getAllowance(spokePoolClient, token);
         return [token.address, { balance, allowance }];
       })
@@ -354,7 +354,7 @@ export class TokenClient {
       await sdkUtils.mapAsync(solanaTokens, async (tokenMint) => {
         const balance = await this._getSolanaTokenBalance(provider, this.relayerSvmAddress, tokenMint);
         // Solana doesn't require allowances like EVM chains
-        return [tokenMint.toAddress(), { balance, allowance: toBN(0) }];
+        return [tokenMint.toNative(), { balance, allowance: toBN(0) }];
       })
     );
 
@@ -378,7 +378,7 @@ export class TokenClient {
       }
     }
     const allowance: BigNumber = await token.allowance(
-      this.relayerEvmAddress.toAddress(),
+      this.relayerEvmAddress.toNative(),
       spokePoolClient.spokePoolAddress.toEvmAddress()
     );
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
@@ -432,8 +432,8 @@ export class TokenClient {
     tokenMint: SvmAddress
   ): Promise<BigNumber> {
     // Convert addresses to the correct format for SVM provider
-    const ownerPubkey = walletAddress.toV2Address();
-    const mintPubkey = tokenMint.toV2Address();
+    const ownerPubkey = arch.svm.toAddress(walletAddress);
+    const mintPubkey = arch.svm.toAddress(tokenMint);
 
     // Get token accounts owned by the wallet for this specific mint
     const tokenAccountsByOwner = await provider

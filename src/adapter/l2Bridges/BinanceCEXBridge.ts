@@ -42,9 +42,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     }
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
-    const l2Token = getTranslatedTokenAddress(l1Token.toAddress(), hubChainId, l2chainId);
+    const l2Token = getTranslatedTokenAddress(l1Token.toNative(), hubChainId, l2chainId);
     this.l2Bridge = new Contract(l2Token, ERC20_ABI, l2Signer);
-    const l1TokenInfo = getTokenInfo(l1Token.toAddress(), hubChainId);
+    const l1TokenInfo = getTokenInfo(l1Token.toNative(), hubChainId);
     this.l1TokenInfo = {
       ...l1TokenInfo,
       symbol: l1TokenInfo.symbol === "WETH" ? "ETH" : l1TokenInfo.symbol,
@@ -60,7 +60,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
     const binanceApiClient = await this.getBinanceClient();
-    const l2TokenInfo = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const l2TokenInfo = getTokenInfo(l2Token.toNative(), this.l2chainId);
     const depositAddress = await binanceApiClient.depositAddress({
       coin: this.l1TokenInfo.symbol,
       network: "BSC",
@@ -92,7 +92,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     l2Token: EvmAddress
   ): Promise<BigNumber> {
     const binanceApiClient = await this.getBinanceClient();
-    const l2TokenInfo = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const l2TokenInfo = getTokenInfo(l2Token.toNative(), this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
       binanceApiClient.depositHistory({
@@ -118,14 +118,14 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // FilterMap to remove all deposits originating from other EOAs.
     const depositsInitiatedForAddress = depositHistory
       .map((deposit, idx) => {
-        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toAddress())) {
+        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toNative())) {
           return undefined;
         }
         return deposit;
       })
       .filter(isDefined);
     const withdrawalsFinalizedForAddress = withdrawHistory.filter((withdrawal) =>
-      compareAddressesSimple(withdrawal.address, fromAddress.toAddress())
+      compareAddressesSimple(withdrawal.address, fromAddress.toNative())
     );
 
     const totalDepositAmountForAddress = depositsInitiatedForAddress.reduce(
