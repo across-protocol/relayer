@@ -210,7 +210,7 @@ export async function lineaL2ToL1Finalizer(
       ({ blockNumber, l2TokenAddress }) =>
         blockNumber >= l2FromBlock &&
         blockNumber <= l2ToBlock &&
-        l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId], l2ChainId))
+        !l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId], l2ChainId))
     );
 
   // Get Linea's MessageSent events for each src event

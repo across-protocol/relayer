@@ -2507,8 +2507,8 @@ export class Dataworker {
 
   async _getRequiredEthForOrbitPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): Promise<{
     amount: BigNumber;
-    token: Address;
-    holder: Address;
+    token: EvmAddress;
+    holder: EvmAddress;
   }> {
     // TODO: Make this code more dynamic in the future. For now, hard code custom gas token fees.
     let relayMessageFee: BigNumber;
@@ -2549,8 +2549,8 @@ export class Dataworker {
     }
     return {
       amount: requiredAmount,
-      token: toAddressType(token, leaf.chainId),
-      holder: toAddressType(holder, leaf.chainId),
+      token: EvmAddress.from(token),
+      holder: EvmAddress.from(holder),
     };
   }
 
