@@ -237,7 +237,7 @@ export class InventoryClient {
    * @param chainId Remove chain to query.
    * @returns An array of supported tokens on chainId that map back to l1Token on mainnet.
    */
-  getRemoteTokensForL1Token(l1Token: EvmAddress, chainId: number | string): Address[] {
+  getRemoteTokensForL1Token(l1Token: EvmAddress, chainId: number): Address[] {
     if (chainId === this.hubPoolClient.chainId) {
       return [l1Token];
     }
@@ -250,7 +250,7 @@ export class InventoryClient {
     if (isAliasConfig(tokenConfig)) {
       return Object.keys(tokenConfig)
         .filter((k) => isDefined(tokenConfig[k][chainId]))
-        .map((token) => toAddressType(token, Number(chainId)));
+        .map((token) => toAddressType(token, chainId));
     }
 
     const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
@@ -278,15 +278,9 @@ export class InventoryClient {
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
-  trackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number | string): void {
+  trackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
-    this.crossChainTransferClient.increaseOutstandingTransfer(
-      this.relayer,
-      l1Token,
-      l2Token,
-      rebalance,
-      Number(chainId)
-    );
+    this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {

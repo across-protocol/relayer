@@ -47,7 +47,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     const l1TokenInfo = getTokenInfo(l1Token.toNative(), hubChainId);
     this.l1TokenInfo = {
       ...l1TokenInfo,
-      address: EvmAddress.from(l1TokenInfo.address.toEvmAddress()),
+      address: l1Token,
       symbol: l1TokenInfo.symbol === "WETH" ? "ETH" : l1TokenInfo.symbol,
     };
 
@@ -55,7 +55,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   async constructWithdrawToL1Txns(
-    toAddress: EvmAddress,
+    _toAddress: EvmAddress,
     l2Token: EvmAddress,
     _l1Token: EvmAddress,
     amount: BigNumber
@@ -88,7 +88,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
 
   async getL2PendingWithdrawalAmount(
     l2EventConfig: EventSearchConfig,
-    l1EventConfig: EventSearchConfig,
+    _l1EventConfig: EventSearchConfig,
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {

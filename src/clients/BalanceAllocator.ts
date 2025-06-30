@@ -1,4 +1,4 @@
-import { BigNumber, ERC20, ethers, min, getNativeTokenAddressForChain, Address } from "../utils";
+import { BigNumber, bnZero, ERC20, ethers, min, getNativeTokenAddressForChain, Address } from "../utils";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -11,7 +11,6 @@ export interface BalanceMap {
 
 export class BalanceAllocator {
   public balances: BalanceMap = {};
-
   public used: BalanceMap = {};
 
   constructor(readonly providers: { [chainId: number]: ethers.providers.Provider }) {}
@@ -45,33 +44,35 @@ export class BalanceAllocator {
 
     // Construct a map of available balances for all requests, taking into account used and balances.
     const availableBalances: BalanceMap = {};
-    for (const request of requestsWithBalances) {
-      if (!availableBalances[request.chainId]) {
-        availableBalances[request.chainId] = {};
-      }
-      for (const token of request.tokens) {
-        if (!availableBalances[request.chainId][token.toBytes32()]) {
-          availableBalances[request.chainId][token.toBytes32()] = {};
-        }
-        availableBalances[request.chainId][token.toBytes32()][request.holder.toBytes32()] = request.balances[
-          token.toBytes32()
-        ].sub(this.getUsed(request.chainId, token, request.holder));
+    for (const { balances, chainId, holder, tokens } of requestsWithBalances) {
+      availableBalances[chainId] ??= {};
+
+      for (const token of tokens) {
+        const tokenAddr = token.toBytes32();
+        const holderAddr = holder.toBytes32();
+        const used = this.getUsed(chainId, token, holder);
+
+        availableBalances[chainId][tokenAddr] ??= {};
+        availableBalances[chainId][tokenAddr][holderAddr] = balances[tokenAddr].sub(used);
       }
     }
 
     // Determine if the entire group will be successful by subtracting the amount from the available balance as we go.
-    for (const request of requestsWithBalances) {
-      const remainingAmount = request.tokens.reduce((acc, token) => {
-        const availableBalance = availableBalances[request.chainId][token.toBytes32()][request.holder.toBytes32()];
+    for (const { amount, chainId, holder, tokens } of requestsWithBalances) {
+      const remainingAmount = tokens.reduce((acc, token) => {
+        const tokenAddr = token.toBytes32();
+        const holderAddr = holder.toBytes32();
+
+        const availableBalance = availableBalances[chainId][tokenAddr][holderAddr];
         const amountToDeduct = min(acc, availableBalance);
-        if (amountToDeduct.gt(0)) {
-          availableBalances[request.chainId][token.toBytes32()][request.holder.toBytes32()] =
-            availableBalance.sub(amountToDeduct);
+        if (amountToDeduct.gt(bnZero)) {
+          availableBalances[chainId][tokenAddr][holderAddr] = availableBalance.sub(amountToDeduct);
         }
         return acc.sub(amountToDeduct);
-      }, request.amount);
+      }, amount);
+
       // If there is a remaining amount, the entire group will fail, so return false.
-      if (remainingAmount.gt(0)) {
+      if (remainingAmount.gt(bnZero)) {
         return false;
       }
     }
@@ -105,40 +106,41 @@ export class BalanceAllocator {
   }
 
   async getBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
-    if (!this.balances?.[chainId]?.[token.toBytes32()]?.[holder.toBytes32()]) {
+    const tokenAddr = token.toBytes32();
+    const holderAddr = holder.toBytes32();
+
+    if (!this.balances?.[chainId]?.[tokenAddr]?.[holderAddr]) {
       const balance = await this._queryBalance(chainId, token, holder);
+
       // To avoid inconsistencies, we recheck the balances value after the query.
       // If it exists, skip the assignment so the value doesn't change after being set.
-      if (!this.balances?.[chainId]?.[token.toBytes32()]?.[holder.toBytes32()]) {
-        // Note: cannot use assign because it breaks the BigNumber object.
-        this.balances[chainId] ??= {};
-        if (!this.balances[chainId][token.toBytes32()]) {
-          this.balances[chainId][token.toBytes32()] = {};
-        }
-        this.balances[chainId][token.toBytes32()][holder.toBytes32()] = balance;
-      }
+      // Note: cannot use assign because it breaks the BigNumber object.
+      this.balances[chainId] ??= {};
+      this.balances[chainId][tokenAddr] ??= {};
+      this.balances[chainId][tokenAddr][holderAddr] ??= balance;
     }
-    return this.balances[chainId][token.toBytes32()][holder.toBytes32()];
+
+    return this.balances[chainId][tokenAddr][holderAddr];
   }
 
   testSetBalance(chainId: number, token: Address, holder: Address, balance: BigNumber): void {
+    const tokenAddr = token.toBytes32();
+    const holderAddr = holder.toBytes32();
+
     this.balances[chainId] ??= {};
-    this.balances[chainId][token.toBytes32()] ??= {};
-    this.balances[chainId][token.toBytes32()][holder.toBytes32()] = balance;
+    this.balances[chainId][tokenAddr] ??= {};
+    this.balances[chainId][tokenAddr][holderAddr] = balance;
   }
 
   getUsed(chainId: number, token: Address, holder: Address): BigNumber {
-    if (!this.used?.[chainId]?.[token.toBytes32()]?.[holder.toBytes32()]) {
-      // Note: cannot use assign because it breaks the BigNumber object.
-      if (!this.used[chainId]) {
-        this.used[chainId] = {};
-      }
-      if (!this.used[chainId][token.toBytes32()]) {
-        this.used[chainId][token.toBytes32()] = {};
-      }
-      this.used[chainId][token.toBytes32()][holder.toBytes32()] = BigNumber.from(0);
-    }
-    return this.used[chainId][token.toBytes32()][holder.toBytes32()];
+    const tokenAddr = token.toBytes32();
+    const holderAddr = holder.toBytes32();
+
+    this.used[chainId] ??= {};
+    this.used[chainId][tokenAddr] ??= {};
+    this.used[chainId][tokenAddr][holderAddr] ??= bnZero;
+
+    return this.used[chainId][tokenAddr][holderAddr];
   }
 
   addUsed(chainId: number, token: Address, holder: Address, amount: BigNumber): void {
@@ -156,8 +158,9 @@ export class BalanceAllocator {
 
   // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
+    const holderAddr = holder.toNative();
     return getNativeTokenAddressForChain(chainId).eq(token)
-      ? await this.providers[chainId].getBalance(holder.toEvmAddress())
-      : await ERC20.connect(token.toEvmAddress(), this.providers[chainId]).balanceOf(holder.toEvmAddress());
+      ? await this.providers[chainId].getBalance(holderAddr)
+      : await ERC20.connect(token.toNative(), this.providers[chainId]).balanceOf(holderAddr);
   }
 }

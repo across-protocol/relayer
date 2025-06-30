@@ -1,3 +1,4 @@
+import assert from "assert";
 import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
 import { groupBy } from "lodash";
@@ -11,6 +12,7 @@ import { RelayData } from "../src/interfaces";
 import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
+  EvmAddress,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,
@@ -309,7 +311,9 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
-  const relayer = await signer.getAddress();
+  const relayer = EvmAddress.from(await signer.getAddress());
+  assert(relayer.isEVM());
+
   const recipient = sdkUtils.EvmAddress.from(depositArgs.recipient);
   const outputToken = sdkUtils.EvmAddress.from(rawOutputToken);
 
@@ -331,7 +335,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
-    : await populateV3Relay(destSpokePool, deposit, toAddressType(relayer, destinationChainId));
+    : await populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
   console.log(`to: ${fill.to}`);
