@@ -44,7 +44,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
-    const l2TokenAddressStr = getTranslatedTokenAddress(l1Token.toAddress(), hubChainId, l2chainId);
+    const l2TokenAddressStr = getTranslatedTokenAddress(l1Token.toNative(), hubChainId, l2chainId);
     this.l2Token = EvmAddress.from(l2TokenAddressStr);
 
     const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2TokenAddressStr];
@@ -53,10 +53,10 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `No L2 Hyperlane router found for token ${l2TokenAddressStr} on chain ${l2chainId}`
     );
 
-    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress()];
+    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toNative()];
     assert(
       isDefined(l1RouterAddressStr),
-      `No L1 Hyperlane router found for token ${l1Token.toAddress()} on chain ${hubChainId}`
+      `No L1 Hyperlane router found for token ${l1Token.toNative()} on chain ${hubChainId}`
     );
 
     this.l2Bridge = new Contract(l2RouterAddressStr, HYPERLANE_ROUTER_ABI, l2Signer);
@@ -87,7 +87,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token constructWithdrawToL1Txns was called with: ${this.l2Token} != ${l2Token}`
     );
 
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
@@ -128,7 +128,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     );
 
     let recipientBytes32: string;
-    const isSpokePool = await isContractDeployedToAddress(fromAddress.toAddress(), this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.l2Bridge.provider);
     if (isSpokePool) {
       recipientBytes32 = toBytes32(this.hubPoolAddress);
     } else {

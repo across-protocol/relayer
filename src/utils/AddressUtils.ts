@@ -1,5 +1,5 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
+import { Address, compareAddressesSimple, ethers, getRemoteTokenForL1Token, isDefined } from ".";
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
@@ -68,4 +68,8 @@ export function getTranslatedTokenAddress(
 
 export function checkAddressChecksum(tokenAddress: string): boolean {
   return ethers.utils.getAddress(tokenAddress) === tokenAddress;
+}
+
+export function toBuffer(address: Address): Buffer {
+  return Buffer.from(address.rawAddress);
 }

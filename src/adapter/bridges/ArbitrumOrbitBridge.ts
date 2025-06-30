@@ -53,7 +53,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
       CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
     const { l1: l1Address, l2: l2Address } =
-      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toAddress()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
+      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toNative()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
@@ -87,7 +87,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: l1GatewayRouter,
       method: "outboundTransfer",
-      args: [l1Token.toAddress(), toAddress.toAddress(), amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
+      args: [l1Token.toNative(), toAddress.toNative(), amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
       value: isDefined(this.gasToken) ? bnZero : l1SubmitValue,
     });
   }
@@ -100,12 +100,12 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress.toAddress()),
+      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress.toNative()),
       eventConfig
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
-        .filter(({ args }) => args.l1Token === l1Token.toAddress())
+        .filter(({ args }) => args.l1Token === l1Token.toNative())
         .map((event) => processEvent(event, "_amount")),
     };
   }
@@ -118,7 +118,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token.toAddress(), undefined, toAddress.toAddress()),
+      this.getL2Bridge().filters.DepositFinalized(l1Token.toNative(), undefined, toAddress.toNative()),
       eventConfig
     );
     return {

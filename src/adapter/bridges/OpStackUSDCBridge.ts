@@ -24,7 +24,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "sendMessage",
-      args: [toAddress.toAddress(), amount, this.l2Gas],
+      args: [toAddress.toNative(), amount, this.l2Gas],
     });
   }
 
@@ -37,7 +37,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.MessageSent(undefined, toAddress.toAddress()),
+      l1Bridge.filters.MessageSent(undefined, toAddress.toNative()),
       eventConfig
     );
     return {
@@ -54,7 +54,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.MessageReceived(undefined, toAddress.toAddress()),
+      l2Bridge.filters.MessageReceived(undefined, toAddress.toNative()),
       eventConfig
     );
     return {
