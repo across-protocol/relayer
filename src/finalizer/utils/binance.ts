@@ -16,6 +16,7 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  EvmAddress,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -144,7 +145,7 @@ export async function binanceFinalizer(
 
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-      const { decimals: l1Decimals } = getTokenInfo(l1Token, hubChainId);
+      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
       const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.

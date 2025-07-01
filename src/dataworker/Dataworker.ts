@@ -671,6 +671,7 @@ export class Dataworker {
             poolRebalanceLeaves: expectedTrees.poolRebalanceTree.leaves.map((leaf) => {
               return {
                 ...leaf,
+                l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toBytes32()),
                 proof: expectedTrees.poolRebalanceTree.tree.getHexProof(leaf),
               };
             }),
@@ -678,6 +679,8 @@ export class Dataworker {
             relayerRefundLeaves: expectedTrees.relayerRefundTree.leaves.map((leaf) => {
               return {
                 ...leaf,
+                l2TokenAddress: leaf.l2TokenAddress.toBytes32(),
+                refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()),
                 proof: expectedTrees.relayerRefundTree.tree.getHexProof(leaf),
               };
             }),
@@ -685,6 +688,7 @@ export class Dataworker {
             slowRelayLeaves: expectedTrees.slowRelayTree.leaves.map((leaf) => {
               return {
                 ...leaf,
+                relayData: convertRelayDataParamsToBytes32(leaf.relayData),
                 proof: expectedTrees.slowRelayTree.tree.getHexProof(leaf),
               };
             }),
