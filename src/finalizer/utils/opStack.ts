@@ -43,7 +43,7 @@ import {
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
   EvmAddress,
-  ZERO_ADDRESS
+  ZERO_ADDRESS,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
