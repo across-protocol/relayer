@@ -1,21 +1,15 @@
 import { SpokePoolClient } from "../clients";
-import { BigNumber } from "../utils";
+import { RelayData } from "../interfaces";
 
 export interface SpokePoolClientsByChain {
   [chainId: number]: SpokePoolClient;
 }
 
-export interface ConvertedRelayData {
+export interface ConvertedRelayData
+  extends Omit<RelayData, "depositor" | "recipient" | "inputToken" | "outputToken" | "exclusiveRelayer"> {
   depositor: string;
   recipient: string;
   inputToken: string;
   outputToken: string;
   exclusiveRelayer: string;
-  originChainId: number;
-  depositId: BigNumber;
-  inputAmount: BigNumber;
-  outputAmount: BigNumber;
-  message: string;
-  fillDeadline: number;
-  exclusivityDeadline: number;
 }

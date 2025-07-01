@@ -224,6 +224,8 @@ export function prettyPrintLeaves(
         result[key] = leaf[key].map((val) => val.toString());
       } else if (BigNumber.isBigNumber(leaf[key])) {
         result[key] = leaf[key].toString();
+      } else if (leaf[key] instanceof Address) {
+        result[key] = leaf[key].toNative();
       } else {
         result[key] = leaf[key];
       }

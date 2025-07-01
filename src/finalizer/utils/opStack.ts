@@ -42,7 +42,6 @@ import {
   getTokenInfo,
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
-  toAddressType,
   EvmAddress,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
@@ -130,7 +129,7 @@ export async function opStackFinalizer(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !l2TokenAddress.eq(toAddressType(USDC.addresses[chainId], chainId)) || !(getCctpDomainForChainId(chainId) > 0)
+        !l2TokenAddress.eq(EvmAddress.from(USDC.addresses[chainId])) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
@@ -159,7 +158,7 @@ export async function opStackFinalizer(
       amountToReturn: event.args.amount,
       chainId,
       leafId: 0,
-      l2TokenAddress: toAddressType(event.l2TokenAddress, chainId),
+      l2TokenAddress: EvmAddress.from(event.l2TokenAddress),
       txnRef: transactionHash,
       txnIndex: transactionIndex,
     };
@@ -743,8 +742,7 @@ async function multicallOptimismFinalizations(
   // one WithdrawRequest with a unique requestId.
   const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    ({ event, status }) =>
-      status === statusRelayed && event.l2TokenAddress.eq(toAddressType(USDB.addresses[chainId], chainId))
+    ({ event, status }) => status === statusRelayed && event.l2TokenAddress.eq(EvmAddress.from(USDB.addresses[chainId]))
   );
   if (claimableUSDBMessages.length === 0) {
     return {
