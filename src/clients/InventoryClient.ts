@@ -104,7 +104,7 @@ export class InventoryClient {
 
     if (isAliasConfig(tokenConfig)) {
       assert(isDefined(l2Token), `Cannot resolve ambiguous ${getNetworkName(chainId)} token config for ${l1Token}`);
-      return tokenConfig[l2Token.toBytes32()]?.[chainId];
+      return tokenConfig[l2Token.toNative()]?.[chainId];
     } else {
       return tokenConfig[chainId];
     }
@@ -183,7 +183,7 @@ export class InventoryClient {
         l2Tokens.forEach((l2Token) => {
           // The effective balance is the current balance + inbound bridge transfers.
           const effectiveBalance = this.getBalanceOnChain(chainId, l1Token, l2Token);
-          distribution[chainId][l2Token.toBytes32()] = effectiveBalance.mul(this.scalar).div(cumulativeBalance);
+          distribution[chainId][l2Token.toNative()] = effectiveBalance.mul(this.scalar).div(cumulativeBalance);
         });
       }
     });
@@ -198,7 +198,7 @@ export class InventoryClient {
   getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
     const distributionPerL1Token: TokenDistributionPerL1Token = {};
     this.getL1Tokens().forEach(
-      (l1Token) => (distributionPerL1Token[l1Token.toEvmAddress()] = this.getChainDistribution(l1Token))
+      (l1Token) => (distributionPerL1Token[l1Token.toNative()] = this.getChainDistribution(l1Token))
     );
     return distributionPerL1Token;
   }
@@ -242,7 +242,7 @@ export class InventoryClient {
       return [l1Token];
     }
 
-    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token.toEvmAddress()];
+    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token.toNative()];
     if (!isDefined(tokenConfig)) {
       return [];
     }
@@ -762,7 +762,7 @@ export class InventoryClient {
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
         const upcomingRefundsAfterLastValidatedBundle = Object.values(
-          allBundleRefunds.pop()?.[chainId]?.[l2Token.toBytes32()] ?? {}
+          allBundleRefunds.pop()?.[chainId]?.[l2Token.toNative()] ?? {}
         ).reduce((acc, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
@@ -814,7 +814,7 @@ export class InventoryClient {
       Object.entries(excessRunningBalances).map(([_chainId, excess]) => {
         const chainId = Number(_chainId);
         const target = this.hubPoolClient.configStoreClient.getSpokeTargetBalancesForBlock(
-          l1Token.toEvmAddress(),
+          l1Token.toNative(),
           chainId
         ).target;
         const excessPostRelay = excess.sub(refundAmountInL1TokenDecimals);
@@ -861,14 +861,14 @@ export class InventoryClient {
     refundAmountInL1TokenDecimals: BigNumber,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
-    if (!isDefined(this.excessRunningBalancePromises[l1Token.toEvmAddress()])) {
+    if (!isDefined(this.excessRunningBalancePromises[l1Token.toNative()])) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      this.excessRunningBalancePromises[l1Token.toEvmAddress()] = this._getLatestRunningBalances(
+      this.excessRunningBalancePromises[l1Token.toNative()] = this._getLatestRunningBalances(
         l1Token,
         chainsToEvaluate
       );
     }
-    const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toEvmAddress()]);
+    const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toNative()]);
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);
   }
 
@@ -958,8 +958,8 @@ export class InventoryClient {
           // As a precautionary step before proceeding, check that the token balance for the token we're about to send
           // hasn't changed on L1. It's possible its changed since we updated the inventory due to one or more of the
           // RPC's returning slowly, leading to concurrent/overlapping instances of the bot running.
-          const tokenContract = new Contract(l1Token.toEvmAddress(), ERC20.abi, this.hubPoolClient.hubPool.signer);
-          const currentBalance = await tokenContract.balanceOf(this.relayer.toEvmAddress());
+          const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
+          const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
 
           const balanceChanged = !balance.eq(currentBalance);
           const [message, log] = balanceChanged
@@ -1050,7 +1050,7 @@ export class InventoryClient {
           const { symbol, decimals } = tokenInfo;
           const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
           const distributionPct =
-            tokenDistributionPerL1Token[l1Token.toEvmAddress()][chainId][l2Token.toBytes32()].mul(100);
+            tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
             `${l1Formatter(amount.toString())} but relayer has ` +
@@ -1136,7 +1136,7 @@ export class InventoryClient {
             assert(isEVMSpokePoolClient(spokePoolClient));
             return {
               ...chainInfo,
-              balance: await spokePoolClient.spokePool.provider.getBalance(this.relayer.toEvmAddress()),
+              balance: await spokePoolClient.spokePool.provider.getBalance(this.relayer.toNative()),
             };
           })
       );
@@ -1520,7 +1520,7 @@ export class InventoryClient {
   }
 
   _l1TokenEnabledForChain(l1Token: EvmAddress, chainId: number): boolean {
-    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token.toEvmAddress()];
+    const tokenConfig = this.inventoryConfig?.tokenConfig?.[l1Token.toNative()];
     if (!isDefined(tokenConfig)) {
       return false;
     }
