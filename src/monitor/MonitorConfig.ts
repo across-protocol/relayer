@@ -134,7 +134,7 @@ export class MonitorConfig extends CommonConfig {
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
             // Fields that are always set to defaults:
-            token: getNativeTokenAddressForChain(chainId),
+            token: EvmAddress.from(getNativeTokenAddressForChain(chainId)),
           };
         }
       );
@@ -184,10 +184,10 @@ export class MonitorConfig extends CommonConfig {
 
           const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
           return {
-            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : token,
+            token: isNativeToken ? EvmAddress.from(getNativeTokenAddressForChain(chainId)) : EvmAddress.from(token),
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
-            account: ethers.utils.getAddress(account),
+            account: EvmAddress.from(ethers.utils.getAddress(account)),
             chainId: parseInt(chainId),
           };
         }
