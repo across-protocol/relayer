@@ -256,7 +256,7 @@ export class Monitor {
         try {
           let decimals: number;
           ({ symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-            toAddressType(tokenAddress, chainId).toNative(),
+            toAddressType(tokenAddress, chainId),
             chainId
           ));
           unfilledAmount = convertFromWei(amountByToken[tokenAddress].toString(), decimals);
@@ -277,15 +277,15 @@ export class Monitor {
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
     // Step 1: Get l1 token address equivalent of L2 token
-    const l1Token = getL1TokenAddress(l2Token.toNative(), chainId);
+    const l1Token = getL1TokenAddress(l2Token, chainId);
     const l1TokenDecimals = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId).decimals;
-    const l2TokenDecimals = getTokenInfo(l2Token.toNative(), chainId).decimals;
+    const l2TokenDecimals = getTokenInfo(l2Token, chainId).decimals;
     return ConvertDecimals(l2TokenDecimals, l1TokenDecimals);
   }
 
   getL1TokensForRelayerBalancesReport(): L1Token[] {
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(l1Token, this.clients.hubPoolClient.chainId);
+      const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
       return {
         ...l1TokenInfo,
@@ -512,7 +512,7 @@ export class Monitor {
                     spokePoolClient.spokePool.provider
                   ).symbol();
                 } else {
-                  symbol = getTokenInfo(token.toNative(), chainId).symbol;
+                  symbol = getTokenInfo(token, chainId).symbol;
                 }
               }
               return {
@@ -1384,7 +1384,7 @@ export class Monitor {
         if (isEVMSpokePoolClient(spokePoolClient)) {
           decimals = await new Contract(token.toEvmAddress(), ERC20.abi, spokePoolClient.spokePool.provider).decimals();
         } else {
-          decimals = getTokenInfo(token.toNative(), chainId).decimals;
+          decimals = getTokenInfo(token, chainId).decimals;
         }
         if (!this.decimals[chainId]) {
           this.decimals[chainId] = {};

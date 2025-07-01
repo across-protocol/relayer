@@ -235,7 +235,7 @@ export class Relayer {
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
       });
       return ignoreDeposit();
     }
@@ -253,7 +253,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit from or to disabled chains.",
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
       });
@@ -278,7 +278,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to invalid address.`,
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
       });
       return ignoreDeposit();
     }
@@ -287,8 +287,8 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
-        depositor,
-        recipient,
+        depositor: depositor.toNative(),
+        recipient: recipient.toNative(),
         txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
@@ -301,8 +301,8 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
-        deposit,
-        l1Token,
+        deposit: convertRelayDataParamsToBytes32(deposit),
+        l1Token: l1Token.toNative(),
       });
       return ignoreDeposit();
     }
@@ -314,7 +314,7 @@ export class Relayer {
         message: "Skipping deposit including in-protocol token swap.",
         originChainId,
         destinationChainId,
-        outputToken: deposit.outputToken,
+        outputToken: deposit.outputToken.toNative(),
         txnRef: deposit.txnRef,
         notificationPath: "across-unprofitable-fills",
       });
@@ -328,7 +328,7 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
-        outputToken: deposit.outputToken,
+        outputToken: deposit.outputToken.toNative(),
         txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
@@ -340,7 +340,7 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
       });
       return ignoreDeposit();
     }
@@ -351,7 +351,7 @@ export class Relayer {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         invalidFills,
         destinationChainId,
       });
@@ -410,9 +410,9 @@ export class Relayer {
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token,
+          l1Token: l1Token.toNative(),
           depositId: depositId.toString(),
-          inputToken,
+          inputToken: inputToken.toNative(),
           inputAmount,
           originChainId,
           txnRef: deposit.txnRef,
@@ -1005,7 +1005,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request from chain that forces origin chain repayment or to lite chain.",
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
       });
       return;
     }
@@ -1016,7 +1016,7 @@ export class Relayer {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
       });
       return;
     }
@@ -1031,7 +1031,7 @@ export class Relayer {
     }
 
     const formatSlowFillRequestMarkdown = (): string => {
-      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken.toNative(), destinationChainId);
+      const { symbol, decimals } = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
       const formatter = createFormatFunction(2, 4, false, decimals);
       const outputAmount = formatter(deposit.outputAmount);
       const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
@@ -1074,7 +1074,7 @@ export class Relayer {
       this.logger.warn({
         at: "Relayer::fillRelay",
         message: "Suppressed fill for deposit that forces origin chain repayment but repaymentChainId != originChainId",
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         repaymentChainId,
       });
       return;
@@ -1083,7 +1083,7 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::fillRelay",
       message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
-      deposit,
+      deposit: convertRelayDataParamsToBytes32(deposit),
       repaymentChainId,
       realizedLpFeePct,
     });
@@ -1412,7 +1412,7 @@ export class Relayer {
     chainId: number,
     tokenAddress: Address
   ): { symbol: string; decimals: number; formatter: (amount: string) => string } {
-    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress.toNative(), chainId);
+    const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId);
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
@@ -1500,7 +1500,7 @@ export class Relayer {
 
     if (isDepositSpedUp(deposit)) {
       const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-        deposit.outputToken.toNative(),
+        deposit.outputToken,
         deposit.destinationChainId
       );
       const updatedOutputAmount = createFormatFunction(2, 4, false, decimals)(deposit.updatedOutputAmount.toString());
@@ -1512,7 +1512,7 @@ export class Relayer {
 
   private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
-      deposit.inputToken.toNative(),
+      deposit.inputToken,
       deposit.originChainId
     );
     const srcChain = getNetworkName(deposit.originChainId);
@@ -1520,15 +1520,18 @@ export class Relayer {
     const depositor = blockExplorerLink(deposit.depositor.toNative(), deposit.originChainId);
     const inputAmount = createFormatFunction(2, 4, false, decimals)(deposit.inputAmount.toString());
 
+    const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
+      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken, deposit.destinationChainId);
+
     let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
     const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-    const _totalFeePct = deposit.inputAmount
+    const adjustedInputAmount = sdkUtils.ConvertDecimals(decimals, outputTokenDecimals)(deposit.inputAmount);
+    const _totalFeePct = adjustedInputAmount
       .sub(deposit.outputAmount)
       .mul(fixedPointAdjustment)
-      .div(deposit.inputAmount);
+      .div(adjustedInputAmount);
     const totalFeePct = formatFeePct(_totalFeePct);
-    const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } =
-      this.clients.hubPoolClient.getTokenInfoForAddress(deposit.outputToken.toNative(), deposit.destinationChainId);
+
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +

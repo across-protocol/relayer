@@ -1,4 +1,4 @@
-import { BigNumber, Contract, toBN, Address } from "../../src/utils";
+import { BigNumber, bnZero, Contract, Address } from "../../src/utils";
 import { TokenClient } from "../../src/clients";
 import { L1Token } from "../../src/interfaces";
 
@@ -9,47 +9,30 @@ export class MockTokenClient extends TokenClient {
     [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
   } = {};
 
-  setTokenData(chainId: number, token: Address, balance: BigNumber, allowance: BigNumber = toBN(0)): void {
-    if (!this.tokenData[chainId]) {
-      this.tokenData[chainId] = {};
-    }
-    this.tokenData[chainId][token.toBytes32()] = { balance, allowance };
+  setTokenData(chainId: number, token: Address, balance: BigNumber, allowance: BigNumber = bnZero): void {
+    this.tokenData[chainId] ??= {};
+    this.tokenData[chainId][token.toNative()] = { balance, allowance };
   }
+
   setTokenShortFallData(chainId: number, token: Address, deposits: number[], totalRequirement: BigNumber): void {
-    if (!this.tokenShortfall[chainId]) {
-      this.tokenShortfall[chainId] = {};
-    }
-    this.tokenShortfall[chainId][token.toBytes32()] = { deposits, totalRequirement };
+    this.tokenShortfall[chainId] ??= {};
+    this.tokenShortfall[chainId][token.toNative()] = { deposits, totalRequirement };
   }
 
   getBalance(chainId: number, token: Address): BigNumber {
-    if (!this.tokenData[chainId]) {
-      return toBN(0);
-    }
-    if (!this.tokenData[chainId][token.toBytes32()]) {
-      return toBN(0);
-    }
-    return this.tokenData[chainId][token.toBytes32()].balance;
+    return this.tokenData[chainId]?.[token.toNative()]?.balance ?? bnZero;
   }
 
   getTokensNeededToCoverShortfall(chainId: number, token: Address): BigNumber {
-    if (!this.tokenShortfall[chainId]) {
-      return toBN(0);
-    }
-    if (!this.tokenShortfall[chainId][token.toBytes32()]) {
-      return toBN(0);
-    }
-    return this.tokenShortfall[chainId][token.toBytes32()].totalRequirement;
+    return this.tokenShortfall[chainId]?.[token.toNative()]?.totalRequirement ?? bnZero;
   }
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
-    if (!this.tokenData[chainId]) {
-      this.tokenData[chainId] = {};
-    }
-    if (!this.tokenData[chainId][token.toBytes32()]) {
-      this.tokenData[chainId][token.toBytes32()] = { balance: toBN(0), allowance: toBN(0) };
-    }
-    this.tokenData[chainId][token.toBytes32()].balance = this.tokenData[chainId][token.toBytes32()].balance.sub(amount);
+    const tokenAddr = token.toNative();
+
+    this.tokenData[chainId] ??= {};
+    this.tokenData[chainId][tokenAddr] ??= { balance: bnZero, allowance: bnZero };
+    this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 }
 

@@ -45,7 +45,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.
-    const _tokenSymbol = getTokenInfo(l1Token.toNative(), this.hubChainId).symbol;
+    const _tokenSymbol = getTokenInfo(l1Token, this.hubChainId).symbol;
     // Handle the special case for when we are bridging WBNB to BNB on L2.
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
 
@@ -104,7 +104,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       async (transactionHash) => this.getL1Bridge().provider.getTransactionReceipt(transactionHash as string)
     );
     // FilterMap to remove all deposits which originated from another EOA.
-    const { decimals: l1Decimals } = getTokenInfo(l1Token.toNative(), this.hubChainId);
+    const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
     const processedDeposits = depositHistory
       .map((deposit, idx) => {
         if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toNative())) {
@@ -158,7 +158,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       withdrawalHistory.map((withdrawal) => withdrawal.txId as string),
       async (transactionHash) => this.l2Provider.getTransactionReceipt(transactionHash as string)
     );
-    const { decimals: l1Decimals } = getTokenInfo(l1Token.toNative(), this.hubChainId);
+    const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
     return {
       [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal, idx) => {

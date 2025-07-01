@@ -121,7 +121,6 @@ export class BaseChainAdapter {
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
-  // @todo: Only take `EvmAddress` objects as input once the SDK clients do not output strings for addresses.
   isSupportedL2Bridge(l1Token: EvmAddress): boolean {
     return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
@@ -272,8 +271,7 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<string[]> {
-    const _l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
-    const l1Token = EvmAddress.from(_l1Token);
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
@@ -313,8 +311,8 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
-    if (!this.isSupportedL2Bridge(EvmAddress.from(l1Token))) {
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
@@ -329,7 +327,7 @@ export class BaseChainAdapter {
       from: l2SearchFromBlock,
       to: this.baseL2SearchConfig.to,
     };
-    return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
+    return await this.l2Bridges[l1Token.toNative()].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
       fromAddress,

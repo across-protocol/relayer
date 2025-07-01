@@ -353,7 +353,7 @@ export class ProfitClient {
   ): Promise<FillProfit> {
     const { hubPoolClient } = this;
 
-    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken.toNative(), deposit.originChainId);
+    const inputTokenInfo = hubPoolClient.getTokenInfoForAddress(deposit.inputToken, deposit.originChainId);
     const inputTokenPriceUsd = this.getPriceOfToken(inputTokenInfo.symbol);
     const inputTokenScalar = toBNWei(1, 18 - inputTokenInfo.decimals);
     const scaledInputAmount = deposit.inputAmount.mul(inputTokenScalar);
@@ -362,7 +362,7 @@ export class ProfitClient {
     // Unlike the input token, output token is not always resolvable via HubPoolClient since outputToken
     // can be any arbitrary token.
     const { symbol: outputTokenSymbol, decimals: outputTokenDecimals } = hubPoolClient.getTokenInfoForAddress(
-      deposit.outputToken.toNative(),
+      deposit.outputToken,
       deposit.destinationChainId
     );
     const outputTokenPriceUsd = this.getPriceOfToken(outputTokenSymbol);
@@ -426,7 +426,7 @@ export class ProfitClient {
   ): BigNumber | undefined {
     const { destinationChainId, outputToken, outputAmount } = deposit;
 
-    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken.toNative(), destinationChainId);
+    const { symbol, decimals } = this.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
     const tokenPriceInUsd = this.getPriceOfToken(symbol);
 
     // The USD amount of a fill must be normalised to 18 decimals, so factor out the token's own decimal promotion.
@@ -435,7 +435,7 @@ export class ProfitClient {
 
   protected getTokenSymbol(token: Address, chainId: number): string {
     try {
-      const { symbol } = getTokenInfo(token.toNative(), chainId);
+      const { symbol } = getTokenInfo(token, chainId);
       return symbol;
     } catch (e) {
       return "UNKNOWN";
@@ -725,7 +725,7 @@ export class ProfitClient {
     // The L1 tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
       return {
         ...l1TokenInfo,

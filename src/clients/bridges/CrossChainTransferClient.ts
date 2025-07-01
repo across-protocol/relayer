@@ -14,12 +14,11 @@ export class CrossChainTransferClient {
   // Get any funds currently in the canonical bridge.
   getOutstandingCrossChainTransferAmount(
     address: Address,
-    chainId: number | string,
+    chainId: number,
     l1Token: EvmAddress,
     l2Token?: Address
   ): BigNumber {
-    const transfers =
-      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
+    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
     if (!transfers) {
       return bnZero;
     }
@@ -34,12 +33,11 @@ export class CrossChainTransferClient {
 
   getOutstandingCrossChainTransferTxs(
     address: Address,
-    chainId: number | string,
+    chainId: number,
     l1Token: EvmAddress,
     l2Token?: Address
   ): string[] {
-    const transfers =
-      this.outstandingCrossChainTransfers[Number(chainId)]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
+    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
     if (!transfers) {
       return [];
     }

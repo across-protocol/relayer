@@ -17,7 +17,6 @@ import {
   isDefined,
   getSvmSignerFromEvmSigner,
   getAssociatedTokenAddress,
-  toKitAddress,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
@@ -146,7 +145,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const l2FinalizationEvents = await this.solanaEventsClient.queryDerivedAddressEvents(
       "MintAndWithdraw",
-      toKitAddress(this.solanaMessageTransmitter),
+      arch.svm.toAddress(this.solanaMessageTransmitter),
       BigInt(eventConfig.from),
       BigInt(eventConfig.to)
     );

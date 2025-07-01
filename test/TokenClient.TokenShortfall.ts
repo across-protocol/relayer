@@ -15,14 +15,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import {
-  EvmAddress,
-  getSvmSignerFromEvmSigner,
-  SvmAddress,
-  isSignerWallet,
-  toAddressType,
-  toBytes32,
-} from "../src/utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
 describe("TokenClient: Token shortfall", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
@@ -120,7 +113,7 @@ describe("TokenClient: Token shortfall", async function () {
       depositId,
       toBNWei(420)
     );
-    const tokenShortFallData = tokenClient.getTokenShortfall()[destinationChainId][toBytes32(erc20_2.address)];
+    const tokenShortFallData = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];
     expect(tokenShortFallData.balance).to.equal(balance);
     expect(tokenShortFallData.needed).to.equal(needed);
     expect(tokenShortFallData.shortfall).to.equal(shortfall);
@@ -137,7 +130,7 @@ describe("TokenClient: Token shortfall", async function () {
     );
     needed = needed.add(toBNWei(42));
     shortfall = needed.sub(balance);
-    const tokenShortFallData2 = tokenClient.getTokenShortfall()[destinationChainId][toBytes32(erc20_2.address)];
+    const tokenShortFallData2 = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];
     expect(tokenShortFallData2.balance).to.equal(balance);
     expect(tokenShortFallData2.needed).to.equal(needed);
     expect(tokenShortFallData2.shortfall).to.equal(shortfall);
@@ -145,8 +138,6 @@ describe("TokenClient: Token shortfall", async function () {
 
     // Updating the client should not impact anything.
     await updateAllClients();
-    expect(tokenShortFallData2).to.deep.equal(
-      tokenClient.getTokenShortfall()[destinationChainId][toBytes32(erc20_2.address)]
-    );
+    expect(tokenShortFallData2).to.deep.equal(tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address]);
   });
 });

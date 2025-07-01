@@ -42,7 +42,7 @@ import {
   getTokenInfo,
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
-  toAddressType,
+  EvmAddress,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -129,7 +129,7 @@ export async function opStackFinalizer(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        l2TokenAddress.eq(toAddressType(USDC.addresses[chainId], chainId)) || !(getCctpDomainForChainId(chainId) > 0)
+        !l2TokenAddress.eq(EvmAddress.from(USDC.addresses[chainId])) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
@@ -158,7 +158,7 @@ export async function opStackFinalizer(
       amountToReturn: event.args.amount,
       chainId,
       leafId: 0,
-      l2TokenAddress: toAddressType(event.l2TokenAddress, chainId),
+      l2TokenAddress: EvmAddress.from(event.l2TokenAddress),
       txnRef: transactionHash,
       txnIndex: transactionIndex,
     };
@@ -247,7 +247,7 @@ async function getOVMStdEvents(
     .map((event) => {
       // If we're aware of this token, then save the event as one we can finalize.
       try {
-        getTokenInfo(event.args.localToken, chainId);
+        getTokenInfo(EvmAddress.from(event.args.localToken), chainId);
         return { ...event, l2TokenAddress: event.args.localToken };
       } catch {
         logger.debug({ at, message: `Skipping unknown ${chain} token withdrawal: ${event.args.localToken}`, event });
@@ -378,7 +378,7 @@ async function viem_multicallOptimismFinalizations(
   const withdrawalStatuses: string[] = [];
   await mapAsync(events, async (event, i) => {
     // Useful information for event:
-    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress.toEvmAddress(), chainId);
+    const { decimals, symbol } = getTokenInfo(event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(event.amountToReturn.toString(), decimals);
 
     const receipt = await publicClientL2.getTransactionReceipt({
@@ -714,7 +714,7 @@ async function multicallOptimismFinalizations(
     if (!isDefined(_callData)) {
       return;
     }
-    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress.toEvmAddress(), chainId);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
@@ -742,8 +742,7 @@ async function multicallOptimismFinalizations(
   // one WithdrawRequest with a unique requestId.
   const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    ({ event, status }) =>
-      status === statusRelayed && event.l2TokenAddress.eq(toAddressType(USDB.addresses[chainId], chainId))
+    ({ event, status }) => status === statusRelayed && event.l2TokenAddress.eq(EvmAddress.from(USDB.addresses[chainId]))
   );
   if (claimableUSDBMessages.length === 0) {
     return {
@@ -907,7 +906,7 @@ async function multicallOptimismL1Proofs(
     provableMessages.map((message) => proveOptimismMessage(chainId, crossChainMessenger, message, message.logIndex))
   );
   const withdrawals = provableMessages.map((message) => {
-    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress.toEvmAddress(), chainId);
+    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
     const proof: CrossChainMessage = {
       originationChainId: chainId,

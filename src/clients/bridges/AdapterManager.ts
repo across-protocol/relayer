@@ -57,7 +57,7 @@ export class AdapterManager {
     const filterMonitoredAddresses = (chainId: number) => {
       return monitoredAddresses.filter(
         (address) =>
-          toAddressType(this.hubPoolClient.hubPool.address, this.hubPoolClient.chainId).eq(address) ||
+          EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
           this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
@@ -86,7 +86,7 @@ export class AdapterManager {
             hubChainId,
             l1Signer,
             l2SignerOrProvider,
-            toAddressType(l1Token, hubChainId)
+            EvmAddress.from(l1Token)
           );
           return [l1Token, bridge];
         }) ?? []
@@ -152,7 +152,7 @@ export class AdapterManager {
     const adapter = this.adapters[chainId];
     // @dev The adapter should filter out tokens that are not supported by the adapter, but we do it here as well.
     const adapterSupportedL1Tokens = l1Tokens.filter((token) => {
-      const tokenSymbol = getTokenInfo(token.toNative(), this.hubPoolClient.chainId).symbol;
+      const tokenSymbol = getTokenInfo(token, this.hubPoolClient.chainId).symbol;
       return (
         adapter.supportedTokens.includes(tokenSymbol) ||
         adapter.supportedTokens.includes(TOKEN_EQUIVALENCE_REMAPPING[tokenSymbol])

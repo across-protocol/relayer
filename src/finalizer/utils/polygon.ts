@@ -19,6 +19,7 @@ import {
   getTokenInfo,
   getL1TokenAddress,
   toAddressType,
+  EvmAddress,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -262,7 +263,7 @@ function resolveCrossChainTransferStructure(
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
   const { l2TokenAddress, amountToReturn } = finalizableMessage;
-  const { symbol, decimals } = getTokenInfo(l2TokenAddress.toEvmAddress(), CHAIN_ID);
+  const { symbol, decimals } = getTokenInfo(l2TokenAddress, CHAIN_ID);
   const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
   const transferBase = {
     originationChainId: CHAIN_ID,
@@ -281,7 +282,7 @@ function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
 }
 
 async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSigner: Signer): Promise<Multicall2Call> {
-  const l1Token = getL1TokenAddress(l2Token, CHAIN_ID);
+  const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
   return {

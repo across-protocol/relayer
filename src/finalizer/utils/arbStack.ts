@@ -230,7 +230,7 @@ async function multicallArbitrumFinalizations(
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const { symbol, decimals } = getTokenInfo(l2TokenAddress.toEvmAddress(), chainId);
+    const { symbol, decimals } = getTokenInfo(l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,

@@ -1,4 +1,4 @@
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
@@ -31,7 +31,6 @@ import {
   SvmAddress,
   SVMProvider,
   EvmAddress,
-  toKitAddress,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -63,15 +62,16 @@ export class TokenClient {
     if (!this._hasTokenPairData(chainId, token)) {
       return bnZero;
     }
-    return this.tokenData[chainId][token.toBytes32()].balance;
+    return this.tokenData[chainId][token.toNative()].balance;
   }
 
   decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
-    this.tokenData[chainId][token.toBytes32()].balance = this.tokenData[chainId][token.toBytes32()].balance.sub(amount);
+    const tokenAddr = token.toNative();
+    this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 
   getShortfallTotalRequirement(chainId: number, token: Address): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.totalRequirement ?? bnZero;
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.totalRequirement ?? bnZero;
   }
 
   getTokensNeededToCoverShortfall(chainId: number, token: Address): BigNumber {
@@ -79,7 +79,7 @@ export class TokenClient {
   }
 
   getShortfallDeposits(chainId: number, token: Address): BigNumber[] {
-    return this.tokenShortfall?.[chainId]?.[token.toBytes32()]?.deposits || [];
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.deposits || [];
   }
 
   hasBalanceForFill(deposit: Deposit): boolean {
@@ -94,7 +94,7 @@ export class TokenClient {
 
     // Deposits are the previous shortfall deposits, appended to this depositId.
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
-    assign(this.tokenShortfall, [chainId, token.toBytes32()], { deposits, totalRequirement });
+    assign(this.tokenShortfall, [chainId, token.toNative()], { deposits, totalRequirement });
   }
 
   captureTokenShortfallForFill(deposit: Deposit): void {
@@ -279,7 +279,7 @@ export class TokenClient {
       const balanceInfo = Object.fromEntries(
         balances.map(({ contract: { address } }, idx) => {
           return [
-            toAddressType(address, chainId).toBytes32(),
+            toAddressType(address, chainId).toNative(),
             { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
           ];
         })
@@ -309,8 +309,8 @@ export class TokenClient {
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
       for (const _token of Object.keys(tokenData)) {
-        const token = toAddressType(_token, chainId);
-        assign(this.tokenData, [chainId, token.toBytes32()], tokenData[token.toBytes32()]);
+        const tokenAddr = toAddressType(_token, chainId).toNative();
+        assign(this.tokenData, [chainId, tokenAddr], tokenData[tokenAddr]);
       }
     });
 
@@ -342,7 +342,7 @@ export class TokenClient {
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
         const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toNative());
         const allowance = await this._getAllowance(spokePoolClient, token);
-        return [toAddressType(token.address, chainId).toBytes32(), { balance, allowance }];
+        return [toAddressType(token.address, chainId).toNative(), { balance, allowance }];
       })
     );
 
@@ -419,7 +419,7 @@ export class TokenClient {
   }
 
   private _hasTokenPairData(chainId: number, token: Address) {
-    const hasData = !!this.tokenData?.[chainId]?.[token.toBytes32()];
+    const hasData = !!this.tokenData?.[chainId]?.[token.toNative()];
     if (!hasData) {
       this.logger.warn({
         at: "TokenBalanceClient",
@@ -433,7 +433,7 @@ export class TokenClient {
     // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
     const hubPoolTokens = this.hubPoolClient.getL1Tokens();
     const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(l1Token.toEvmAddress(), this.hubPoolClient.chainId);
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
       return {
         ...l1TokenInfo,
@@ -449,8 +449,8 @@ export class TokenClient {
     tokenMint: SvmAddress
   ): Promise<BigNumber> {
     // Convert addresses to the correct format for SVM provider
-    const ownerPubkey = toKitAddress(walletAddress);
-    const mintPubkey = toKitAddress(tokenMint);
+    const ownerPubkey = arch.svm.toAddress(walletAddress);
+    const mintPubkey = arch.svm.toAddress(tokenMint);
 
     // Get token accounts owned by the wallet for this specific mint
     const tokenAccountsByOwner = await provider
