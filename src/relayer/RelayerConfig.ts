@@ -234,7 +234,7 @@ export class RelayerConfig extends CommonConfig {
         assert(effectiveL1Token !== undefined, `No token identified for ${l1Token}`);
 
         // Filter inventory configuration by supported tokens, if specified.
-        const known = this.relayerTokens.includes(effectiveL1Token) || this.relayerTokens.length === 0;
+        const known = this.relayerTokens.map((token) => token.toNative()).includes(effectiveL1Token) || this.relayerTokens.length === 0;
         if (!known) {
           delete rawTokenConfigs[l1Token];
           return;
