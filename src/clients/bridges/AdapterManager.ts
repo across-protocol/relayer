@@ -161,7 +161,7 @@ export class AdapterManager {
     this.logger.debug({
       at: "AdapterManager",
       message: `Getting outstandingCrossChainTransfers for ${chainId}`,
-      adapterSupportedL1Tokens,
+      adapterSupportedL1Tokens: adapterSupportedL1Tokens.map((l1Token) => l1Token.toNative()),
       searchConfigs: adapter.getUpdatedSearchConfigs(),
     });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
@@ -175,7 +175,13 @@ export class AdapterManager {
     simMode = false,
     l2Token?: Address
   ): Promise<TransactionResponse> {
-    this.logger.debug({ at: "AdapterManager", message: "Sending token cross-chain", chainId, l1Token, amount });
+    this.logger.debug({
+      at: "AdapterManager",
+      message: "Sending token cross-chain",
+      chainId,
+      l1Token: l1Token.toNative(),
+      amount,
+    });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
     return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
   }
@@ -192,7 +198,7 @@ export class AdapterManager {
       at: "AdapterManager",
       message: "Withdrawing token from L2",
       chainId,
-      l2Token,
+      l2Token: l2Token.toNative(),
       amount,
     });
     const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode);
