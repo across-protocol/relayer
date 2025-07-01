@@ -41,6 +41,7 @@ import {
   toSvmRelayerRefundLeaf,
   toSvmSlowFillLeaf,
   forEachAsync,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -78,7 +79,6 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 import {
   address,
   createTransactionMessage,

@@ -43,6 +43,7 @@ import {
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
   EvmAddress,
+  ZERO_ADDRESS,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -125,11 +126,12 @@ export async function opStackFinalizer(
   // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
+  const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !l2TokenAddress.eq(EvmAddress.from(USDC.addresses[chainId])) || !(getCctpDomainForChainId(chainId) > 0)
+        !l2TokenAddress.eq(usdc) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );

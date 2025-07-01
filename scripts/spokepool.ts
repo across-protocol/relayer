@@ -12,6 +12,7 @@ import { RelayData } from "../src/interfaces";
 import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
+  EvmAddress,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,

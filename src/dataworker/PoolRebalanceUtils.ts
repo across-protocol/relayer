@@ -18,6 +18,7 @@ import {
   isChainDisabled,
   EvmAddress,
   Address,
+  isDefined,
 } from "../utils";
 import { DataworkerClients } from "./DataworkerClientHelper";
 
@@ -224,7 +225,11 @@ export function prettyPrintLeaves(
         result[key] = leaf[key].map((val) => val.toString());
       } else if (BigNumber.isBigNumber(leaf[key])) {
         result[key] = leaf[key].toString();
-      } else if (leaf[key] instanceof Address) {
+      } else if (typeof leaf[key] === "number") {
+        result[key] = leaf[key];
+      } else if (Array.isArray(leaf[key]) && isDefined(leaf[key][0]) && Address.isAddress(leaf[key][0])) {
+        result[key] = leaf[key].map((val) => val.toNative());
+      } else if (Address.isAddress(leaf[key])) {
         result[key] = leaf[key].toNative();
       } else {
         result[key] = leaf[key];
