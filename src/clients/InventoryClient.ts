@@ -863,10 +863,7 @@ export class InventoryClient {
   ): Promise<{ [chainId: number]: BigNumber }> {
     if (!isDefined(this.excessRunningBalancePromises[l1Token.toNative()])) {
       // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      this.excessRunningBalancePromises[l1Token.toNative()] = this._getLatestRunningBalances(
-        l1Token,
-        chainsToEvaluate
-      );
+      this.excessRunningBalancePromises[l1Token.toNative()] = this._getLatestRunningBalances(l1Token, chainsToEvaluate);
     }
     const excessRunningBalances = lodash.cloneDeep(await this.excessRunningBalancePromises[l1Token.toNative()]);
     return this._getExcessRunningBalancePcts(excessRunningBalances, l1Token, refundAmountInL1TokenDecimals);
@@ -1049,8 +1046,7 @@ export class InventoryClient {
 
           const { symbol, decimals } = tokenInfo;
           const l2TokenFormatter = createFormatFunction(2, 4, false, decimals);
-          const distributionPct =
-            tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
+          const distributionPct = tokenDistributionPerL1Token[l1Token.toNative()][chainId][l2Token.toNative()].mul(100);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
             `${l1Formatter(amount.toString())} but relayer has ` +
