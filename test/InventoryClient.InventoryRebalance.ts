@@ -422,10 +422,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
       );
 
-      // Expected withdrawal amount is in correct decimals:
-      const expectedWithdrawalAmount = l2TokenConverter(
-        expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1))
-      );
       expect(adapterManager.withdrawalsRequired.length).eq(0);
     });
   });
