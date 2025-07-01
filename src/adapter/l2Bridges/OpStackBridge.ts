@@ -39,7 +39,7 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,

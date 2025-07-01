@@ -24,7 +24,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero } from "../src/utils";
+import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { constants as sdkConstants, interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
 
@@ -52,9 +52,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
   function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
     return mockOriginSpokePoolClient.deposit({
-      inputToken: erc20_1.address,
+      inputToken: toAddressType(erc20_1.address, originChainId),
       inputAmount: eventOverride?.inputAmount ?? undefined,
-      outputToken: eventOverride?.outputToken ?? erc20_2.address,
+      outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
       message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -63,7 +63,6 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.DepositWithBlock);
   }
-
   function generateV3FillFromDeposit(
     deposit: interfaces.DepositWithBlock,
     fillEventOverride?: Partial<interfaces.FillWithBlock>,
@@ -77,8 +76,17 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     const fill = {
       ...fillObject,
       message,
+      inputToken: deposit.inputToken,
+      outputToken: deposit.outputToken,
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      exclusiveRelayer: deposit.exclusiveRelayer,
+      relayer: toAddressType(_relayer, destinationChainId),
       relayExecutionInfo: {
-        updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+        updatedRecipient: toAddressType(
+          fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+          destinationChainId
+        ),
         updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
         updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
         fillType,
@@ -98,6 +106,11 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
     return mockDestinationSpokePoolClient.requestSlowFill({
       ...relayData,
+      inputToken: deposit.inputToken,
+      outputToken: deposit.outputToken,
+      depositor: deposit.depositor,
+      recipient: deposit.recipient,
+      exclusiveRelayer: deposit.exclusiveRelayer,
       blockNumber: fillEventOverride?.blockNumber ?? spokePoolClient_2.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.SlowFillRequestWithBlock);
@@ -276,15 +289,15 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
     // All fills and deposits are valid
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
+    expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(3);
 
     // There are two "unexecutable slow fills" because there are two deposits that have "equivalent" input
     // and output tokens AND:
     // - one slow fill request does not get seen by the spoke pool client
     // - one slow fill request is in an older bundle
-    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(2);
+    expect(data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(2);
     expect(
-      data1.unexecutableSlowFills[destinationChainId][erc20_2.address].map((x) => x.depositId).sort()
+      data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].map((x) => x.depositId).sort()
     ).to.deep.equal([depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort());
   });
 
@@ -298,7 +311,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // was sent in a prior bundle to the fast fill.
 
     // Fill deposits with invalid repayment information
-    const invalidRelayer = ethers.utils.randomBytes(32);
+    const invalidRelayer = ethers.utils.hexlify(ethers.utils.randomBytes(32));
     const invalidFillEvent = generateV3FillFromDeposit(
       deposits[0],
       {},
@@ -329,7 +342,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // The fill cannot be refunded but there is still an unexecutable slow fill leaf we need to refund.
     expect(data1.bundleFillsV3).to.deep.equal({});
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    expect(data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
     const logs = spy.getCalls().filter((x) => x.lastArg.message.includes("unrepayable"));
     expect(logs.length).to.equal(1);
   });
@@ -414,8 +427,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     });
 
     // All fills are valid. Note, origin chain deposit must take repayment on origin chain.
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-    expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(1);
+    expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+    expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(1);
 
     // There are zero "unexecutable slow fills" because the slow fill requests in an older bundle are invalid
     expect(data1.unexecutableSlowFills).to.deep.equal({});
@@ -431,7 +444,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     await mockDestinationSpokePoolClient.update(["RequestedSlowFill", "FilledRelay"]);
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
 
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+    expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
     expect(data1.unexecutableSlowFills).to.deep.equal({});
   });
@@ -469,8 +482,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
     // Should not create unexecutable slow fill.
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-    expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+    expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+    expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
 
     // If instead the deposit was from a prior bundle then we would create an unexecutable slow fill because
@@ -479,8 +492,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     bundleBlockRanges[originChainIndex] = [deposit.blockNumber + 1, deposit.blockNumber + 2];
     const data2 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
     expect(data2.bundleDepositsV3).to.deep.equal({});
-    expect(data2.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-    expect(data2.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    expect(data2.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+    expect(data2.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
   });
 
   it("Ignores disabled chains for unexecutable slow fills", async function () {
@@ -527,8 +540,8 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // Now, there is no bundle deposit but still an expired deposit to refund.
     // There is also an unexecutable slow fill.
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
-    expect(data1.unexecutableSlowFills[destinationChainId][erc20_2.address].length).to.equal(1);
+    expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+    expect(data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(1);
   });
 
   it("Does not add prior bundle expired lite chain deposits that requested a slow fill in a prior bundle to unexecutable slow fills", async function () {
@@ -572,7 +585,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // Now, there is no bundle deposit but still an expired deposit to refund.
     // There is NOT an unexecutable slow fill.
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
   });
 
@@ -600,7 +613,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // Now, there is no bundle deposit but still an expired deposit to refund.
     // There is also an unexecutable slow fill.
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
   });
 
@@ -636,7 +649,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // Now, there is no bundle deposit but still an expired deposit to refund.
     // There is also no unexecutable slow fill because the slow fill request was sent in this bundle.
     expect(data1.bundleDepositsV3).to.deep.equal({});
-    expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     expect(data1.unexecutableSlowFills).to.deep.equal({});
     expect(data1.bundleSlowFillsV3).to.deep.equal({});
   });

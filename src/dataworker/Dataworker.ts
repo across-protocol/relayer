@@ -13,6 +13,7 @@ import {
   isDefined,
   toBNWei,
   ZERO_ADDRESS,
+  ZERO_BYTES,
   chainIsMatic,
   CHAIN_IDs,
   getWidestPossibleExpectedBlockRange,
@@ -22,6 +23,10 @@ import {
   getTokenInfo,
   isEVMSpokePoolClient,
   isSVMSpokePoolClient,
+  Address,
+  EvmAddress,
+  toAddressType,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -33,6 +38,7 @@ import {
   RelayerRefundLeaf,
   SlowFillLeaf,
   FillStatus,
+  ConvertedRelayData,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
@@ -58,7 +64,6 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -405,7 +410,12 @@ export class Dataworker {
           message: "Root bundle USD volume does not exceed threshold, exiting early 🟡",
           usdThresholdToSubmitNewBundle,
           totalUsdRefund,
-          leaves: rootBundleData.poolRebalanceLeaves,
+          leaves: rootBundleData.poolRebalanceLeaves.map((leaf) => {
+            return {
+              ...leaf,
+              l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
+            };
+          }),
         });
         return;
       } else {
@@ -501,6 +511,7 @@ export class Dataworker {
       unexecutableSlowFills,
       expiredDepositsToRefundV3
     );
+
     const relayerRefundRoot = _buildRelayerRefundRoot(
       mainnetBundleEndBlock,
       bundleFillsV3,
@@ -571,7 +582,10 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
-      pendingRootBundle,
+      pendingRootBundle: {
+        ...pendingRootBundle,
+        proposer: pendingRootBundle.proposer.toNative(),
+      },
     });
 
     // Exit early if challenge period timestamp has passed:
@@ -737,7 +751,10 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        rootBundle,
+        rootBundle: {
+          ...rootBundle,
+          proposer: rootBundle.proposer.toNative(),
+        },
       });
       return {
         valid: false,
@@ -939,11 +956,31 @@ export class Dataworker {
         at: "Dataworker#validate",
         message: "Unexpected pool rebalance root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
-        expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves,
+        expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves.map((leaf) => {
+          return {
+            ...leaf,
+            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
+          };
+        }),
         expectedPoolRebalanceRoot: expectedPoolRebalanceRoot.tree.getHexRoot(),
-        expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves,
+        expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves.map((leaf) => {
+          return {
+            ...leaf,
+            l2TokenAddress: leaf.l2TokenAddress.toNative(),
+            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toNative()),
+          };
+        }),
         expectedRelayerRefundRoot: expectedRelayerRefundRoot.tree.getHexRoot(),
-        expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves,
+        expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves.map((leaf) => {
+          return {
+            ...leaf,
+            depositor: leaf.relayData.depositor.toNative(),
+            recipient: leaf.relayData.recipient.toNative(),
+            inputToken: leaf.relayData.inputToken.toNative(),
+            outputToken: leaf.relayData.outputToken.toNative(),
+            exclusiveRelayer: leaf.relayData.exclusiveRelayer.toNative(),
+          };
+        }),
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
         pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
@@ -1187,11 +1224,14 @@ export class Dataworker {
       }
 
       const { addressFilter } = this.config;
-      if (addressFilter?.has(getAddress(depositor)) || addressFilter?.has(getAddress(recipient))) {
+      if (
+        addressFilter?.has(getAddress(depositor.toNative())) ||
+        addressFilter?.has(getAddress(recipient.toNative()))
+      ) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",
-          leafExecutionArgs: [depositor, recipient],
+          leafExecutionArgs: [depositor.toNative(), recipient.toNative()],
         });
         return false;
       }
@@ -1256,7 +1296,7 @@ export class Dataworker {
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
-            client.spokePoolAddress.toEvmAddress(),
+            client.spokePoolAddress,
             amountRequired
           );
 
@@ -1269,13 +1309,13 @@ export class Dataworker {
               depositId: slowFill.relayData.depositId,
               fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
-              token: outputToken,
+              token: outputToken.toNative(),
               amount: outputAmount,
               spokeBalance: await this._getSpokeBalanceForL2Tokens(
                 balanceAllocator,
                 destinationChainId,
                 outputToken,
-                client.spokePoolAddress.toEvmAddress()
+                client.spokePoolAddress
               ),
             });
           }
@@ -1332,7 +1372,10 @@ export class Dataworker {
     slowRelayTree: MerkleTree<SlowFillLeaf>,
     rootBundleId: number,
     leaf: SlowFillLeaf
-  ): { method: string; args: (number | string[] | SlowFillLeaf)[] } {
+  ): {
+    method: string;
+    args: (number | string[] | { relayData: ConvertedRelayData; chainId: number; updatedOutputAmount: BigNumber })[];
+  } {
     const method = "executeSlowRelayLeaf";
     const proof = slowRelayTree.getHexProof(leaf);
     const relayDataWithBytes32Params = convertRelayDataParamsToBytes32(leaf.relayData);
@@ -1387,7 +1430,10 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
-      pendingRootBundle,
+      pendingRootBundle: {
+        ...pendingRootBundle,
+        proposer: pendingRootBundle.proposer.toNative(),
+      },
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
@@ -1580,7 +1626,11 @@ export class Dataworker {
     const l1TokensWithPotentiallyOlderUpdate = poolLeaves.reduce((l1TokenSet, leaf) => {
       const currLeafL1Tokens = leaf.l1Tokens;
       currLeafL1Tokens.forEach((l1Token, i) => {
-        if (leaf.netSendAmounts[i].gt(0) && !l1TokenSet.includes(l1Token) && !syncedL1Tokens.has(l1Token)) {
+        if (
+          leaf.netSendAmounts[i].gt(0) &&
+          !l1TokenSet.some((token) => token.eq(l1Token)) &&
+          !syncedL1Tokens.has(l1Token.toEvmAddress())
+        ) {
           l1TokenSet.push(l1Token);
         }
       });
@@ -1615,7 +1665,10 @@ export class Dataworker {
           return true;
         }
         const hubChainId = this.clients.hubPoolClient.chainId;
-        const hubPoolAddress = this.clients.hubPoolClient.hubPool.address;
+        const hubPoolAddress = toAddressType(
+          this.clients.hubPoolClient.hubPool.address,
+          this.clients.hubPoolClient.chainId
+        );
         const success = await balanceAllocator.requestBalanceAllocation(
           hubChainId,
           [l1Token],
@@ -1630,7 +1683,7 @@ export class Dataworker {
         this.logger.error({
           at: "Dataworker#_getExecutablePoolRebalanceLeaves",
           message: `Not enough funds to execute pool rebalance leaf for chain ${leaf.chainId}`,
-          l1Tokens: leaf.l1Tokens,
+          l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           netSendAmounts: leaf.netSendAmounts,
         });
       }
@@ -1679,13 +1732,16 @@ export class Dataworker {
           message: `Loading more orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )} 📨!`,
-          leaf,
-          feeToken,
+          leaf: {
+            ...leaf,
+            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
+          },
+          feeToken: feeToken.toNative(),
           requiredAmount,
         });
         if (submitExecution) {
           const canFund = await balanceAllocator.requestBalanceAllocations([
-            { ...feeData, holder: await signer.getAddress() },
+            { ...feeData, holder: toAddressType(await signer.getAddress(), hubPoolChainId) },
           ]);
           if (!canFund) {
             this.logger.error({
@@ -1696,7 +1752,7 @@ export class Dataworker {
             });
             continue;
           }
-          if (feeToken === ZERO_ADDRESS) {
+          if (feeToken.toBytes32() === ZERO_BYTES) {
             this.clients.multiCallerClient.enqueueTransaction({
               contract: this.clients.hubPoolClient.hubPool,
               chainId: hubPoolChainId,
@@ -1712,11 +1768,11 @@ export class Dataworker {
             // feeToken balance owner, so we can't simply set `unpermissioned: true` to send it through the Multisender.
             // Instead, we need to set `nonMulticall: true` and avoid batch calling this transaction.
             this.clients.multiCallerClient.enqueueTransaction({
-              contract: new Contract(feeToken, ERC20.abi, signer),
+              contract: new Contract(feeToken.toEvmAddress(), ERC20.abi, signer),
               chainId: hubPoolChainId,
               nonMulticall: true,
               method: "transfer",
-              args: [holder, requiredAmount],
+              args: [holder.toEvmAddress(), requiredAmount],
               message: `Loaded orbit gas token for message to ${getNetworkName(leaf.chainId)} 📨!`,
               mrkdwn: `Root hash: ${tree.getHexRoot()}\nLeaf: ${leaf.leafId}\nChain: ${leaf.chainId}`,
             });
@@ -1728,7 +1784,7 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          feeToken,
+          feeToken: feeToken.toNative(),
           requiredAmount,
           feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
@@ -1745,7 +1801,7 @@ export class Dataworker {
             balanceAllocator.addUsed(
               leaf.chainId,
               leaf.l1Tokens[i],
-              spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
+              spokePoolClients[leaf.chainId].spokePoolAddress,
               amount.mul(-1)
             );
           }
@@ -1764,7 +1820,7 @@ export class Dataworker {
             leaf.netSendAmounts,
             leaf.runningBalances,
             leaf.leafId,
-            leaf.l1Tokens,
+            leaf.l1Tokens.map((token) => token.toEvmAddress()),
             tree.getHexProof(leaf),
           ],
           message: `Executed PoolRebalanceLeaf for chain ${leaf.chainId} 🌿!`,
@@ -1794,7 +1850,7 @@ export class Dataworker {
     const { netSendAmounts, l1Tokens } = poolRebalanceLeaf;
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token, idx) => {
       const currentLiquidReserves = this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
-      updatedLiquidReserves[l1Token] = currentLiquidReserves;
+      updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves;
       assert(currentLiquidReserves !== undefined && currentLiquidReserves.gte(0), "Liquid reserves should be >= 0");
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
@@ -1810,14 +1866,18 @@ export class Dataworker {
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
-          l1Token,
+          l1Token: l1Token.toNative(),
         });
-        updatedLiquidReserves[l1Token] = currentLiquidReserves.sub(netSendAmounts[idx]);
+        updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
       }
 
       // @dev: post-sync liquid reserves should be equal to ERC20 balanceOf the HubPool.
-      const postSyncLiquidReserves = await balanceAllocator.getBalanceSubUsed(chainId, l1Token, hubPool.address);
+      const postSyncLiquidReserves = await balanceAllocator.getBalanceSubUsed(
+        chainId,
+        l1Token,
+        toAddressType(hubPool.address, chainId)
+      );
 
       // If updated liquid reserves are not enough to cover the payment, then send an error log that
       // we're short on funds. Otherwise, enqueue a sync() call and then update the availableLiquidReserves.
@@ -1831,7 +1891,7 @@ export class Dataworker {
         });
       } else {
         // At this point, we can assume that the liquid reserves increased post-sync so we'll enqueue an update.
-        updatedLiquidReserves[l1Token] = postSyncLiquidReserves.sub(netSendAmounts[idx]);
+        updatedLiquidReserves[l1Token.toEvmAddress()] = postSyncLiquidReserves.sub(netSendAmounts[idx]);
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingHubChainLeaves",
           message: `Updating exchange rate for ${tokenSymbol} because we need to update the liquid reserves of the contract to execute the hubChain poolRebalanceLeaf.`,
@@ -1844,7 +1904,7 @@ export class Dataworker {
             contract: hubPool,
             chainId,
             method: "exchangeRateCurrent",
-            args: [l1Token],
+            args: [l1Token.toEvmAddress()],
             message: "Updated exchange rate ♻️!",
             mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
             unpermissioned: true,
@@ -1869,21 +1929,24 @@ export class Dataworker {
 
     await sdkUtils.forEachAsync(poolRebalanceLeaves, async (leaf) => {
       await sdkUtils.forEachAsync(leaf.l1Tokens, async (l1Token, idx) => {
-        aggregateNetSendAmounts[l1Token] ??= bnZero;
+        aggregateNetSendAmounts[l1Token.toEvmAddress()] ??= bnZero;
 
         // If leaf's netSendAmount is negative, then we don't need to updateExchangeRates since the Hub will not
         // have a liquidity constraint because it won't be sending any tokens.
         if (leaf.netSendAmounts[idx].lte(0)) {
           return;
         }
-        aggregateNetSendAmounts[l1Token] = aggregateNetSendAmounts[l1Token].add(leaf.netSendAmounts[idx]);
+        aggregateNetSendAmounts[l1Token.toEvmAddress()] = aggregateNetSendAmounts[l1Token.toEvmAddress()].add(
+          leaf.netSendAmounts[idx]
+        );
       });
     });
 
     // Now, go through each L1 token and see if we need to update the exchange rate for it.
     await sdkUtils.forEachAsync(Object.keys(aggregateNetSendAmounts), async (l1Token) => {
       const currHubPoolLiquidReserves =
-        latestLiquidReserves[l1Token] ?? this.clients.hubPoolClient.getLpTokenInfoForL1Token(l1Token)?.liquidReserves;
+        latestLiquidReserves[l1Token] ??
+        this.clients.hubPoolClient.getLpTokenInfoForL1Token(EvmAddress.from(l1Token))?.liquidReserves;
       assert(
         currHubPoolLiquidReserves !== undefined && currHubPoolLiquidReserves.gte(0),
         "Liquid reserves should be >= 0"
@@ -1896,7 +1959,7 @@ export class Dataworker {
         return;
       }
 
-      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
+      const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(EvmAddress.from(l1Token))?.symbol;
       if (currHubPoolLiquidReserves.gte(requiredNetSendAmountForL1Token)) {
         this.logger.debug({
           at: "Dataworker#_updateExchangeRatesBeforeExecutingNonHubChainLeaves",
@@ -1904,14 +1967,17 @@ export class Dataworker {
           leavesWithNetSendAmountRequirementsFromHubPoolLiquidReserves: Object.fromEntries(
             poolRebalanceLeaves
               .filter((leaf) => {
-                const l1TokenIndex = leaf.l1Tokens.indexOf(l1Token);
+                const l1TokenIndex = leaf.l1Tokens.map((token) => token.toEvmAddress()).indexOf(l1Token);
                 if (l1TokenIndex === -1) {
                   return false;
                 }
                 const netSendAmount = leaf.netSendAmounts[l1TokenIndex];
                 return netSendAmount.gt(0);
               })
-              .map((leaf) => [leaf.chainId, leaf.netSendAmounts[leaf.l1Tokens.indexOf(l1Token)]])
+              .map((leaf) => [
+                leaf.chainId,
+                leaf.netSendAmounts[leaf.l1Tokens.map((token) => token.toEvmAddress()).indexOf(l1Token)],
+              ])
           ),
           currHubPoolLiquidReserves,
           requiredNetSendAmountForL1Token,
@@ -1923,7 +1989,11 @@ export class Dataworker {
       // Current liquid reserves are insufficient to execute aggregate net send amount for this token so
       // look at the updated liquid reserves post-sync. This will be equal the ERC20 balanceOf the hub pool
       // including any netSendAmounts used in a prior pool leaf execution.
-      const updatedLiquidReserves = await balanceAllocator.getBalanceSubUsed(hubPoolChainId, l1Token, hubPool.address);
+      const updatedLiquidReserves = await balanceAllocator.getBalanceSubUsed(
+        hubPoolChainId,
+        toAddressType(l1Token, hubPoolChainId),
+        toAddressType(hubPool.address, hubPoolChainId)
+      );
 
       // If the post-sync balance is still too low to execute all the pool leaves, then log an error
       if (updatedLiquidReserves.lt(requiredNetSendAmountForL1Token)) {
@@ -1968,7 +2038,7 @@ export class Dataworker {
     // multiple transactions for the same token.
     if (submitExecution) {
       for (const l1Token of updatedL1Tokens) {
-        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
+        const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(EvmAddress.from(l1Token))?.symbol;
         this.clients.multiCallerClient.enqueueTransaction({
           contract: this.clients.hubPoolClient.hubPool,
           chainId: hubPoolChainId,
@@ -1984,16 +2054,16 @@ export class Dataworker {
     return updatedL1Tokens;
   }
 
-  async _updateOldExchangeRates(l1Tokens: string[], submitExecution: boolean): Promise<void> {
+  async _updateOldExchangeRates(l1Tokens: EvmAddress[], submitExecution: boolean): Promise<void> {
     const hubPool = this.clients.hubPoolClient.hubPool;
     const chainId = this.clients.hubPoolClient.chainId;
     const seenL1Tokens = new Set<string>();
 
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {
-      if (seenL1Tokens.has(l1Token)) {
+      if (seenL1Tokens.has(l1Token.toEvmAddress())) {
         return;
       }
-      seenL1Tokens.add(l1Token);
+      seenL1Tokens.add(l1Token.toEvmAddress());
       const tokenSymbol = this.clients.hubPoolClient.getTokenInfoForL1Token(l1Token)?.symbol;
 
       // Exit early if we recently synced this token.
@@ -2014,9 +2084,9 @@ export class Dataworker {
       }
 
       const multicallInput = [
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
-        hubPool.interface.encodeFunctionData("sync", [l1Token]),
-        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token.toEvmAddress()]),
+        hubPool.interface.encodeFunctionData("sync", [l1Token.toEvmAddress()]),
+        hubPool.interface.encodeFunctionData("pooledTokens", [l1Token.toEvmAddress()]),
       ];
       const multicallOutput = await hubPool.callStatic.multicall(multicallInput);
       const currentPooledTokens = hubPool.interface.decodeFunctionResult("pooledTokens", multicallOutput[0]);
@@ -2039,14 +2109,14 @@ export class Dataworker {
         lastUpdateTime: latestFeesCompoundedTime,
         currentLiquidReserves,
         updatedLiquidReserves,
-        l1Token,
+        l1Token: l1Token.toNative(),
       });
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
           contract: hubPool,
           chainId,
           method: "exchangeRateCurrent",
-          args: [l1Token],
+          args: [l1Token.toEvmAddress()],
           message: "Updated exchange rate ♻️!",
           mrkdwn: `Updated exchange rate for l1 token: ${tokenSymbol}`,
           unpermissioned: true,
@@ -2185,7 +2255,7 @@ export class Dataworker {
     }
   }
 
-  protected getTokenInfo(l2Token: string, chainId: number): string {
+  protected getTokenInfo(l2Token: Address, chainId: number): string {
     try {
       return getTokenInfo(l2Token, chainId).symbol;
     } catch (e) {
@@ -2262,7 +2332,7 @@ export class Dataworker {
             {
               chainId: leaf.chainId,
               tokens: l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
-              holder: client.spokePoolAddress.toEvmAddress(),
+              holder: client.spokePoolAddress,
               amount: totalSent,
             },
           ];
@@ -2272,10 +2342,11 @@ export class Dataworker {
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens
           if (isDefined(valueToPassViaPayable) && isEVMSpokePoolClient(client)) {
+            const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [ZERO_ADDRESS], // ZERO_ADDRESS is used to represent ETH.
-              holder: await client.spokePool.signer.getAddress(), // The signer's address is what will be sending the ETH.
+              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
           }
@@ -2295,7 +2366,7 @@ export class Dataworker {
                 balanceAllocator,
                 leaf.chainId,
                 leaf.l2TokenAddress,
-                client.spokePoolAddress.toEvmAddress()
+                client.spokePoolAddress
               ),
               requiredEthValue: valueToPassViaPayable,
             });
@@ -2305,7 +2376,7 @@ export class Dataworker {
               balanceAllocator.addUsed(
                 leaf.chainId,
                 leaf.l2TokenAddress,
-                this.clients.hubPoolClient.hubPool.address,
+                toAddressType(this.clients.hubPoolClient.hubPool.address, leaf.chainId),
                 leaf.amountToReturn.mul(-1)
               );
             }
@@ -2325,12 +2396,17 @@ export class Dataworker {
       if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = getMsgValue(leaf);
+          const ethersLeaf = {
+            ...leaf,
+            l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
+            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toEvmAddress()),
+          };
           this.clients.multiCallerClient.enqueueTransaction({
             value: valueToPassViaPayable,
             contract: client.spokePool,
             chainId: Number(chainId),
             method: "executeRelayerRefundLeaf",
-            args: [rootBundleId, leaf, relayerRefundTree.getHexProof(leaf)],
+            args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
             mrkdwn,
             // If mainnet, send through Multicall3 so it can be batched with PoolRebalanceLeaf executions, otherwise
@@ -2414,8 +2490,8 @@ export class Dataworker {
   _getSpokeBalanceForL2Tokens(
     balanceAllocator: BalanceAllocator,
     chainId: number,
-    token: string,
-    holder: string
+    token: Address,
+    holder: Address
   ): Promise<BigNumber> {
     return sdkUtils.reduceAsync(
       l2TokensToCountTowardsSpokePoolLeafExecutionCapital(token, chainId),
@@ -2459,6 +2535,12 @@ export class Dataworker {
       key,
       root: {
         ...this.rootCache[key],
+        leaves: this.rootCache[key].leaves.map((leaf) => {
+          return {
+            ...leaf,
+            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
+          };
+        }),
         tree: this.rootCache[key].tree.getHexRoot(),
       },
     });
@@ -2468,8 +2550,8 @@ export class Dataworker {
 
   async _getRequiredEthForOrbitPoolRebalanceLeaf(leaf: PoolRebalanceLeaf): Promise<{
     amount: BigNumber;
-    token: string;
-    holder: string;
+    token: EvmAddress;
+    holder: EvmAddress;
   }> {
     // TODO: Make this code more dynamic in the future. For now, hard code custom gas token fees.
     let relayMessageFee: BigNumber;
@@ -2510,8 +2592,8 @@ export class Dataworker {
     }
     return {
       amount: requiredAmount,
-      token,
-      holder,
+      token: EvmAddress.from(token),
+      holder: EvmAddress.from(holder),
     };
   }
 

@@ -40,9 +40,10 @@ import {
   bnZero,
   forEachAsync,
   getTokenInfo,
-  compareAddressesSimple,
   getCctpDomainForChainId,
   isEVMSpokePoolClient,
+  EvmAddress,
+  ZERO_ADDRESS,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -125,11 +126,12 @@ export async function opStackFinalizer(
   // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
   // events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
+  const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
   const { recentTokensBridgedEvents = [], olderTokensBridgedEvents = [] } = groupBy(
     spokePoolClient.getTokensBridged().filter(
       ({ l2TokenAddress }) =>
         // CCTP USDC withdrawals should be finalized via the CCTP Finalizer.
-        !compareAddressesSimple(l2TokenAddress, USDC.addresses[chainId]) || !(getCctpDomainForChainId(chainId) > 0)
+        !l2TokenAddress.eq(usdc) || !(getCctpDomainForChainId(chainId) > 0)
     ),
     (e) => (e.blockNumber >= latestBlockToProve ? "recentTokensBridgedEvents" : "olderTokensBridgedEvents")
   );
@@ -158,7 +160,7 @@ export async function opStackFinalizer(
       amountToReturn: event.args.amount,
       chainId,
       leafId: 0,
-      l2TokenAddress: event.l2TokenAddress,
+      l2TokenAddress: EvmAddress.from(event.l2TokenAddress),
       txnRef: transactionHash,
       txnIndex: transactionIndex,
     };
@@ -247,7 +249,7 @@ async function getOVMStdEvents(
     .map((event) => {
       // If we're aware of this token, then save the event as one we can finalize.
       try {
-        getTokenInfo(event.args.localToken, chainId);
+        getTokenInfo(EvmAddress.from(event.args.localToken), chainId);
         return { ...event, l2TokenAddress: event.args.localToken };
       } catch {
         logger.debug({ at, message: `Skipping unknown ${chain} token withdrawal: ${event.args.localToken}`, event });
@@ -742,7 +744,7 @@ async function multicallOptimismFinalizations(
   // one WithdrawRequest with a unique requestId.
   const statusRelayed = optimismSDK.MessageStatus[optimismSDK.MessageStatus.RELAYED];
   const claimableUSDBMessages = allMessages.filter(
-    ({ event, status }) => status === statusRelayed && event.l2TokenAddress === USDB.addresses[chainId]
+    ({ event, status }) => status === statusRelayed && event.l2TokenAddress.eq(EvmAddress.from(USDB.addresses[chainId]))
   );
   if (claimableUSDBMessages.length === 0) {
     return {

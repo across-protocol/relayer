@@ -25,13 +25,13 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
-  EvmAddress,
   Address,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
+  EvmAddress,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -121,9 +121,8 @@ export class BaseChainAdapter {
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
-  // @todo: Only take `EvmAddress` objects as input once the SDK clients do not output strings for addresses.
-  isSupportedL2Bridge(l1Token: string): boolean {
-    return isDefined(this.l2Bridges[l1Token]);
+  isSupportedL2Bridge(l1Token: EvmAddress): boolean {
+    return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
 
   filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
@@ -272,9 +271,8 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<string[]> {
-    const _l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
-    const l1Token = EvmAddress.from(_l1Token);
-    if (!this.isSupportedL2Bridge(l1Token.toNative())) {
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
     let txnsToSend: AugmentedTransaction[];
@@ -313,7 +311,7 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token.toNative(), this.chainId);
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
@@ -329,7 +327,7 @@ export class BaseChainAdapter {
       from: l2SearchFromBlock,
       to: this.baseL2SearchConfig.to,
     };
-    return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
+    return await this.l2Bridges[l1Token.toNative()].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
       fromAddress,
@@ -419,7 +417,7 @@ export class BaseChainAdapter {
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
-    const contract = new Contract(nativeTokenAddress, WETH_ABI, l2Signer);
+    const contract = new Contract(nativeTokenAddress.toEvmAddress(), WETH_ABI, l2Signer);
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.

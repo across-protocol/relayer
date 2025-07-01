@@ -1,5 +1,12 @@
 import { AdapterManager } from "../../src/clients/bridges";
-import { BigNumber, TransactionResponse, bnZero, getTranslatedTokenAddress } from "../../src/utils";
+import {
+  BigNumber,
+  TransactionResponse,
+  bnZero,
+  getTranslatedTokenAddress,
+  Address,
+  EvmAddress,
+} from "../../src/utils";
 
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
@@ -18,16 +25,16 @@ export class MockAdapterManager extends AdapterManager {
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
   async sendTokenCrossChain(
-    _address: string,
+    _address: Address,
     chainId: number,
-    l1Token: string,
+    l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<TransactionResponse> {
     if (!this.tokensSentCrossChain[chainId]) {
       this.tokensSentCrossChain[chainId] = {};
     }
     const hash = createRandomBytes32();
-    this.tokensSentCrossChain[chainId][l1Token] = { amount, hash };
+    this.tokensSentCrossChain[chainId][l1Token.toBytes32()] = { amount, hash };
     return { hash } as TransactionResponse;
   }
 
@@ -52,21 +59,21 @@ export class MockAdapterManager extends AdapterManager {
 
   setMockedOutstandingCrossChainTransfers(
     chainId: number,
-    address: string,
-    l1Token: string,
+    address: Address,
+    l1Token: EvmAddress,
     amount: BigNumber,
-    l2Token?: string
+    l2Token?: Address
   ): void {
     this.mockedOutstandingCrossChainTransfers[chainId] ??= {};
 
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
 
-    transfers[address] ??= {};
-    transfers[address][l1Token] ??= {};
+    transfers[address.toBytes32()] ??= {};
+    transfers[address.toBytes32()][l1Token.toEvmAddress()] ??= {};
 
     l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId, false);
 
-    transfers[address][l1Token][l2Token] = {
+    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()] = {
       totalAmount: amount,
       depositTxHashes: [],
     };

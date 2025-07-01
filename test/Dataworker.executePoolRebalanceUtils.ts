@@ -8,6 +8,7 @@ import {
   getCurrentTime,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
+  toAddressType,
 } from "../src/utils";
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, ZERO_ADDRESS } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -112,7 +113,7 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
-          { netSendAmounts: [toBNWei(-1)], l1Tokens: [l1Token_1.address] },
+          { netSendAmounts: [toBNWei(-1)], l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)] },
           true
         );
         expect(latestReserves[l1Token_1.address]).to.equal(liquidReserves);
@@ -125,7 +126,7 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
 
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
-          { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
+          { netSendAmounts: [netSendAmount], l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)] },
           true
         );
         expect(latestReserves[l1Token_1.address]).to.equal(currentReserves.sub(netSendAmount));
@@ -139,14 +140,14 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
 
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
-          { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
+          { netSendAmounts: [netSendAmount], l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)] },
           true
         );
         expect(lastSpyLogLevel(spy)).to.equal("warn");
@@ -160,14 +161,14 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           updatedLiquidReserves
         );
 
         const latestReserves = await dataworkerInstance._updateExchangeRatesBeforeExecutingHubChainLeaves(
           balanceAllocator,
-          { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address] },
+          { netSendAmounts: [netSendAmount], l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)] },
           true
         );
         expect(latestReserves[l1Token_1.address]).to.equal(updatedLiquidReserves.sub(netSendAmount));
@@ -188,7 +189,12 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         const passedInLiquidReserves = toBNWei("0");
 
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token_1.address, hubPool.address, netSendAmount);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
+          netSendAmount
+        );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {
@@ -196,8 +202,16 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           },
           balanceAllocator,
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
+            {
+              netSendAmounts: [netSendAmount],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+            {
+              netSendAmounts: [netSendAmount],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -217,8 +231,16 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           {},
           balanceAllocator,
           [
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [netSendAmount], l1Tokens: [l1Token_1.address], chainId: 10 },
+            {
+              netSendAmounts: [netSendAmount],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+            {
+              netSendAmounts: [netSendAmount],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -231,7 +253,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [toBNWei(0)], l1Tokens: [l1Token_1.address], chainId: 1 }],
+          [
+            {
+              netSendAmounts: [toBNWei(0)],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+          ],
           true
         );
         expect(updated.size).to.equal(0);
@@ -251,8 +279,16 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           {},
           balanceAllocator,
           [
-            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token2], chainId: 10 },
+            {
+              netSendAmounts: [liquidReserves],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+            {
+              netSendAmounts: [liquidReserves],
+              l1Tokens: [toAddressType(l1Token2, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -271,19 +307,32 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         // Post-sync reserves are still insufficient to execute all leaves.
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
-        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token2, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          toAddressType(l1Token2, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
+          postUpdateLiquidReserves
+        );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
           [
-            { netSendAmounts: [liquidReserves], l1Tokens: [l1Token_1.address], chainId: 1 },
+            {
+              netSendAmounts: [liquidReserves],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
             // This one exceeds the post-update liquid reserves for the l1 token.
-            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
+            {
+              netSendAmounts: [liquidReserves.mul(2)],
+              l1Tokens: [toAddressType(l1Token2, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -303,19 +352,32 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
 
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
-        balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token2, hubPool.address, postUpdateLiquidReserves);
+        balanceAllocator.testSetBalance(
+          hubPoolClient.chainId,
+          toAddressType(l1Token2, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
+          postUpdateLiquidReserves
+        );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
           [
             // Both net send amounts exceed the post update liquid reserves
-            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token2], chainId: 10 },
+            {
+              netSendAmounts: [liquidReserves.mul(2)],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+            {
+              netSendAmounts: [liquidReserves.mul(2)],
+              l1Tokens: [toAddressType(l1Token2, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -333,8 +395,8 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
 
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
 
@@ -342,9 +404,17 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           {},
           balanceAllocator,
           [
-            { netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 },
+            {
+              netSendAmounts: [liquidReserves.mul(2)],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
             // This negative liquid reserves doesn't offset the positive one, it just gets ignored.
-            { netSendAmounts: [liquidReserves.mul(-10)], l1Tokens: [l1Token_1.address], chainId: 10 },
+            {
+              netSendAmounts: [liquidReserves.mul(-10)],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 10,
+            },
           ],
           true
         );
@@ -361,8 +431,8 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
 
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
 
@@ -373,9 +443,21 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           // but the sum of the three is greater than the post-update liquid reserves.
           // This should force the dataworker to submit an update.
           [
-            { netSendAmounts: [toBNWei("4")], l1Tokens: [l1Token_1.address], chainId: 1 },
-            { netSendAmounts: [toBNWei("9")], l1Tokens: [l1Token_1.address], chainId: 10 },
-            { netSendAmounts: [toBNWei("7")], l1Tokens: [l1Token_1.address], chainId: 137 },
+            {
+              netSendAmounts: [toBNWei("4")],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+            {
+              netSendAmounts: [toBNWei("9")],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 10,
+            },
+            {
+              netSendAmounts: [toBNWei("7")],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 137,
+            },
           ],
           true
         );
@@ -391,15 +473,21 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
 
         balanceAllocator.testSetBalance(
           hubPoolClient.chainId,
-          l1Token_1.address,
-          hubPool.address,
+          toAddressType(l1Token_1.address, hubPoolClient.chainId),
+          toAddressType(hubPool.address, hubPoolClient.chainId),
           postUpdateLiquidReserves
         );
 
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          [{ netSendAmounts: [liquidReserves.mul(2)], l1Tokens: [l1Token_1.address], chainId: 1 }],
+          [
+            {
+              netSendAmounts: [liquidReserves.mul(2)],
+              l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+              chainId: 1,
+            },
+          ],
           true
         );
         expect(updated.size).to.equal(0);
@@ -413,7 +501,10 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       it("exits early if we recently synced l1 token", async function () {
         mockHubPoolClient.currentTime = 10_000;
         mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 10_000, toBNWei("0"));
-        await dataworkerInstance._updateOldExchangeRates([l1Token_1.address], true);
+        await dataworkerInstance._updateOldExchangeRates(
+          [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+          true
+        );
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("exits early if liquid reserves wouldn't increase for token post-update", async function () {
@@ -442,7 +533,10 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           ]),
         ]);
 
-        await dataworkerInstance._updateOldExchangeRates([l1Token_1.address], true);
+        await dataworkerInstance._updateOldExchangeRates(
+          [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+          true
+        );
         expect(multiCallerClient.transactionCount()).to.equal(0);
 
         // Add test when liquid reserves decreases
@@ -466,7 +560,10 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           ]),
         ]);
 
-        await dataworkerInstance._updateOldExchangeRates([l1Token_1.address], true);
+        await dataworkerInstance._updateOldExchangeRates(
+          [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+          true
+        );
         expect(multiCallerClient.transactionCount()).to.equal(0);
       });
       it("submits update if liquid reserves would increase for token post-update and last update was old enough", async function () {
@@ -495,7 +592,10 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
           ]),
         ]);
 
-        await dataworkerInstance._updateOldExchangeRates([l1Token_1.address], true);
+        await dataworkerInstance._updateOldExchangeRates(
+          [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
+          true
+        );
         expect(multiCallerClient.transactionCount()).to.equal(1);
       });
     });
@@ -503,11 +603,21 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
   describe("_executePoolRebalanceLeaves", async function () {
     let token1: string, token2: string, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
-      token1 = randomAddress();
-      token2 = randomAddress();
+      token1 = toAddressType(randomAddress(), hubPoolClient.chainId);
+      token2 = toAddressType(randomAddress(), hubPoolClient.chainId);
       balanceAllocator = getNewBalanceAllocator();
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPool.address, toBNWei("2"));
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPool.address, toBNWei("2"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        toAddressType(hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
     });
     it("non-orbit leaf", async function () {
       // Should just submit execution
@@ -577,9 +687,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         true
       );
       expect(result).to.equal(2);
-      expect(await balanceAllocator.getUsed(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address)).to.equal(
-        toBNWei("2")
-      );
+      expect(
+        await balanceAllocator.getUsed(
+          hubPoolClient.chainId,
+          token1,
+          toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId)
+        )
+      ).to.equal(toBNWei("2"));
     });
     it("Adds virtual balance to SpokePool for ethereum leaves", async function () {
       const leaves: PoolRebalanceLeaf[] = [
@@ -605,7 +719,7 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         await balanceAllocator.getUsed(
           hubPoolClient.chainId,
           token1,
-          spokePoolClients[hubPoolClient.chainId].spokePool.address
+          toAddressType(spokePoolClients[hubPoolClient.chainId].spokePool.address, hubPoolClient.chainId)
         )
       ).to.equal(toBNWei("-1"));
     });
@@ -666,7 +780,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       assert(feePayer !== undefined);
       const customGasTokenFunder = feePayer;
       azero.balanceOf.whenCalledWith(customGasTokenFunder).returns(0);
-      expect(await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, customGasTokenFunder)).to.equal(0);
+      expect(
+        await balanceAllocator.getBalance(
+          hubPoolClient.chainId,
+          toAddressType(azero.address, hubPoolClient.chainId),
+          toAddressType(customGasTokenFunder, hubPoolClient.chainId)
+        )
+      ).to.equal(0);
 
       // Adds one fee per net send amount + one extra if groupIndex = 0
       const leaves: PoolRebalanceLeaf[] = [
@@ -724,7 +844,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       // Custom gas token funder for AZERO
       const customGasTokenFunder = "0x0d57392895Db5aF3280e9223323e20F3951E81B1";
       azero.balanceOf.whenCalledWith(customGasTokenFunder).returns(0);
-      expect(await balanceAllocator.getBalance(hubPoolClient.chainId, azero.address, customGasTokenFunder)).to.equal(0);
+      expect(
+        await balanceAllocator.getBalance(
+          hubPoolClient.chainId,
+          toAddressType(azero.address, hubPoolClient.chainId),
+          toAddressType(customGasTokenFunder, hubPoolClient.chainId)
+        )
+      ).to.equal(0);
 
       // Adds one fee per net send amount + one extra if groupIndex = 0
       const leaves: PoolRebalanceLeaf[] = [
@@ -753,7 +879,12 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
     });
     it("Ignores leaves without sufficient reserves to execute", async function () {
       // Should only be able to execute the first leaf
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("1"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("1")
+      );
 
       const leaves: PoolRebalanceLeaf[] = [
         {
@@ -788,13 +919,23 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
   describe("_getExecutablePoolRebalanceLeaves", function () {
     let token1: string, token2: string, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
-      token1 = randomAddress();
-      token2 = randomAddress();
+      token1 = toAddressType(randomAddress(), hubPoolClient.chainId);
+      token2 = toAddressType(randomAddress(), hubPoolClient.chainId);
       balanceAllocator = getNewBalanceAllocator();
     });
     it("All l1 tokens on single leaf are executable", async function () {
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("1"));
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("1"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("1")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("1")
+      );
       const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
@@ -813,8 +954,18 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
     });
     it("Some l1 tokens on single leaf are not executable", async function () {
       // Not enough to cover one net send amounts of 1
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("0"));
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("1"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("0")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("1")
+      );
       const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
@@ -836,8 +987,18 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
     });
     it("All l1 tokens on multiple leaves are executable", async function () {
       // Covers 2 leaves each with one net send amount of 1
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("2"));
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("2"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
       const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [
           {
@@ -865,8 +1026,18 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
     });
     it("Some l1 tokens are not executable after first leaf is executed", async function () {
       // 1 only covers the first leaf
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, hubPoolClient.hubPool.address, toBNWei("1"));
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, hubPoolClient.hubPool.address, toBNWei("2"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("1")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
 
       const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
         [

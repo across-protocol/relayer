@@ -11,12 +11,7 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants@^3.1.63":
-  version "3.1.63"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.63.tgz#c031fb30c79ff86448b5ccaca8a411d552ef144f"
-  integrity sha512-61MyPKT7X+qaZsAATDpcWpZoVAK1VwfWua0zTX5SU5UExzCartV+CsAfsrYaF5ttGBebtI33cS+754MGfA71bA==
-
-"@across-protocol/constants@^3.1.68":
+"@across-protocol/constants@^3.1.66", "@across-protocol/constants@^3.1.68":
   version "3.1.68"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.68.tgz#2a58b091b3f717394ee8025b20ee89022da849d8"
   integrity sha512-f/o4i323HxwT/4h32xZdxKLwN3xXoAaxcd/xwP0tfAc/+X4/a+1qJ5Mfx+U2IwDkSheiSyqRYF3z5oYPnax3mg==
@@ -30,12 +25,12 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^4.0.12":
-  version "4.0.12"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.0.12.tgz#45e8d6cc1fe137ae5349c1aa4b17e9ebc8e982cd"
-  integrity sha512-OreKSdJS1uOo9/bPkYQrym1Gcwz9ccINviQ+72Nbfw11NwJmlkdWEMAMQ7Y8MaiXPvneOkXH1enZJI2M9YIrgA==
+"@across-protocol/contracts@^4.1.0":
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.0.tgz#548cf631d78cd34cd193f41cfed32b5fb881606e"
+  integrity sha512-ypwmjkZsqswIKX93QwhJf8G5zGyM8aMLH1iBtnXAxjLvuAEe1fAnUDt2E2444DA2bVT5lCcVbmYCZ+BS7ZjHGw==
   dependencies:
-    "@across-protocol/constants" "^3.1.63"
+    "@across-protocol/constants" "^3.1.66"
     "@coral-xyz/anchor" "^0.31.1"
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
@@ -61,20 +56,19 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.2.16":
-  version "4.2.16"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.2.16.tgz#095d2213755d0cdccbe511a1ae6c07cfc45dd8b3"
-  integrity sha512-JMIdp0oLJeB9myn8DHycJOdjCCCzaMzdjgNZCSYlFejAMw9Ot/rfKnlwAwe/OX7/IQyzwjFm6Nxa8VQRlHzIgA==
+"@across-protocol/sdk@4.3.4":
+  version "4.3.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.4.tgz#d138c983197805f34b12900ee7087583adbf228d"
+  integrity sha512-4xOzSVClYMrzl0YGqOGtPn5wExlHj0zqSc8Jxp8K6HEcwlKmcDksriq+eTlkpqk+lig7/zHvBe88DaMvoiLQ5w==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.68"
-    "@across-protocol/contracts" "^4.0.12"
+    "@across-protocol/contracts" "^4.1.0"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@pinata/sdk" "^2.1.0"
     "@solana-program/system" "^0.7.0"
-    "@solana-program/token" "^0.5.1"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.1.0"
     "@solana/web3.js" "^1.31.0"

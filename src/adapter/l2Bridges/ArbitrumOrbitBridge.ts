@@ -49,8 +49,8 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const l1Token = getL1TokenAddress(l2Token.toNative(), this.l2chainId);
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const l1Token = getL1TokenAddress(l2Token, this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2GatewayRouter,
@@ -75,7 +75,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token.toNative(), this.l2chainId);
+    const l1Token = getL1TokenAddress(l2Token, this.l2chainId);
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         this.l2Bridge,

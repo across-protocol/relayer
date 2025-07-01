@@ -15,6 +15,7 @@ import {
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
+  EvmAddress,
 } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
@@ -156,7 +157,7 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(messageType.l1TokenAddress, l1ChainId);
+      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(EvmAddress.from(messageType.l1TokenAddress), l1ChainId);
       const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,

@@ -44,13 +44,14 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
-    const l2TokenAddressStr = getTranslatedTokenAddress(l1Token.toNative(), hubChainId, l2chainId);
-    this.l2Token = EvmAddress.from(l2TokenAddressStr);
+    const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
+    assert(l2Token.isEVM());
+    this.l2Token = l2Token;
 
-    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2TokenAddressStr];
+    const l2RouterAddressStr = HYPERLANE_ROUTERS[l2chainId]?.[l2Token.toNative()];
     assert(
       isDefined(l2RouterAddressStr),
-      `No L2 Hyperlane router found for token ${l2TokenAddressStr} on chain ${l2chainId}`
+      `No L2 Hyperlane router found for token ${l2Token.toNative()} on chain ${l2chainId}`
     );
 
     const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toNative()];
@@ -87,7 +88,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       `this.l2Token does not match l2Token constructWithdrawToL1Txns was called with: ${this.l2Token} != ${l2Token}`
     );
 
-    const { decimals, symbol } = getTokenInfo(l2Token.toNative(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     const fee: BigNumber = await this.l2Bridge.quoteGasPayment(this.destinationDomainId);
