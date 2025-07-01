@@ -158,6 +158,13 @@ export class InventoryClient {
     return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
   }
 
+  /**
+   * Only returns the balance of the token on chain, not including any outstanding cross chain transfers.
+   * @param chainId Chain to query token balance on.
+   * @param l1Token L1 token to query on chainId (after mapping).
+   * @param l2Token L2 token address on the destination chain.
+   * @returns Balance of l1Token on chainId, not including any outstanding cross chain transfers.
+   */
   private getBalanceOnChainWithOutstandingTransfers(chainId: number, l1Token: string, l2Token: string): BigNumber {
     const balance = this.getBalanceOnChain(chainId, l1Token, l2Token);
     return balance.sub(
