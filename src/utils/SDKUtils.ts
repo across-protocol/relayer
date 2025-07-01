@@ -92,6 +92,7 @@ export const {
   ConvertDecimals,
   getTokenInfo,
   convertRelayDataParamsToBytes32,
+  convertFillParamsToBytes32,
 } = sdk.utils;
 
 export const {
