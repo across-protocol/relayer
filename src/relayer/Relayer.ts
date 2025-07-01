@@ -27,11 +27,11 @@ import {
   toAddressType,
   EvmAddress,
   CHAIN_IDs,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
-import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;

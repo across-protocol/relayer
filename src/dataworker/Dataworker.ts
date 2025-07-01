@@ -26,6 +26,7 @@ import {
   Address,
   EvmAddress,
   toAddressType,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -63,7 +64,6 @@ import {
   BundleSlowFills,
   ExpiredDepositsToRefundV3,
 } from "../interfaces/BundleData";
-import { convertRelayDataParamsToBytes32 } from "../utils/DepositUtils";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root

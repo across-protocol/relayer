@@ -1,8 +1,7 @@
 import { MerkleTree, EMPTY_MERKLE_ROOT } from "@across-protocol/contracts";
 import { RelayerRefundLeaf, RelayerRefundLeafWithGroup, SlowFillLeaf } from "../interfaces";
-import { getParamType, utils } from ".";
+import { getParamType, utils, convertRelayDataParamsToBytes32 } from ".";
 import _ from "lodash";
-import { convertRelayDataParamsToBytes32 } from "./DepositUtils";
 
 export function buildSlowRelayTree(relays: SlowFillLeaf[]): MerkleTree<SlowFillLeaf> {
   const hashFn = (_input: SlowFillLeaf) => {
