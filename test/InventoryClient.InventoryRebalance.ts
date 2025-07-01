@@ -418,9 +418,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       );
 
       await inventoryClient.withdrawExcessBalances();
-      const expectedWithdrawalPct = currentAllocationPct.sub(
-        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
-      );
 
       expect(adapterManager.withdrawalsRequired.length).eq(0);
     });
