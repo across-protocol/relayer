@@ -24,7 +24,6 @@ import {
   toBN,
   toBytes32,
   toAddressType,
-  EvmAddress,
 } from "../src/utils";
 import * as utils from "./utils";
 

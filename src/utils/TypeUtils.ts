@@ -23,7 +23,7 @@ export function toSvmRelayData(relayData: RelayData): SvmSpokeClient.RelayData {
     depositId: ethers.utils.arrayify(ethers.utils.hexZeroPad(relayData.depositId.toHexString(), 32)),
     inputToken: address(relayData.inputToken.toBase58()),
     outputToken: address(relayData.outputToken.toBase58()),
-    inputAmount: relayData.inputAmount.toBigInt(),
+    inputAmount: ethers.utils.arrayify(ethers.utils.hexZeroPad(relayData.inputAmount.toHexString(), 32)),
     outputAmount: relayData.outputAmount.toBigInt(),
     message: Uint8Array.from(Buffer.from(relayData.message.slice(2), "hex")),
     fillDeadline: relayData.fillDeadline,
