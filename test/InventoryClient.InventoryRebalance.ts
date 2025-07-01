@@ -391,6 +391,43 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       );
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
     });
+
+    it("should not withdraw excess balance if the balance on chain is less than the desired withdrawal amount", async function () {
+      // This test validates when an L2 token has different decimals than the L1 token, that the
+      // withdrawal amount is in the correct L2 token decimals.
+      hubPoolClient.mapTokenInfo(testL2Token, "USDC", 18);
+      const l2TokenConverter = sdkUtils.ConvertDecimals(6, 18);
+
+      // We set the token balance on the L2 chain using 18 decimals rather than 6:
+      let currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+      const increaseBalanceAmount = l2TokenConverter(currentCumulativeBalance);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
+      currentCumulativeBalance = inventoryClient.getCumulativeBalance(testL1Token);
+
+      // Current allocation computations should still be able to be performed correctly:
+      const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, testL1Token);
+      const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
+      expect(currentAllocationPct).eq(toWei("0.5"));
+
+      inventoryClient.crossChainTransferClient.increaseOutstandingTransfer(
+        inventoryClient.relayer,
+        testL1Token,
+        testL2Token,
+        sdkUtils.ConvertDecimals(18, 6)(toWei("10000")),
+        testChain
+      );
+
+      await inventoryClient.withdrawExcessBalances();
+      const expectedWithdrawalPct = currentAllocationPct.sub(
+        BigNumber.from(inventoryConfig.tokenConfig[testL1Token][testChain].targetPct)
+      );
+
+      // Expected withdrawal amount is in correct decimals:
+      const expectedWithdrawalAmount = l2TokenConverter(
+        expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1))
+      );
+      expect(adapterManager.withdrawalsRequired.length).eq(0);
+    });
   });
 
   describe("Remote chain token mappings", async function () {

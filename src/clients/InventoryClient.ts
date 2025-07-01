@@ -1268,10 +1268,8 @@ export class InventoryClient {
           }
 
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
-          const balanceOnChainWithOutstandingTransfers = this.getBalanceOnChainWithOutstandingTransfers(
-            chainId,
-            l1Token,
-            l2Token
+          const balanceOnChainWithOutstandingTransfers = l2BalanceFromL1Decimals(
+            this.getBalanceOnChainWithOutstandingTransfers(chainId, l1Token, l2Token)
           );
 
           // We apply a discount on the effective target % because the repayment chain choice
