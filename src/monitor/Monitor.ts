@@ -1049,6 +1049,7 @@ export class Monitor {
         });
       }
 
+
       const spokePoolAddress = this.clients.spokePoolClients[chainId].spokePoolAddress;
       for (const l1Token of allL1Tokens) {
         // Outstanding transfers are mapped to either the spoke pool or the hub pool, depending on which
