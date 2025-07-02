@@ -1125,7 +1125,10 @@ export class Monitor {
 
   updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
-    for (const chainId of this.crossChainAdapterSupportedChains) {
+    const supportedChains = this.crossChainAdapterSupportedChains.filter((chainId) =>
+      this.monitorChains.includes(chainId)
+    );
+    for (const chainId of supportedChains) {
       const l2ToL1Tokens = this.getL2ToL1TokenMap(allL1Tokens, chainId);
       const l2TokenAddresses = Object.keys(l2ToL1Tokens);
 
