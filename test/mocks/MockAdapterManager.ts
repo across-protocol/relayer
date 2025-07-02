@@ -12,7 +12,8 @@ import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
 import { BaseChainAdapter } from "../../src/adapter";
 
-type L2Withdrawal = { l2Token: string; amountToWithdraw: BigNumber; l2ChainId: number; address: string };
+type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber; l2ChainId: number; address: Address };
+
 export class MockAdapterManager extends AdapterManager {
   public adapterChains: number[] | undefined;
   public tokensSentCrossChain: {
@@ -30,15 +31,13 @@ export class MockAdapterManager extends AdapterManager {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<TransactionResponse> {
-    if (!this.tokensSentCrossChain[chainId]) {
-      this.tokensSentCrossChain[chainId] = {};
-    }
+    this.tokensSentCrossChain[chainId] ??= {};
     const hash = createRandomBytes32();
-    this.tokensSentCrossChain[chainId][l1Token.toBytes32()] = { amount, hash };
+    this.tokensSentCrossChain[chainId][l1Token.toNative()] = { amount, hash };
     return { hash } as TransactionResponse;
   }
 
-  setAdapters(chainId, adapter: BaseChainAdapter): void {
+  setAdapters(chainId: number, adapter: BaseChainAdapter): void {
     this.adapters[chainId] = adapter;
   }
 
@@ -69,11 +68,11 @@ export class MockAdapterManager extends AdapterManager {
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
 
     transfers[address.toNative()] ??= {};
-    transfers[address.toNative()][l1Token.toEvmAddress()] ??= {};
+    transfers[address.toNative()][l1Token.toNative()] ??= {};
 
     l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId, false);
 
-    transfers[address.toNative()][l1Token.toEvmAddress()][l2Token.toNative()] = {
+    transfers[address.toNative()][l1Token.toNative()][l2Token.toNative()] = {
       totalAmount: amount,
       depositTxHashes: [],
     };
