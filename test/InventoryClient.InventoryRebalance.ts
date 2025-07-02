@@ -25,12 +25,12 @@ import {
   CHAIN_IDs,
   createFormatFunction,
   ERC20,
+  EvmAddress,
   fixedPointAdjustment as fixedPoint,
   getNetworkName,
   parseUnits,
   TOKEN_SYMBOLS_MAP,
   toAddressType,
-  toBytes32,
 } from "../src/utils";
 import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -122,7 +122,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
 
     inventoryClient = new InventoryClient(
-      toAddressType(owner.address, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
       spyLogger,
       inventoryConfig,
       tokenClient,
@@ -144,14 +144,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
   it("Accessors work as expected", async function () {
     expect(inventoryClient.getEnabledChains()).to.deep.equal(enabledChainIds);
-    expect(inventoryClient.getL1Tokens().map((token) => token.toEvmAddress())).to.deep.equal(
+    expect(inventoryClient.getL1Tokens().map((token) => token.toNative())).to.deep.equal(
       Object.keys(inventoryConfig.tokenConfig)
     );
     expect(inventoryClient.getEnabledL2Chains()).to.deep.equal([OPTIMISM, POLYGON, BASE, ARBITRUM]);
 
-    expect(inventoryClient.getCumulativeBalance(toAddressType(mainnetWeth, hubPoolClient.chainId)).eq(initialWethTotal))
+    expect(inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetWeth)).eq(initialWethTotal))
       .to.be.true;
-    expect(inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId)).eq(initialUsdcTotal))
+    expect(inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc)).eq(initialUsdcTotal))
       .to.be.true;
 
     // Check the allocation matches to what is expected in the seed state of the mock. Check more complex matchers.
@@ -159,23 +159,23 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     for (const chainId of enabledChainIds) {
       for (const l1Token of inventoryClient.getL1Tokens()) {
         expect(inventoryClient.getBalanceOnChain(chainId, l1Token)).to.equal(
-          initialAllocation[chainId][l1Token.toEvmAddress()]
+          initialAllocation[chainId][l1Token.toNative()]
         );
         expect(
           inventoryClient.crossChainTransferClient
             .getOutstandingCrossChainTransferAmount(
-              toAddressType(owner.address, hubPoolClient.chainId),
+              EvmAddress.from(owner.address),
               chainId,
               l1Token
             )
             .eq(bnZero)
         ).to.be.true; // For now no cross-chain transfers
 
-        const expectedShare = initialAllocation[chainId][l1Token.toEvmAddress()]
+        const expectedShare = initialAllocation[chainId][l1Token.toNative()]
           .mul(toWei(1))
-          .div(initialTotals[l1Token.toEvmAddress()]);
-        const l2Token = (l1Token.toEvmAddress() === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
-        expect(tokenDistribution[l1Token.toEvmAddress()][chainId][l2Token]).to.equal(expectedShare);
+          .div(initialTotals[l1Token.toNative()]);
+        const l2Token = (l1Token.toNative() === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
+        expect(tokenDistribution[l1Token.toNative()][chainId][l2Token]).to.equal(expectedShare);
       }
     }
   });
@@ -206,7 +206,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(
       inventoryClient
         .getCurrentAllocationPct(
-          toAddressType(mainnetUsdc, hubPoolClient.chainId),
+          EvmAddress.from(mainnetUsdc),
           ARBITRUM,
           toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM)
         )
@@ -226,14 +226,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[ARBITRUM][toBytes32(mainnetUsdc)].amount.eq(expectedBridgedAmount)).to.be
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(expectedBridgedAmount)).to.be
       .true;
 
     // Now, mock these funds having entered the canonical bridge.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       ARBITRUM,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetUsdc, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetUsdc),
       expectedBridgedAmount
     );
 
@@ -246,8 +246,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Now mock that funds have finished coming over the bridge and check behavior is as expected.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       ARBITRUM,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetUsdc, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetUsdc),
       bnZero
     ); // zero the transfer. mock conclusion.
 
@@ -293,26 +293,26 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // the cross-chain transfers.
     expect(
       tokenClient
-        .getBalance(MAINNET, toAddressType(mainnetWeth, hubPoolClient.chainId))
+        .getBalance(MAINNET, EvmAddress.from(mainnetWeth))
         .eq(toWei(100).sub(expectedBridgedAmount))
     ).to.be.true;
     expect(
       inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-        toAddressType(owner.address, hubPoolClient.chainId),
+        EvmAddress.from(owner.address),
         POLYGON,
-        toAddressType(mainnetWeth, hubPoolClient.chainId)
+        EvmAddress.from(mainnetWeth)
       )
     ).to.equal(expectedBridgedAmount);
 
     // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[POLYGON][toBytes32(mainnetWeth)].amount.eq(expectedBridgedAmount)).to.be
+    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount.eq(expectedBridgedAmount)).to.be
       .true;
 
     // Now, mock these funds having entered the canonical bridge.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetWeth, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetWeth),
       expectedBridgedAmount
     );
 
@@ -329,8 +329,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     // Zero the transfer. mock conclusion.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetWeth, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetWeth),
       bnZero
     );
     // Balance after the relay concludes should be initial + bridged amount as 10+17.9=27.9
@@ -375,7 +375,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const expectedAlloc = withdrawAmount.mul(toWei(1)).div(initialUsdcTotal.sub(withdrawAmount));
     expect(
       inventoryClient.getCurrentAllocationPct(
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         ARBITRUM,
         toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM)
       )
@@ -417,16 +417,16 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // We can trigger this by increasing the balance on the chain a lot. In this case, we set it
       // equal to the current cumulative balance so the chain allocation gets set close to 50%.
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
       const increaseBalanceAmount = currentCumulativeBalance;
       tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
       const currentChainBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
       const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
       expect(currentAllocationPct.gte(excessWithdrawThresholdPct)).to.be.true;
@@ -438,8 +438,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
       expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
-      expect(adapterManager.withdrawalsRequired[0].l2Token.toEvmAddress()).eq(testL2Token);
-      expect(adapterManager.withdrawalsRequired[0].address.toEvmAddress()).eq(owner.address);
+      expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token);
+      expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
     });
 
     it("Withdrawal amount is in correct L2 token decimals", async function () {
@@ -450,18 +450,18 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
       // We set the token balance on the L2 chain using 18 decimals rather than 6:
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
       const increaseBalanceAmount = l2TokenConverter(currentCumulativeBalance);
       tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
 
       // Current allocation computations should still be able to be performed correctly:
       const currentChainBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(testL1Token, hubPoolClient.chainId)
+        EvmAddress.from(testL1Token)
       );
       const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
       expect(currentAllocationPct).eq(toWei("0.5"));
@@ -521,13 +521,13 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     it("Correctly resolves 1:many token mappings", async function () {
       // Caller must specify l2Token for 1:many mappings.
-      expect(() => inventoryClient.getTokenConfig(toAddressType(mainnetUsdc, hubPoolClient.chainId), BASE)).to.throw;
+      expect(() => inventoryClient.getTokenConfig(EvmAddress.from(mainnetUsdc), BASE)).to.throw;
 
       enabledChainIds
         .filter((chainId) => chainId !== MAINNET)
         .forEach((chainId) => {
           const config = inventoryClient.getTokenConfig(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             chainId,
             toAddressType(bridgedUSDC[chainId], chainId)
           );
@@ -546,14 +546,14 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           // Non-zero native USDC balance, zero bridged balance.
           const nativeBalance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(nativeUSDC[chainId], chainId)
           );
           expect(nativeBalance.gt(bnZero)).to.be.true;
 
           let bridgedBalance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(bridgedUSDC[chainId], chainId)
           );
           expect(bridgedBalance.eq(bnZero)).to.be.true;
@@ -564,7 +564,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           // Native balance should now match bridged balance.
           bridgedBalance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(bridgedUSDC[chainId], chainId)
           );
           expect(nativeBalance.eq(bridgedBalance)).to.be.true;
@@ -577,7 +577,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         toAddressType(bridgedUSDC[testChain], testChain)
       );
       expect(bridgedBalance.eq(bnZero)).to.be.true;
@@ -589,13 +589,13 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const convertedTestBalance = toMegaWei("10");
       bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         toAddressType(bridgedUSDC[testChain], testChain)
       );
       expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
 
       // Cumulative balance returns in L1 token decimals:
-      const cumulativeBalance = inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId));
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc));
       expect(cumulativeBalance.eq(initialUsdcTotal.add(convertedTestBalance))).to.be.true;
     });
 
@@ -604,7 +604,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         toAddressType(bridgedUSDC[testChain], testChain)
       );
       expect(bridgedBalance.eq(bnZero)).to.be.true;
@@ -616,7 +616,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const convertedTestBalance = toMegaWei("10");
       bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         toAddressType(bridgedUSDC[testChain], testChain)
       );
       expect(bridgedBalance.eq(convertedTestBalance)).to.be.true;
@@ -630,9 +630,9 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       );
       await inventoryClient.update();
 
-      const cumulativeBalance = inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId));
+      const cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc));
       const currentAllocationPct = inventoryClient.getCurrentAllocationPct(
-        toAddressType(mainnetUsdc, hubPoolClient.chainId),
+        EvmAddress.from(mainnetUsdc),
         testChain,
         toAddressType(bridgedUSDC[testChain], testChain)
       );
@@ -649,26 +649,26 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         .forEach((chainId) => {
           const bridgedBalance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(bridgedUSDC[chainId], chainId)
           );
           expect(bridgedBalance.eq(bnZero)).to.be.true;
 
           const nativeBalance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(nativeUSDC[chainId], chainId)
           );
           expect(nativeBalance.gt(bnZero)).to.be.true;
 
           const cumulativeBalance = inventoryClient.getCumulativeBalance(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId)
+            EvmAddress.from(mainnetUsdc)
           );
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
           tokenClient.setTokenData(chainId, toAddressType(bridgedUSDC[chainId], chainId), nativeBalance);
 
-          const newBalance = inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId));
+          const newBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc));
           expect(newBalance.eq(initialUsdcTotal.add(nativeBalance))).to.be.true;
 
           // Revert to 0 balance for bridged USDC.
@@ -682,27 +682,27 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         .forEach((chainId) => {
           // Total USDC across all chains.
           let cumulativeBalance = inventoryClient.getCumulativeBalance(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId)
+            EvmAddress.from(mainnetUsdc)
           );
           expect(cumulativeBalance.gt(bnZero)).to.be.true;
           expect(cumulativeBalance.eq(initialUsdcTotal)).to.be.true;
 
           // The initial allocation is all native USDC, 0 bridged.
           const nativeAllocation = inventoryClient.getCurrentAllocationPct(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             chainId,
             toAddressType(nativeUSDC[chainId], chainId)
           );
           expect(nativeAllocation.gt(bnZero)).to.be.true;
           let balance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(nativeUSDC[chainId], chainId)
           );
           expect(nativeAllocation.eq(balance.mul(fixedPoint).div(cumulativeBalance))).to.be.true;
 
           let bridgedAllocation = inventoryClient.getCurrentAllocationPct(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             chainId,
             toAddressType(bridgedUSDC[chainId], chainId)
           );
@@ -710,7 +710,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
           balance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(bridgedUSDC[chainId], chainId)
           );
           expect(bridgedAllocation.eq(bnZero)).to.be.true;
@@ -718,7 +718,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           // Add bridged USDC, same amount as native USDC.
           balance = inventoryClient.getBalanceOnChain(
             chainId,
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             toAddressType(nativeUSDC[chainId], chainId)
           );
           tokenClient.setTokenData(chainId, toAddressType(bridgedUSDC[chainId], chainId), balance);
@@ -726,7 +726,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
             inventoryClient
               .getBalanceOnChain(
                 chainId,
-                toAddressType(mainnetUsdc, hubPoolClient.chainId),
+                EvmAddress.from(mainnetUsdc),
                 toAddressType(bridgedUSDC[chainId], chainId)
               )
               .eq(balance)
@@ -735,7 +735,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
           // Native USDC allocation should now be non-zero.
           bridgedAllocation = inventoryClient.getCurrentAllocationPct(
-            toAddressType(mainnetUsdc, hubPoolClient.chainId),
+            EvmAddress.from(mainnetUsdc),
             chainId,
             toAddressType(bridgedUSDC[chainId], chainId)
           );
@@ -743,10 +743,10 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
           expect(
             inventoryClient
-              .getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId))
+              .getCumulativeBalance(EvmAddress.from(mainnetUsdc))
               .gt(cumulativeBalance)
           ).to.be.true;
-          cumulativeBalance = inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId));
+          cumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc));
           expect(cumulativeBalance.gt(initialUsdcTotal)).to.be.true;
 
           // Return bridged USDC balance to 0 for next loop.
@@ -766,7 +766,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       await inventoryClient.rebalanceInventoryIfNeeded();
       expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
 
-      const cumulativeUSDC = inventoryClient.getCumulativeBalance(toAddressType(mainnetUsdc, hubPoolClient.chainId));
+      const cumulativeUSDC = inventoryClient.getCumulativeBalance(EvmAddress.from(mainnetUsdc));
       const targetPct = toWei(0.1);
       const thresholdPct = toWei(0.05);
       const expectedRebalance = cumulativeUSDC.mul(targetPct).div(fixedPoint);
@@ -797,7 +797,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(virtualMainnetBalance);
 
         // The mock adapter manager should have been called with the expected transaction.
-        expect(adapterManager.tokensSentCrossChain[chainId][toBytes32(mainnetUsdc)].amount.eq(expectedRebalance)).to.be
+        expect(adapterManager.tokensSentCrossChain[chainId][mainnetUsdc].amount.eq(expectedRebalance)).to.be
           .true;
 
         await inventoryClient.update();
@@ -810,19 +810,19 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 });
 
 function seedMocks(seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) {
-  hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
-  hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
+  hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetWeth), decimals: 18, symbol: "WETH" });
+  hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetUsdc), decimals: 6, symbol: "USDC" });
   enabledChainIds.forEach((chainId) => {
     adapterManager.setMockedOutstandingCrossChainTransfers(
       chainId,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetWeth, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetWeth),
       bnZero
     );
     adapterManager.setMockedOutstandingCrossChainTransfers(
       chainId,
-      toAddressType(owner.address, hubPoolClient.chainId),
-      toAddressType(mainnetUsdc, hubPoolClient.chainId),
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetUsdc),
       bnZero
     );
     tokenClient.setTokenData(
