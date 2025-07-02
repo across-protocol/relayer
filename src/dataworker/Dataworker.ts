@@ -45,6 +45,7 @@ import {
   convertFillParamsToBytes32,
   mapAsync,
   getAccountMeta,
+  getClaimAccountPda,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -91,11 +92,14 @@ import {
   pipe,
   some,
   fetchEncodedAccount,
+  compressTransactionMessageUsingAddressLookupTables,
   type KeyPairSigner,
+  type AddressesByLookupTableAddress,
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
+import { findAddressLookupTablePda } from "@solana-program/address-lookup-table";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -2916,16 +2920,10 @@ export class Dataworker {
       });
     }
 
-    // The remaining accounts for a relayer refund leaf are the refund addresses
-    const _l2TokenAddress = leaf.l2TokenAddress;
-    assert(
-      _l2TokenAddress.isSVM(),
-      `Dataworker#executeRelayerRefundLeafSvm: Attempting to execute a relayer refund leaf with token address ${leaf.l2TokenAddress}`
-    );
-    const remainingAccountMetas = await mapAsync(leaf.refundAddresses, async (refundAddress) => {
-      assert(refundAddress.isSVM());
-      const refundATA = await getAssociatedTokenAddress(refundAddress, _l2TokenAddress);
-      return getAccountMeta(refundATA, true);
+    // Get the lookup table Pda.
+    const [lookupTable] = await findAddressLookupTablePda({
+      authority: kitKeypair.address,
+      recentSlot: recentBlockhash.value.lastValidBlockHeight,
     });
 
     // There are two modes of refunding relayers on SVM:
@@ -2945,17 +2943,37 @@ export class Dataworker {
         eventAuthority,
         program: spokePoolProgramId,
       });
-      // Append the relayer repayment accounts.
-      executeRelayerRefundLeafIx.accounts.push(...remainingAccountMetas);
+      // For the relayer refund case, the remaining accounts to append are the relayer ATAs.
+      const _l2TokenAddress = leaf.l2TokenAddress;
+      assert(
+        _l2TokenAddress.isSVM(),
+        `Dataworker#executeRelayerRefundLeafSvm: Attempting to execute a relayer refund leaf with token address ${leaf.l2TokenAddress}`
+      );
+      const refundATAs = await mapAsync(leaf.refundAddresses, async (refundAddress) => {
+        assert(refundAddress.isSVM());
+        const refundATA = await getAssociatedTokenAddress(refundAddress, _l2TokenAddress);
+        return getAccountMeta(refundATA, true);
+      });
+      executeRelayerRefundLeafIx.accounts.push(...refundATAs);
+      const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
+        [lookupTable]: Object.values(executeRelayerRefundLeafIx.accounts).map((account) => address(account.address)),
+      };
+
       const executeRelayerRefundLeafTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         // @dev This RPC response returns an unknown, so we need to cast it to the proper return type.
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx)
+        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
+        (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
       return runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
     } catch (e) {
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Failed to execute relayer refunds. Falling back to deferred refunds.",
+        errorMsg: e,
+      });
       // If we failed on case 1, log the error and continue to case 2, where we assume that the leaf execution failed since one or more relayers did not have an ATA defined.
       const executeRelayerRefundLeafDeferredIx = SvmSpokeClient.getExecuteRelayerRefundLeafDeferredInstruction({
         signer: kitKeypair,
@@ -2968,13 +2986,23 @@ export class Dataworker {
         eventAuthority,
         program: spokePoolProgramId,
       });
-      // Append the relayer repayment accounts.
-      executeRelayerRefundLeafDeferredIx.accounts.push(...remainingAccountMetas);
+      // For the delayed refund case, the remaining accounts to append are the claim accounts.
+      const claimAccounts = await mapAsync(leaf.refundAddresses, async (refundAddress) =>
+        getClaimAccountPda(l2TokenAddress, address(refundAddress.toBase58()))
+      );
+      executeRelayerRefundLeafDeferredIx.accounts.push(...claimAccounts);
+      const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
+        [lookupTable]: Object.values(executeRelayerRefundLeafDeferredIx.accounts).map((account) =>
+          address(account.address)
+        ),
+      };
+
       const executeRelayerRefundLeafDeferredTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx)
+        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
+        (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
       return runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
     }

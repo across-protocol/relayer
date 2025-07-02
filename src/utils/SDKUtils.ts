@@ -93,6 +93,7 @@ export const {
   getTokenInfo,
   convertRelayDataParamsToBytes32,
   convertFillParamsToBytes32,
+  getClaimAccountPda,
 } = sdk.utils;
 
 export const {
