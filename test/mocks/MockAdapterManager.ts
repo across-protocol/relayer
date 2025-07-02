@@ -68,12 +68,12 @@ export class MockAdapterManager extends AdapterManager {
 
     const transfers = this.mockedOutstandingCrossChainTransfers[chainId];
 
-    transfers[address.toBytes32()] ??= {};
-    transfers[address.toBytes32()][l1Token.toEvmAddress()] ??= {};
+    transfers[address.toNative()] ??= {};
+    transfers[address.toNative()][l1Token.toEvmAddress()] ??= {};
 
     l2Token ??= getTranslatedTokenAddress(l1Token, 1, chainId, false);
 
-    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()] = {
+    transfers[address.toNative()][l1Token.toEvmAddress()][l2Token.toNative()] = {
       totalAmount: amount,
       depositTxHashes: [],
     };

@@ -695,49 +695,59 @@ export class Dataworker {
             bundleDepositsV3: Object.fromEntries(
               Object.entries(bundleData.bundleDepositsV3).map(([chainId, tokenToDeposits]) => [
                 chainId,
-                Object.entries(tokenToDeposits).map(([token, deposits]) => [
-                  token,
-                  deposits.map(convertRelayDataParamsToBytes32),
-                ]),
+                Object.fromEntries(
+                  Object.entries(tokenToDeposits).map(([token, deposits]) => [
+                    token,
+                    deposits.map(convertRelayDataParamsToBytes32),
+                  ])
+                ),
               ])
             ),
             expiredDepositsToRefundV3: Object.fromEntries(
               Object.entries(bundleData.expiredDepositsToRefundV3).map(([chainId, tokenToDeposits]) => [
                 chainId,
-                Object.entries(tokenToDeposits).map(([token, deposits]) => [
-                  token,
-                  deposits.map(convertRelayDataParamsToBytes32),
-                ]),
+                Object.fromEntries(
+                  Object.entries(tokenToDeposits).map(([token, deposits]) => [
+                    token,
+                    deposits.map(convertRelayDataParamsToBytes32),
+                  ])
+                ),
               ])
             ),
             bundleFillsV3: Object.fromEntries(
               Object.entries(bundleData.bundleFillsV3).map(([chainId, tokenToFills]) => [
                 chainId,
-                Object.entries(tokenToFills).map(([token, fillObject]) => [
-                  token,
-                  {
-                    ...fillObject,
-                    fills: fillObject.fills.map(convertFillParamsToBytes32),
-                  },
-                ]),
+                Object.fromEntries(
+                  Object.entries(tokenToFills).map(([token, fillObject]) => [
+                    token,
+                    {
+                      ...fillObject,
+                      fills: fillObject.fills.map(convertFillParamsToBytes32),
+                    },
+                  ])
+                ),
               ])
             ),
             unexecutableSlowFills: Object.fromEntries(
               Object.entries(bundleData.unexecutableSlowFills).map(([chainId, tokenToSlowFills]) => [
                 chainId,
-                Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
-                  token,
-                  slowFills.map(convertRelayDataParamsToBytes32),
-                ]),
+                Object.fromEntries(
+                  Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
+                    token,
+                    slowFills.map(convertRelayDataParamsToBytes32),
+                  ])
+                ),
               ])
             ),
             bundleSlowFillsV3: Object.fromEntries(
               Object.entries(bundleData.bundleSlowFillsV3).map(([chainId, tokenToSlowFills]) => [
                 chainId,
-                Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
-                  token,
-                  slowFills.map(convertRelayDataParamsToBytes32),
-                ]),
+                Object.fromEntries(
+                  Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
+                    token,
+                    slowFills.map(convertRelayDataParamsToBytes32),
+                  ])
+                ),
               ])
             ),
             bundleBlockRanges: bundleBlockRangeMap,

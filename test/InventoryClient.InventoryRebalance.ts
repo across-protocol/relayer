@@ -175,7 +175,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           .mul(toWei(1))
           .div(initialTotals[l1Token.toEvmAddress()]);
         const l2Token = (l1Token.toEvmAddress() === mainnetWeth ? l2TokensForWeth : l2TokensForUsdc)[chainId];
-        expect(tokenDistribution[l1Token.toEvmAddress()][chainId][toBytes32(l2Token)]).to.equal(expectedShare);
+        expect(tokenDistribution[l1Token.toEvmAddress()][chainId][l2Token]).to.equal(expectedShare);
       }
     }
   });
@@ -483,28 +483,28 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     const nativeUSDC = TOKEN_SYMBOLS_MAP.USDC.addresses;
     const bridgedUSDC = { ...TOKEN_SYMBOLS_MAP["USDC.e"].addresses, ...TOKEN_SYMBOLS_MAP["USDbC"].addresses };
     const usdcConfig = {
-      [toBytes32(nativeUSDC[OPTIMISM])]: {
+      [nativeUSDC[OPTIMISM]]: {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
       },
-      [toBytes32(nativeUSDC[POLYGON])]: {
+      [nativeUSDC[POLYGON]]: {
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-      [toBytes32(nativeUSDC[BASE])]: {
+      [nativeUSDC[BASE]]: {
         [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-      [toBytes32(nativeUSDC[ARBITRUM])]: {
+      [nativeUSDC[ARBITRUM]]: {
         [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-      [toBytes32(bridgedUSDC[OPTIMISM])]: {
+      [bridgedUSDC[OPTIMISM]]: {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
       },
-      [toBytes32(bridgedUSDC[POLYGON])]: {
+      [bridgedUSDC[POLYGON]]: {
         [POLYGON]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-      [toBytes32(bridgedUSDC[BASE])]: {
+      [bridgedUSDC[BASE]]: {
         [BASE]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
-      [toBytes32(bridgedUSDC[ARBITRUM])]: {
+      [bridgedUSDC[ARBITRUM]]: {
         [ARBITRUM]: { targetPct: toWei(0.07), thresholdPct: toWei(0.05), targetOverageBuffer },
       },
     };
@@ -533,7 +533,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
           );
           expect(config).to.exist;
 
-          const expectedConfig = inventoryConfig.tokenConfig[mainnetUsdc][toBytes32(bridgedUSDC[chainId])][chainId];
+          const expectedConfig = inventoryConfig.tokenConfig[mainnetUsdc][bridgedUSDC[chainId]][chainId];
           expect(expectedConfig).to.exist;
           expect(expectedConfig).to.deep.equal(expectedConfig);
         });
@@ -759,7 +759,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
         const l2Token = bridgedUSDC[chainId];
         hubPoolClient.mapTokenInfo(l2Token, "USDC.e", 6);
-        delete inventoryConfig.tokenConfig[mainnetUsdc][toBytes32(l2Token)];
+        delete inventoryConfig.tokenConfig[mainnetUsdc][l2Token];
       }
 
       await inventoryClient.update();
@@ -782,7 +782,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
         const l2Token = bridgedUSDC[chainId];
 
         // Apply a new target balance for bridged USDC.
-        inventoryConfig.tokenConfig[mainnetUsdc][toBytes32(l2Token)] = {
+        inventoryConfig.tokenConfig[mainnetUsdc][l2Token] = {
           [chainId]: { targetPct, thresholdPct, targetOverageBuffer },
         };
 
