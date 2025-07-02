@@ -55,6 +55,7 @@ import {
   assert,
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
+  chainIsEvm,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -99,7 +100,9 @@ export class Monitor {
     readonly clients: MonitorClients
   ) {
     this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
-    this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
+    this.monitorChains = Object.values(clients.spokePoolClients)
+      .map(({ chainId }) => chainId)
+      .filter(chainIsEvm);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -734,7 +737,7 @@ export class Monitor {
         : this.monitorChains;
 
     const l2TokenForChain = (chainId: number, symbol: string) => {
-      return TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
+      return toAddressType(TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId], chainId);
     };
     const pendingRelayerRefunds = {};
     const pendingRebalanceRoots = {};
@@ -824,7 +827,7 @@ export class Monitor {
               (
                 await this._getBalances([
                   {
-                    token: toAddressType(l2Token, chainId),
+                    token: l2Token,
                     chainId: chainId,
                     account: spokePool,
                   },
@@ -881,7 +884,7 @@ export class Monitor {
       pendingRelayerRefunds[chainId] = {};
       l2TokenAddresses.forEach((l2Token) => {
         const pendingValidatedDeductions = accountedBundleRefunds
-          .map((refund) => refund[chainId]?.[l2Token])
+          .map((refund) => refund[chainId]?.[l2Token.toBytes32()])
           .filter(isDefined)
           .reduce(
             (totalPendingRefunds, refunds) =>
@@ -892,7 +895,7 @@ export class Monitor {
             bnZero
           );
         const nextBundleDeductions = [unaccountedBundleRefunds]
-          .map((refund) => refund[chainId]?.[l2Token])
+          .map((refund) => refund[chainId]?.[l2Token.toBytes32()])
           .filter(isDefined)
           .reduce(
             (totalPendingRefunds, refunds) =>
@@ -902,7 +905,7 @@ export class Monitor {
               ),
             bnZero
           );
-        pendingRelayerRefunds[chainId][l2Token] = pendingValidatedDeductions.add(nextBundleDeductions);
+        pendingRelayerRefunds[chainId][l2Token.toNative()] = pendingValidatedDeductions.add(nextBundleDeductions);
       });
 
       this.logger.debug({
@@ -921,14 +924,15 @@ export class Monitor {
           .map((symbol) => l2TokenForChain(+chainId, symbol))
           .filter(isDefined);
         Object.entries(bundleSlowFills)
-          .filter(([l2Token]) => l2TokenAddresses.includes(l2Token))
+          .filter(([l2Token]) => l2TokenAddresses.map((_l2Token) => _l2Token.toBytes32()).includes(l2Token))
           .map(([l2Token, fills]) => {
+            const _l2Token = toAddressType(l2Token, +chainId);
             const pendingSlowFillAmounts = fills
               .map((fill) => fill.outputAmount)
               .filter(isDefined)
               .reduce((totalAmounts, outputAmount) => totalAmounts.add(outputAmount), bnZero);
-            pendingRelayerRefunds[chainId][l2Token] =
-              pendingRelayerRefunds[chainId][l2Token].add(pendingSlowFillAmounts);
+            pendingRelayerRefunds[chainId][_l2Token.toNative()] =
+              pendingRelayerRefunds[chainId][_l2Token.toNative()].add(pendingSlowFillAmounts);
           });
       });
 
@@ -946,22 +950,25 @@ export class Monitor {
         }
 
         const tokenDecimals = resolveTokenDecimals(tokenSymbol);
-        const currentSpokeBalance = formatWei(currentSpokeBalances[chainId][tokenAddress].toString(), tokenDecimals);
+        const currentSpokeBalance = formatWei(
+          currentSpokeBalances[chainId][tokenAddress.toNative()].toString(),
+          tokenDecimals
+        );
 
         // Relayer refunds may be undefined when there were no refunds included in the last bundle.
         const currentRelayerRefunds = formatWei(
-          (pendingRelayerRefunds[chainId]?.[tokenAddress] ?? bnZero).toString(),
+          (pendingRelayerRefunds[chainId]?.[tokenAddress.toNative()] ?? bnZero).toString(),
           tokenDecimals
         );
         // Rebalance roots will be undefined when there was no root in the last bundle for the chain.
         const currentRebalanceRoots = formatWei(
-          (pendingRebalanceRoots[chainId]?.[tokenAddress] ?? bnZero).toString(),
+          (pendingRebalanceRoots[chainId]?.[tokenAddress.toNative()] ?? bnZero).toString(),
           tokenDecimals
         );
         const virtualSpokeBalance = formatWei(
-          currentSpokeBalances[chainId][tokenAddress]
-            .add(pendingRebalanceRoots[chainId]?.[tokenAddress] ?? bnZero)
-            .sub(pendingRelayerRefunds[chainId]?.[tokenAddress] ?? bnZero)
+          currentSpokeBalances[chainId][tokenAddress.toNative()]
+            .add(pendingRebalanceRoots[chainId]?.[tokenAddress.toNative()] ?? bnZero)
+            .sub(pendingRelayerRefunds[chainId]?.[tokenAddress.toNative()] ?? bnZero)
             .toString(),
           tokenDecimals
         );
