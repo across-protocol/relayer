@@ -43,6 +43,8 @@ import {
   forEachAsync,
   convertRelayDataParamsToBytes32,
   convertFillParamsToBytes32,
+  mapAsync,
+  getAccountMeta,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -1436,7 +1438,7 @@ export class Dataworker {
         `Deposit Id: ${relayData.depositId.toString()}\n` +
         `amount: ${outputAmount.toString()}`;
 
-      if (submitExecution) {
+      if (submitExecution && !this.config.executorIgnoreChains.includes(chainId)) {
         if (isEVMSpokePoolClient(client)) {
           const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
@@ -2500,7 +2502,7 @@ export class Dataworker {
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
-      if (submitExecution) {
+      if (submitExecution && !this.config.executorIgnoreChains.includes(chainId)) {
         if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = getMsgValue(leaf);
           const ethersLeaf = {
@@ -2511,7 +2513,7 @@ export class Dataworker {
           this.clients.multiCallerClient.enqueueTransaction({
             value: valueToPassViaPayable,
             contract: client.spokePool,
-            chainId: Number(chainId),
+            chainId,
             method: "executeRelayerRefundLeaf",
             args: [rootBundleId, ethersLeaf, relayerRefundTree.getHexProof(leaf)],
             message: "Executed RelayerRefundLeaf 🌿!",
@@ -2914,6 +2916,18 @@ export class Dataworker {
       });
     }
 
+    // The remaining accounts for a relayer refund leaf are the refund addresses
+    const _l2TokenAddress = leaf.l2TokenAddress;
+    assert(
+      _l2TokenAddress.isSVM(),
+      `Dataworker#executeRelayerRefundLeafSvm: Attempting to execute a relayer refund leaf with token address ${leaf.l2TokenAddress}`
+    );
+    const remainingAccountMetas = await mapAsync(leaf.refundAddresses, async (refundAddress) => {
+      assert(refundAddress.isSVM());
+      const refundATA = await getAssociatedTokenAddress(refundAddress, _l2TokenAddress);
+      return getAccountMeta(refundATA, true);
+    });
+
     // There are two modes of refunding relayers on SVM:
     // Case 1: All relayers have an initialized ATA, so we call the spoke pool's `executeRelayerRefundLeaf` instruction.
     // Case 2: One or more relayers do not have an initialized ATA, so we call `executeRelayerRefundLeafDeferred` and allow the refunds to be
@@ -2931,6 +2945,8 @@ export class Dataworker {
         eventAuthority,
         program: spokePoolProgramId,
       });
+      // Append the relayer repayment accounts.
+      executeRelayerRefundLeafIx.accounts.push(...remainingAccountMetas);
       const executeRelayerRefundLeafTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
@@ -2952,6 +2968,8 @@ export class Dataworker {
         eventAuthority,
         program: spokePoolProgramId,
       });
+      // Append the relayer repayment accounts.
+      executeRelayerRefundLeafDeferredIx.accounts.push(...remainingAccountMetas);
       const executeRelayerRefundLeafDeferredTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),

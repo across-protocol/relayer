@@ -8,6 +8,7 @@ import {
   EvmAddress,
   toAddressType,
 } from ".";
+import { AccountRole, type Address as KitAddress, type WritableAccount, type ReadonlyAccount } from "@solana/kit";
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
@@ -80,4 +81,11 @@ export function checkAddressChecksum(tokenAddress: string): boolean {
 
 export function toBuffer(address: Address): Buffer {
   return Buffer.from(address.rawAddress);
+}
+
+export function getAccountMeta(value: KitAddress, isWritable: boolean): WritableAccount | ReadonlyAccount {
+  return Object.freeze({
+    address: value,
+    role: isWritable ? AccountRole.WRITABLE : AccountRole.READONLY,
+  });
 }
