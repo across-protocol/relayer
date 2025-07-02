@@ -737,7 +737,8 @@ export class Monitor {
         : this.monitorChains;
 
     const l2TokenForChain = (chainId: number, symbol: string) => {
-      return toAddressType(TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId], chainId);
+      const _l2Token = TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
+      return isDefined(_l2Token) ? toAddressType(_l2Token, chainId) : undefined;
     };
     const pendingRelayerRefunds = {};
     const pendingRebalanceRoots = {};
