@@ -34,6 +34,9 @@ export class DataworkerConfig extends CommonConfig {
 
   readonly bufferToPropose: number;
 
+  // A list of chains to ignore slow fill/relayer refund execution. Primarily used for debugging purposes.
+  readonly executorIgnoreChains: number[];
+
   constructor(env: ProcessEnv) {
     const {
       ROOT_BUNDLE_EXECUTION_THRESHOLD,
@@ -51,6 +54,7 @@ export class DataworkerConfig extends CommonConfig {
       FORCE_PROPOSAL,
       FORCE_PROPOSAL_BUNDLE_RANGE,
       PERSIST_BUNDLES_TO_ARWEAVE,
+      EXECUTOR_IGNORE_CHAINS,
     } = env;
     super(env);
 
@@ -76,6 +80,7 @@ export class DataworkerConfig extends CommonConfig {
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
     this.l1ExecutorEnabled = L1_EXECUTOR_ENABLED === "true";
+    this.executorIgnoreChains = JSON.parse(EXECUTOR_IGNORE_CHAINS ?? "[]");
     if (this.l2ExecutorEnabled) {
       assert(this.spokeRootsLookbackCount > 0, "must set spokeRootsLookbackCount > 0 if L2 executor enabled");
     } else if (this.disputerEnabled || this.proposerEnabled) {
