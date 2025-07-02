@@ -18,13 +18,13 @@ export class CrossChainTransferClient {
     l1Token: EvmAddress,
     l2Token?: Address
   ): BigNumber {
-    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
+    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toNative()]?.[l1Token.toNative()];
     if (!transfers) {
       return bnZero;
     }
 
     if (l2Token) {
-      return transfers[l2Token.toBytes32()]?.totalAmount ?? bnZero;
+      return transfers[l2Token.toNative()]?.totalAmount ?? bnZero;
     }
 
     // No specific l2Token specified; return the sum of all l1Token transfers to chainId.
@@ -37,13 +37,13 @@ export class CrossChainTransferClient {
     l1Token: EvmAddress,
     l2Token?: Address
   ): string[] {
-    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toBytes32()]?.[l1Token.toEvmAddress()];
+    const transfers = this.outstandingCrossChainTransfers[chainId]?.[address.toNative()]?.[l1Token.toEvmAddress()];
     if (!transfers) {
       return [];
     }
 
     if (l2Token) {
-      return transfers[l2Token.toBytes32()]?.depositTxHashes ?? [];
+      return transfers[l2Token.toNative()]?.depositTxHashes ?? [];
     }
 
     // No specific l2Token specified; return the set of all l1Token transfers to chainId.
@@ -66,15 +66,15 @@ export class CrossChainTransferClient {
     chainId: number
   ): void {
     const transfers = (this.outstandingCrossChainTransfers[chainId] ??= {});
-    transfers[address.toBytes32()] ??= {};
-    transfers[address.toBytes32()][l1Token.toEvmAddress()] ??= {};
-    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()] ??= {
+    transfers[address.toNative()] ??= {};
+    transfers[address.toNative()][l1Token.toEvmAddress()] ??= {};
+    transfers[address.toNative()][l1Token.toEvmAddress()][l2Token.toNative()] ??= {
       totalAmount: bnZero,
       depositTxHashes: [],
     };
 
     // TODO: Require a tx hash here so we can track it as well.
-    transfers[address.toBytes32()][l1Token.toEvmAddress()][l2Token.toBytes32()].totalAmount =
+    transfers[address.toNative()][l1Token.toEvmAddress()][l2Token.toNative()].totalAmount =
       this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token, l2Token).add(rebalance);
   }
 
