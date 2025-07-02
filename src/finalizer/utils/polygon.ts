@@ -208,7 +208,6 @@ async function multicallPolygonFinalizations(
   logger: winston.Logger
 ): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
-
   const finalizedBridges = await resolvePolygonBridgeFinalizations(finalizableMessages, posClient, hubPoolClient);
   const finalizedRetrievals = await resolvePolygonRetrievalFinalizations(finalizableMessages, hubSigner, hubPoolClient);
 
@@ -284,7 +283,7 @@ function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
 async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSigner: Signer): Promise<Multicall2Call> {
   const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
-  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
+  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token.toNative());
   return {
     callData: callData.data,
     target: callData.to,
