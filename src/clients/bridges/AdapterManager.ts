@@ -27,13 +27,14 @@ import {
   Address,
   isSVMSpokePoolClient,
 } from "../../utils";
-import { SpokePoolClient, HubPoolClient } from "../";
+import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
   private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  protected spokePoolClientManager: SpokePoolManager;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -43,13 +44,15 @@ export class AdapterManager {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly monitoredAddresses: Address[]
   ) {
     if (!spokePoolClients) {
       return;
     }
+
+    this.spokePoolClientManager = new SpokePoolManager(logger, spokePoolClients);
     const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
@@ -58,7 +61,7 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
+          this.spokePoolClientManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -115,7 +118,7 @@ export class AdapterManager {
           .filter(isDefined) ?? []
       );
     };
-    Object.values(this.spokePoolClients).map(({ chainId }) => {
+    Object.values(this.spokePoolClientManager.getSpokePoolClients()).map(({ chainId }) => {
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
         spokePoolClients,
@@ -217,7 +220,7 @@ export class AdapterManager {
   // inventory from L1 to ZkSync via the AtomicDepositor.
   async wrapNativeTokenIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
-      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
+      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClientManager.getClient(chainId))),
       async (chainId) => {
         const wrapThreshold =
           inventoryConfig?.wrapEtherThresholdPerChain?.[chainId] ?? inventoryConfig.wrapEtherThreshold;
@@ -232,7 +235,7 @@ export class AdapterManager {
   }
 
   getSigner(chainId: number): Signer {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClientManager.getClient(chainId);
     assert(isEVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
