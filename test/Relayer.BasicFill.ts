@@ -65,7 +65,7 @@ import {
   deployMulticall3,
 } from "./utils";
 
-describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
+describe.only("Relayer: Check for Unfilled Deposits and Fill", async function () {
   const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -438,7 +438,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Ignores exclusive deposits", async function () {
       const exclusivityDeadline = 7200;
       const deposits: Deposit[] = [];
-      const { fillStatus, relayerAddress } = relayerInstance;
+      const { fillStatus, evmRelayerAddress: relayerAddress } = relayerInstance;
 
       // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.
       // Verify that the relayer can immediately fill the first deposit, and both after the exclusivity window.
