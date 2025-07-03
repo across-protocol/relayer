@@ -82,9 +82,9 @@ export class SvmFillerClient {
     this.queuedFills.push({ txPromise: fillTx, message, mrkdwn });
   }
 
-  enqueueSlowFill(relayData: ProtoFill) {
-    // todo: implement similarly to `enqueueFill`
-    assert(false, "SvmFillerClient.enqueueSlowFill not implemented");
+  enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string) {
+    const slowFillTx = arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
+    this.queuedFills.push({ txPromise: slowFillTx, message, mrkdwn });
   }
 
   // @dev returns promises with txn signatures (~hashes)

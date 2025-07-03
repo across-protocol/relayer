@@ -1061,6 +1061,8 @@ export class Relayer {
       });
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
+      assert(spokePoolClient.spokePoolAddress.isSVM());
+
       const [recipient, outputToken] = [deposit.recipient, deposit.outputToken];
       if (!(recipient.isSVM() && outputToken.isSVM())) {
         // @dev recipient or outputToken are incorrectly formatted for the destination chain, drop deposit processing and log
@@ -1075,8 +1077,12 @@ export class Relayer {
         return;
       }
 
-      // todo: `enqueueSlowFill` is not impld. yet
-      this.clients.svmFillerClient.enqueueSlowFill({ ...deposit, recipient, outputToken });
+      this.clients.svmFillerClient.enqueueSlowFill(
+        spokePoolClient.spokePoolAddress,
+        { ...deposit, recipient, outputToken },
+        "Requested slow fill for deposit.",
+        formatSlowFillRequestMarkdown()
+      );
     }
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
