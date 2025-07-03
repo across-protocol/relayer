@@ -109,15 +109,15 @@ describe("Dataworker block range-related utility methods", async function () {
       mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestHeightSearched);
     });
     let blockRanges = await getWidestPossibleExpectedBlockRange(
-        chainIdListForBundleEvaluationBlockNumbers,
-        spokePoolClients,
-        defaultEndBlockBuffers,
-        {
-          ...dataworkerClients,
-          hubPoolClient: mockHubPoolClient,
-        },
-        0,
-        chainIdListForBundleEvaluationBlockNumbers
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      defaultEndBlockBuffers,
+      {
+        ...dataworkerClients,
+        hubPoolClient: mockHubPoolClient,
+      },
+      0,
+      chainIdListForBundleEvaluationBlockNumbers
     );
     expect(blockRanges).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
@@ -129,15 +129,15 @@ describe("Dataworker block range-related utility methods", async function () {
     // - Works with Buffers > 0 such that the latest blocks minus buffers are < latest bundle end blocks.
     defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(10);
     blockRanges = await getWidestPossibleExpectedBlockRange(
-        chainIdListForBundleEvaluationBlockNumbers,
-        spokePoolClients,
-        defaultEndBlockBuffers,
-        {
-          ...dataworkerClients,
-          hubPoolClient: mockHubPoolClient,
-        },
-        0,
-        chainIdListForBundleEvaluationBlockNumbers
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      defaultEndBlockBuffers,
+      {
+        ...dataworkerClients,
+        hubPoolClient: mockHubPoolClient,
+      },
+      0,
+      chainIdListForBundleEvaluationBlockNumbers
     );
     expect(blockRanges).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
