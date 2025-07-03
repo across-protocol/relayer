@@ -1,0 +1,10 @@
+{
+  "version": "v1",
+  "packages": {
+    "@across-protocol/sdk": {
+      "signature": "1ee7d2129763918cebc5499cc79756ef",
+      "file": true,
+      "replaced": "4.2.16-alpha.6"
+    }
+  }
+}

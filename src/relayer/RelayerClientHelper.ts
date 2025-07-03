@@ -11,6 +11,7 @@ import {
   TokenClient,
   MultiCallerClient,
   TryMulticallClient,
+  SvmFillerClient,
 } from "../clients";
 import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
@@ -36,6 +37,7 @@ import {
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { chainIsSvm, isDefined } from "@across-protocol/sdk/dist/types/utils";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
@@ -44,6 +46,7 @@ export interface RelayerClients extends Clients {
   inventoryClient: InventoryClient;
   acrossApiClient: AcrossApiClient;
   tryMulticallClient: MultiCallerClient;
+  svmFillerClient: SvmFillerClient;
 }
 
 async function indexedSpokePoolClient(
@@ -224,6 +227,16 @@ export async function constructRelayerClients(
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
 
+  let svmFillerClient: SvmFillerClient = undefined;
+  const svmChainIds = enabledChainIds.filter(chainIsSvm);
+  if (svmChainIds.length > 1) {
+    throw new Error(`Multiple SVM chains detected: ${svmChainIds.join(", ")}. Only one SVM chain is supported.`);
+  }
+  const svmChainId = svmChainIds[0];
+  if (isDefined(svmChainId)) {
+    svmFillerClient = await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainId, logger);
+  }
+
   return {
     ...commonClients,
     spokePoolClients,
@@ -232,5 +245,6 @@ export async function constructRelayerClients(
     inventoryClient,
     acrossApiClient,
     tryMulticallClient,
+    svmFillerClient,
   };
 }

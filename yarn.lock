@@ -56,10 +56,8 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.4":
-  version "4.3.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.4.tgz#d138c983197805f34b12900ee7087583adbf228d"
-  integrity sha512-4xOzSVClYMrzl0YGqOGtPn5wExlHj0zqSc8Jxp8K6HEcwlKmcDksriq+eTlkpqk+lig7/zHvBe88DaMvoiLQ5w==
+"@across-protocol/sdk@file:.yalc/@across-protocol/sdk":
+  version "4.3.3"
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.68"
@@ -2944,7 +2942,7 @@
     "@solana/codecs-strings" "2.1.0"
     "@solana/errors" "2.1.0"
 
-"@solana/kit@^2.1.0":
+"@solana/kit@2.1.0", "@solana/kit@^2.1.0":
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/@solana/kit/-/kit-2.1.0.tgz#57ed0fd74c4330e3b0e25e961ed1264e7f8a0c24"
   integrity sha512-vqaHROLKp89xdIbaKVG6BQ44uMN9E6/rSTeltkvquD2qdTObssafGDbAKVFjwZhlNO+sdzHDCLekGabn5VAL6A==
