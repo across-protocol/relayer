@@ -17,6 +17,7 @@ import {
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
+  Address,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -85,9 +86,10 @@ export async function binanceFinalizer(
   _hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  _senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
   const chainId = l2SpokePoolClient.chainId;
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;

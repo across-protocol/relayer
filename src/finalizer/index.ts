@@ -33,6 +33,8 @@ import {
   stringifyThrownValue,
   isEVMSpokePoolClient,
   chainIsEvm,
+  EvmAddress,
+  Address,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
@@ -248,12 +250,12 @@ export async function finalize(
     const userSpecifiedAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
       ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
       : [];
-    const addressesToFinalize = [
+    const addressesToFinalize: Address[] = [
       hubPoolClient.hubPool.address,
-      spokePoolClients[chainId].spokePoolAddress.toEvmAddress(),
       CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
       ...userSpecifiedAddresses,
-    ].map(getAddress);
+    ].map((address) => EvmAddress.from(getAddress(address)));
+    addressesToFinalize.push(spokePoolClients[chainId].spokePoolAddress);
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
