@@ -1168,7 +1168,7 @@ export class Relayer {
         return;
       }
 
-      const message = `Filled v3 deposit on SVM 🚀`;
+      const message = "Filled v3 deposit on SVM 🚀";
       const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
 
       this.clients.svmFillerClient.enqueueFill(

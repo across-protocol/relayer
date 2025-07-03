@@ -34,10 +34,11 @@ import {
   SvmAddress,
   EvmAddress,
   getSvmSignerFromEvmSigner,
+  chainIsSvm,
+  isDefined,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
-import { chainIsSvm, isDefined } from "@across-protocol/sdk/dist/types/utils";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
