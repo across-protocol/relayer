@@ -130,8 +130,6 @@ async function generateWithdrawalData(
  * to have SpokePool address in the `senderAddresses`. We instead need SpokePool's `statePda` in there, because that is
  * what gets recorded as `depositor` in the `DepositForBurn` event
  */
-// TODO: this function is fragile, because it assumes the format of `senderAddresses` and how it gets populated
-// TODO: When we fully move to using the `Address` class, this problem should be alleviated by using `Address.eq` instead
 function augmentSendersListForSolana(senderAddresses: Address[], spokePoolClient: SpokePoolClient): Address[] {
   const spokeAddress = spokePoolClient.spokePoolAddress;
   // This format is taken from `src/finalizer/index.ts`
