@@ -962,7 +962,15 @@ export class InventoryClient {
           const [message, log] = balanceChanged
             ? ["🚧 Token balance on mainnet changed, skipping rebalance", this.logger.warn]
             : ["Token balance in relayer on mainnet is as expected, sending cross chain transfer", this.logger.debug];
-          log({ at: "InventoryClient", message, l1Token, l2Token, l2ChainId: chainId, balance, currentBalance });
+          log({
+            at: "InventoryClient",
+            message,
+            l1Token: l1Token.toNative(),
+            l2Token: l2Token.toNative(),
+            l2ChainId: chainId,
+            balance,
+            currentBalance,
+          });
 
           if (!balanceChanged) {
             possibleRebalances.push(rebalance);
@@ -977,7 +985,22 @@ export class InventoryClient {
 
       // Extract unexecutable rebalances for logging.
 
-      this.log("Considered inventory rebalances", { rebalancesRequired, possibleRebalances });
+      this.log("Considered inventory rebalances", {
+        rebalancesRequired: rebalancesRequired.map((rebalance) => {
+          return {
+            ...rebalance,
+            l1Token: rebalance.l1Token.toNative(),
+            l2Token: rebalance.l2Token.toNative(),
+          };
+        }),
+        possibleRebalances: possibleRebalances.map((rebalance) => {
+          return {
+            ...rebalance,
+            l1Token: rebalance.l1Token.toNative(),
+            l2Token: rebalance.l2Token.toNative(),
+          };
+        }),
+      });
 
       // Finally, execute the rebalances.
       // TODO: The logic below is slow as it waits for each transaction to be included before sending the next one. This
