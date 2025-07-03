@@ -27,11 +27,11 @@ import {
   EvmAddress,
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
+  chainIsSvm,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { MultiCallerClient, SvmFillerClient } from "../clients";
-import { chainIsSvm } from "@across-protocol/sdk/dist/types/utils";
+import { MultiCallerClient } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -914,7 +914,10 @@ export class Relayer {
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
-    this.clients.svmFillerClient.clearTransactionQueue();
+    // @dev this.clients.svmFillerClient is only defined if any SVM chain is enabled
+    if (isDefined(this.clients.svmFillerClient)) {
+      this.clients.svmFillerClient.clearTransactionQueue();
+    }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );

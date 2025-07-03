@@ -14,10 +14,10 @@ import {
   Address as SDKAddress,
   blockExplorerLink,
   winston,
+  chainIsSvm,
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
-import { chainIsSvm } from "../utils";
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   destinationChainId: number;
