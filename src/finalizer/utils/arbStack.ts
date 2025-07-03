@@ -27,6 +27,7 @@ import {
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
+  EvmAddress,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -181,7 +182,7 @@ export async function arbStackFinalizer(
       return {
         ...e,
         amount: e.args._amount,
-        l2TokenAddress: l2Token,
+        l2TokenAddress: EvmAddress.from(l2Token),
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
@@ -190,7 +191,7 @@ export async function arbStackFinalizer(
       return {
         ...e,
         amount: e.args.callvalue,
-        l2TokenAddress: l2Token,
+        l2TokenAddress: EvmAddress.from(l2Token),
       };
     }),
   ];
