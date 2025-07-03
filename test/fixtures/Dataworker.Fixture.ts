@@ -229,7 +229,9 @@ export async function setupDataworker(
   };
   const dataworkerInstance = new Dataworker(
     spyLogger,
-    {} as DataworkerConfig,
+    {
+      executorIgnoreChains: [],
+    } as DataworkerConfig,
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,

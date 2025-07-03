@@ -61,11 +61,13 @@ export async function constructMonitorClients(
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
-    spokePoolChains.map((chainId) => {
-      const spokePoolClient = spokePoolClients[chainId];
-      assert(isEVMSpokePoolClient(spokePoolClient));
-      return [chainId, spokePoolClient.spokePool.provider];
-    })
+    spokePoolChains
+      .filter((chainId) => isEVMSpokePoolClient(spokePoolClients[chainId]))
+      .map((chainId) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        assert(isEVMSpokePoolClient(spokePoolClient));
+        return [chainId, spokePoolClient.spokePool.provider];
+      })
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 

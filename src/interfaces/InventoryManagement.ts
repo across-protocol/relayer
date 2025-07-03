@@ -69,7 +69,6 @@ export interface InventoryConfig {
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
   return (
-    Object.keys(config).every((k) => ethersUtils.hexDataLength(k) === 32) ||
-    Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k])
+    Object.keys(config).every((k) => ethersUtils.isAddress(k)) || Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k])
   );
 }
