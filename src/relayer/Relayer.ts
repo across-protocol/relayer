@@ -915,7 +915,6 @@ export class Relayer {
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
     this.clients.svmFillerClient.clearTransactionQueue();
-    // @dev txnReceipt here means 'promise of a txn hash'
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
@@ -975,7 +974,7 @@ export class Relayer {
         ? this.clients.svmFillerClient.getTxnQueueLen()
         : this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
       if (pendingTxnCount > 0) {
-        this.executeFills(destinationChainId, simulate);
+        txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
     });
 
