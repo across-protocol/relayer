@@ -57,7 +57,7 @@
     zksync-web3 "^0.14.3"
 
 "@across-protocol/sdk@file:.yalc/@across-protocol/sdk":
-  version "4.3.3"
+  version "4.3.4"
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.68"

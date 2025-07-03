@@ -17,7 +17,7 @@ import {
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
-import { chainIsSvm } from "@across-protocol/sdk/dist/types/utils";
+import { chainIsSvm } from "../utils";
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   destinationChainId: number;
