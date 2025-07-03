@@ -836,9 +836,7 @@ async function _getCCTPDepositEventsSvm(
     const destinationDomain = eventData.destinationDomain;
 
     if (
-      !senderAddresses.some((addr) =>
-        compareAddressesSimple(addr.truncateToBytes20(), depositor.truncateToBytes20())
-      ) ||
+      !senderAddresses.some((addr) => addr.eq(depositor)) ||
       getCctpDomainForChainId(destinationChainId) !== destinationDomain
     ) {
       return undefined;
