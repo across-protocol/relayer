@@ -65,7 +65,7 @@ import {
   deployMulticall3,
 } from "./utils";
 
-describe.only("Relayer: Check for Unfilled Deposits and Fill", async function () {
+describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
   const { EMPTY_MESSAGE } = constants;
   const { fixedPointAdjustment: fixedPoint } = sdkUtils;
