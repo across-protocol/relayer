@@ -19,7 +19,6 @@ import {
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
-import { getRedisCache } from "./RedisUtils";
 import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
 import { assert, Provider } from ".";
@@ -814,8 +813,7 @@ async function _getCCTPDepositEventsSvm(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<AttestedCCTPDeposit[]> {
   // Get the `DepositForBurn` events on Solana.
-  const redisCache = await getRedisCache();
-  const provider = getSvmProvider(redisCache);
+  const provider = getSvmProvider();
   const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);

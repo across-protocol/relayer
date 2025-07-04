@@ -26,8 +26,7 @@ export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder
     evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
     return evmBlockFinders[chainId];
   }
-  const redisCache = await getRedisCache();
-  const provider = getSvmProvider(redisCache);
+  const provider = getSvmProvider();
   svmBlockFinder ??= new SVMBlockFinder(provider);
   return svmBlockFinder;
 }

@@ -3,7 +3,6 @@ import { providers as sdkProviders } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import winston from "winston";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
-import { CachingMechanismInterface } from "../interfaces";
 import { delay, getOriginFromURL, Logger, SVMProvider } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
@@ -263,15 +262,12 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export function getSvmProvider(
-  cachingMechanism?: CachingMechanismInterface,
-  logger: winston.Logger = Logger
-): SVMProvider {
+export function getSvmProvider(logger: winston.Logger = Logger): SVMProvider {
   const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
-    cachingMechanism,
+    undefined,
     10,
     0,
     logger,
