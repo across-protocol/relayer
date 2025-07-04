@@ -276,7 +276,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const erc20 = new Contract(token.address, ERC20.abi, signer);
   const [balance, allowance] = await Promise.all([
     erc20.balanceOf(depositor.toNative()),
-    erc20.allowance(depositor.toNative(), spokePool.address)
+    erc20.allowance(depositor.toNative(), spokePool.address),
   ]);
 
   if (inputAmount.gt(balance)) {
