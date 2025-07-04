@@ -31,6 +31,7 @@ export const {
   getRootBundlePda,
   getTransferLiabilityPda,
   getEventAuthority,
+  getClaimAccountPda,
 } = sdk.arch.svm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 
