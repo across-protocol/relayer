@@ -916,7 +916,7 @@ export class Relayer {
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
-    // @dev this.clients.svmFillerClient is only defined if any SVM chain is enabled
+    // @dev `this.clients.svmFillerClient` is only defined if we have an SVM chain in enabled chains
     if (isDefined(this.clients.svmFillerClient)) {
       this.clients.svmFillerClient.clearTransactionQueue();
     }

@@ -47,7 +47,7 @@ export interface RelayerClients extends Clients {
   inventoryClient: InventoryClient;
   acrossApiClient: AcrossApiClient;
   tryMulticallClient: MultiCallerClient;
-  svmFillerClient: SvmFillerClient;
+  svmFillerClient: SvmFillerClient | undefined;
 }
 
 async function indexedSpokePoolClient(
@@ -228,15 +228,14 @@ export async function constructRelayerClients(
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
 
-  let svmFillerClient: SvmFillerClient = undefined;
   const svmChainIds = enabledChainIds.filter(chainIsSvm);
   if (svmChainIds.length > 1) {
     throw new Error(`Multiple SVM chains detected: ${svmChainIds.join(", ")}. Only one SVM chain is supported.`);
   }
-  const svmChainId = svmChainIds[0];
-  if (isDefined(svmChainId)) {
-    svmFillerClient = await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainId, logger);
-  }
+  const svmFillerClient =
+    svmChainIds.length === 1
+      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      : undefined;
 
   return {
     ...commonClients,
