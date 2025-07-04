@@ -13,6 +13,7 @@ import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
   Address,
+  disconnectRedisClients,
   EvmAddress,
   formatFeePct,
   getDeploymentBlockNumber,
@@ -273,7 +274,17 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
 
   const erc20 = new Contract(token.address, ERC20.abi, signer);
-  const allowance = await erc20.allowance(depositor.toNative(), spokePool.address);
+  const [balance, allowance] = await Promise.all([
+    erc20.balanceOf(depositor.toNative()),
+    erc20.allowance(depositor.toNative(), spokePool.address)
+  ]);
+
+  if (inputAmount.gt(balance)) {
+    const baseBalance = balance.div(toBN(10).pow(token.decimals));
+    console.log(`Insufficient balance for ${baseAmount} ${tokenSymbol} deposit (${baseBalance}).`);
+    return false;
+  }
+
   if (inputAmount.gt(allowance)) {
     const approvalAmount = inputAmount.mul(5);
     const approval = await erc20.approve(spokePool.address, approvalAmount);
@@ -615,6 +626,7 @@ async function run(argv: string[]): Promise<number> {
     default:
       return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
+  await disconnectRedisClients();
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
 }
