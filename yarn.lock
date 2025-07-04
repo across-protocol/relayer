@@ -56,10 +56,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.6":
-  version "4.3.6"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.6.tgz#cb32deaf448b3e2389a11cb46392f315febff7d4"
-  integrity sha512-n/KdzR0Bh20e77dO6RYux1SYqdOgaQQUKghtquI4A0fYDlvG78V+9xMAfms6KMHRsqAFcHCJy0thzm/3n0EQSw==
+"@across-protocol/sdk@4.3.7":
+  version "4.3.7"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.7.tgz#b036b860dfa0d358148ea0ffaaac9e37937c3025"
+  integrity sha512-9B6BOU3ohiNAatFXOseA+hLD2Nn2NTr/hawtSBRJ+WfH5HvMjbhNe/AMymzPSNb8uXCvvysCP7Hczy/RKztTLw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.68"
@@ -2944,7 +2944,7 @@
     "@solana/codecs-strings" "2.1.0"
     "@solana/errors" "2.1.0"
 
-"@solana/kit@^2.1.0":
+"@solana/kit@2.1.0", "@solana/kit@^2.1.0":
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/@solana/kit/-/kit-2.1.0.tgz#57ed0fd74c4330e3b0e25e961ed1264e7f8a0c24"
   integrity sha512-vqaHROLKp89xdIbaKVG6BQ44uMN9E6/rSTeltkvquD2qdTObssafGDbAKVFjwZhlNO+sdzHDCLekGabn5VAL6A==

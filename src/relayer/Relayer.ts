@@ -17,7 +17,6 @@ import {
   isDefined,
   winston,
   fixedPointAdjustment,
-  TransactionResponse,
   Profiler,
   formatGwei,
   depositForcesOriginChainRepayment,
@@ -28,6 +27,7 @@ import {
   EvmAddress,
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
+  chainIsSvm,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -50,9 +50,9 @@ type RepaymentChainProfitability = {
 };
 
 export class Relayer {
-  public readonly relayerAddress: Address;
+  public readonly relayerEvmAddress: Address;
   public readonly fillStatus: { [depositHash: string]: number } = {};
-  private pendingTxnReceipts: { [chainId: number]: Promise<TransactionResponse[]> } = {};
+  private pendingTxnHashes: { [chainId: number]: Promise<string[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
@@ -63,7 +63,7 @@ export class Relayer {
   protected updated = 0;
 
   constructor(
-    relayerAddress: string,
+    relayerEvmAddress: string,
     readonly logger: winston.Logger,
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
@@ -85,7 +85,7 @@ export class Relayer {
       logger: this.logger,
     });
     // Hardcode an EVM chain ID, since the relayer address stored here is an EVM address.
-    this.relayerAddress = toAddressType(getAddress(relayerAddress), CHAIN_IDs.MAINNET);
+    this.relayerEvmAddress = toAddressType(getAddress(relayerEvmAddress), CHAIN_IDs.MAINNET);
     this.inventoryChainIds =
       this.config.pollingDelay === 0 ? Object.values(clients.spokePoolClients).map(({ chainId }) => chainId) : [];
   }
@@ -111,7 +111,7 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
-      relayerEvmAddress: this.relayerAddress.toNative(),
+      relayerEvmAddress: this.relayerEvmAddress.toNative(),
       relayerSvmAddress: tokenClient.relayerSvmAddress.toNative(),
     });
   }
@@ -349,7 +349,10 @@ export class Relayer {
 
     // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
     // making the same relayer fill a deposit multiple times.
-    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(this.relayerAddress))) {
+    if (
+      !acceptInvalidFills &&
+      invalidFills.some((fill) => fill.relayer.eq(this.getRelayerAddrOn(fill.destinationChainId)))
+    ) {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
@@ -396,7 +399,10 @@ export class Relayer {
       return false;
     }
 
-    if (this.fillIsExclusive(deposit) && !deposit.exclusiveRelayer.eq(this.relayerAddress)) {
+    if (
+      this.fillIsExclusive(deposit) &&
+      !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))
+    ) {
       return false;
     }
 
@@ -529,7 +535,7 @@ export class Relayer {
     const commitment = deposits.reduce((acc, deposit) => {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer.eq(this.relayerAddress));
+        ?.find((f) => f.relayer.eq(this.getRelayerAddrOn(f.destinationChainId)));
       if (!isDefined(fill)) {
         return acc;
       }
@@ -673,7 +679,7 @@ export class Relayer {
     const { slowDepositors } = this.config;
     const [originChain, destChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
 
-    if (isDefined(this.pendingTxnReceipts[destinationChainId])) {
+    if (isDefined(this.pendingTxnHashes[destinationChainId])) {
       this.logger.info({
         at: "Relayer::evaluateFill",
         message: `${destChain} transaction queue has pending fills; skipping ${originChain} deposit ${depositId.toString()}...`,
@@ -716,7 +722,7 @@ export class Relayer {
     // is at least that old before filling it. This is mainly useful on chains with long block times,
     // where there is a high chance of fill collisions in the first blocks after a deposit is made.
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
-    if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.relayerAddress)) {
+    if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))) {
       const originSpoke = spokePoolClients[originChainId];
       let avgBlockTime;
       if (isEVMSpokePoolClient(originSpoke)) {
@@ -881,22 +887,24 @@ export class Relayer {
   }
 
   protected async executeFills(chainId: number, simulate = false): Promise<string[]> {
-    const multiCallerClient = this.getMulticaller(chainId);
-    const { pendingTxnReceipts } = this;
+    const fillExecutorClient = chainIsSvm(chainId) ? this.clients.svmFillerClient : this.getMulticaller(chainId);
+    const { pendingTxnHashes } = this;
 
-    if (isDefined(pendingTxnReceipts[chainId])) {
+    if (isDefined(pendingTxnHashes[chainId])) {
       this.logger.info({
         at: "Relayer::executeFills",
         message: `${getNetworkName(chainId)} transaction queue has pending fills; skipping...`,
       });
-      multiCallerClient.clearTransactionQueue(chainId);
+      fillExecutorClient.clearTransactionQueue(chainId);
       return [];
     }
-    pendingTxnReceipts[chainId] = multiCallerClient.executeTxnQueue(chainId, simulate);
-    const txnReceipts = await pendingTxnReceipts[chainId];
-    delete pendingTxnReceipts[chainId];
+    pendingTxnHashes[chainId] = (async () => {
+      return (await fillExecutorClient.executeTxnQueue(chainId, simulate)).map((response) => response.hash);
+    })();
+    const txnReceipts = await pendingTxnHashes[chainId];
+    delete pendingTxnHashes[chainId];
 
-    return txnReceipts.map(({ hash }) => hash);
+    return txnReceipts;
   }
 
   async checkForUnfilledDepositsAndFill(
@@ -914,6 +922,10 @@ export class Relayer {
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
+    // @dev `this.clients.svmFillerClient` is only defined if we have an SVM chain in enabled chains
+    if (isDefined(this.clients.svmFillerClient)) {
+      this.clients.svmFillerClient.clearTransactionQueue();
+    }
     const txnReceipts: { [chainId: number]: Promise<string[]> } = Object.fromEntries(
       Object.values(spokePoolClients).map(({ chainId }) => [chainId, []])
     );
@@ -966,9 +978,12 @@ export class Relayer {
           latestHeightSearched - mdcPerChain[chainId],
         ])
       );
+
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers, sendSlowRelays);
 
-      const pendingTxnCount = this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
+      const pendingTxnCount = chainIsSvm(destinationChainId)
+        ? this.clients.svmFillerClient.getTxnQueueLen()
+        : this.getMulticaller(destinationChainId).getQueuedTransactions(destinationChainId).length;
       if (pendingTxnCount > 0) {
         txnReceipts[destinationChainId] = this.executeFills(destinationChainId, simulate);
       }
@@ -1055,6 +1070,31 @@ export class Relayer {
         message: "Requested slow fill for deposit.",
         mrkdwn: formatSlowFillRequestMarkdown(),
       });
+    } else {
+      assert(isSVMSpokePoolClient(spokePoolClient));
+      assert(spokePoolClient.spokePoolAddress.isSVM());
+
+      const [recipient, outputToken] = [deposit.recipient, deposit.outputToken];
+      if (!(recipient.isSVM() && outputToken.isSVM())) {
+        // @dev recipient or outputToken are incorrectly formatted for the destination chain, drop deposit processing and log
+        this.logger.debug({
+          at: "Relayer",
+          message: "Dropping slow fill request because recipient or outputToken are not valid SVM addresses.",
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId.toString(),
+          destinationChainId: deposit.destinationChainId,
+          recipient: recipient.toString(),
+          outputToken: outputToken.toString(),
+        });
+        return;
+      }
+
+      this.clients.svmFillerClient.enqueueSlowFill(
+        spokePoolClient.spokePoolAddress,
+        { ...deposit, recipient, outputToken },
+        "Requested slow fill for deposit.",
+        formatSlowFillRequestMarkdown()
+      );
     }
     this.setFillStatus(deposit, FillStatus.RequestedSlowFill);
   }
@@ -1096,7 +1136,11 @@ export class Relayer {
         ? [
             "fillRelay",
             "",
-            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.relayerAddress.toBytes32()],
+            [
+              convertRelayDataParamsToBytes32(deposit),
+              repaymentChainId,
+              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
+            ],
           ]
         : [
             "fillRelayWithUpdatedDeposit",
@@ -1104,7 +1148,7 @@ export class Relayer {
             [
               convertRelayDataParamsToBytes32(deposit),
               repaymentChainId,
-              this.relayerAddress.toBytes32(),
+              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
               deposit.updatedOutputAmount,
               deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
@@ -1118,10 +1162,48 @@ export class Relayer {
       const contract = spokePoolClient.spokePool;
       const chainId = deposit.destinationChainId;
       const multiCallerClient = this.getMulticaller(chainId);
+
       multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+    } else {
+      assert(isSVMSpokePoolClient(spokePoolClient));
+      assert(spokePoolClient.spokePoolAddress.isSVM());
+      const [recipient, outputToken] = [deposit.recipient, deposit.outputToken];
+      if (!(recipient.isSVM() && outputToken.isSVM())) {
+        // @dev recipient or outputToken are incorrectly formatted for the destination chain, drop deposit processing and log
+        this.logger.debug({
+          at: "Relayer",
+          message: "Dropping fill request because recipient or outputToken are not valid SVM addresses.",
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId.toString(),
+          destinationChainId: deposit.destinationChainId,
+          recipient: recipient.toString(),
+          outputToken: outputToken.toString(),
+        });
+        return;
+      }
+
+      const message = "Filled v3 deposit on SVM 🚀";
+      const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
+
+      this.clients.svmFillerClient.enqueueFill(
+        spokePoolClient.spokePoolAddress,
+        {
+          ...deposit,
+          recipient: recipient,
+          outputToken: outputToken,
+        },
+        repaymentChainId,
+        this.getRelayerAddrOn(repaymentChainId),
+        message,
+        mrkdwn
+      );
     }
 
     this.setFillStatus(deposit, FillStatus.Filled);
+  }
+
+  getRelayerAddrOn(repaymentChainId: number): Address {
+    return chainIsSvm(repaymentChainId) ? this.clients.svmFillerClient.relayerAddress : this.relayerEvmAddress;
   }
 
   /**
@@ -1373,7 +1455,7 @@ export class Relayer {
           const l1Token = this.clients.inventoryClient.getL1TokenAddress(toAddressType(token, chainId), chainId);
           const outstandingCrossChainTransferAmount =
             this.clients.inventoryClient.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              this.relayerAddress,
+              this.relayerEvmAddress,
               chainId,
               l1Token,
               toAddressType(token, chainId)
@@ -1383,7 +1465,7 @@ export class Relayer {
               formatter(
                 this.clients.inventoryClient.crossChainTransferClient
                   .getOutstandingCrossChainTransferAmount(
-                    this.relayerAddress,
+                    this.relayerEvmAddress,
                     chainId,
                     l1Token,
                     toAddressType(token, chainId)
