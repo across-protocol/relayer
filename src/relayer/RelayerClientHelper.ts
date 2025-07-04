@@ -35,7 +35,6 @@ import {
   EvmAddress,
   getSvmSignerFromEvmSigner,
   chainIsSvm,
-  isDefined,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
