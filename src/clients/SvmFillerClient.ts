@@ -4,7 +4,6 @@ import {
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
-  type TransactionSigner,
 } from "@solana/kit";
 import {
   assert,
@@ -34,19 +33,15 @@ type QueuedSvmFill = {
 };
 
 export class SvmFillerClient {
-  private readonly logger: winston.Logger;
-  private readonly provider: arch.svm.SVMProvider;
-  // @dev Solana mainnet or devnet
-  readonly chainId: number;
-  private readonly signer: TransactionSigner;
   private queuedFills: QueuedSvmFill[] = [];
 
-  private constructor(signer: KeyPairSigner, provider: arch.svm.SVMProvider, chainId: number, logger: winston.Logger) {
-    this.signer = signer;
-    this.provider = provider;
-    this.chainId = chainId;
-    this.logger = logger;
-  }
+  private constructor(
+    private readonly signer: KeyPairSigner,
+    private readonly provider: arch.svm.SVMProvider,
+    // @dev Solana mainnet or devnet
+    readonly chainId: number,
+    private readonly logger: winston.Logger
+  ) {}
 
   static async from(
     evmSigner: Signer,
@@ -66,12 +61,12 @@ export class SvmFillerClient {
     repaymentAddress: SDKAddress,
     message: string,
     mrkdwn: string
-  ) {
+  ): void {
     assert(
       repaymentAddress.isValidOn(repaymentChainId),
       `SvmFillerClient:enqueueFill ${repaymentAddress} not valid on chain ${repaymentChainId}`
     );
-    const fillTx = arch.svm.getFillRelayTx(
+    const fillTxPromise = arch.svm.getFillRelayTx(
       spokePool,
       this.provider,
       relayData,
@@ -79,12 +74,12 @@ export class SvmFillerClient {
       repaymentChainId,
       repaymentAddress
     );
-    this.queuedFills.push({ txPromise: fillTx, message, mrkdwn });
+    this.queuedFills.push({ txPromise: fillTxPromise, message, mrkdwn });
   }
 
-  enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string) {
-    const slowFillTx = arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
-    this.queuedFills.push({ txPromise: slowFillTx, message, mrkdwn });
+  enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string): void {
+    const slowFillTxPromise = arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
+    this.queuedFills.push({ txPromise: slowFillTxPromise, message, mrkdwn });
   }
 
   // @dev returns promises with txn signatures (~hashes)
@@ -113,7 +108,7 @@ export class SvmFillerClient {
           explorer: blockExplorerLink(signature.toString(), this.chainId),
         });
       } catch (e) {
-        this.logger.warn({
+        this.logger.error({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction: ${message}`,
           mrkdwn,
@@ -125,21 +120,23 @@ export class SvmFillerClient {
     return signatures.map((hash) => ({ hash }));
   }
 
-  // @dev chainId is here to match MulticallerClient interface
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clearTransactionQueue(chainId: number | null = null): void {
-    // NOTE: chainId is ignored because this client only handles one chain.
+    // @dev chainId is ignored because this client only handles one chain. We take `chainId` as arg here to match MulticallerClient interface
     this.queuedFills = [];
   }
 
-  // @dev simulates all transactions from the queue, logging their results
+  // @dev simulates all transactions from the queue in parallel, logging their results
   private async simulateQueue(queue: QueuedSvmFill[]) {
-    if (queue.length === 0) return;
+    if (queue.length === 0) {
+      return;
+    }
 
     const simulationResults = await Promise.allSettled(
       queue.map(({ txPromise }) => txPromise.then((tx) => signAndSimulateTransaction(this.provider, tx)))
     );
 
-    const successfulSims: { logs: string[] | null }[] = [];
+    const successfulSims: { logs: string[] }[] = [];
     const failedSims: { error: any }[] = [];
 
     simulationResults.forEach((result) => {
@@ -177,7 +174,7 @@ export class SvmFillerClient {
   }
 
   getRelayerAddr(): SvmAddress {
-    return SvmAddress.from(this.signer.address);
+    return SvmAddress.from(this.signer.address, "base58");
   }
 }
 
@@ -196,12 +193,16 @@ const signAndSimulateTransaction = async (
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-  // @dev adapted config from https://solana.com/docs/rpc/http/simulatetransaction
-  const simulateTxConfig = {
-    sigVerify: false,
-    replaceRecentBlockhash: true,
-    commitment: "finalized",
-    encoding: "base64",
-  } as const;
-  return provider.simulateTransaction(serializedTx, simulateTxConfig).send();
+  return provider
+    .simulateTransaction(
+      serializedTx,
+      // @dev adapted config from https://solana.com/docs/rpc/http/simulatetransaction
+      {
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+        commitment: "finalized",
+        encoding: "base64",
+      }
+    )
+    .send();
 };
