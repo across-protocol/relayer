@@ -9,6 +9,7 @@ import {
   disconnectRedisClients,
   isDefined,
   Profiler,
+  getSvmSignerFromEvmSigner,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -141,10 +142,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         const tokenClient = new TokenClient(
           logger,
           EvmAddress.from(await baseSigner.getAddress()),
-          SvmAddress.from("11111111111111111111111111111111"), // Not used for mainnet.
+          SvmAddress.from(getSvmSignerFromEvmSigner(baseSigner).publicKey.toBase58()),
           {}, // SpokePoolClients not required
           clients.hubPoolClient
         );
+        logger[startupLogLevel(config)]({
+          at: "Dataworker#index",
+          message: "Dataworker addresses",
+          evmAddress: tokenClient.relayerEvmAddress.toNative(),
+          svmAddress: tokenClient.relayerSvmAddress.toNative(),
+        });
         await tokenClient.update();
         // Run approval on hub pool.
         await tokenClient.setBondTokenAllowance();

@@ -111,6 +111,8 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
+      relayerEvmAddress: this.relayerAddress.toNative(),
+      relayerSvmAddress: tokenClient.relayerSvmAddress.toNative(),
     });
   }
 
