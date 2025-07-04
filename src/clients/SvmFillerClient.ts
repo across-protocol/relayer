@@ -34,7 +34,7 @@ type QueuedSvmFill = {
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
-  private readonly relayerAddress: SvmAddress;
+  readonly relayerAddress: SvmAddress;
 
   private constructor(
     private readonly signer: KeyPairSigner,
@@ -174,10 +174,6 @@ export class SvmFillerClient {
 
   getTxnQueueLen(): number {
     return this.queuedFills.length;
-  }
-
-  getRelayerAddr(): SvmAddress {
-    return this.relayerAddress;
   }
 }
 

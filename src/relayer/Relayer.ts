@@ -1203,7 +1203,7 @@ export class Relayer {
   }
 
   getRelayerAddrOn(repaymentChainId: number): Address {
-    return chainIsSvm(repaymentChainId) ? this.clients.svmFillerClient.getRelayerAddr() : this.relayerEvmAddress;
+    return chainIsSvm(repaymentChainId) ? this.clients.svmFillerClient.relayerAddress : this.relayerEvmAddress;
   }
 
   /**
