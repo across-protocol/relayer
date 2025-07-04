@@ -162,6 +162,20 @@ export class InventoryClient {
   }
 
   /**
+   * Only returns the balance of the token on chain, not including any outstanding cross chain transfers.
+   * @param chainId Chain to query token balance on.
+   * @param l1Token L1 token to query on chainId (after mapping).
+   * @param l2Token L2 token address on the destination chain.
+   * @returns Balance of l1Token on chainId, not including any outstanding cross chain transfers.
+   */
+  private getBalanceOnChainWithOutstandingTransfers(chainId: number, l1Token: string, l2Token: string): BigNumber {
+    const balance = this.getBalanceOnChain(chainId, l1Token, l2Token);
+    return balance.sub(
+      this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
+    );
+  }
+
+  /**
    * Determine the allocation of an l1 token across all configured remote chain IDs.
    * @param l1Token L1 token to query.
    * @returns Distribution of l1Token by chain ID and l2Token.
@@ -1288,6 +1302,9 @@ export class InventoryClient {
           }
 
           const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          const balanceOnChainWithOutstandingTransfers = l2BalanceFromL1Decimals(
+            this.getBalanceOnChainWithOutstandingTransfers(chainId, l1Token, l2Token)
+          );
 
           // We apply a discount on the effective target % because the repayment chain choice
           // algorithm should never allow the inventory to get above the target pct * target overage buffer.
@@ -1301,10 +1318,12 @@ export class InventoryClient {
           );
           const excessWithdrawThresholdPct = targetPct.mul(targetPctMultiplier).div(this.scalar);
 
-          const shouldWithdrawExcess = currentAllocPct.gte(excessWithdrawThresholdPct);
           const withdrawPct = currentAllocPct.sub(targetPct);
           const cumulativeBalanceInL2TokenDecimals = l2BalanceFromL1Decimals(cumulativeBalance);
           const desiredWithdrawalAmount = cumulativeBalanceInL2TokenDecimals.mul(withdrawPct).div(this.scalar);
+          const shouldWithdrawExcess =
+            currentAllocPct.gte(excessWithdrawThresholdPct) &&
+            balanceOnChainWithOutstandingTransfers.gte(desiredWithdrawalAmount);
 
           this.log(
             `Evaluated withdrawing excess balance on ${getNetworkName(chainId)} for token ${l1TokenInfo.symbol}: ${
