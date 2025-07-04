@@ -41,6 +41,7 @@ import {
   Address,
   toAddressType,
   toBytes32,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -238,7 +239,7 @@ export class ProfitClient {
         at: "ProfitClient#getTotalGasCost",
         message: "Failed to simulate fill for deposit.",
         reason,
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
@@ -459,7 +460,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
         outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
@@ -507,7 +508,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
-        deposit,
+        deposit: convertRelayDataParamsToBytes32(deposit),
         lpFeePct,
       });
     }
@@ -530,7 +531,7 @@ export class ProfitClient {
     this.logger.debug({
       at: "ProfitClient",
       message: "Handling unprofitable fill",
-      deposit,
+      deposit: convertRelayDataParamsToBytes32(deposit),
       lpFeePct,
       relayerFeePct,
       gasCost,

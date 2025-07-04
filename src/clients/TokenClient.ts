@@ -31,6 +31,7 @@ import {
   SvmAddress,
   SVMProvider,
   EvmAddress,
+  convertRelayDataParamsToBytes32,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -101,7 +102,12 @@ export class TokenClient {
 
   captureTokenShortfallForFill(deposit: Deposit): void {
     const { outputAmount: unfilledAmount } = deposit;
-    this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
+    this.logger.debug({
+      at: "TokenBalanceClient",
+      message: "Handling token shortfall",
+      deposit: convertRelayDataParamsToBytes32(deposit),
+      unfilledAmount,
+    });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.outputToken, deposit.depositId, unfilledAmount);
   }
 

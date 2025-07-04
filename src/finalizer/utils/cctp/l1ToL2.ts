@@ -33,6 +33,7 @@ import {
   toBuffer,
   isSVMSpokePoolClient,
   getTypedAnchorProgram,
+  Address,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
@@ -49,7 +50,7 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient));
   const searchConfig: EventSearchConfig = {

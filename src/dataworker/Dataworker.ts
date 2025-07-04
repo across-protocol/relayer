@@ -355,7 +355,7 @@ export class Dataworker {
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
-    const blockRangesForProposal = this._getWidestPossibleBlockRangeForNextBundle(
+    const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
@@ -635,7 +635,7 @@ export class Dataworker {
     }
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
-    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock
@@ -1544,7 +1544,7 @@ export class Dataworker {
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
-    const widestPossibleExpectedBlockRange = this._getWidestPossibleBlockRangeForNextBundle(
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock
     );
@@ -2772,7 +2772,7 @@ export class Dataworker {
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleStartBlock: number
-  ): number[][] {
+  ): Promise<number[][]> {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
