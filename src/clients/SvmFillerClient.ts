@@ -34,6 +34,7 @@ type QueuedSvmFill = {
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
+  private readonly relayerAddress: SvmAddress;
 
   private constructor(
     private readonly signer: KeyPairSigner,
@@ -41,7 +42,9 @@ export class SvmFillerClient {
     // @dev Solana mainnet or devnet
     readonly chainId: number,
     private readonly logger: winston.Logger
-  ) {}
+  ) {
+    this.relayerAddress = SvmAddress.from(this.signer.address, "base58");
+  }
 
   static async from(
     evmSigner: Signer,
@@ -174,7 +177,7 @@ export class SvmFillerClient {
   }
 
   getRelayerAddr(): SvmAddress {
-    return SvmAddress.from(this.signer.address, "base58");
+    return this.relayerAddress;
   }
 }
 
