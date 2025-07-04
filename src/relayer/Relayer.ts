@@ -1136,7 +1136,11 @@ export class Relayer {
         ? [
             "fillRelay",
             "",
-            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.getRelayerAddrOn(repaymentChainId)],
+            [
+              convertRelayDataParamsToBytes32(deposit),
+              repaymentChainId,
+              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
+            ],
           ]
         : [
             "fillRelayWithUpdatedDeposit",
@@ -1144,7 +1148,7 @@ export class Relayer {
             [
               convertRelayDataParamsToBytes32(deposit),
               repaymentChainId,
-              this.getRelayerAddrOn(repaymentChainId),
+              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
               deposit.updatedOutputAmount,
               deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
