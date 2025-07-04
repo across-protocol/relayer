@@ -1074,10 +1074,11 @@ export class Relayer {
         this.logger.debug({
           at: "Relayer",
           message: "Dropping slow fill request because recipient or outputToken are not valid SVM addresses.",
-          chainId: deposit.destinationChainId,
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId.toString(),
+          destinationChainId: deposit.destinationChainId,
           recipient: recipient.toString(),
           outputToken: outputToken.toString(),
-          depositId: deposit.depositId,
         });
         return;
       }
@@ -1162,10 +1163,11 @@ export class Relayer {
         this.logger.debug({
           at: "Relayer",
           message: "Dropping fill request because recipient or outputToken are not valid SVM addresses.",
-          chainId: deposit.destinationChainId,
+          originChainId: deposit.originChainId,
+          depositId: deposit.depositId.toString(),
+          destinationChainId: deposit.destinationChainId,
           recipient: recipient.toString(),
           outputToken: outputToken.toString(),
-          depositId: deposit.depositId,
         });
         return;
       }
