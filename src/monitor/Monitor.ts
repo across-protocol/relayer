@@ -770,7 +770,7 @@ export class Monitor {
       outstandingBundle: bundle,
     });
 
-    const slowFillBlockRange = getWidestPossibleExpectedBlockRange(
+    const slowFillBlockRange = await getWidestPossibleExpectedBlockRange(
       enabledChainIds,
       this.clients.spokePoolClients,
       getEndBlockBuffers(enabledChainIds, this.clients.bundleDataClient.blockRangeEndBlockBuffer),

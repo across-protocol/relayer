@@ -44,6 +44,7 @@ import {
   isEVMSpokePoolClient,
   EvmAddress,
   ZERO_ADDRESS,
+  Address,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
@@ -106,7 +107,7 @@ export async function opStackFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId, latestHeightSearched: to, spokePool } = spokePoolClient;
@@ -145,7 +146,9 @@ export async function opStackFinalizer(
   // and because they are lite chains, our only way to withdraw them is to initiate a manual bridge from the
   // the lite chain to Ethereum via the canonical OVM standard bridge.
   // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
-  const ovmFromAddresses = senderAddresses.filter((sender) => sender !== spokePool.address);
+  const ovmFromAddresses = senderAddresses
+    .map((sender) => sender.toEvmAddress())
+    .filter((sender) => sender !== spokePool.address);
   const searchConfig = { ...spokePoolClient.eventSearchConfig, to };
   const withdrawalEvents = await Promise.all([
     getOVMStdEvents(logger, spokePool.provider, ovmFromAddresses, searchConfig),
