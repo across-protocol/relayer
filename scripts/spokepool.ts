@@ -181,13 +181,19 @@ async function getRelayerQuote(
       fillDeadline,
     } = quoteData;
 
-    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime, fillDeadline, outputToken].forEach(
-      (field) => {
-        if (!isDefined(field)) {
-          throw new Error("Incomplete suggested-fees response");
-        }
+    [
+      totalRelayFee,
+      exclusiveRelayer,
+      exclusivityDeadline,
+      quoteTimestamp,
+      estimatedFillTime,
+      fillDeadline,
+      outputToken,
+    ].forEach((field) => {
+      if (!isDefined(field)) {
+        throw new Error("Incomplete suggested-fees response");
       }
-    );
+    });
 
     return {
       outputToken: toAddressType(outputToken, toChainId),
@@ -210,8 +216,16 @@ async function getRelayerQuote(
   do {
     let totalRelayFee: BigNumber;
     let estimatedFillTime: number;
-    ({ outputToken, outputAmount, totalRelayFee, exclusivityDeadline, exclusiveRelayer, quoteTimestamp, estimatedFillTime, fillDeadline } =
-      await suggestedFees());
+    ({
+      outputToken,
+      outputAmount,
+      totalRelayFee,
+      exclusivityDeadline,
+      exclusiveRelayer,
+      quoteTimestamp,
+      estimatedFillTime,
+      fillDeadline,
+    } = await suggestedFees());
 
     outputAmount = amount.sub(totalRelayFee);
     const quote =
