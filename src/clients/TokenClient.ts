@@ -1,5 +1,5 @@
 import { arch, utils as sdkUtils } from "@across-protocol/sdk";
-import { HubPoolClient, SpokePoolClient } from ".";
+import { HubPoolClient, SpokePoolClient, SpokePoolManager } from ".";
 import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
@@ -43,16 +43,18 @@ export class TokenClient {
   private profiler: InstanceType<typeof Profiler>;
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
+  readonly spokePoolClientManager: SpokePoolManager;
 
   constructor(
     readonly logger: winston.Logger,
     readonly relayerEvmAddress: EvmAddress,
     readonly relayerSvmAddress: SvmAddress,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly additionalL1Tokens: EvmAddress[] = []
   ) {
     this.profiler = new Profiler({ at: "TokenClient", logger });
+    this.spokePoolClientManager = new SpokePoolManager(logger, spokePoolClients);
   }
 
   getAllTokenData(): TokenDataType {
@@ -167,7 +169,7 @@ export class TokenClient {
 
     let mrkdwn = "*Approval transactions:* \n";
     for (const { token: _token, chainId } of tokensToApprove) {
-      const targetSpokePoolClient = this.spokePoolClients[chainId];
+      const targetSpokePoolClient = this.spokePoolClientManager.getClient(chainId);
       if (isEVMSpokePoolClient(targetSpokePoolClient)) {
         const targetSpokePool = targetSpokePoolClient.spokePool;
         const token = toAddressType(_token, chainId).toEvmAddress();
@@ -203,7 +205,7 @@ export class TokenClient {
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClientManager.getClient(chainId);
     assert(isEVMSpokePoolClient(spokePoolClient));
     const signer = spokePoolClient.spokePool.signer;
 
@@ -259,7 +261,7 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClientManager.getClient(chainId);
 
     if (isEVMSpokePoolClient(spokePoolClient)) {
       const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
@@ -304,11 +306,11 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
 
     const tokenClientTokens = this._getTokenClientTokens();
-    const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
+    const chainIds = Object.values(this.spokePoolClientManager.getSpokePoolClients()).map(({ chainId }) => chainId);
 
     const balanceInfo = await Promise.all(
       chainIds
-        .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
+        .filter((chainId) => isDefined(this.spokePoolClientManager.getClient(chainId)))
         .map((chainId) => this.updateChain(chainId, tokenClientTokens))
     );
 
@@ -341,7 +343,7 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClientManager.getClient(chainId);
     assert(isEVMSpokePoolClient(spokePoolClient));
 
     const tokenData = Object.fromEntries(
@@ -359,7 +361,7 @@ export class TokenClient {
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClientManager.getClient(chainId);
     assert(isSVMSpokePoolClient(spokePoolClient));
 
     const provider = getSvmProvider();

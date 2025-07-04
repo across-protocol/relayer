@@ -298,8 +298,10 @@ class MockBaseChainAdapter extends BaseChainAdapter {
   async updateSpokePoolClients() {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
-    const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
+    const blockNumber = await this.spokePoolClientManager
+      .getClient(this.hubChainId)
+      ?.spokePool.provider.getBlockNumber();
+    this.spokePoolClientManager.getClient(this.hubChainId).latestHeightSearched = blockNumber;
+    this.spokePoolClientManager.getClient(this.chainId).latestHeightSearched = blockNumber;
   }
 }
