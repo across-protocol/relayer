@@ -27,6 +27,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
+  ZERO_BYTES,
   formatGwei,
   fixedPointAdjustment,
   getRemoteTokenForL1Token,
@@ -56,7 +57,7 @@ const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
-  DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM: SVM_RECIPIENT,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM: SVM_RELAYER,
 } = sdkConsts;
 
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -657,17 +658,18 @@ export class ProfitClient {
       [CHAIN_IDs.TATARA]: "WETH",
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
-    const [defaultTestSymbol, relayer] =
+    const [defaultTestSymbol, _relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
-        // @dev We need set the recipient to a valid address on the destination network in order for the gas query to succeed.
+        // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
         const destinationAddress = toAddressType(
-          chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RECIPIENT,
+          chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
           destinationChainId
         );
+        const relayer = chainIsEvm(destinationChainId) ? _relayer : SVM_RELAYER;
         const sampleDeposit = {
           depositId: bnZero,
           depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
@@ -681,7 +683,10 @@ export class ProfitClient {
           quoteTimestamp: currentTime - 60,
           fillDeadline: currentTime + 60,
           exclusivityDeadline: 0,
-          exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
+          exclusiveRelayer: toAddressType(
+            chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
+            destinationChainId
+          ),
           message: EMPTY_MESSAGE,
           fromLiteChain: false,
           toLiteChain: false,
