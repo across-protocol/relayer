@@ -93,19 +93,20 @@ export class SvmFillerClient {
       return [];
     }
 
-    // @dev execture transactions consecutively, returning signatures of successful ones
-    const signatures = await queue.reduce(async (acc, { txPromise, message, mrkdwn }) => {
-      const signatures = await acc;
+    // @dev Execute transactions sequentially, returning signatures of successful ones.
+    const signatures: string[] = [];
+    for (const { txPromise, message, mrkdwn } of queue) {
       try {
         const transaction = await txPromise;
         const signature = await signAndSendTransaction(this.provider, transaction);
-        signatures.push(signature.toString());
+        const signatureString = signature.toString();
+        signatures.push(signatureString);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
           message,
           mrkdwn,
-          signature: signature.toString(),
-          explorer: blockExplorerLink(signature.toString(), this.chainId),
+          signature: signatureString,
+          explorer: blockExplorerLink(signatureString, this.chainId),
         });
       } catch (e) {
         this.logger.error({
@@ -115,8 +116,7 @@ export class SvmFillerClient {
           error: e,
         });
       }
-      return signatures;
-    }, Promise.resolve([] as string[]));
+    }
     return signatures.map((hash) => ({ hash }));
   }
 
