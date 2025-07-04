@@ -1,12 +1,6 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { utils as ethersUtils } from "ethers";
-import {
-  constants as sdkConsts,
-  priceClient,
-  relayFeeCalculator,
-  typeguards,
-  utils as sdkUtils,
-} from "@across-protocol/sdk";
+import { constants as sdkConsts, relayFeeCalculator, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -43,6 +37,10 @@ import {
   SvmAddress,
   toAddressType,
   convertRelayDataParamsToBytes32,
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -98,11 +96,8 @@ type UnprofitableFill = {
 // relayer's own address. The specified address is deliberately setup by RL to have a 0 token balance.
 const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
-const { PriceClient } = priceClient;
-const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
-
 export class ProfitClient {
-  private readonly priceClient;
+  private readonly priceClient: PriceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenSymbolMap: { [symbol: string]: string } = {};
   protected tokenPrices: { [address: string]: BigNumber } = {};
