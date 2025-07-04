@@ -2987,9 +2987,14 @@ export class Dataworker {
         program: spokePoolProgramId,
       });
       // For the delayed refund case, the remaining accounts to append are the claim accounts.
-      const claimAccounts = await mapAsync(leaf.refundAddresses, async (refundAddress) =>
-        getClaimAccountPda(l2TokenAddress, address(refundAddress.toBase58()))
-      );
+      const claimAccounts = await mapAsync(leaf.refundAddresses, async (refundAddress) => {
+        const claimAccountPda = await getClaimAccountPda(
+          spokePoolProgramId,
+          l2TokenAddress,
+          address(refundAddress.toBase58())
+        );
+        return getAccountMeta(claimAccountPda, true);
+      });
       executeRelayerRefundLeafDeferredIx.accounts.push(...claimAccounts);
       const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
         [lookupTable]: Object.values(executeRelayerRefundLeafDeferredIx.accounts).map((account) =>
