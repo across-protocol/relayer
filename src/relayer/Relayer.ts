@@ -349,7 +349,10 @@ export class Relayer {
 
     // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
     // making the same relayer fill a deposit multiple times.
-    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(this.relayerEvmAddress))) {
+    if (
+      !acceptInvalidFills &&
+      invalidFills.some((fill) => fill.relayer.eq(this.getRelayerAddrOn(fill.destinationChainId)))
+    ) {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
@@ -396,7 +399,10 @@ export class Relayer {
       return false;
     }
 
-    if (this.fillIsExclusive(deposit) && !deposit.exclusiveRelayer.eq(this.relayerEvmAddress)) {
+    if (
+      this.fillIsExclusive(deposit) &&
+      !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))
+    ) {
       return false;
     }
 
@@ -529,7 +535,7 @@ export class Relayer {
     const commitment = deposits.reduce((acc, deposit) => {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer.eq(this.relayerEvmAddress));
+        ?.find((f) => f.relayer.eq(this.getRelayerAddrOn(f.destinationChainId)));
       if (!isDefined(fill)) {
         return acc;
       }
@@ -716,7 +722,7 @@ export class Relayer {
     // is at least that old before filling it. This is mainly useful on chains with long block times,
     // where there is a high chance of fill collisions in the first blocks after a deposit is made.
     const minFillTime = this.config.minFillTime?.[destinationChainId] ?? 0;
-    if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.relayerEvmAddress)) {
+    if (minFillTime > 0 && !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))) {
       const originSpoke = spokePoolClients[originChainId];
       let avgBlockTime;
       if (isEVMSpokePoolClient(originSpoke)) {
@@ -1130,7 +1136,7 @@ export class Relayer {
         ? [
             "fillRelay",
             "",
-            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.relayerEvmAddress.toBytes32()],
+            [convertRelayDataParamsToBytes32(deposit), repaymentChainId, this.getRelayerAddrOn(repaymentChainId)],
           ]
         : [
             "fillRelayWithUpdatedDeposit",
@@ -1138,7 +1144,7 @@ export class Relayer {
             [
               convertRelayDataParamsToBytes32(deposit),
               repaymentChainId,
-              this.relayerEvmAddress.toBytes32(),
+              this.getRelayerAddrOn(repaymentChainId),
               deposit.updatedOutputAmount,
               deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
