@@ -23,7 +23,6 @@ import {
   isDefined,
   populateV3Relay,
   toBN,
-  toBytes32,
   toAddressType,
 } from "../src/utils";
 import * as utils from "./utils";
@@ -66,8 +65,7 @@ function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[
     .filter(Boolean);
 }
 
-function printDeposit(originChainId: number, log: LogDescription): void {
-  const { destinationChainId, message } = log.args;
+function decodeRelayData(originChainId: number, destinationChainId: number, log: LogDescription): RelayData {
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
   const relayData = Object.fromEntries(
     eventArgs.map((key) => {
@@ -86,6 +84,13 @@ function printDeposit(originChainId: number, log: LogDescription): void {
       }
     })
   ) as RelayData;
+
+  return relayData;
+}
+
+function printDeposit(originChainId: number, log: LogDescription): void {
+  const { destinationChainId, message } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
   const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
 
   const fields = {
@@ -106,15 +111,15 @@ function printDeposit(originChainId: number, log: LogDescription): void {
 }
 
 function printFill(destinationChainId: number, log: LogDescription): void {
-  const { originChainId, outputToken } = log.args;
-  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-
-  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const { originChainId } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
-    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+    tokenSymbol: resolveTokenSymbols([relayData.outputToken.toNative()], destinationChainId)[0],
+    ...relayData,
   };
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
       Object.entries(fields)
