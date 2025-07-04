@@ -99,7 +99,12 @@ import {
 import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
-import { findAddressLookupTablePda } from "@solana-program/address-lookup-table";
+import {
+  findAddressLookupTablePda,
+  getExtendLookupTableInstruction,
+  getCloseLookupTableInstruction,
+  getCreateLookupTableInstruction,
+} from "@solana-program/address-lookup-table";
 
 // Internal error reasons for labeling a pending root bundle as "invalid" that we don't want to submit a dispute
 // for. These errors are due to issues with the dataworker configuration, instead of with the pending root
@@ -2921,9 +2926,27 @@ export class Dataworker {
     }
 
     // Get the lookup table Pda.
-    const [lookupTable] = await findAddressLookupTablePda({
+    const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
       recentSlot: recentBlockhash.value.lastValidBlockHeight,
+    });
+    const lookupTablePda = lookupTable[0];
+    const lookupTableIx = getCreateLookupTableInstruction({
+      address: lookupTable,
+      authority: kitKeypair,
+      recentSlot: recentBlockhash.value.lastValidBlockHeight,
+    });
+    const createLookupTableTx = pipe(
+      createTransactionMessage({ version: 0 }),
+      (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+      (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+      (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
+    );
+    txSignature = runTransactionSvm(createLookupTableTx, kitKeypair, provider);
+    this.logger.debug({
+      at: "Dataworker#executeRelayerRefundLeafSvm",
+      message: "Created relayer refund address lookup table",
+      lookupTable,
     });
 
     // There are two modes of refunding relayers on SVM:
@@ -2955,21 +2978,30 @@ export class Dataworker {
         return getAccountMeta(refundATA, true);
       });
       executeRelayerRefundLeafIx.accounts.push(...refundATAs);
+      const lutAddresses = Object.values(executeRelayerRefundLeafIx.accounts).map((account) =>
+        address(account.address)
+      );
       const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
-        [lookupTable]: Object.values(executeRelayerRefundLeafIx.accounts).map((account) => address(account.address)),
+        [lookupTablePda]: lutAddresses,
       };
+      const extendLookupTableIx = getExtendLookupTableInstruction({
+        address: lookupTablePda,
+        authority: kitKeypair,
+        payer: kitKeypair,
+        addresses: lutAddresses,
+      });
 
       const executeRelayerRefundLeafTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         // @dev This RPC response returns an unknown, so we need to cast it to the proper return type.
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
+        (tx) => appendTransactionMessageInstructions([extendLookupTableIx, executeRelayerRefundLeafIx], tx),
         (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
       return runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
     } catch (e) {
-      this.logger.debug({
+      this.logger.warn({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Failed to execute relayer refunds. Falling back to deferred refunds.",
         errorMsg: e,
@@ -2996,20 +3028,47 @@ export class Dataworker {
         return getAccountMeta(claimAccountPda, true);
       });
       executeRelayerRefundLeafDeferredIx.accounts.push(...claimAccounts);
+      const lutAddresses = Object.values(executeRelayerRefundLeafDeferredIx.accounts).map((account) =>
+        address(account.address)
+      );
       const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
-        [lookupTable]: Object.values(executeRelayerRefundLeafDeferredIx.accounts).map((account) =>
-          address(account.address)
-        ),
+        [lookupTablePda]: lutAddresses,
       };
+      const extendLookupTableIx = getExtendLookupTableInstruction({
+        address: lookupTablePda,
+        authority: kitKeypair,
+        payer: kitKeypair,
+        addresses: lutAddresses,
+      });
 
       const executeRelayerRefundLeafDeferredTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
+        (tx) => appendTransactionMessageInstructions([extendLookupTableIx, executeRelayerRefundLeafDeferredIx], tx),
         (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
-      return runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
+      const refundLeafSignature = runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
+
+      // We should clean up the LUT now before returning.
+      const deleteLutIx = getCloseLookupTableInstruction({
+        address: lookupTablePda,
+        authority: kitKeypair,
+        recipient: kitKeypair.address,
+      });
+      const closeLutTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+        (tx) => appendTransactionMessageInstructions([deleteLutIx], tx)
+      );
+      txSignature = runTransactionSvm(closeLutTx, kitKeypair, provider);
+      this.logger.debug({
+        at: "Dataworker#executeRelayerRefundLeafSvm",
+        message: "Closed address LUT",
+        txSignature,
+      });
+      return refundLeafSignature;
     }
   }
 
