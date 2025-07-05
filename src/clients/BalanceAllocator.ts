@@ -1,4 +1,16 @@
-import { BigNumber, bnZero, ERC20, ethers, min, getNativeTokenAddressForChain, Address } from "../utils";
+import {
+  BigNumber,
+  bnZero,
+  ERC20,
+  ethers,
+  min,
+  getNativeTokenAddressForChain,
+  Address,
+  assert,
+  chainIsEvm,
+  getSvmProvider,
+  getSolanaTokenBalance,
+} from "../utils";
 
 // This type is used to map used and current balances of different users.
 export interface BalanceMap {
@@ -158,9 +170,15 @@ export class BalanceAllocator {
 
   // This method is primarily here to be overridden for testing purposes.
   protected async _queryBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
-    const holderAddr = holder.toNative();
-    return getNativeTokenAddressForChain(chainId).eq(token)
-      ? await this.providers[chainId].getBalance(holderAddr)
-      : await ERC20.connect(token.toNative(), this.providers[chainId]).balanceOf(holderAddr);
+    if (chainIsEvm(chainId)) {
+      const holderAddr = holder.toNative();
+      return getNativeTokenAddressForChain(chainId).eq(token)
+        ? await this.providers[chainId].getBalance(holderAddr)
+        : await ERC20.connect(token.toNative(), this.providers[chainId]).balanceOf(holderAddr);
+    } else {
+      assert(token.isSVM());
+      assert(holder.isSVM());
+      return getSolanaTokenBalance(getSvmProvider(), token, holder);
+    }
   }
 }

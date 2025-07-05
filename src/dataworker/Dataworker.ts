@@ -45,6 +45,7 @@ import {
   convertFillParamsToBytes32,
   mapAsync,
   getAccountMeta,
+  chainIsSvm,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2612,6 +2613,9 @@ export class Dataworker {
     token: Address,
     holder: Address
   ): Promise<BigNumber> {
+    if (chainIsSvm(chainId)) {
+      return Promise.resolve(bnZero);
+    }
     return sdkUtils.reduceAsync(
       l2TokensToCountTowardsSpokePoolLeafExecutionCapital(token, chainId),
       async (acc, token) => acc.add(await balanceAllocator.getBalanceSubUsed(chainId, token, holder)),
