@@ -455,7 +455,7 @@ export class TokenClient {
     walletAddress: SvmAddress,
     tokenMint: SvmAddress
   ): Promise<BigNumber> {
-    return getSolanaTokenBalance(provider, walletAddress, tokenMint);
+    return getSolanaTokenBalance(provider, tokenMint, walletAddress);
   }
 
   protected async getRedis(): Promise<CachingMechanismInterface | undefined> {
