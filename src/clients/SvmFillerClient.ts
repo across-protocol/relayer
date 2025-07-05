@@ -183,7 +183,7 @@ const signAndSendTransaction = async (
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-  return provider.sendTransaction(serializedTx).send();
+  return provider.sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false }).send();
 };
 
 const signAndSimulateTransaction = async (
