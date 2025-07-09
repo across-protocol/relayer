@@ -231,8 +231,9 @@ export class MultiCallerClient {
       const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
         return isPromiseFulfilled(result) ? result.value : [];
       });
+      const multicallBundle = await this.buildMultiCallBundles(_txns, this.chunkSize[chainId]);
       // Fill in the set of txns to submit to the network. Anything that failed simulation is dropped.
-      txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
+      txnRequestsToSubmit.push(...multicallBundle.concat(_valueTxns));
     }
 
     if (simulate) {

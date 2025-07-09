@@ -401,7 +401,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<[BundleData, number] | undefined> {
+  ): Promise<number> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -521,7 +521,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return [rootBundleData.bundleData, executablePoolRebalanceLeaves];
+    return executablePoolRebalanceLeaves;
   }
 
   async _proposeRootBundle(
@@ -2574,6 +2574,9 @@ export class Dataworker {
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
+        canFailInSimulation: true, // proposeRootBundle will fail in simulation since executing the root bundle out of L1 cannot be in the same transaction
+        // as proposing a new root bundle.
+        nonMulticall: true,
         mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
           chainIds,
