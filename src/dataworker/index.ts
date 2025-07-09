@@ -8,7 +8,6 @@ import {
   Signer,
   disconnectRedisClients,
   Profiler,
-  isDefined,
   getSvmSignerFromEvmSigner,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
@@ -157,13 +156,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
-      const proposeRootBundleReturnData = await dataworker.proposeRootBundle(
-        spokePoolClients,
-        config.rootBundleExecutionThreshold,
-        config.sendingTransactionsEnabled,
-        fromBlocks
-      );
-      poolRebalanceLeafExecutionCount = isDefined(proposeRootBundleReturnData) ? proposeRootBundleReturnData[1] : 0;
+      poolRebalanceLeafExecutionCount =
+        (await dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingTransactionsEnabled,
+          fromBlocks
+        )) ?? 0;
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
