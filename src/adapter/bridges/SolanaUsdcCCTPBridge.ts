@@ -78,7 +78,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     _l2Token: Address,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const signer = await this.l1Signer.getAddress();
     assert(compareAddressesSimple(signer, toAddress.toEvmAddress()), "Cannot rebalance to a non-signer address");
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
@@ -91,12 +91,12 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
             amount,
             this.l2DestinationDomain,
             associatedTokenAddress.toBytes32(),
-            this.l1UsdcTokenAddress.toAddress(),
+            this.l1UsdcTokenAddress.toNative(),
             ZERO_BYTES, // Anyone can finalize the message on domain when this is set to bytes32(0)
             0, // maxFee set to 0 so this will be a "standard" speed transfer
             2000, // Hardcoded minFinalityThreshold value for standard transfer
           ]
-        : [amount, this.l2DestinationDomain, associatedTokenAddress.toBytes32(), this.l1UsdcTokenAddress.toAddress()],
+        : [amount, this.l2DestinationDomain, associatedTokenAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
     });
   }
 
@@ -109,14 +109,14 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const signer = await this.l1Signer.getAddress();
     // @todo. We can only track EOA transfers of the signer of the bot since we cannot translate an EVM address to an SVM token account
     // unless we have knowledge of the private key.
-    if (fromAddress.toAddress() !== signer) {
+    if (fromAddress.toNative() !== signer) {
       return {};
     }
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const eventFilterArgs = this.IS_CCTP_V2
-      ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
-      : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
+      ? [this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()]
+      : [undefined, this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
     const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter((event) =>
       compareAddressesSimple(event.args.mintRecipient, associatedTokenAddress.toBytes32())
@@ -135,17 +135,17 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const signer = await this.l1Signer.getAddress();
     // @todo. We can only track EOA transfers of the signer of the bot since we cannot translate an EVM address to an SVM token account
     // unless we have knowledge of the private key.
-    if (fromAddress.toAddress() !== signer) {
+    if (fromAddress.toNative() !== signer) {
       return {};
     }
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
 
     // Lazily evaluate the events client.
     this.solanaEventsClient ??= await this.solanaEventsClientPromise;
-    assert(compareAddressesSimple(l1Token.toAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
+    assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
     const l2FinalizationEvents = await this.solanaEventsClient.queryDerivedAddressEvents(
       "MintAndWithdraw",
-      this.solanaMessageTransmitter.toV2Address(),
+      arch.svm.toAddress(this.solanaMessageTransmitter),
       BigInt(eventConfig.from),
       BigInt(eventConfig.to)
     );

@@ -1,4 +1,4 @@
-import { utils } from "@across-protocol/sdk";
+import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
@@ -13,6 +13,8 @@ import {
   SvmAddress,
   mapAsync,
   chainIsProd,
+  Address,
+  EvmAddress,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
@@ -215,10 +217,12 @@ async function getRelevantCCTPTxHashes(
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  senderAddresses: string[],
+  _senderAddresses: EvmAddress[],
   sourceEventSearchConfig: EventSearchConfig,
   isSourceHubChain: boolean
 ): Promise<Set<string>> {
+  // At this point, all sender addresses should be EVM.
+  const senderAddresses = _senderAddresses.map((address) => address.toNative());
   const txHashesFromHubPool: string[] = [];
 
   if (isSourceHubChain) {
@@ -281,13 +285,18 @@ async function getRelevantCCTPTxHashes(
  * @returns An array of `CCTPMessageEvent` objects.
  */
 async function getCCTPMessageEvents(
-  senderAddresses: string[],
+  _senderAddresses: Address[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig,
   isSourceHubChain: boolean
 ): Promise<CCTPMessageEvent[]> {
+  // At this point, we are going from EVM to EVM _or_ we are going from and EVM L1 to an SVM L2. Either way, we need to ensure that all
+  // `senderAddresses` are EVM.
+  const senderAddresses: EvmAddress[] = _senderAddresses
+    .map((address) => (address.isEVM() ? address : undefined))
+    .filter(isDefined);
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const { tokenMessengerInterface, messageTransmitterInterface } = getContractInterfaces(
     l2ChainId,
@@ -426,8 +435,9 @@ function getRelevantCCTPEventsFromReceipt(
   sourceDomainId: number,
   destinationDomainId: number,
   usdcAddress: string,
-  senderAddresses: string[]
+  _senderAddresses: EvmAddress[]
 ): CCTPMessageEvent[] {
+  const senderAddresses = _senderAddresses.map((address) => address.toNative());
   const relevantEvents: CCTPMessageEvent[] = [];
 
   /*
@@ -503,7 +513,7 @@ function getRelevantCCTPEventsFromReceipt(
 }
 
 async function getCCTPMessagesWithStatus(
-  senderAddresses: string[],
+  senderAddresses: Address[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
@@ -570,7 +580,7 @@ async function getCCTPMessagesWithStatus(
  * @returns A promise that resolves to an array of `AttestedCCTPDeposit` objects.
  */
 export async function getAttestedCCTPDeposits(
-  senderAddresses: string[],
+  senderAddresses: Address[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
@@ -609,7 +619,7 @@ export async function getAttestedCCTPDeposits(
  * @returns A promise that resolves to an array of `AttestedCCTPMessage` objects. These can be `AttestedCCTPDeposit` or common `AttestedCCTPMessage` types.
  */
 export async function getAttestedCCTPMessages(
-  senderAddresses: string[],
+  senderAddresses: Address[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
@@ -796,7 +806,7 @@ async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: numb
 }
 
 async function _getCCTPDepositEventsSvm(
-  senderAddresses: string[],
+  senderAddresses: Address[],
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
@@ -809,7 +819,7 @@ async function _getCCTPDepositEventsSvm(
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
     "DepositForBurn",
-    SvmAddress.from(address).toV2Address(),
+    arch.svm.toAddress(SvmAddress.from(address)),
     BigInt(sourceEventSearchConfig.from),
     BigInt(sourceEventSearchConfig.to)
   );
@@ -822,11 +832,11 @@ async function _getCCTPDepositEventsSvm(
   // Return undefined if we need to filter out the deposit event.
   const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
     const eventData = event.data as MinimalSvmDepositForBurnData;
-    const trimmedDepositor = cctpBytes32ToAddress(SvmAddress.from(eventData.depositor, "base58").toBytes32());
+    const depositor = SvmAddress.from(eventData.depositor);
     const destinationDomain = eventData.destinationDomain;
 
     if (
-      !senderAddresses.some((addr) => compareAddressesSimple(addr, trimmedDepositor)) ||
+      !senderAddresses.some((addr) => addr.eq(depositor)) ||
       getCctpDomainForChainId(destinationChainId) !== destinationDomain
     ) {
       return undefined;
@@ -836,7 +846,7 @@ async function _getCCTPDepositEventsSvm(
     return await mapAsync(attestation.messages, async (data) => {
       const decodedMessage = _decodeDepositForBurnMessageDataV1({ data: data.message }, true);
       if (
-        !senderAddresses.includes(cctpBytes32ToAddress(decodedMessage.sender)) ||
+        !senderAddresses.some((addr) => compareAddressesSimple(addr.toBytes32(), decodedMessage.sender)) ||
         getCctpDomainForChainId(destinationChainId) !== decodedMessage.destinationDomain
       ) {
         return undefined;

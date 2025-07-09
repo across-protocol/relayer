@@ -40,8 +40,8 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const weth = new Contract(l2Token.toAddress(), WETH_ABI, this.l2Signer);
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const weth = new Contract(l2Token.toNative(), WETH_ABI, this.l2Signer);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const unwrapTxn: AugmentedTransaction = {
       contract: weth,
@@ -59,7 +59,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       chainId: this.l2chainId,
       method: "bridgeETHTo",
       args: [
-        toAddress.toAddress(), // to
+        toAddress.toNative(), // to
         200_000, // minGasLimit
         "0x", // extraData
       ],
@@ -84,14 +84,14 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.ETHBridgeInitiated(
-          fromAddress.toAddress() // from
+          fromAddress.toNative() // from
         ),
         l2EventConfig
       ),
       paginatedEventQuery(
         this.l1Bridge,
         this.l1Bridge.filters.ETHBridgeFinalized(
-          fromAddress.toAddress() // from
+          fromAddress.toNative() // from
         ),
         l1EventConfig
       ),

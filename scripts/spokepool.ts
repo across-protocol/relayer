@@ -1,3 +1,4 @@
+import assert from "assert";
 import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
 import { groupBy } from "lodash";
@@ -11,6 +12,7 @@ import { RelayData } from "../src/interfaces";
 import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
+  EvmAddress,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,
@@ -21,6 +23,7 @@ import {
   populateV3Relay,
   toBN,
   toBytes32,
+  toAddressType,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -304,17 +307,23 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
 
   const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
+  const rawOutputToken =
+    depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
-  const relayer = await signer.getAddress();
+  const relayer = EvmAddress.from(await signer.getAddress());
+  assert(relayer.isEVM());
+
+  const recipient = sdkUtils.EvmAddress.from(depositArgs.recipient);
+  const outputToken = sdkUtils.EvmAddress.from(rawOutputToken);
+
   const deposit = {
     depositId: depositArgs.depositId,
     originChainId,
     destinationChainId,
-    depositor: depositArgs.depositor,
-    recipient: depositArgs.recipient,
-    inputToken: depositArgs.inputToken,
+    depositor: toAddressType(depositArgs.depositor, originChainId),
+    recipient,
+    inputToken: toAddressType(depositArgs.inputToken, originChainId),
     inputAmount: depositArgs.inputAmount,
     outputToken,
     outputAmount,
@@ -322,9 +331,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     quoteTimestamp: depositArgs.quoteTimestamp,
     fillDeadline: depositArgs.fillDeadline,
     exclusivityDeadline: depositArgs.exclusivityDeadline,
-    exclusiveRelayer: depositArgs.exclusiveRelayer,
-    fromLiteChain: false, // Not relevant
-    toLiteChain: false, // Not relevant
+    exclusiveRelayer: toAddressType(depositArgs.exclusiveRelayer, destinationChainId),
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
@@ -347,7 +354,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     const destProvider = await getProvider(destinationChainId);
     const destSigner = signer.connect(destProvider);
 
-    const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
+    const erc20 = new Contract(outputToken.toNative(), ERC20.abi, destSigner);
     const allowance = await erc20.allowance(sender, destSpokePool.address);
     if (outputAmount.gt(allowance)) {
       const approvalAmount = outputAmount.mul(5);

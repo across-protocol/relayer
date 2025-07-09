@@ -126,14 +126,14 @@ export async function approveTokens(
   const approvalMarkdwn = await mapAsync(tokens, async ({ token: l1Token, bridge }) => {
     const txs = [];
     if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-      txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toAddress(), bnZero]));
+      txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toNative(), bnZero]));
     }
-    txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toAddress(), MAX_SAFE_ALLOWANCE]));
+    txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
     const hubNetwork = getNetworkName(hubChainId);
     const spokeNetwork = getNetworkName(chainId);
     let internalMrkdwn =
-      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toAddress(), hubChainId)} ` +
+      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toNative(), hubChainId)} ` +
       `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
       `tx: ${blockExplorerLink(receipts[receipts.length - 1].txnRef, hubChainId)}`;
     if (receipts.length > 1) {

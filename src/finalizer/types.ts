@@ -1,6 +1,6 @@
 import { Signer } from "ethers";
 import { AugmentedTransaction, HubPoolClient, SpokePoolClient } from "../clients";
-import { Multicall2Call, winston } from "../utils";
+import { Multicall2Call, winston, Address } from "../utils";
 
 /**
  * A cross-chain message is a message sent from one chain to another. This can be a token withdrawal from L2 to L1,
@@ -40,7 +40,7 @@ export interface ChainFinalizer {
     hubPoolClient: HubPoolClient,
     l2SpokePoolClient: SpokePoolClient,
     l1SpokePoolClient: SpokePoolClient,
-    l1ToL2AddressesToFinalize: string[]
+    l1ToL2AddressesToFinalize: Address[]
   ): Promise<FinalizerPromise>;
 }
 

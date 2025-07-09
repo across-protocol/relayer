@@ -39,19 +39,19 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
     const withdrawTxn: AugmentedTransaction = {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "bridgeERC20To",
       args: [
-        l2Token.toAddress(), // _localToken
-        l1Token.toAddress(), // Remote token to be received on L1 side. If the
+        l2Token.toNative(), // _localToken
+        l1Token.toNative(), // Remote token to be received on L1 side. If the
         // remoteL1Token on the other chain does not recognize the local token as the correct
         // pair token, the ERC20 bridge will fail and the tokens will be returned to sender on
         // this chain.
-        toAddress.toAddress(), // _to
+        toAddress.toNative(), // _to
         amount, // _amount
         200_000, // minGasLimit
         "0x", // _data
@@ -73,9 +73,9 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
       paginatedEventQuery(
         this.l2Bridge,
         this.l2Bridge.filters.ERC20BridgeInitiated(
-          l2Token.toAddress(), // localToken
+          l2Token.toNative(), // localToken
           null, // remoteToken
-          fromAddress.toAddress() // from
+          fromAddress.toNative() // from
         ),
         l2EventConfig
       ),
@@ -83,8 +83,8 @@ export class OpStackBridge extends BaseL2BridgeAdapter {
         this.l1Bridge,
         this.l1Bridge.filters.ERC20BridgeFinalized(
           null, // localToken
-          l2Token.toAddress(), // remoteToken
-          fromAddress.toAddress() // from
+          l2Token.toNative(), // remoteToken
+          fromAddress.toNative() // from
         ),
         l1EventConfig
       ),

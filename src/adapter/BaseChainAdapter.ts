@@ -25,13 +25,13 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   bnZero,
-  EvmAddress,
   Address,
   getNativeTokenSymbol,
   getWrappedNativeTokenAddress,
   stringifyThrownValue,
   ZERO_BYTES,
   isEVMSpokePoolClient,
+  EvmAddress,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -116,14 +116,13 @@ export class BaseChainAdapter {
    * @returns True if l1Token is supported
    */
   isSupportedToken(l1Token: EvmAddress): l1Token is SupportedL1Token {
-    const relevantSymbols = matchTokenSymbol(l1Token.toAddress(), this.hubChainId);
+    const relevantSymbols = matchTokenSymbol(l1Token.toNative(), this.hubChainId);
     // if the symbol is not in the supported tokens list, it's not supported
     return relevantSymbols.some((symbol) => this.supportedTokens.includes(symbol));
   }
 
-  // @todo: Only take `EvmAddress` objects as input once the SDK clients do not output strings for addresses.
-  isSupportedL2Bridge(l1Token: string): boolean {
-    return isDefined(this.l2Bridges[l1Token]);
+  isSupportedL2Bridge(l1Token: EvmAddress): boolean {
+    return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
 
   filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
@@ -140,7 +139,7 @@ export class BaseChainAdapter {
 
     await Promise.all(
       l1Tokens.map(async (l1Token) => {
-        const l1TokenAddress = l1Token.toAddress();
+        const l1TokenAddress = l1Token.toNative();
         const l2Bridge = this.l2Bridges[l1TokenAddress];
 
         if (!l2Bridge || !this.isSupportedToken(l1Token)) {
@@ -156,7 +155,7 @@ export class BaseChainAdapter {
 
         await Promise.all(
           requiredApprovals.map(async ({ token: tokenAddress, bridge: bridgeAddress }) => {
-            const erc20 = ERC20.connect(tokenAddress.toAddress(), this.getSigner(this.chainId));
+            const erc20 = ERC20.connect(tokenAddress.toNative(), this.getSigner(this.chainId));
             const senderAddress = EvmAddress.from(await this.getSigner(this.chainId).getAddress());
 
             const cachedResult = await getL2TokenAllowanceFromCache(
@@ -166,7 +165,7 @@ export class BaseChainAdapter {
               bridgeAddress
             );
             const allowance =
-              cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridgeAddress.toAddress()));
+              cachedResult ?? (await erc20.allowance(senderAddress.toNative(), bridgeAddress.toNative()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setL2TokenAllowanceInCache(this.chainId, tokenAddress, senderAddress, bridgeAddress, allowance);
             }
@@ -187,12 +186,12 @@ export class BaseChainAdapter {
 
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract for L2 -> L1 bridging", {
-        unavailableTokens: unavailableTokens.map((token) => token.toAddress()),
+        unavailableTokens: unavailableTokens.map((token) => token.toNative()),
       });
     }
 
     if (tokensToApprove.length === 0) {
-      this.log("No L2 token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toAddress()) });
+      this.log("No L2 token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
       return;
     }
 
@@ -206,9 +205,9 @@ export class BaseChainAdapter {
     // each bridge supports (if applicable).
     const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
       mapAsync(
-        l1Tokens.map((token) => [token, this.bridges[token.toAddress()]?.l1Gateways] as [EvmAddress, EvmAddress[]]),
+        l1Tokens.map((token) => [token, this.bridges[token.toNative()]?.l1Gateways] as [EvmAddress, EvmAddress[]]),
         async ([l1Token, bridges]) => {
-          const l1TokenAddress = l1Token.toAddress();
+          const l1TokenAddress = l1Token.toNative();
           const erc20 = ERC20.connect(l1TokenAddress, this.getSigner(this.hubChainId));
           if (!isDefined(bridges) || !this.isSupportedToken(l1Token)) {
             unavailableTokens.push(l1Token);
@@ -217,7 +216,7 @@ export class BaseChainAdapter {
           const bridgesToApprove = await filterAsync(bridges, async (bridge) => {
             const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(l1Token, senderAddress, bridge);
-            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), bridge.toAddress()));
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toNative(), bridge.toNative()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setTokenAllowanceInCache(l1Token, senderAddress, bridge, allowance);
             }
@@ -230,11 +229,11 @@ export class BaseChainAdapter {
         Object.values(this.bridges).filter((bridge) => isDefined(bridge.gasToken)),
         async (bridge) => {
           const gasToken = bridge.gasToken;
-          const erc20 = ERC20.connect(gasToken.toAddress(), this.getSigner(this.hubChainId));
+          const erc20 = ERC20.connect(gasToken.toNative(), this.getSigner(this.hubChainId));
           const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
             const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
-            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toAddress(), gateway.toAddress()));
+            const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toNative(), gateway.toNative()));
             if (!isDefined(cachedResult) && aboveAllowanceThreshold(allowance)) {
               await setTokenAllowanceInCache(gasToken, senderAddress, gateway, allowance);
             }
@@ -255,11 +254,11 @@ export class BaseChainAdapter {
       .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract", {
-        unavailableTokens: unavailableTokens.map((token) => token.toAddress()),
+        unavailableTokens: unavailableTokens.map((token) => token.toNative()),
       });
     }
     if (tokensToApprove.length === 0) {
-      this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toAddress()) });
+      this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
       return;
     }
     const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
@@ -272,14 +271,13 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<string[]> {
-    const _l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
-    const l1Token = EvmAddress.from(_l1Token);
-    if (!this.isSupportedL2Bridge(l1Token.toAddress())) {
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
+    if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
     let txnsToSend: AugmentedTransaction[];
     try {
-      txnsToSend = await this.l2Bridges[l1Token.toAddress()].constructWithdrawToL1Txns(
+      txnsToSend = await this.l2Bridges[l1Token.toNative()].constructWithdrawToL1Txns(
         address,
         l2Token,
         l1Token,
@@ -290,8 +288,8 @@ export class BaseChainAdapter {
         "Failed to constructWithdrawToL1Txns",
         {
           toAddress: address,
-          l2Token: l2Token.toAddress(),
-          l1Token: l1Token.toAddress(),
+          l2Token: l2Token.toNative(),
+          l1Token: l1Token.toNative(),
           amount: amount.toString(),
           srcChainId: this.chainId,
           dstChainId: this.hubChainId,
@@ -313,7 +311,7 @@ export class BaseChainAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    const l1Token = getL1TokenAddress(l2Token.toAddress(), this.chainId);
+    const l1Token = getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
       return bnZero;
     }
@@ -329,7 +327,7 @@ export class BaseChainAdapter {
       from: l2SearchFromBlock,
       to: this.baseL2SearchConfig.to,
     };
-    return await this.l2Bridges[l1Token].getL2PendingWithdrawalAmount(
+    return await this.l2Bridges[l1Token.toNative()].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
       fromAddress,
@@ -344,7 +342,7 @@ export class BaseChainAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    const bridge = this.bridges[l1Token.toAddress()];
+    const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     let bridgeTransactionDetails: BridgeTransactionDetails;
     try {
@@ -353,9 +351,9 @@ export class BaseChainAdapter {
       this.log(
         "Failed to construct L1 to L2 transaction",
         {
-          address: address.toAddress(),
-          l1Token: l1Token.toAddress(),
-          l2Token: l2Token.toAddress(),
+          address: address.toNative(),
+          l1Token: l1Token.toNative(),
+          l2Token: l2Token.toNative(),
           amount: amount.toString(),
           srcChainId: this.hubChainId,
           dstChainId: this.chainId,
@@ -367,7 +365,7 @@ export class BaseChainAdapter {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
     const { contract, method, args, value } = bridgeTransactionDetails;
-    const tokenSymbol = matchTokenSymbol(l1Token.toAddress(), this.hubChainId)[0];
+    const tokenSymbol = matchTokenSymbol(l1Token.toNative(), this.hubChainId)[0];
     const [srcChain, dstChain] = [getNetworkName(this.hubChainId), getNetworkName(this.chainId)];
     const message = `💌⭐️ Bridging tokens from ${srcChain} to ${dstChain}.`;
     const _txnRequest: AugmentedTransaction = {
@@ -390,8 +388,8 @@ export class BaseChainAdapter {
     this.log(
       message,
       {
-        l1Token: l1Token.toAddress(),
-        l2Token: l2Token.toAddress(),
+        l1Token: l1Token.toNative(),
+        l2Token: l2Token.toNative(),
         amount,
         contract: contract.address,
         txnRequestData,
@@ -419,7 +417,7 @@ export class BaseChainAdapter {
       return null;
     }
     const l2Signer = this.getSigner(this.chainId);
-    const contract = new Contract(nativeTokenAddress, WETH_ABI, l2Signer);
+    const contract = new Contract(nativeTokenAddress.toEvmAddress(), WETH_ABI, l2Signer);
 
     // First verify that the target contract looks like WETH. This protects against
     // accidentally sending ETH to the wrong address, which would be a critical error.
@@ -473,7 +471,7 @@ export class BaseChainAdapter {
 
     await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
-        const bridge = this.bridges[l1Token.toAddress()];
+        const bridge = this.bridges[l1Token.toNative()];
         const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
@@ -493,7 +491,7 @@ export class BaseChainAdapter {
           const finalizedSum = finalizedAmounts.reduce((acc, amount) => acc.sub(BigNumber.from(amount)), bnZero);
           // The total amount outstanding is the outstanding initiated amount subtracted by the leftover finalized amount.
           const _totalAmount = outstandingInitiatedEvents.reduce((acc, event) => acc.add(event.amount), finalizedSum);
-          assign(outstandingTransfers, [monitoredAddress.toAddress(), l1Token.toAddress(), l2Token], {
+          assign(outstandingTransfers, [monitoredAddress.toNative(), l1Token.toNative(), l2Token], {
             totalAmount: _totalAmount.gt(bnZero) ? _totalAmount : bnZero,
             depositTxHashes: outstandingInitiatedEvents.map((event) => event.txnRef),
           });

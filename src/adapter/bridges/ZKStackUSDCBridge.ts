@@ -59,7 +59,7 @@ export class ZKStackUSDCBridge extends ZKStackBridge {
         0,
         this.l2GasLimit,
         this.gasPerPubdataLimit,
-        toAddress.toAddress(),
+        toAddress.toNative(),
         this.usdcBridge.address,
         0,
         secondBridgeCalldata,
@@ -82,7 +82,7 @@ export class ZKStackUSDCBridge extends ZKStackBridge {
     const processedEvents = events
       .filter(
         ({ args }) =>
-          compareAddressesSimple(args.to, to.toAddress()) && compareAddressesSimple(args.l1Token, l1Token.toAddress())
+          compareAddressesSimple(args.to, to.toNative()) && compareAddressesSimple(args.l1Token, l1Token.toNative())
       )
       .map((e) => processEvent(e, "amount"));
 
@@ -99,7 +99,7 @@ export class ZKStackUSDCBridge extends ZKStackBridge {
   ): Promise<BridgeEvents> {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     const l2Bridge = this.getL2Bridge();
-    const filter = l2Bridge.filters.FinalizeDeposit(null, to.toAddress(), l2Token);
+    const filter = l2Bridge.filters.FinalizeDeposit(null, to.toNative(), l2Token);
     const events = await paginatedEventQuery(l2Bridge, filter, eventConfig);
 
     return {

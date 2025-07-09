@@ -27,6 +27,8 @@ import {
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
+  EvmAddress,
+  Address,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -81,9 +83,11 @@ export async function arbStackFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  recipientAddresses: string[]
+  _recipientAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
+  // Recipient addresses are just used to query events.
+  const recipientAddresses = _recipientAddresses.map((address) => address.toEvmAddress());
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;
@@ -181,7 +185,7 @@ export async function arbStackFinalizer(
       return {
         ...e,
         amount: e.args._amount,
-        l2TokenAddress: l2Token,
+        l2TokenAddress: EvmAddress.from(l2Token),
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
@@ -190,7 +194,7 @@ export async function arbStackFinalizer(
       return {
         ...e,
         amount: e.args.callvalue,
-        l2TokenAddress: l2Token,
+        l2TokenAddress: EvmAddress.from(l2Token),
       };
     }),
   ];

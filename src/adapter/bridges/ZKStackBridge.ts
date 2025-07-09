@@ -100,7 +100,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         [
           this.l2chainId,
           amount.add(txBaseCost),
-          toAddress.toAddress(),
+          toAddress.toNative(),
           amount,
           "0x",
           this.l2GasLimit,
@@ -119,7 +119,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           0,
           this.l2GasLimit,
           this.gasPerPubdataLimit,
-          toAddress.toAddress(),
+          toAddress.toNative(),
           this.sharedBridge.address,
           0,
           secondBridgeCalldata,
@@ -143,12 +143,12 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
-    const isL2Contract = await this._isContract(toAddress.toAddress(), this.getL2Bridge().provider!);
-    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toAddress();
+    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
+    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toNative();
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
-      const assetId = await this.nativeTokenVault.assetId(l1Token.toAddress());
+      const assetId = await this.nativeTokenVault.assetId(l1Token.toNative());
       if (assetId === ZERO_BYTES) {
         throw new Error(`Undefined assetId for L1 token ${l1Token}`);
       }
@@ -158,7 +158,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         eventConfig
       );
       processedEvents = rawEvents
-        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toNative()))
         .map((e) => processEvent(e, "amount"));
     } else {
       if (isL2Contract) {
@@ -166,11 +166,11 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         processedEvents = rawEvents
           .filter(
             (e) =>
-              compareAddressesSimple(e.args.to, toAddress.toAddress()) &&
-              compareAddressesSimple(e.args.l1Token, l1Token.toAddress())
+              compareAddressesSimple(e.args.to, toAddress.toNative()) &&
+              compareAddressesSimple(e.args.l1Token, l1Token.toNative())
           )
           .map((e) => processEvent(e, "amount"));
-      } else if (toAddress.toAddress() === this.hubPool.address) {
+      } else if (toAddress.toNative() === this.hubPool.address) {
         // If the recipient is not an L2 contract, then we should ignore any events where the sender is the HubPool,
         // because the only deposits that we care about that send to a contract are from the HubPool, and we're
         // already tracking that above in the `isL2Contract` case. This case is important because we know the monitor
@@ -200,7 +200,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
     // so we add a special case for this reason.
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toAddress(), this.l2Bridge.provider);
+    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
@@ -214,7 +214,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         eventConfig
       );
       processedEvents = events
-        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toAddress()))
+        .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toNative()))
         .map((event) => processEvent(event, "amount"));
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
@@ -222,7 +222,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       if (isSpokePool) {
         events = await paginatedEventQuery(
           this.nativeToken,
-          this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toAddress()),
+          this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
           eventConfig
         );
       } else {
@@ -230,12 +230,12 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         const [_events, wrapEvents] = await Promise.all([
           paginatedEventQuery(
             this.nativeToken,
-            this.nativeToken.filters.Transfer(fromAddress.toAddress(), toAddress.toAddress()),
+            this.nativeToken.filters.Transfer(fromAddress.toNative(), toAddress.toNative()),
             eventConfig
           ),
           paginatedEventQuery(
             this.wrappedNativeToken,
-            this.wrappedNativeToken.filters.Deposit(toAddress.toAddress()),
+            this.wrappedNativeToken.filters.Deposit(toAddress.toNative()),
             eventConfig
           ),
         ]);
@@ -251,7 +251,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   _secondBridgeCalldata(toAddress: EvmAddress, l1Token: EvmAddress, amount: BigNumber): string {
     return ethers.utils.defaultAbiCoder.encode(
       ["address", "uint256", "address"],
-      [l1Token.toAddress(), amount, toAddress.toAddress()]
+      [l1Token.toNative(), amount, toAddress.toNative()]
     );
   }
 
@@ -284,7 +284,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
   protected override resolveL2TokenAddress(l1Token: EvmAddress): string {
     // ZkStack chains may or may not have native USDC, but all will have only one USDC "type" supported by Across. If there is an entry in the TOKEN_SYMBOLS_MAP for USDC, then use this, otherwise, bubble up the resolution.
     if (
-      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token.toAddress()) &&
+      compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId], l1Token.toNative()) &&
       isDefined(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
     ) {
       return TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId];
