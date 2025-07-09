@@ -401,7 +401,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleData> {
+  ): Promise<[BundleData, number] | undefined> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -425,13 +425,19 @@ export class Dataworker {
       blockRangesForProposal,
     });
     const logData = true;
-    const rootBundleData = await this._proposeRootBundle(
-      blockRangesForProposal,
-      spokePoolClients,
-      latestHeightSearched,
-      false, // Don't load data from arweave when proposing.
-      logData
-    );
+
+    const clonedBundleDataClient = _.cloneDeep(this.clients.bundleDataClient);
+    const [rootBundleData, executablePoolRebalanceLeaves] = await Promise.all([
+      this._proposeRootBundle(
+        blockRangesForProposal,
+        spokePoolClients,
+        latestHeightSearched,
+        false, // Don't load data from arweave when proposing.
+        logData,
+        clonedBundleDataClient
+      ),
+      this.executePoolRebalanceLeaves(spokePoolClients, submitProposals, earliestBlocksInSpokePoolClients),
+    ]);
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
@@ -515,7 +521,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.bundleData;
+    return [rootBundleData.bundleData, executablePoolRebalanceLeaves];
   }
 
   async _proposeRootBundle(
@@ -523,11 +529,12 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBundleEndBlock: number,
     loadDataFromArweave = false,
-    logData = false
+    logData = false,
+    bundleDataClient: BundleDataClient = this.clients.bundleDataClient
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
-      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
+      await bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
     const bundleData = {
       bundleBlockRanges: blockRangesForProposal,
       bundleDepositsV3,
@@ -1510,10 +1517,10 @@ export class Dataworker {
    */
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<number> {
+    const balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
     const leafCount = 0;
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
