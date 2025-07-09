@@ -241,7 +241,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await mockOriginSpokePoolClient.update(["RequestedSlowFill"]);
     expect(mockOriginSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
     const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
-    expect(data1.bundleSlowFillsV3[originChainId][erc20_1.address].length).to.equal(1);
+    expect(data1.bundleSlowFillsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
   });
 
   it("Ignores disabled chains for slow fill requests", async function () {

@@ -304,8 +304,8 @@ describe("Dataworker: Load bundle data", async function () {
       );
 
       // Includes this deposit as part of bundleDeposits and refunds it once expired:
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
 
     it("Does not consider expired zero value deposits from prior bundle", async function () {

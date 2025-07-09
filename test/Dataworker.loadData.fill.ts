@@ -933,7 +933,7 @@ describe("Dataworker: Load bundle data", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(1);
     });
 
     it("getBundleTimestampsFromCache and setBundleTimestampsInCache", async function () {
