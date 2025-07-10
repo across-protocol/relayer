@@ -426,15 +426,13 @@ export class Dataworker {
     });
     const logData = true;
 
-    const clonedBundleDataClient = _.cloneDeep(this.clients.bundleDataClient);
     const [rootBundleData, executablePoolRebalanceLeaves] = await Promise.all([
       this._proposeRootBundle(
         blockRangesForProposal,
         spokePoolClients,
         latestHeightSearched,
         false, // Don't load data from arweave when proposing.
-        logData,
-        clonedBundleDataClient
+        logData
       ),
       this.executePoolRebalanceLeaves(spokePoolClients, submitProposals, earliestBlocksInSpokePoolClients),
     ]);
@@ -529,12 +527,11 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     latestMainnetBundleEndBlock: number,
     loadDataFromArweave = false,
-    logData = false,
-    bundleDataClient: BundleDataClient = this.clients.bundleDataClient
+    logData = false
   ): Promise<ProposeRootBundleReturnType> {
     const timerStart = Date.now();
     const { bundleDepositsV3, bundleFillsV3, bundleSlowFillsV3, unexecutableSlowFills, expiredDepositsToRefundV3 } =
-      await bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
+      await this.clients.bundleDataClient.loadData(blockRangesForProposal, spokePoolClients, loadDataFromArweave);
     const bundleData = {
       bundleBlockRanges: blockRangesForProposal,
       bundleDepositsV3,
