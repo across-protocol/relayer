@@ -401,7 +401,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<number> {
+  ): Promise<BundleData> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -425,17 +425,13 @@ export class Dataworker {
       blockRangesForProposal,
     });
     const logData = true;
-
-    const [rootBundleData, executablePoolRebalanceLeaves] = await Promise.all([
-      this._proposeRootBundle(
-        blockRangesForProposal,
-        spokePoolClients,
-        latestHeightSearched,
-        false, // Don't load data from arweave when proposing.
-        logData
-      ),
-      this.executePoolRebalanceLeaves(spokePoolClients, submitProposals, earliestBlocksInSpokePoolClients),
-    ]);
+    const rootBundleData = await this._proposeRootBundle(
+      blockRangesForProposal,
+      spokePoolClients,
+      latestHeightSearched,
+      false, // Don't load data from arweave when proposing.
+      logData
+    );
 
     if (usdThresholdToSubmitNewBundle !== undefined) {
       // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
@@ -519,7 +515,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return executablePoolRebalanceLeaves;
+    return rootBundleData.bundleData;
   }
 
   async _proposeRootBundle(
@@ -1514,10 +1510,10 @@ export class Dataworker {
    */
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
+    balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
     submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<number> {
-    const balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
     const leafCount = 0;
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
@@ -2571,9 +2567,6 @@ export class Dataworker {
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
-        canFailInSimulation: true, // proposeRootBundle will fail in simulation since executing the root bundle out of L1 cannot be in the same transaction
-        // as proposing a new root bundle.
-        nonMulticall: true,
         mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
           chainIds,
