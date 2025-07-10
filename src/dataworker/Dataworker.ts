@@ -154,7 +154,6 @@ export class Dataworker {
     readonly maxL1TokenCountOverride: number | undefined,
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
-    readonly forceProposal = false,
     readonly forceBundleRange?: [number, number][]
   ) {
     this.blockRangeEndBlockBuffer = clients.bundleDataClient.blockRangeEndBlockBuffer;
@@ -333,10 +332,6 @@ export class Dataworker {
     // Check if a bundle is pending.
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
-    }
-    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
-      this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
-      return;
     }
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
