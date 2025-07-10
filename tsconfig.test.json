@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["mocha", "chai"]
+    "types": ["node", "mocha", "chai", "hardhat" ]
   },
   "include": ["./test", "./test/**/*", "./src"]
 }
