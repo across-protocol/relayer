@@ -1,4 +1,3 @@
-import { Contract } from "ethers";
 import { TokenClient } from "../clients";
 import {
   EvmAddress,
