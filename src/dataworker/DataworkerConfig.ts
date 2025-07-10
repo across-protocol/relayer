@@ -56,7 +56,7 @@ export class DataworkerConfig extends CommonConfig {
       FORCE_PROPOSAL_BUNDLE_RANGE,
       PERSIST_BUNDLES_TO_ARWEAVE,
       EXECUTOR_IGNORE_CHAINS,
-      MIN_CHALLENGE_LEAD_TIME = "600"
+      MIN_CHALLENGE_LEAD_TIME = "600",
     } = env;
     super(env);
 
