@@ -1,9 +1,12 @@
+import { Contract } from "ethers";
 import { TokenClient } from "../clients";
 import {
   EvmAddress,
   SvmAddress,
   winston,
   config,
+  getDeployedContract,
+  getProvider,
   startupLogLevel,
   Signer,
   disconnectRedisClients,
@@ -28,13 +31,14 @@ let logger: winston.Logger;
 
 export async function createDataworker(
   _logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  config?: DataworkerConfig,
 ): Promise<{
   config: DataworkerConfig;
   clients: DataworkerClients;
   dataworker: Dataworker;
 }> {
-  const config = new DataworkerConfig(process.env);
+  config ??= new DataworkerConfig(process.env);
   const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
   const dataworker = new Dataworker(
@@ -57,6 +61,37 @@ export async function createDataworker(
   };
 }
 
+function resolvePersonality(config: DataworkerConfig): string {
+  if (config.proposerEnabled) {
+    return config.l1ExecutorEnabled
+      ? "Proposer/Executor"
+      : "Proposer";
+  }
+
+  if (config.l1ExecutorEnabled || config.l2ExecutorEnabled) {
+    return "Executor";
+  }
+
+  if (config.disputerEnabled) {
+    return "Disputer";
+  }
+
+  return "Dataworker"; // unknown
+}
+
+async function getChallengeRemaining(chainId: number): Promise<number> {
+  const provider = await getProvider(chainId);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const [proposal, currentTime] = await Promise.all([
+    hubPool.rootBundleProposal(),
+    hubPool.getCurrentTime(),
+  ]);
+  const { challengePeriodEndTimestamp } = proposal;
+
+  return Math.max(challengePeriodEndTimestamp  - currentTime, 0);
+}
+
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
     at: "Dataworker#index",
@@ -64,8 +99,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   logger = _logger;
 
-  const { clients, config, dataworker } = await profiler.measureAsync(
-    createDataworker(logger, baseSigner),
+  const config = new DataworkerConfig(process.env);
+  const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+
+  const personality = resolvePersonality(config);
+  if (challengeRemaining > 600 && (config.proposerEnabled || config.l1ExecutorEnabled)) {
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} aborting (not ready)`, challengeRemaining });
+    return;
+  }
+
+  const { clients, dataworker } = await profiler.measureAsync(
+    createDataworker(logger, baseSigner, config),
     "createDataworker",
     {
       message: "Time to update non-spoke clients",
