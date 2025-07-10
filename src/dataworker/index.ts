@@ -94,10 +94,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   logger = _logger;
 
   const config = new DataworkerConfig(process.env);
+  const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
 
-  const personality = resolvePersonality(config);
-  if (challengeRemaining > 600 && (config.proposerEnabled || config.l1ExecutorEnabled)) {
+  if (challengeRemaining > config.minChallengeLeadTime && (config.proposerEnabled || config.l1ExecutorEnabled)) {
     logger[startupLogLevel(config)]({
       at: "Dataworker#index",
       message: `${personality} aborting (not ready)`,
