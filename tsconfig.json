@@ -10,7 +10,9 @@
     "strict": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
-    "types": ["node"]
+    "types": ["node"],
+    "moduleResolution": "node",
+    "typeRoots": ["node_modules/@types"]
   },
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],
