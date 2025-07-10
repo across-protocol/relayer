@@ -48,7 +48,6 @@ export async function createDataworker(
     config.maxPoolRebalanceLeafSizeOverride,
     config.spokeRootsLookbackCount,
     config.bufferToPropose,
-    config.forcePropose,
     config.forceProposalBundleRange
   );
 
