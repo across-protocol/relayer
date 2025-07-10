@@ -160,6 +160,25 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
+export async function overrideRedisKey(
+  key: string,
+  value: string,
+  ttl: number,
+  redisClient: CachingMechanismInterface,
+  logger: winston.Logger
+) {
+  const existingValue = await redisClient.get(key);
+  if (existingValue === value) {
+    return false;
+  }
+
+  logger.debug({ at: "OverrideKey#run", message: `Taking over from ${key} instance ${existingValue}.` });
+  await redisClient.set(key, value, ttl);
+  logger.debug({ at: "OverrideKey#run", message: `Handing over to ${key} instance ${value}.` });
+
+  return true;
+}
+
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients arent't GCed automagically.
   const clients = Object.entries(redisClients);

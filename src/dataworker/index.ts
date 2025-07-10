@@ -12,6 +12,9 @@ import {
   Profiler,
   isDefined,
   getSvmSignerFromEvmSigner,
+  getRedisCache,
+  overrideRedisKey,
+  waitUntilTrue,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -27,6 +30,15 @@ import { PendingRootBundle } from "../interfaces";
 
 config();
 let logger: winston.Logger;
+
+const ACTIVE_DATAWORKER_EXPIRY = 600; // 10 minutes.
+const {
+  RUN_IDENTIFIER: runIdentifier,
+  BOT_IDENTIFIER: botIdentifier = "across-dataworker",
+  DATAWORKER_MAX_STARTUP_DELAY = "120",
+} = process.env;
+
+const maxStartupDelay = Number(DATAWORKER_MAX_STARTUP_DELAY);
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -115,6 +127,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   await config.update(logger); // Update address filter.
   let poolRebalanceLeafExecutionCount = 0;
+
+  const redis = await getRedisCache(logger);
+
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
