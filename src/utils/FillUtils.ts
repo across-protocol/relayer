@@ -32,7 +32,7 @@ export function getUnfilledDeposits(
 
   return deposits
     .filter((deposit) => {
-      return !destinationClient.isDepositFilled(deposit)
+      return !destinationClient.isDepositFilled(deposit);
     })
     .map((deposit) => {
       const invalidFills = destinationClient.getFillsForDeposit(deposit) ?? [];
