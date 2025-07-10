@@ -2567,6 +2567,8 @@ export class Dataworker {
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
+        nonMulticall: true, // Proposal transactions cannot be bundled into an `aggregate` call.
+        canFailInSimulation: true, // Proposal transactions may fail in simulation if they are bundled with l1 bundle executions.
         mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
           chainIds,
