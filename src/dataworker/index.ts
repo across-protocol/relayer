@@ -122,7 +122,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
-    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", loggedConfig });
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} started 👩‍🔬`, loggedConfig });
 
     profiler.mark("loopStart");
     // Determine the spoke client's lookback:
