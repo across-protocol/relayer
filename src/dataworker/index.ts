@@ -32,7 +32,7 @@ let logger: winston.Logger;
 export async function createDataworker(
   _logger: winston.Logger,
   baseSigner: Signer,
-  config?: DataworkerConfig,
+  config?: DataworkerConfig
 ): Promise<{
   config: DataworkerConfig;
   clients: DataworkerClients;
@@ -63,9 +63,7 @@ export async function createDataworker(
 
 function resolvePersonality(config: DataworkerConfig): string {
   if (config.proposerEnabled) {
-    return config.l1ExecutorEnabled
-      ? "Proposer/Executor"
-      : "Proposer";
+    return config.l1ExecutorEnabled ? "Proposer/Executor" : "Proposer";
   }
 
   if (config.l1ExecutorEnabled || config.l2ExecutorEnabled) {
@@ -83,13 +81,10 @@ async function getChallengeRemaining(chainId: number): Promise<number> {
   const provider = await getProvider(chainId);
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
-  const [proposal, currentTime] = await Promise.all([
-    hubPool.rootBundleProposal(),
-    hubPool.getCurrentTime(),
-  ]);
+  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
   const { challengePeriodEndTimestamp } = proposal;
 
-  return Math.max(challengePeriodEndTimestamp  - currentTime, 0);
+  return Math.max(challengePeriodEndTimestamp - currentTime, 0);
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
@@ -104,7 +99,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   const personality = resolvePersonality(config);
   if (challengeRemaining > 600 && (config.proposerEnabled || config.l1ExecutorEnabled)) {
-    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} aborting (not ready)`, challengeRemaining });
+    logger[startupLogLevel(config)]({
+      at: "Dataworker#index",
+      message: `${personality} aborting (not ready)`,
+      challengeRemaining,
+    });
     return;
   }
 
