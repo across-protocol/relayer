@@ -1,5 +1,18 @@
-// @ts-nocheck
 /* eslint-env jest */
+
+// Provide minimal typings for Jest globals so that this test passes tsc
+// even if @types/jest is missing from devDependencies.
+// These declarations are narrowed to `any` to avoid pulling in the full Jest
+// type-suite.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function describe(name: string, fn: () => void): any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function it(name: string, fn: () => void): any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function expect(actual: any): any;
+}
+
 import { cmpAPIToEventMessageBytesV2 } from "../../src/utils/CCTPUtils";
 
 describe("cmpAPIToEventMessageBytesV2", () => {
