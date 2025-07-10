@@ -177,7 +177,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
     }
 
-    if (config.proposerEnabled) {
+    if (config.proposerEnabled || config.l1ExecutorEnabled) {
       if (config.sendingTransactionsEnabled) {
         const tokenClient = new TokenClient(
           logger,
@@ -197,21 +197,39 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         await tokenClient.setBondTokenAllowance();
       }
 
-      // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
+      const executionQueue = [];
+      if (config.l1ExecutorEnabled) {
+        const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
+        executionQueue.push(
+          dataworker.executePoolRebalanceLeaves(
+            spokePoolClients,
+            balanceAllocator,
+            config.sendingTransactionsEnabled,
+            fromBlocks
+          )
+        );
+      }
+
+      if (config.proposerEnabled) {
+        executionQueue.push(
+          dataworker.proposeRootBundle(
+            spokePoolClients,
+            config.rootBundleExecutionThreshold,
+            config.sendingTransactionsEnabled,
+            fromBlocks
+          )
+        );
+      }
+
+      const [_poolRebalanceLeafExecutionCount] = await Promise.all(executionQueue);
       poolRebalanceLeafExecutionCount =
-        (await dataworker.proposeRootBundle(
-          spokePoolClients,
-          config.rootBundleExecutionThreshold,
-          config.sendingTransactionsEnabled,
-          fromBlocks
-        )) ?? 0;
+        typeof _poolRebalanceLeafExecutionCount === "number" ? _poolRebalanceLeafExecutionCount : 0;
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
 
     if (config.l2ExecutorEnabled) {
       const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
-
       // Execute slow relays before relayer refunds to give them priority for any L2 funds.
       await dataworker.executeSlowRelayLeaves(
         spokePoolClients,
