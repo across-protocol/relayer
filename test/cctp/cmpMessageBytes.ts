@@ -1,4 +1,4 @@
-import chai, { expect } from "chai";
+import { expect } from "chai";
 import { cmpAPIToEventMessageBytesV2 } from "../../src/utils/CCTPUtils";
 
 describe("utils/CCTPUtils.cmpAPIToEventMessageBytesV2", function () {
