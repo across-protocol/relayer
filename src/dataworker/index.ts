@@ -222,7 +222,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       const updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
       if (updatedChallengeRemaining === 0) {
         if (poolRebalanceLeafExecutionCount > 0) {
-          await clients.multiCallerClient.executeTxnQueues();
+          const { provider } = clients.hubPoolClient.hubPool;
+          const txns = await clients.multiCallerClient.executeTxnQueues();
+          const [txnHash] = txns[config.hubPoolChainId];
+          if (isDefined(txnHash)) {
+            const txnResponse = await provider.getTransaction(txnHash);
+            await txnResponse.wait(1);
+          }
         }
         if (isDefined(proposeRootBundleTxn)) {
           clients.multiCallerClient.enqueueTransaction(proposeRootBundleTxn);
