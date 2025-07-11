@@ -15,6 +15,7 @@ import {
   getRedisCache,
   overrideRedisKey,
   waitUntilTrue,
+  waitForPubSub,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -35,10 +36,10 @@ const ACTIVE_DATAWORKER_EXPIRY = 600; // 10 minutes.
 const {
   RUN_IDENTIFIER: runIdentifier,
   BOT_IDENTIFIER: botIdentifier = "across-dataworker",
-  DATAWORKER_MAX_STARTUP_DELAY = "120",
+  DATAWORKER_MAX_AWAIT_DELAY = "600",
 } = process.env;
 
-const maxStartupDelay = Number(DATAWORKER_MAX_STARTUP_DELAY);
+const maxAwaitDelay = Number(DATAWORKER_MAX_AWAIT_DELAY);
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -213,10 +214,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       // publish so that other instances can see that we're running
-      await redis.pub(botIdentifier, runIdentifier);
+      await redis.pub(botIdentifier, "KILL");
       logger.debug({
         at: "Dataworker#index",
-        message: `Published signal to ${botIdentifier} instance ${runIdentifier}.`,
+        message: `Published signal to ${botIdentifier} instances.`,
       });
 
       const executionQueue = new Array(2).fill(Promise.resolve(undefined));
@@ -241,7 +242,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       const [_poolRebalanceLeafExecutionCount, proposeRootBundleTxn] = await Promise.all(executionQueue);
       poolRebalanceLeafExecutionCount = _poolRebalanceLeafExecutionCount ?? 0;
-      const updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+      let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+
+      if (updatedChallengeRemaining > 0) {
+        const handover = await waitForPubSub(redis, botIdentifier, maxAwaitDelay * 1000);
+        if (handover) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+          });
+          return;
+        }
+      }
+
+      // check again to see if the challenge remaining has changed
+      updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+
       if (updatedChallengeRemaining === 0) {
         if (poolRebalanceLeafExecutionCount > 0) {
           await clients.multiCallerClient.executeTxnQueues();

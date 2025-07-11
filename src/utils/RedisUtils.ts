@@ -184,6 +184,27 @@ export async function overrideRedisKey(
   return true;
 }
 
+export async function waitForPubSub(redisClient: RedisClient, channel: string, maxWaitMs = 60000): Promise<boolean> {
+  return new Promise((resolve, _) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const listener = (message: string, channel: string) => {
+      if (channel === channel && message === "KILL") {
+        abortController.abort();
+      }
+    };
+    redisClient.sub(channel, listener);
+
+    signal.addEventListener("abort", () => {
+      resolve(true);
+    });
+
+    setTimeout(() => {
+      resolve(false);
+    }, maxWaitMs);
+  });
+}
+
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients arent't GCed automagically.
   const clients = Object.entries(redisClients);
