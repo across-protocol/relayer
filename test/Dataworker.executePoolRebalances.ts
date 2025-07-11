@@ -128,8 +128,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     expect(leafCount).to.equal(0);
     expect(lastSpyLogIncludes(spy, "No pending proposal")).to.be.true;
 
-    let proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    multiCallerClient.enqueueTransaction(proposeTxn);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
@@ -164,8 +163,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    expect(proposeTxn).to.be.undefined;
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
@@ -195,8 +193,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await updateAllClients();
 
     const balanceAllocator = getNewBalanceAllocator();
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    multiCallerClient.enqueueTransaction(proposeTxn);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
 
     // Execute queue and check that root bundle is pending:
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
