@@ -285,8 +285,7 @@ describe("Monitor", async function () {
     await monitorInstance.update();
 
     // Have the data worker propose a new bundle.
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    multiCallerClient.enqueueTransaction(proposeTxn);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTxnQueues();
 
@@ -383,9 +382,8 @@ describe("Monitor", async function () {
     await monitorInstance.update();
 
     // Have the data worker propose a new bundle.
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
     await l1Token.approve(hubPool.address, MAX_UINT_VAL);
-    multiCallerClient.enqueueTransaction(proposeTxn);
     await multiCallerClient.executeTxnQueues();
 
     // Execute pool rebalance leaves.

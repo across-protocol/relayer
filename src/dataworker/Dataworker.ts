@@ -61,13 +61,7 @@ import {
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import {
-  AugmentedTransaction,
-  SpokePoolClient,
-  BalanceAllocator,
-  BundleDataClient,
-  SVMSpokePoolClient,
-} from "../clients";
+import { SpokePoolClient, BalanceAllocator, BundleDataClient, SVMSpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -160,6 +154,7 @@ export class Dataworker {
     readonly maxL1TokenCountOverride: number | undefined,
     readonly spokeRootsLookbackCount = 0,
     readonly bufferToPropose = 0,
+    readonly forceProposal = false,
     readonly forceBundleRange?: [number, number][]
   ) {
     this.blockRangeEndBlockBuffer = clients.bundleDataClient.blockRangeEndBlockBuffer;
@@ -339,6 +334,10 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
+    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
+      this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
+      return;
+    }
 
     // If config store version isn't up to date, return early. This is a simple rule that is perhaps too aggressive
     // but the proposer role is a specialized one and the user should always be using updated software.
@@ -402,7 +401,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<AugmentedTransaction> {
+  ): Promise<BundleData> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -505,7 +504,7 @@ export class Dataworker {
       slowRelayRoot: rootBundleData.slowFillTree.getHexRoot(),
     });
     if (submitProposals) {
-      return this.getRootBundleProposal(
+      this.enqueueRootBundleProposal(
         hubPoolChainId,
         blockRangesForProposal,
         rootBundleData.poolRebalanceLeaves,
@@ -516,7 +515,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return;
+    return rootBundleData.bundleData;
   }
 
   async _proposeRootBundle(
@@ -2549,7 +2548,7 @@ export class Dataworker {
     });
   }
 
-  getRootBundleProposal(
+  enqueueRootBundleProposal(
     hubPoolChainId: number,
     bundleBlockRange: number[][],
     poolRebalanceLeaves: PoolRebalanceLeaf[],
@@ -2558,11 +2557,11 @@ export class Dataworker {
     relayerRefundRoot: string,
     slowRelayLeaves: SlowFillLeaf[],
     slowRelayRoot: string
-  ): AugmentedTransaction {
+  ): void {
     try {
       const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
       const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(bundleBlockRange[0][0]);
-      return {
+      this.clients.multiCallerClient.enqueueTransaction({
         contract: this.clients.hubPoolClient.hubPool, // target contract
         chainId: hubPoolChainId,
         method: "proposeRootBundle", // method called.
@@ -2580,7 +2579,7 @@ export class Dataworker {
           [...slowRelayLeaves],
           slowRelayRoot
         ),
-      };
+      });
     } catch (error) {
       this.logger.error({
         at: "Dataworker",
@@ -2588,7 +2587,6 @@ export class Dataworker {
         error,
         notificationPath: "across-error",
       });
-      return;
     }
   }
 
