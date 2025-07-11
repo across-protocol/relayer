@@ -10,6 +10,7 @@ import {
   Signer,
   disconnectRedisClients,
   Profiler,
+  isDefined,
   getSvmSignerFromEvmSigner,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
@@ -196,33 +197,37 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         await tokenClient.setBondTokenAllowance();
       }
 
-      const executionQueue = [];
+      const executionQueue = new Array(2).fill(Promise.resolve(undefined));
       if (config.l1ExecutorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
-        executionQueue.push(
-          dataworker.executePoolRebalanceLeaves(
-            spokePoolClients,
-            balanceAllocator,
-            config.sendingTransactionsEnabled,
-            fromBlocks
-          )
+        executionQueue[0] = dataworker.executePoolRebalanceLeaves(
+          spokePoolClients,
+          balanceAllocator,
+          config.sendingTransactionsEnabled,
+          fromBlocks
         );
       }
 
       if (config.proposerEnabled) {
-        executionQueue.push(
-          dataworker.proposeRootBundle(
-            spokePoolClients,
-            config.rootBundleExecutionThreshold,
-            config.sendingTransactionsEnabled,
-            fromBlocks
-          )
+        executionQueue[1] = dataworker.proposeRootBundle(
+          spokePoolClients,
+          config.rootBundleExecutionThreshold,
+          config.sendingTransactionsEnabled,
+          fromBlocks
         );
       }
 
-      const [_poolRebalanceLeafExecutionCount] = await Promise.all(executionQueue);
-      poolRebalanceLeafExecutionCount =
-        typeof _poolRebalanceLeafExecutionCount === "number" ? _poolRebalanceLeafExecutionCount : 0;
+      const [_poolRebalanceLeafExecutionCount, proposeRootBundleTxn] = await Promise.all(executionQueue);
+      poolRebalanceLeafExecutionCount = _poolRebalanceLeafExecutionCount ?? 0;
+      const updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+      if (updatedChallengeRemaining === 0) {
+        if (poolRebalanceLeafExecutionCount > 0) {
+          await clients.multiCallerClient.executeTxnQueues();
+        }
+        if (isDefined(proposeRootBundleTxn)) {
+          clients.multiCallerClient.enqueueTransaction(proposeRootBundleTxn);
+        }
+      }
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
