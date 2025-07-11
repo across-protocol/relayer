@@ -63,7 +63,8 @@ describe("Dataworker: Execute slow relays", async function () {
 
     await updateAllClients();
 
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    multiCallerClient.enqueueTransaction(proposeTxn);
 
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);
@@ -121,7 +122,8 @@ describe("Dataworker: Execute slow relays", async function () {
 
     await updateAllClients();
 
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    multiCallerClient.enqueueTransaction(proposeTxn);
 
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);
@@ -181,7 +183,8 @@ describe("Dataworker: Execute slow relays", async function () {
 
     await updateAllClients();
 
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    multiCallerClient.enqueueTransaction(proposeTxn);
 
     // Execute queue and check that root bundle is pending:
     expect(multiCallerClient.transactionCount()).to.equal(1);

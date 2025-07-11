@@ -914,6 +914,28 @@ describe("Dataworker: Load bundle data", async function () {
       expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
     });
 
+    it("Matches fill with deposit with originChainId == destinationChainId", async function () {
+      await depositV3(
+        spokePool_1,
+        originChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_1.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      const deposit = spokePoolClient_1.getDeposits()[0];
+      await fillV3Relay(spokePool_1, deposit, relayer);
+      await spokePoolClient_1.update();
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(1);
+    });
+
     it("getBundleTimestampsFromCache and setBundleTimestampsInCache", async function () {
       // Unit test
       await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
