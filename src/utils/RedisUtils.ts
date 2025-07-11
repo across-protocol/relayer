@@ -62,8 +62,9 @@ export class RedisClient {
     return this.client.publish(channel, message);
   }
 
-  sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
-    return this.client.subscribe(channel, listener);
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    await this.client.subscribe(channel, listener);
+    return 1;
   }
 
   async disconnect(): Promise<void> {
@@ -122,7 +123,10 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   return redisClients[url];
 }
 
-export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisClient | undefined> {
+export async function getRedisCache(
+  logger?: winston.Logger,
+  url?: string
+): Promise<CachingMechanismInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;
@@ -184,7 +188,11 @@ export async function overrideRedisKey(
   return true;
 }
 
-export async function waitForPubSub(redisClient: RedisClient, channel: string, maxWaitMs = 60000): Promise<boolean> {
+export async function waitForPubSub(
+  redisClient: CachingMechanismInterface,
+  channel: string,
+  maxWaitMs = 60000
+): Promise<boolean> {
   return new Promise((resolve, _) => {
     const abortController = new AbortController();
     const signal = abortController.signal;
