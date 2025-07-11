@@ -203,21 +203,31 @@ export class Monitor {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
       await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
-        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(({ deposit }) => {
-          // Ignore depositId >= bnUInt32Max; these tend to be pre-fills that are eventually valid and
-          // tend to confuse this reporting because there are multiple deposits with the same depositId.
-          if (deposit.depositId < bnUint32Max) {
-            this.logger.warn({
-              at: "SpokePoolClient",
-              chainId: destinationChainId,
-              message: `Unfilled deposit found matching ${getNetworkName(deposit.originChainId)} deposit.`,
-              deposit,
-              notificationPath: "across-unfilled-deposits",
-            });
-          }
+        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
+          ({ deposit, invalidFills: invalid }) => {
+            // Ignore depositId >= bnUInt32Max; these tend to be pre-fills that are eventually valid and
+            // tend to confuse this reporting because there are multiple deposits with the same depositId.
+            if (deposit.depositId < bnUint32Max && invalid.length > 0) {
+              const invalidFills = Object.fromEntries(
+                invalid.map(({ relayer, destinationChainId, depositId, txnRef, outputAmount }) => {
+                  return [relayer, { destinationChainId, depositId, txnRef, outputAmount }];
+                })
+              );
 
-          return deposit;
-        });
+              this.logger.warn({
+                at: "SpokePoolClient",
+                chainId: destinationChainId,
+                message: `Unfilled deposit found matching ${getNetworkName(deposit.originChainId)} deposit.`,
+                depositOutputAmount: deposit.outputAmount.toString(),
+                depositTxnRef: deposit.txnRef,
+                invalidFills,
+                notificationPath: "across-unfilled-deposits",
+              });
+            }
+
+            return deposit;
+          }
+        );
 
         const fillStatus = await spokePoolClients[destinationChainId].fillStatusArray(deposits);
         return [destinationChainId, deposits.filter((_, idx) => fillStatus[idx] !== FillStatus.Filled)];
