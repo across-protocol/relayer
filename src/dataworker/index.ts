@@ -299,7 +299,12 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             at: "Dataworker#index",
             message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
           });
-          const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, updatedChallengeRemaining * 1000);
+          const handover = await waitForPubSub(
+            redis,
+            botIdentifier,
+            runIdentifier,
+            (updatedChallengeRemaining + 12) * 1000
+          );
           if (handover) {
             logger.debug({
               at: "Dataworker#index",
