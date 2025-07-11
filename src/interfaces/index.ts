@@ -71,3 +71,5 @@ export type TokensBridged = interfaces.TokensBridged;
 export const { FillType, FillStatus } = interfaces;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
+export type PubSubMechanismInterface = interfaces.PubSubMechanismInterface;
+export type RedisClientInterface = CachingMechanismInterface & PubSubMechanismInterface;

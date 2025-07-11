@@ -1,4 +1,5 @@
 import { interfaces, constants } from "@across-protocol/sdk";
+import { RedisClientInterface } from "../interfaces";
 import { RedisClient, setRedisKey } from "../utils";
 
 /**
@@ -7,7 +8,7 @@ import { RedisClient, setRedisKey } from "../utils";
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
-export class RedisCache implements interfaces.CachingMechanismInterface {
+export class RedisCache implements RedisClientInterface {
   /**
    * The redisClient is the redis client that is used to communicate with the redis server.
    * It is instantiated lazily when the `instantiate` method is called.
@@ -33,5 +34,13 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     await setRedisKey(key, String(value), this.redisClient, ttl);
     // Return key to indicate that the value was set successfully.
     return key;
+  }
+
+  public async pub(channel: string, message: string): Promise<void> {
+    await this.redisClient.pub(channel, message);
+  }
+
+  public async sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
+    await this.redisClient.sub(channel, listener);
   }
 }
