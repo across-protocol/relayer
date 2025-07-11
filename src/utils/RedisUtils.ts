@@ -197,9 +197,7 @@ export async function waitForPubSub(
   return new Promise((resolve, _) => {
     const abortController = new AbortController();
     const signal = abortController.signal;
-    console.log("waitForPubSub", channel, maxWaitMs);
     const listener = (msg: string, chl: string) => {
-      console.log("listener", msg, chl);
       if (chl === channel && msg !== message) {
         abortController.abort();
       }
