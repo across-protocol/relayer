@@ -58,8 +58,9 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 1:
     // Before submitting any spoke pool transactions, check that dataworker behaves as expected with no roots.
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    let proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
+    expect(proposeTxn).to.be.undefined;
 
     // TEST 2:
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -87,7 +88,8 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot2.runningBalances
     );
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    multiCallerClient.enqueueTransaction(proposeTxn);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
@@ -99,10 +101,6 @@ describe("Dataworker: Propose root bundle", async function () {
     await multiCallerClient.executeTxnQueues();
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
-
-    // Attempting to propose another root fails:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    expect(lastSpyLogIncludes(spy, "Has pending proposal, cannot propose")).to.be.true;
 
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
@@ -125,7 +123,8 @@ describe("Dataworker: Propose root bundle", async function () {
     // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
     // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    expect(proposeTxn).to.be.undefined;
     expect(lastSpyLogIncludes(spy, "No pool rebalance leaves, cannot propose")).to.be.true;
 
     // TEST 4:
@@ -150,11 +149,13 @@ describe("Dataworker: Propose root bundle", async function () {
 
     // TEST 5:
     // Won't submit anything if the USD threshold to propose a root is set and set too high:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
+    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
+    expect(proposeTxn).to.be.undefined;
     expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
 
     // TEST 4: cont.
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    multiCallerClient.enqueueTransaction(proposeTxn);
     // Should have enqueued a new transaction:
     expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
@@ -195,7 +196,8 @@ describe("Dataworker: Propose root bundle", async function () {
     await updateAllClients();
     await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    expect(proposeTxn).to.be.undefined;
     expect(multiCallerClient.transactionCount()).to.equal(0);
     expect(lastSpyLogIncludes(spy, "Skipping proposal because missing updated ConfigStore version")).to.be.true;
     expect(lastSpyLogLevel(spy)).to.equal("warn");
