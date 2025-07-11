@@ -96,9 +96,9 @@ describe("Dataworker: Validate pending root bundle", async function () {
       expectedPoolRebalanceRoot2.runningBalances
     );
     await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    let proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
     multiCallerClient.enqueueTransaction(proposeTxn);
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTxnQueues();
 
     // Exit early if no pending bundle. There shouldn't be a bundle seen yet because we haven't passed enough blocks
@@ -138,7 +138,7 @@ describe("Dataworker: Validate pending root bundle", async function () {
       await hre.network.provider.send("evm_mine");
     }
     await updateAllClients();
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
     multiCallerClient.enqueueTransaction(proposeTxn);
     await multiCallerClient.executeTxnQueues();
 
