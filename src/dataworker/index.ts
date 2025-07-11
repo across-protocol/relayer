@@ -39,9 +39,6 @@ const {
 
 const maxAwaitDelay = Number(DATAWORKER_MAX_AWAIT_DELAY);
 
-console.log("runIdentifier", runIdentifier);
-console.log("botIdentifier", botIdentifier);
-
 export async function createDataworker(
   _logger: winston.Logger,
   baseSigner: Signer,
@@ -286,7 +283,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     } else {
       // wait
 
-      if (config.l1ExecutorEnabled) {
+      if (config.l1ExecutorEnabled && redis && runIdentifier) {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         let counter = 0;
 
@@ -302,18 +299,18 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             at: "Dataworker#index",
             message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
           });
-          const handover = await waitForPubSub(
-            redis,
-            botIdentifier,
-            runIdentifier,
-            (updatedChallengeRemaining + 12) * 1000
-          );
+          const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, updatedChallengeRemaining * 1000);
           if (handover) {
             logger.debug({
               at: "Dataworker#index",
               message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
             });
             return;
+          } else {
+            logger.debug({
+              at: "Dataworker#index",
+              message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+            });
           }
 
           updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
