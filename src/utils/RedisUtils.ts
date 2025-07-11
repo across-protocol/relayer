@@ -58,6 +58,14 @@ export class RedisClient {
     }
   }
 
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
+    return this.client.subscribe(channel, listener);
+  }
+
   async disconnect(): Promise<void> {
     await disconnectRedisClient(this.client, this.logger);
   }
@@ -114,10 +122,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   return redisClients[url];
 }
 
-export async function getRedisCache(
-  logger?: winston.Logger,
-  url?: string
-): Promise<CachingMechanismInterface | undefined> {
+export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisClient | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;

@@ -212,6 +212,13 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         await tokenClient.setBondTokenAllowance();
       }
 
+      // publish so that other instances can see that we're running
+      await redis.pub(botIdentifier, runIdentifier);
+      logger.debug({
+        at: "Dataworker#index",
+        message: `Published signal to ${botIdentifier} instance ${runIdentifier}.`,
+      });
+
       const executionQueue = new Array(2).fill(Promise.resolve(undefined));
       if (config.l1ExecutorEnabled) {
         const balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients));
