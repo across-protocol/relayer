@@ -5,7 +5,6 @@ import {
   disconnectRedisClients,
   getNetworkName,
   getRedisCache,
-  overrideRedisKey,
   Profiler,
   Signer,
   winston,
@@ -88,18 +87,19 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.
-      if (loop && runIdentifier && redis && activeRelayer !== runIdentifier) {
-        if (!activeRelayerUpdated) {
-          activeRelayerUpdated = await overrideRedisKey(
-            botIdentifier,
-            runIdentifier,
-            ACTIVE_RELAYER_EXPIRY,
-            redis,
-            logger
-          );
-        } else {
-          logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
-          stop = true;
+      if (loop && runIdentifier && redis) {
+        if (activeRelayer !== runIdentifier) {
+          if (!activeRelayerUpdated) {
+            logger.debug({
+              at: "Relayer#run",
+              message: `Taking over from ${botIdentifier} instance ${activeRelayer}.`,
+            });
+            await redis.set(botIdentifier, runIdentifier, ACTIVE_RELAYER_EXPIRY);
+            activeRelayerUpdated = true;
+          } else {
+            logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
+            stop = true;
+          }
         }
       }
 
