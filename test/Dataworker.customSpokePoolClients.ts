@@ -39,7 +39,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
 
     // Attempting to propose a root fails because bundle block range has a start blocks < spoke clients fromBlock's
     // (because lookback is set to low)
-    await dataworkerInstance.proposeRootBundle(
+    const proposeTxn = await dataworkerInstance.proposeRootBundle(
       spokePoolClients,
       undefined,
       true,
@@ -47,7 +47,7 @@ describe("Dataworker: Using SpokePool clients with short lookback windows", asyn
     );
     expect(lastSpyLogIncludes(spy, "Cannot propose bundle with insufficient event data")).to.be.true;
     expect(lastSpyLogLevel(spy)).to.equal("warn");
-    expect(multiCallerClient.transactionCount()).to.equal(0);
+    expect(proposeTxn).to.be.undefined;
   });
   it("Cannot validate", async function () {
     await updateAllClients();
