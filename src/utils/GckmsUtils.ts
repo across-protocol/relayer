@@ -3,6 +3,8 @@
 import kms from "@google-cloud/kms";
 import { Storage } from "@google-cloud/storage";
 import fs from "fs";
+import path from "path";
+
 export interface KeyConfig {
   projectId: string;
   locationId: string;
@@ -26,24 +28,72 @@ const { GCP_STORAGE_CONFIG } = process.env;
 // - retryOptions: object that allows the caller to specify how the library retries.
 const storageConfig = GCP_STORAGE_CONFIG ? JSON.parse(GCP_STORAGE_CONFIG) : undefined;
 
-export function getGckmsConfig(keys: string[]): KeyConfig[] {
-  let configOverride: GckmsConfig = {};
-  if (process.env.GCKMS_CONFIG) {
-    configOverride = JSON.parse(process.env.GCKMS_CONFIG);
-  } else {
-    const overrideFname = ".GckmsOverride.js";
-    try {
-      if (fs.existsSync(`${__dirname}/${overrideFname}`)) {
-        configOverride = require(`./${overrideFname}`);
+const DEFAULT_GCKMS_CONFIG_FILE = ".GckmsOverride.js";
+
+function loadConfigOverride(filenameOrContent: string): GckmsConfig {
+  // 1. Figure out the file path if we're dealing with the default `.GckmsOverride.js`
+  const filePath =
+    filenameOrContent === DEFAULT_GCKMS_CONFIG_FILE
+      ? path.join(__dirname, DEFAULT_GCKMS_CONFIG_FILE)
+      : path.resolve(process.cwd(), filenameOrContent);
+
+  const doesFileExist = fs.existsSync(filePath);
+
+  // 2. If a file exists, parse as a JavaScript module (the default file) or as JSON from file
+  if (doesFileExist) {
+    // Case: Default file is a module require
+    if (filenameOrContent === DEFAULT_GCKMS_CONFIG_FILE) {
+      try {
+        return require(filePath);
+      } catch (err) {
+        throw new Error(`Failed to parse GCKMS_CONFIG from ${DEFAULT_GCKMS_CONFIG_FILE}`);
       }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(err);
+    } else {
+      // Case: arbitrary file as JSON
+      try {
+        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+      } catch {
+        throw new Error(`Failed to parse GCKMS_CONFIG from ${filePath}. Bad JSON?`);
+      }
     }
   }
 
+  // 3. If it isn't a file, treat it as a JSON string
+  try {
+    return JSON.parse(filenameOrContent);
+  } catch {
+    throw new Error("Failed to parse GCKMS_CONFIG environment variable as JSON. Bad JSON?");
+  }
+}
+
+/**
+ * Retrieves the GCKMS config from the environment.
+ *
+ * The config can be set in one of two ways:
+ * 1. `GCKMS_CONFIG` is set to a file path containing the config.
+ * 2. `GCKMS_CONFIG` is set but a JSON string, in which case it will be parsed as a JSON object.
+ *
+ * If `GCKMS_CONFIG` is not set, the config will be read from the file `.GckmsOverride.js`.
+ *
+ * @param keys The keys to retrieve from the config.
+ * @returns The GCKMS config.
+ */
+export function getGckmsConfig(keys: string[]): KeyConfig[] {
+  const filenameOrContent = process.env.GCKMS_CONFIG || DEFAULT_GCKMS_CONFIG_FILE;
+  const configOverride = loadConfigOverride(filenameOrContent);
+
+  // Basic check
+  if (Object.keys(configOverride).length === 0) {
+    throw new Error("GCKMS_CONFIG is empty");
+  }
+
+  // 4. Retrieve keys
   const keyConfigs = keys.map((keyName: string): KeyConfig => {
-    return (configOverride["mainnet"][keyName] || {}) as KeyConfig; // Hardcode to "mainnet" network. This makes no impact key retrieval.
+    const config = configOverride["mainnet"][keyName];
+    if (!config) {
+      throw new Error(`Key configuration not found for key: ${keyName}`);
+    }
+    return config as KeyConfig;
   });
 
   return keyConfigs;
