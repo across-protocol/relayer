@@ -39,6 +39,9 @@ const {
 
 const maxAwaitDelay = Number(DATAWORKER_MAX_AWAIT_DELAY);
 
+console.log("runIdentifier", runIdentifier);
+console.log("botIdentifier", botIdentifier);
+
 export async function createDataworker(
   _logger: winston.Logger,
   baseSigner: Signer,
@@ -268,7 +271,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
         pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if (proposalCollision || executorCollision) {
+    if (proposalCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
@@ -297,7 +300,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         while (updatedChallengeRemaining > 0 && ++counter < 5) {
           logger.debug({
             at: "Dataworker#index",
-            message: `Waiting updated challenge remaining ${updatedChallengeRemaining}`,
+            message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
           });
           const handover = await waitForPubSub(
             redis,
