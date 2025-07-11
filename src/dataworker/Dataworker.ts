@@ -61,7 +61,13 @@ import {
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, BalanceAllocator, BundleDataClient, SVMSpokePoolClient } from "../clients";
+import {
+  AugmentedTransaction,
+  SpokePoolClient,
+  BalanceAllocator,
+  BundleDataClient,
+  SVMSpokePoolClient,
+} from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -396,7 +402,7 @@ export class Dataworker {
     usdThresholdToSubmitNewBundle?: BigNumber,
     submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
-  ): Promise<BundleData> {
+  ): Promise<AugmentedTransaction> {
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -499,7 +505,7 @@ export class Dataworker {
       slowRelayRoot: rootBundleData.slowFillTree.getHexRoot(),
     });
     if (submitProposals) {
-      this.enqueueRootBundleProposal(
+      return this.getRootBundleProposal(
         hubPoolChainId,
         blockRangesForProposal,
         rootBundleData.poolRebalanceLeaves,
@@ -510,7 +516,7 @@ export class Dataworker {
         rootBundleData.slowFillTree.getHexRoot()
       );
     }
-    return rootBundleData.bundleData;
+    return;
   }
 
   async _proposeRootBundle(
@@ -2543,7 +2549,7 @@ export class Dataworker {
     });
   }
 
-  enqueueRootBundleProposal(
+  getRootBundleProposal(
     hubPoolChainId: number,
     bundleBlockRange: number[][],
     poolRebalanceLeaves: PoolRebalanceLeaf[],
@@ -2552,18 +2558,16 @@ export class Dataworker {
     relayerRefundRoot: string,
     slowRelayLeaves: SlowFillLeaf[],
     slowRelayRoot: string
-  ): void {
+  ): AugmentedTransaction {
     try {
       const bundleEndBlocks = bundleBlockRange.map((block) => block[1]);
       const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(bundleBlockRange[0][0]);
-      this.clients.multiCallerClient.enqueueTransaction({
+      return {
         contract: this.clients.hubPoolClient.hubPool, // target contract
         chainId: hubPoolChainId,
         method: "proposeRootBundle", // method called.
         args: [bundleEndBlocks, poolRebalanceLeaves.length, poolRebalanceRoot, relayerRefundRoot, slowRelayRoot], // props sent with function call.
         message: "Proposed new root bundle 🌱", // message sent to logger.
-        nonMulticall: true, // Proposal transactions cannot be bundled into an `aggregate` call.
-        canFailInSimulation: true, // Proposal transactions may fail in simulation if they are bundled with l1 bundle executions.
         mrkdwn: PoolRebalanceUtils.generateMarkdownForRootBundle(
           this.clients.hubPoolClient,
           chainIds,
@@ -2576,7 +2580,7 @@ export class Dataworker {
           [...slowRelayLeaves],
           slowRelayRoot
         ),
-      });
+      };
     } catch (error) {
       this.logger.error({
         at: "Dataworker",
@@ -2584,6 +2588,7 @@ export class Dataworker {
         error,
         notificationPath: "across-error",
       });
+      return;
     }
   }
 
