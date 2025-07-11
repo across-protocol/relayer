@@ -3,7 +3,7 @@ export async function waitUntilTrue(
   intervalMs: number,
   maxWaitMs = 60000
 ): Promise<boolean> {
-  const startTime = Date.now();
+  const startTime = performance.now();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
