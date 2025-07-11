@@ -191,13 +191,16 @@ export async function overrideRedisKey(
 export async function waitForPubSub(
   redisClient: CachingMechanismInterface,
   channel: string,
+  message: string,
   maxWaitMs = 60000
 ): Promise<boolean> {
   return new Promise((resolve, _) => {
     const abortController = new AbortController();
     const signal = abortController.signal;
-    const listener = (message: string, channel: string) => {
-      if (channel === channel && message === "KILL") {
+    console.log("waitForPubSub", channel, maxWaitMs);
+    const listener = (msg: string, chl: string) => {
+      console.log("listener", msg, chl);
+      if (chl === channel && msg !== message) {
         abortController.abort();
       }
     };
