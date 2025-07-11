@@ -212,13 +212,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         await tokenClient.setBondTokenAllowance();
       }
 
-      // publish so that other instances can see that we're running
-      await redis.pub(botIdentifier, "KILL");
-      logger.debug({
-        at: "Dataworker#index",
-        message: `Published signal to ${botIdentifier} instances.`,
-      });
-
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
@@ -294,12 +287,24 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         let counter = 0;
 
+        // publish so that other instances can see that we're running
+        await redis.pub(botIdentifier, runIdentifier);
+        logger.debug({
+          at: "Dataworker#index",
+          message: `Published signal to ${botIdentifier} instances.`,
+        });
+
         while (updatedChallengeRemaining > 0 && ++counter < 5) {
           logger.debug({
             at: "Dataworker#index",
             message: `Waiting updated challenge remaining ${updatedChallengeRemaining}`,
           });
-          const handover = await waitForPubSub(redis, botIdentifier, (updatedChallengeRemaining + 12) * 1000);
+          const handover = await waitForPubSub(
+            redis,
+            botIdentifier,
+            runIdentifier,
+            (updatedChallengeRemaining + 12) * 1000
+          );
           if (handover) {
             logger.debug({
               at: "Dataworker#index",
