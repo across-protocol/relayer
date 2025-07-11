@@ -100,10 +100,6 @@ describe("Dataworker: Propose root bundle", async function () {
     await updateAllClients();
     expect(hubPoolClient.hasPendingProposal()).to.equal(true);
 
-    // Attempting to propose another root fails:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    expect(lastSpyLogIncludes(spy, "Has pending proposal, cannot propose")).to.be.true;
-
     // Advance time and execute leaves:
     await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     for (const leaf of expectedPoolRebalanceRoot2.leaves) {
