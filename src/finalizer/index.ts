@@ -532,12 +532,14 @@ async function updateFinalizerClients(clients: Clients) {
 export class FinalizerConfig extends DataworkerConfig {
   readonly maxFinalizerLookback: number;
   readonly finalizationStrategy: FinalizationType;
+  readonly finalizerEnabled: boolean;
   public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
-    const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
+    const { FINALIZER_ENABLED, FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
     super(env);
 
+    this.finalizerEnabled = FINALIZER_ENABLED === "true";
     this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS ?? "[]");
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
