@@ -339,7 +339,6 @@ describe("Dataworker block range-related utility methods", async function () {
       {
         [originChainId]: mainnetDeploymentBlock,
       },
-      true // isV3
     );
     expect(result.length).to.equal(1);
     expect(result[0].chainId).to.equal(chainIds[0]);
@@ -353,7 +352,6 @@ describe("Dataworker block range-related utility methods", async function () {
       {
         [originChainId]: mainnetDeploymentBlock,
       },
-      false // isV3
     );
     expect(result.length).to.equal(0);
 
@@ -370,7 +368,6 @@ describe("Dataworker block range-related utility methods", async function () {
       {
         [originChainId]: mainnetDeploymentBlock,
       },
-      true // isV3
     );
     expect(result.length).to.equal(0);
 
@@ -387,7 +384,6 @@ describe("Dataworker block range-related utility methods", async function () {
       {
         [originChainId]: mainnetDeploymentBlock,
       },
-      true // isV3
     );
     expect(result.length).to.equal(0);
   });
