@@ -67,8 +67,8 @@ describe("Dataworker: Execute relayer refunds", async function () {
     await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
     await updateAllClients();
 
-    const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-    multiCallerClient.enqueueTransaction(proposeTxn);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
     // Execute queue and check that root bundle is pending:
     await multiCallerClient.executeTxnQueues();
 
@@ -167,8 +167,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     });
     it("No validated bundle refunds", async function () {
       // Propose a bundle:
-      const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      multiCallerClient.enqueueTransaction(proposeTxn);
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await multiCallerClient.executeTxnQueues();
       await updateAllClients();
 
@@ -186,8 +185,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
     it("Get refunds from validated bundles", async function () {
       await updateAllClients();
       // Propose a bundle:
-      let proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      multiCallerClient.enqueueTransaction(proposeTxn);
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await multiCallerClient.executeTxnQueues();
 
       // Advance time and execute leaves:
@@ -273,8 +271,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       await updateAllClients();
 
       // Validate another bundle:
-      proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      multiCallerClient.enqueueTransaction(proposeTxn);
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await multiCallerClient.executeTxnQueues();
       await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
       await updateAllClients();
@@ -308,8 +305,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       ).to.gt(0);
 
       // Propose a bundle:
-      const proposeTxn = await dataworkerInstance.proposeRootBundle(spokePoolClients);
-      multiCallerClient.enqueueTransaction(proposeTxn);
+      await dataworkerInstance.proposeRootBundle(spokePoolClients);
       await multiCallerClient.executeTxnQueues();
       await updateAllClients();
 
