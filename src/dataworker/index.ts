@@ -169,11 +169,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     if (config.disputerEnabled) {
       await dataworker.validatePendingRootBundle(
         spokePoolClients,
-        config.sendingTransactionsEnabled,
         fromBlocks,
-        // @dev Opportunistically publish bundle data to external storage layer since we're reconstructing it in this
-        // process, if user has configured it so.
-        config.persistingBundleData
       );
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
@@ -202,8 +198,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
-        config.rootBundleExecutionThreshold,
-        config.sendingTransactionsEnabled,
         fromBlocks
       );
     } else {
@@ -217,7 +211,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingTransactionsEnabled,
           fromBlocks
         );
       }
@@ -227,13 +220,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         await dataworker.executeSlowRelayLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingTransactionsEnabled,
           fromBlocks
         );
         await dataworker.executeRelayerRefundLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingTransactionsEnabled,
           fromBlocks
         );
       }

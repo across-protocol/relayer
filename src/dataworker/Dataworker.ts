@@ -398,10 +398,10 @@ export class Dataworker {
    */
   async proposeRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    usdThresholdToSubmitNewBundle?: BigNumber,
-    submitProposals = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<BundleData> {
+    const submitProposals = this.config.sendingTransactionsEnabled;
+
     // TODO: Handle the case where we can't get event data or even blockchain data from any chain. This will require
     // some changes to override the bundle block range here, and loadData to skip chains with zero block ranges.
     // For now, we assume that if one blockchain fails to return data, then this entire function will fail. This is a
@@ -597,10 +597,10 @@ export class Dataworker {
 
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    submitDisputes = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
-    persistBundleData = false
   ): Promise<void> {
+    const persistBundleData = this.config.persistingBundleData;
+    const submitDisputes = this.config.sendingTransactionsEnabled;
     if (!this.clients.hubPoolClient.isUpdated || this.clients.hubPoolClient.currentTime === undefined) {
       throw new Error("HubPoolClient not updated");
     }
@@ -1140,7 +1140,6 @@ export class Dataworker {
   async executeSlowRelayLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     this.logger.debug({
@@ -1273,7 +1272,6 @@ export class Dataworker {
             balanceAllocator,
             client,
             tree,
-            submitExecution,
             rootBundleRelay.rootBundleId
           );
         }
@@ -1286,9 +1284,9 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
     slowRelayTree: MerkleTree<SlowFillLeaf>,
-    submitExecution: boolean,
     rootBundleId?: number
   ): Promise<void> {
+    const submitExecution = this.config.sendingTransactionsEnabled;
     const currentTime = client.getCurrentTime();
 
     // Ignore slow fill leaves for deposits with messages as these messages might be very expensive to execute.
@@ -1504,14 +1502,12 @@ export class Dataworker {
    * exchange rate updates needed to execute leaves.
    * @param spokePoolClients
    * @param balanceAllocator
-   * @param submitExecution
    * @param earliestBlocksInSpokePoolClients
    * @returns number of leaves executed
    */
   async executePoolRebalanceLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<number> {
     const leafCount = 0;
@@ -1633,7 +1629,6 @@ export class Dataworker {
       expectedTrees.relayerRefundTree.tree,
       expectedTrees.slowRelayTree.leaves,
       expectedTrees.slowRelayTree.tree,
-      submitExecution
     );
   }
 
@@ -1646,7 +1641,6 @@ export class Dataworker {
     relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
     slowFillLeaves: SlowFillLeaf[],
     slowFillTree: MerkleTree<SlowFillLeaf>,
-    submitExecution: boolean
   ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
@@ -1676,14 +1670,12 @@ export class Dataworker {
       latestLiquidReserves = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         balanceAllocator,
         mainnetLeaves[0],
-        submitExecution
       );
       leafCount += await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
         poolRebalanceTree,
-        submitExecution
       );
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
@@ -1697,7 +1689,6 @@ export class Dataworker {
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
         slowFillTree,
-        submitExecution,
         nextRootBundleIdForMainnet
       );
       await this._executeRelayerRefundLeaves(
@@ -1705,7 +1696,6 @@ export class Dataworker {
         balanceAllocator,
         spokePoolClients[hubPoolChainId],
         relayerRefundTree,
-        submitExecution,
         nextRootBundleIdForMainnet
       );
     }
@@ -1722,7 +1712,6 @@ export class Dataworker {
       latestLiquidReserves,
       balanceAllocator,
       nonHubChainPoolRebalanceLeaves,
-      submitExecution
     );
     Object.keys(latestLiquidReserves).forEach((token) => {
       if (!syncedL1Tokens.has(token)) {
@@ -1744,7 +1733,7 @@ export class Dataworker {
       });
       return l1TokenSet;
     }, []);
-    await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate, submitExecution);
+    await this._updateOldExchangeRates(l1TokensWithPotentiallyOlderUpdate);
 
     // Figure out which non-mainnet pool rebalance leaves we can execute and execute them:
     leafCount += await this._executePoolRebalanceLeaves(
@@ -1752,7 +1741,6 @@ export class Dataworker {
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
       poolRebalanceTree,
-      submitExecution
     );
     return leafCount;
   }
@@ -1806,8 +1794,8 @@ export class Dataworker {
     allLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
     tree: MerkleTree<PoolRebalanceLeaf>,
-    submitExecution: boolean
   ): Promise<number> {
+    const submitExecution = this.config.sendingTransactionsEnabled;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
     const signer = this.clients.hubPoolClient.hubPool.signer;
 
@@ -1845,8 +1833,7 @@ export class Dataworker {
             l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           },
           feeToken: feeToken.toNative(),
-          requiredAmount,
-        });
+          requiredAmount, });
         if (submitExecution) {
           const canFund = await balanceAllocator.requestBalanceAllocations([
             { ...feeData, holder: toAddressType(await signer.getAddress(), hubPoolChainId) },
@@ -1949,10 +1936,9 @@ export class Dataworker {
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
     balanceAllocator: BalanceAllocator,
     poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">,
-    submitExecution: boolean
   ): Promise<Record<string, BigNumber>> {
-    const hubPool = this.clients.hubPoolClient.hubPool;
-    const chainId = this.clients.hubPoolClient.chainId;
+    const submitExecution = this.config.sendingTransactionsEnabled;
+    const { hubPool, chainId } = this.clients.hubPoolClient;
 
     const updatedLiquidReserves: Record<string, BigNumber> = {};
     const { netSendAmounts, l1Tokens } = poolRebalanceLeaf;
@@ -2027,11 +2013,10 @@ export class Dataworker {
     latestLiquidReserves: Record<string, BigNumber>,
     balanceAllocator: BalanceAllocator,
     poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
-    submitExecution: boolean
   ): Promise<Set<string>> {
+    const submitExecution = this.config.sendingTransactionsEnabled;
     const updatedL1Tokens = new Set<string>();
-    const hubPool = this.clients.hubPoolClient.hubPool;
-    const hubPoolChainId = this.clients.hubPoolClient.chainId;
+    const { hubPool, chainId: hubPoolChainId }  = this.clients.hubPoolClient;
 
     const aggregateNetSendAmounts: Record<string, BigNumber> = {};
 
@@ -2162,9 +2147,9 @@ export class Dataworker {
     return updatedL1Tokens;
   }
 
-  async _updateOldExchangeRates(l1Tokens: EvmAddress[], submitExecution: boolean): Promise<void> {
-    const hubPool = this.clients.hubPoolClient.hubPool;
-    const chainId = this.clients.hubPoolClient.chainId;
+  async _updateOldExchangeRates(l1Tokens: EvmAddress[]): Promise<void> {
+    const submitExecution = this.config.sendingTransactionsEnabled;
+    const { hubPool, chainId }  = this.clients.hubPoolClient;
     const seenL1Tokens = new Set<string>();
 
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {
@@ -2236,7 +2221,6 @@ export class Dataworker {
   async executeRelayerRefundLeaves(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     balanceAllocator: BalanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(spokePoolClients)),
-    submitExecution = true,
     earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     const { configStoreClient, hubPoolClient } = this.clients;
@@ -2356,7 +2340,6 @@ export class Dataworker {
           balanceAllocator,
           client,
           tree,
-          submitExecution,
           rootBundleRelay.rootBundleId
         );
       }
@@ -2376,13 +2359,13 @@ export class Dataworker {
     balanceAllocator: BalanceAllocator,
     client: SpokePoolClient,
     relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
-    submitExecution: boolean,
     rootBundleId: number
   ): Promise<void> {
     if (leaves.length === 0) {
       return;
     }
     const chainId = client.chainId;
+    const submitExecution = this.config.sendingTransactionsEnabled;
 
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
     // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
