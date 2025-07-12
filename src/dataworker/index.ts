@@ -202,7 +202,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
-        config.rootBundleExecutionThreshold,
         config.sendingTransactionsEnabled,
         fromBlocks
       );
