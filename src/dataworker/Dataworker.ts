@@ -174,11 +174,6 @@ export class Dataworker {
     }
   }
 
-  isV3(_blockNumber: number): boolean {
-    _blockNumber; // lint
-    return true;
-  }
-
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
   // For instance, if the spoke or hub clients have been updated, it probably makes sense to clear this to be safe.
   clearCache(): void {
@@ -361,7 +356,6 @@ export class Dataworker {
       nextBundleMainnetStartBlock,
       true
     );
-    const mainnetBlockRange = getBlockRangeForChain(blockRangesForProposal, hubPoolClient.chainId, chainIds);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
@@ -369,8 +363,7 @@ export class Dataworker {
       spokePoolClients,
       blockRangesForProposal,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      this.isV3(mainnetBlockRange[0])
+      earliestBlocksInSpokePoolClients
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
@@ -940,8 +933,7 @@ export class Dataworker {
       spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      this.isV3(mainnetBlockRange[0])
+      earliestBlocksInSpokePoolClients
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
@@ -1192,8 +1184,7 @@ export class Dataworker {
             spokePoolClients,
             blockNumberRanges,
             chainIds,
-            earliestBlocksInSpokePoolClients,
-            this.isV3(mainnetBlockRange[0])
+            earliestBlocksInSpokePoolClients
           );
           if (invalidBlockRanges.length > 0) {
             this.logger.warn({
@@ -2285,8 +2276,7 @@ export class Dataworker {
           spokePoolClients,
           blockNumberRanges,
           chainIds,
-          earliestBlocksInSpokePoolClients,
-          this.isV3(mainnetBlockRanges[0])
+          earliestBlocksInSpokePoolClients
         );
         if (invalidBlockRanges.length > 0) {
           this.logger.warn({
@@ -2776,15 +2766,13 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     blockRanges: number[][],
     chainIds: number[],
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
-    isV3: boolean
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
   ): Promise<InvalidBlockRange[]> {
     return await blockRangesAreInvalidForSpokeClients(
       spokePoolClients,
       blockRanges,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      isV3
+      earliestBlocksInSpokePoolClients
     );
   }
 
