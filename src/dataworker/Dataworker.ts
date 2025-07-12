@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Contract, utils as ethersUtils } from "ethers";
+import { Contract, utils as ethersUtils, Signer } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   bnZero,
@@ -60,7 +60,7 @@ import {
   ConvertedRelayData,
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
-import { DataworkerClients } from "./DataworkerClientHelper";
+import { constructDataworkerClients, DataworkerClients } from "./DataworkerClientHelper";
 import { SpokePoolClient, BalanceAllocator, BundleDataClient, SVMSpokePoolClient } from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
@@ -136,6 +136,38 @@ export type PoolRebalanceRoot = {
 };
 
 type PoolRebalanceRootCache = Record<string, PoolRebalanceRoot>;
+
+export async function createDataworker(
+  _logger: winston.Logger,
+  baseSigner: Signer,
+  config?: DataworkerConfig
+): Promise<{
+  config: DataworkerConfig;
+  clients: DataworkerClients;
+  dataworker: Dataworker;
+}> {
+  config ??= new DataworkerConfig(process.env);
+  const clients = await constructDataworkerClients(_logger, config, baseSigner);
+
+  const dataworker = new Dataworker(
+    _logger,
+    config,
+    clients,
+    clients.configStoreClient.getChainIdIndicesForBlock(),
+    config.maxRelayerRepaymentLeafSizeOverride,
+    config.maxPoolRebalanceLeafSizeOverride,
+    config.spokeRootsLookbackCount,
+    config.bufferToPropose,
+    config.forcePropose,
+    config.forceProposalBundleRange
+  );
+
+  return {
+    config,
+    clients,
+    dataworker,
+  };
+}
 
 // @notice Constructs roots to submit to HubPool on L1. Fetches all data synchronously from SpokePool/HubPool clients
 // so this class assumes that those upstream clients are already updated and have fetched on-chain data from RPC's.

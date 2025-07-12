@@ -54,7 +54,7 @@ import {
   CHAIN_IDs,
   chainIsOPStack,
 } from "../utils";
-import { createDataworker } from "../dataworker";
+import { createDataworker } from "../dataworker/Dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
 import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "../interfaces";
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";

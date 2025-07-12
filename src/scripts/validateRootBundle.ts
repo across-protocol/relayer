@@ -30,7 +30,7 @@ import {
   getSpokePoolClientEventSearchConfigsForFastDataworker,
 } from "../dataworker/DataworkerClientHelper";
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
-import { createDataworker } from "../dataworker";
+import { createDataworker } from "../dataworker/Dataworker";
 import { getBlockForChain } from "../dataworker/DataworkerUtils";
 
 config();

@@ -13,52 +13,18 @@ import {
   Profiler,
   getSvmSignerFromEvmSigner,
 } from "../utils";
+import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { spokePoolClientsToProviders } from "../common";
-import { Dataworker } from "./Dataworker";
+import { createDataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
 import {
-  constructDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
   getSpokePoolClientEventSearchConfigsForFastDataworker,
-  DataworkerClients,
 } from "./DataworkerClientHelper";
-import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { PendingRootBundle, BundleData } from "../interfaces";
 
 config();
 let logger: winston.Logger;
-
-export async function createDataworker(
-  _logger: winston.Logger,
-  baseSigner: Signer,
-  config?: DataworkerConfig
-): Promise<{
-  config: DataworkerConfig;
-  clients: DataworkerClients;
-  dataworker: Dataworker;
-}> {
-  config ??= new DataworkerConfig(process.env);
-  const clients = await constructDataworkerClients(_logger, config, baseSigner);
-
-  const dataworker = new Dataworker(
-    _logger,
-    config,
-    clients,
-    clients.configStoreClient.getChainIdIndicesForBlock(),
-    config.maxRelayerRepaymentLeafSizeOverride,
-    config.maxPoolRebalanceLeafSizeOverride,
-    config.spokeRootsLookbackCount,
-    config.bufferToPropose,
-    config.forcePropose,
-    config.forceProposalBundleRange
-  );
-
-  return {
-    config,
-    clients,
-    dataworker,
-  };
-}
 
 function resolvePersonality(config: DataworkerConfig): string {
   if (config.proposerEnabled) {
@@ -117,6 +83,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   await config.update(logger); // Update address filter.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
+
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
