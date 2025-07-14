@@ -194,7 +194,8 @@ export async function waitForPubSub(
   message: string,
   maxWaitMs = 60000
 ): Promise<boolean> {
-  return new Promise((resolve, _) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return new Promise((resolve, _reject) => {
     const abortController = new AbortController();
     const signal = abortController.signal;
     const listener = (msg: string, chl: string) => {
@@ -202,7 +203,7 @@ export async function waitForPubSub(
         abortController.abort();
       }
     };
-    redisClient.sub(channel, listener);
+    void redisClient.sub(channel, listener);
 
     signal.addEventListener("abort", () => {
       resolve(true);
