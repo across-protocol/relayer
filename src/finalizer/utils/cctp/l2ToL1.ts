@@ -140,7 +140,7 @@ function augmentSendersListForSolana(senderAddresses: Address[], spokePoolClient
       toPublicKey(spokeAddress.toBase58())
     );
     // This format has to match format in CCTPUtils.ts >
-    const statePda = SvmAddress.from(_statePda.toBase58(), "base58");
+    const statePda = SvmAddress.from(_statePda.toBase58());
     return [...senderAddresses, statePda];
   } else {
     return senderAddresses;

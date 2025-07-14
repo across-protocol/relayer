@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   bnZero,
   winston,
@@ -46,6 +46,7 @@ import {
   mapAsync,
   getAccountMeta,
   getClaimAccountPda,
+  chainIsSvm,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2445,11 +2446,14 @@ export class Dataworker {
           }
           const refundSum = leaf.refundAmounts.reduce((acc, curr) => acc.add(curr), BigNumber.from(0));
           const totalSent = refundSum.add(leaf.amountToReturn.gte(0) ? leaf.amountToReturn : BigNumber.from(0));
+          const holder = chainIsSvm(leaf.chainId)
+            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(client.spokePoolAddress)))
+            : client.spokePoolAddress;
           const balanceRequestsToQuery = [
             {
               chainId: leaf.chainId,
               tokens: l2TokensToCountTowardsSpokePoolLeafExecutionCapital(leaf.l2TokenAddress, leaf.chainId),
-              holder: client.spokePoolAddress,
+              holder,
               amount: totalSent,
             },
           ];
