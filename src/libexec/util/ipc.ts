@@ -1,16 +1,39 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { isDefined, sortEventsAscending } from "../../utils";
+// import { Log, IPCEventRemoved, SpokePoolClientMessage } from "./../types";
 import { Log, SpokePoolClientMessage } from "./../types";
 
-/**
- * Given the inputs for a SpokePoolClient update, consolidate the inputs into a message and submit it to the parent
- * process (if defined).
- * @param blockNumber Block number up to which the update applies.
- * @param currentTime The SpokePool timestamp at blockNumber.
- * @param events An array of Log objects to be submitted.
- * @returns void
- */
-export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
+export type EventsAdded = {
+  placeholder: number; // @todo
+};
+
+export type SpokePoolEventRemoved = {
+  event: string;
+};
+
+export function postBlock(blockNumber: number, currentTime: number): boolean {
+  if (!isDefined(process.send)) {
+    // Process was probably started standalone.
+    // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
+    return true;
+  }
+
+  const message: SpokePoolClientMessage = {
+    blockNumber,
+    currentTime,
+  };
+
+  const msg = JSON.stringify(message);
+  try {
+    process.send(msg);
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+export function postEvents(events: Log[]): boolean {
   if (!isDefined(process.send)) {
     // Process was probably started standalone.
     // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
@@ -19,8 +42,6 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
 
   events = sortEventsAscending(events);
   const message: SpokePoolClientMessage = {
-    blockNumber,
-    currentTime,
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
@@ -40,13 +61,22 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
  * @param event Log instance.
  * @returns void
  */
-export function removeEvent(event: Log): void {
+export function removeEvent(event: Log): boolean {
+  const message: SpokePoolEventRemoved = {
+    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
+  };
+  return post(message);
+}
+
+function post(message: SpokePoolClientMessage): boolean {
   if (!isDefined(process.send)) {
     return;
   }
 
-  const message: SpokePoolClientMessage = {
-    event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
-  };
-  process.send(JSON.stringify(message));
+  try {
+    process.send(message);
+    return true;
+  } catch {
+    return false;
+  }
 }

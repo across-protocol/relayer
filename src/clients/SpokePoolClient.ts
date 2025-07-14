@@ -14,7 +14,7 @@ import {
   spreadEventWithBlockNumber,
   toAddressType,
 } from "../utils";
-import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
+import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
@@ -26,14 +26,17 @@ type SpokePoolEventRemoved = {
   event: string;
 };
 
-type SpokePoolEventsAdded = {
+type BlockUpdate = {
   blockNumber: number;
   currentTime: number;
+};
+
+type SpokePoolEventsAdded = {
   nEvents: number; // Number of events.
   data: string;
 };
 
-export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
+export type SpokePoolClientMessage = BlockUpdate | SpokePoolEventsAdded | SpokePoolEventRemoved;
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -52,6 +55,7 @@ type MinGenericSpokePoolClient = {
   chainId: number;
   spokePoolAddress: Address | undefined;
   deploymentBlock: number;
+  isUpdated: boolean;
   _queryableEventNames: () => string[];
   eventSearchConfig: { from: number; to?: number; maxLookBack?: number };
   depositHashes: { [depositHash: string]: DepositWithBlock };
@@ -163,12 +167,30 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         return;
       }
 
+      if (BlockUpdateMessage.is(message)) {
+        const { blockNumber, currentTime } = message;
+
+        // nb. This condition may be indicative of re-org.
+        if ((this.isUpdated && blockNumber <= this.#pendingBlockNumber) || currentTime <= this.#pendingCurrentTime) {
+          this.logger.warn({
+            at,
+            message: "Received out-of-order block update.",
+            blockNumber: { current: this.#pendingBlockNumber, new: blockNumber },
+            currentTime: { current: this.#pendingCurrentTime, new: currentTime },
+          });
+        }
+
+        this.#pendingBlockNumber = blockNumber;
+        this.#pendingCurrentTime = currentTime;
+        return;
+      }
+
       if (!EventsAddedMessage.is(message)) {
         this.logger.warn({ at, message: "Received unexpected message from SpokePoolListener.", rawMessage: message });
         return;
       }
 
-      const { blockNumber, currentTime, nEvents, data } = message;
+      const { nEvents, data } = message;
       if (nEvents > 0) {
         const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
 
@@ -188,9 +210,6 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           this.#pendingEvents[eventIdx].push(event);
         });
       }
-
-      this.#pendingBlockNumber = blockNumber;
-      this.#pendingCurrentTime = currentTime;
     }
 
     /**

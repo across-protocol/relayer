@@ -13,7 +13,6 @@ import {
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
-  getCurrentTime,
   getDeploymentBlockNumber,
   getNetworkName,
   getNodeUrlList,
@@ -26,7 +25,7 @@ import {
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
-import { postEvents, removeEvent } from "./util/ipc";
+import { postBlock, postEvents, removeEvent } from "./util/ipc";
 import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
@@ -74,9 +73,8 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
     eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
   );
 
-  if (!stop) {
-    postEvents(toBlock, currentTime, events.flat());
-  }
+  stop ||= !postBlock(toBlock, currentTime);
+  stop ||= !postEvents(events.flat());
 }
 
 /**
@@ -117,19 +115,17 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
               event: log["eventName"],
               topics: [], // Not supplied by viem, but not actually used by the relayer.
             };
+
             if (log.removed) {
               eventMgr.remove(event, provider.name);
               removeEvent(event);
-            } else {
-              eventMgr.add(event, provider.name);
+              return;
+            }
+
+            if (eventMgr.add(event, provider.name)) {
+              stop ||= !postEvents([event]);
             }
           });
-
-          const events = eventMgr.tick();
-          const { blockNumber } = events.at(-1);
-          if (!postEvents(blockNumber, getCurrentTime(), events)) {
-            stop = true;
-          }
         },
       });
     });

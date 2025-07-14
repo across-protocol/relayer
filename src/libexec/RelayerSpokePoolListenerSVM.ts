@@ -23,7 +23,7 @@ import {
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
-import { postEvents } from "./util/ipc";
+import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
 type WSProvider = RpcSubscriptions<SolanaRpcSubscriptionsApi>;
@@ -88,7 +88,7 @@ async function scrapeEvents(
   ]);
 
   if (!abortController.signal.aborted) {
-    if (!postEvents(Number(opts.to), currentTime, events.flat().map(logFromEvent))) {
+    if (!postBlock(Number(opts.to), currentTime) || !postEvents(events.flat().map(logFromEvent))) {
       abortController.abort();
     }
   }
@@ -124,8 +124,8 @@ async function listen(
     for await (const update of subscription) {
       const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
       const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
-      const events = eventMgr.tick();
-      if (!postEvents(Number(slot), currentTime, events)) {
+
+      if (!postBlock(Number(slot), currentTime)) {
         abortController.abort();
       }
     }
@@ -144,7 +144,10 @@ async function listen(
         .filter(({ name }) => eventNames.includes(name))
         .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-      events.forEach((event) => eventMgr.add(event, providerName));
+      const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
+      if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
+        abortController.abort();
+      }
     }
   };
 
