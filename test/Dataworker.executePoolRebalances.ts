@@ -106,7 +106,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       destinationChainId
     ));
   });
-  it.only("Simple lifecycle", async function () {
+  it("Simple lifecycle", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
