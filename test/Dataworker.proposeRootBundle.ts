@@ -13,7 +13,6 @@ import {
   lastSpyLogLevel,
   requestSlowFill,
   sinon,
-  toBNWei,
   utf8ToHex,
 } from "./utils";
 
