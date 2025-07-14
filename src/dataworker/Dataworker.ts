@@ -565,7 +565,7 @@ export class Dataworker {
 
   async validatePendingRootBundle(
     spokePoolClients: { [chainId: number]: SpokePoolClient },
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {},
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number } = {}
   ): Promise<void> {
     const persistBundleData = this.config.persistingBundleData;
     const submitDisputes = this.config.sendingTransactionsEnabled;
@@ -1596,7 +1596,7 @@ export class Dataworker {
       expectedTrees.relayerRefundTree.leaves,
       expectedTrees.relayerRefundTree.tree,
       expectedTrees.slowRelayTree.leaves,
-      expectedTrees.slowRelayTree.tree,
+      expectedTrees.slowRelayTree.tree
     );
   }
 
@@ -1608,7 +1608,7 @@ export class Dataworker {
     relayerRefundLeaves: RelayerRefundLeaf[],
     relayerRefundTree: MerkleTree<RelayerRefundLeaf>,
     slowFillLeaves: SlowFillLeaf[],
-    slowFillTree: MerkleTree<SlowFillLeaf>,
+    slowFillTree: MerkleTree<SlowFillLeaf>
   ): Promise<number> {
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
 
@@ -1637,13 +1637,13 @@ export class Dataworker {
       assert(mainnetLeaves.length === 1, "There should only be one Ethereum PoolRebalanceLeaf");
       latestLiquidReserves = await this._updateExchangeRatesBeforeExecutingHubChainLeaves(
         balanceAllocator,
-        mainnetLeaves[0],
+        mainnetLeaves[0]
       );
       leafCount += await this._executePoolRebalanceLeaves(
         spokePoolClients,
         mainnetLeaves,
         balanceAllocator,
-        poolRebalanceTree,
+        poolRebalanceTree
       );
 
       // We need to know the next root bundle ID for the mainnet spoke pool in order to execute leaves for roots that
@@ -1679,7 +1679,7 @@ export class Dataworker {
     const syncedL1Tokens = await this._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
       latestLiquidReserves,
       balanceAllocator,
-      nonHubChainPoolRebalanceLeaves,
+      nonHubChainPoolRebalanceLeaves
     );
     Object.keys(latestLiquidReserves).forEach((token) => {
       if (!syncedL1Tokens.has(token)) {
@@ -1708,7 +1708,7 @@ export class Dataworker {
       spokePoolClients,
       nonHubChainPoolRebalanceLeaves,
       balanceAllocator,
-      poolRebalanceTree,
+      poolRebalanceTree
     );
     return leafCount;
   }
@@ -1761,7 +1761,7 @@ export class Dataworker {
     },
     allLeaves: PoolRebalanceLeaf[],
     balanceAllocator: BalanceAllocator,
-    tree: MerkleTree<PoolRebalanceLeaf>,
+    tree: MerkleTree<PoolRebalanceLeaf>
   ): Promise<number> {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const hubPoolChainId = this.clients.hubPoolClient.chainId;
@@ -1801,7 +1801,8 @@ export class Dataworker {
             l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
           },
           feeToken: feeToken.toNative(),
-          requiredAmount, });
+          requiredAmount,
+        });
         if (submitExecution) {
           const canFund = await balanceAllocator.requestBalanceAllocations([
             { ...feeData, holder: toAddressType(await signer.getAddress(), hubPoolChainId) },
@@ -1903,7 +1904,7 @@ export class Dataworker {
 
   async _updateExchangeRatesBeforeExecutingHubChainLeaves(
     balanceAllocator: BalanceAllocator,
-    poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">,
+    poolRebalanceLeaf: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens">
   ): Promise<Record<string, BigNumber>> {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const { hubPool, chainId } = this.clients.hubPoolClient;
@@ -1980,11 +1981,11 @@ export class Dataworker {
   async _updateExchangeRatesBeforeExecutingNonHubChainLeaves(
     latestLiquidReserves: Record<string, BigNumber>,
     balanceAllocator: BalanceAllocator,
-    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[],
+    poolRebalanceLeaves: Pick<PoolRebalanceLeaf, "netSendAmounts" | "l1Tokens" | "chainId">[]
   ): Promise<Set<string>> {
     const submitExecution = this.config.sendingTransactionsEnabled;
     const updatedL1Tokens = new Set<string>();
-    const { hubPool, chainId: hubPoolChainId }  = this.clients.hubPoolClient;
+    const { hubPool, chainId: hubPoolChainId } = this.clients.hubPoolClient;
 
     const aggregateNetSendAmounts: Record<string, BigNumber> = {};
 
@@ -2117,7 +2118,7 @@ export class Dataworker {
 
   async _updateOldExchangeRates(l1Tokens: EvmAddress[]): Promise<void> {
     const submitExecution = this.config.sendingTransactionsEnabled;
-    const { hubPool, chainId }  = this.clients.hubPoolClient;
+    const { hubPool, chainId } = this.clients.hubPoolClient;
     const seenL1Tokens = new Set<string>();
 
     await sdk.utils.forEachAsync(l1Tokens, async (l1Token) => {

@@ -167,10 +167,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     profiler.mark("dataworkerFunctionLoopTimerStart");
     // Validate and dispute pending proposal before proposing a new one
     if (config.disputerEnabled) {
-      await dataworker.validatePendingRootBundle(
-        spokePoolClients,
-        fromBlocks,
-      );
+      await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
     }
@@ -196,10 +193,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
-      proposedBundleData = await dataworker.proposeRootBundle(
-        spokePoolClients,
-        fromBlocks
-      );
+      proposedBundleData = await dataworker.proposeRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
@@ -217,16 +211,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       if (config.l2ExecutorEnabled) {
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          fromBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          fromBlocks
-        );
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, fromBlocks);
+        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator, fromBlocks);
       }
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
