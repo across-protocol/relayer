@@ -239,15 +239,12 @@ export class ProfitClient {
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
       // Attempt to extract an underlying cause, if the error object exposes one. This is
-      // helpful for libraries that populate the standard `cause` property on Error
-      // instances.
+      // helpful for Solana errors, where standard `cause` property of Error is populated
       let cause: string | undefined;
       if (err && typeof err === "object" && "cause" in err) {
         const _cause = (err as { cause?: unknown }).cause;
         if (_cause) {
-          cause = isEthersError(_cause)
-            ? _cause.reason
-            : isError(_cause)
+          cause = isError(_cause)
             ? _cause.message
             : // For non-Error objects (including those containing BigInts), use util.inspect for a
               // readable representation that won’t throw on JSON.stringify. This prints BigInts as
