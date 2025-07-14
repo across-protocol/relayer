@@ -58,6 +58,15 @@ export class RedisClient {
     }
   }
 
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    await this.client.subscribe(channel, listener);
+    return 1;
+  }
+
   async disconnect(): Promise<void> {
     await disconnectRedisClient(this.client, this.logger);
   }
@@ -158,6 +167,51 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   if (depositRaw) {
     return JSON.parse(depositRaw, objectWithBigNumberReviver);
   }
+}
+
+export async function overrideRedisKey(
+  key: string,
+  value: string,
+  ttl: number,
+  redisClient: CachingMechanismInterface,
+  logger: winston.Logger
+) {
+  const existingValue = await redisClient.get(key);
+  if (existingValue === value) {
+    return false;
+  }
+
+  logger.debug({ at: "OverrideKey#run", message: `Taking over from ${key} instance ${existingValue}.` });
+  await redisClient.set(key, value, ttl);
+  logger.debug({ at: "OverrideKey#run", message: `Handing over to ${key} instance ${value}.` });
+
+  return true;
+}
+
+export async function waitForPubSub(
+  redisClient: CachingMechanismInterface,
+  channel: string,
+  message: string,
+  maxWaitMs = 60000
+): Promise<boolean> {
+  return new Promise((resolve, _) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const listener = (msg: string, chl: string) => {
+      if (chl === channel && msg !== message) {
+        abortController.abort();
+      }
+    };
+    redisClient.sub(channel, listener);
+
+    signal.addEventListener("abort", () => {
+      resolve(true);
+    });
+
+    setTimeout(() => {
+      resolve(false);
+    }, maxWaitMs);
+  });
 }
 
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {

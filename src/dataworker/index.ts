@@ -12,6 +12,8 @@ import {
   isDefined,
   Profiler,
   getSvmSignerFromEvmSigner,
+  getRedisCache,
+  waitForPubSub,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -27,6 +29,15 @@ import { PendingRootBundle, BundleData } from "../interfaces";
 
 config();
 let logger: winston.Logger;
+
+const ACTIVE_DATAWORKER_EXPIRY = 600; // 10 minutes.
+const {
+  RUN_IDENTIFIER: runIdentifier,
+  BOT_IDENTIFIER: botIdentifier = "across-dataworker",
+  DATAWORKER_MAX_AWAIT_DELAY = "600",
+} = process.env;
+
+const maxAwaitDelay = Number(DATAWORKER_MAX_AWAIT_DELAY);
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -117,6 +128,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   await config.update(logger); // Update address filter.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
+
+  const redis = await getRedisCache(logger);
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
@@ -255,7 +268,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
         pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if (proposalCollision || executorCollision) {
+    if (proposalCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
@@ -268,6 +281,47 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
+      // wait
+
+      if (config.l1ExecutorEnabled && redis && runIdentifier) {
+        let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        let counter = 0;
+
+        // publish so that other instances can see that we're running
+        await redis.pub(botIdentifier, runIdentifier);
+        logger.debug({
+          at: "Dataworker#index",
+          message: `Published signal to ${botIdentifier} instances.`,
+        });
+
+        while (updatedChallengeRemaining > 0 && ++counter < 5) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
+          });
+          const handover = await waitForPubSub(
+            redis,
+            botIdentifier,
+            runIdentifier,
+            (updatedChallengeRemaining + 12) * 1000
+          );
+          if (handover) {
+            logger.debug({
+              at: "Dataworker#index",
+              message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+            });
+            return;
+          } else {
+            logger.debug({
+              at: "Dataworker#index",
+              message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+            });
+          }
+
+          updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        }
+      }
+
       await clients.multiCallerClient.executeTxnQueues();
     }
     profiler.mark("dataworkerFunctionLoopTimerEnd");
