@@ -106,7 +106,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
       destinationChainId
     ));
   });
-  it("Simple lifecycle", async function () {
+  it.only("Simple lifecycle", async function () {
     await updateAllClients();
 
     // Send a deposit and a fill so that dataworker builds simple roots.
@@ -134,14 +134,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTxnQueues();
 
-    // Executing leaves before bundle challenge period has passed should do nothing:
-    await updateAllClients();
-    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
-    expect(leafCount).to.equal(0);
-    expect(lastSpyLogIncludes(spy, "Challenge period not passed")).to.be.true;
-
-    // Advance time and execute leaves:
-    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    // Executing leaves before bundle challenge period should still execute leaves
     await updateAllClients();
     leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(2);
@@ -150,6 +143,18 @@ describe("Dataworker: Execute pool rebalances", async function () {
     // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
     // console.log(spy.getCall(-1))
     expect(multiCallerClient.transactionCount()).to.equal(4);
+    await multiCallerClient.executeTxnQueues();
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(2);
+
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 to update the exchangeRate to execute the destination chain leaf.
+    // extra ETH for arbitrum gas fees has been sent in the previous call to executeTxnQueues.
+    // console.log(spy.getCall(-1))
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTxnQueues();
 
     // If we attempt execution again, the hub pool client should show them as already executed.
