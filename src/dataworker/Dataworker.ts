@@ -433,38 +433,6 @@ export class Dataworker {
       logData
     );
 
-    if (usdThresholdToSubmitNewBundle !== undefined) {
-      // Exit early if volume of pool rebalance leaves exceeds USD threshold. Volume includes netSendAmounts only since
-      // that is the actual amount sent over bridges. This also mitigates the chance that a RelayerRefundLeaf is
-      // published but its refund currency isn't sent over the bridge in a PoolRebalanceLeaf.
-      const totalUsdRefund = await PoolRebalanceUtils.computePoolRebalanceUsdVolume(
-        rootBundleData.poolRebalanceLeaves,
-        this.clients
-      );
-      if (totalUsdRefund.lt(usdThresholdToSubmitNewBundle)) {
-        this.logger.debug({
-          at: "Dataworker",
-          message: "Root bundle USD volume does not exceed threshold, exiting early 🟡",
-          usdThresholdToSubmitNewBundle,
-          totalUsdRefund,
-          leaves: rootBundleData.poolRebalanceLeaves.map((leaf) => {
-            return {
-              ...leaf,
-              l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
-            };
-          }),
-        });
-        return;
-      } else {
-        this.logger.debug({
-          at: "Dataworker",
-          message: "Root bundle USD volume exceeds threshold! 💚",
-          usdThresholdToSubmitNewBundle,
-          totalUsdRefund,
-        });
-      }
-    }
-
     // TODO: Validate running balances in potential new bundle and make sure that important invariants
     // are not violated, such as a token balance being lower than the amount necessary to pay out all refunds,
     // slow fills, and return funds to the HubPool. Can use logic similar to /src/scripts/validateRunningbalances.ts
