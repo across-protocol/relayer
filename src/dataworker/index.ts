@@ -87,6 +87,8 @@ async function getChallengeRemaining(chainId: number): Promise<number> {
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const { RUN_IDENTIFIER: runIdentifier } = process.env;
+
   const profiler = new Profiler({
     at: "Dataworker#index",
     logger: _logger,
@@ -97,7 +99,11 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
 
-  if (challengeRemaining > config.minChallengeLeadTime && (config.proposerEnabled || config.l1ExecutorEnabled)) {
+  if (
+    !isDefined(runIdentifier) &&
+    challengeRemaining > config.minChallengeLeadTime &&
+    ((config.proposerEnabled && !config.forcePropose) || config.l1ExecutorEnabled)
+  ) {
     logger[startupLogLevel(config)]({
       at: "Dataworker#index",
       message: `${personality} aborting (not ready)`,
