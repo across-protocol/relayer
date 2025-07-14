@@ -1,4 +1,5 @@
 import { Provider } from "@ethersproject/abstract-provider";
+import { inspect } from "util";
 import { utils as ethersUtils } from "ethers";
 import { constants as sdkConsts, relayFeeCalculator, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
@@ -237,10 +238,28 @@ export class ProfitClient {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
       const reason = isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
+      // Attempt to extract an underlying cause, if the error object exposes one. This is
+      // helpful for libraries that populate the standard `cause` property on Error
+      // instances.
+      let cause: string | undefined;
+      if (err && typeof err === "object" && "cause" in err) {
+        const _cause = (err as { cause?: unknown }).cause;
+        if (_cause) {
+          cause = isEthersError(_cause)
+            ? _cause.reason
+            : isError(_cause)
+            ? _cause.message
+            : // For non-Error objects (including those containing BigInts), use util.inspect for a
+              // readable representation that won’t throw on JSON.stringify. This prints BigInts as
+              // “123n” and provides depth-limited details rather than the unhelpful "[object Object]".
+              inspect(_cause, { depth: 3, breakLength: 120 });
+        }
+      }
       this.logger.warn({
         at: "ProfitClient#getTotalGasCost",
         message: "Failed to simulate fill for deposit.",
         reason,
+        cause,
         deposit: convertRelayDataParamsToBytes32(deposit),
         notificationPath: "across-warn",
       });
