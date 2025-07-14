@@ -62,7 +62,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       message: eventOverride?.message ?? "0x",
       quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
       fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
-      destinationChainId,
+      destinationChainId: eventOverride?.destinationChainId ?? destinationChainId,
       blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
       // so that mocked client's latestHeightSearched gets set to the same value.
     } as interfaces.DepositWithBlock);
@@ -224,6 +224,24 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     expect(data1.bundleSlowFillsV3[destinationChainId][toBytes32(erc20_2.address)][0].depositId).to.equal(
       eligibleToSlowFill.args.depositId
     );
+  });
+
+  it("Allows slow fills for deposits where originChain == destinationChain", async function () {
+    generateV3Deposit({ outputToken: erc20_1.address, destinationChainId: originChainId });
+    await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+    const deposits = mockOriginSpokePoolClient.getDeposits();
+
+    const fillObject = V3FillFromDeposit(deposits[0], ZERO_ADDRESS);
+    const { relayer, repaymentChainId, relayExecutionInfo, ...relayData } = fillObject;
+    await mockOriginSpokePoolClient.requestSlowFill({
+      ...relayData,
+      blockNumber: spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
+      // so that mocked client's latestHeightSearched gets set to the same value.
+    } as interfaces.SlowFillRequestWithBlock);
+    await mockOriginSpokePoolClient.update(["RequestedSlowFill"]);
+    expect(mockOriginSpokePoolClient.getSlowFillRequestsForOriginChain(originChainId).length).to.equal(1);
+    const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), spokePoolClients);
+    expect(data1.bundleSlowFillsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
   });
 
   it("Ignores disabled chains for slow fill requests", async function () {

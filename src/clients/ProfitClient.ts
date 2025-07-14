@@ -1,12 +1,6 @@
 import { Provider } from "@ethersproject/abstract-provider";
 import { utils as ethersUtils } from "ethers";
-import {
-  constants as sdkConsts,
-  priceClient,
-  relayFeeCalculator,
-  typeguards,
-  utils as sdkUtils,
-} from "@across-protocol/sdk";
+import { constants as sdkConsts, relayFeeCalculator, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import * as constants from "../common/Constants";
 import {
   assert,
@@ -27,6 +21,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
+  ZERO_BYTES,
   formatGwei,
   fixedPointAdjustment,
   getRemoteTokenForL1Token,
@@ -39,9 +34,13 @@ import {
   chainIsEvm,
   EvmAddress,
   Address,
+  SvmAddress,
   toAddressType,
-  toBytes32,
   convertRelayDataParamsToBytes32,
+  PriceClient,
+  acrossApi,
+  coingecko,
+  defiLlama,
 } from "../utils";
 import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
@@ -56,6 +55,7 @@ const {
   EMPTY_MESSAGE,
   DEFAULT_SIMULATED_RELAYER_ADDRESS: PROD_RELAYER,
   DEFAULT_SIMULATED_RELAYER_ADDRESS_TEST: TEST_RELAYER,
+  DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM: SVM_RELAYER,
 } = sdkConsts;
 
 const { getNativeTokenSymbol, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -96,11 +96,8 @@ type UnprofitableFill = {
 // relayer's own address. The specified address is deliberately setup by RL to have a 0 token balance.
 const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
-const { PriceClient } = priceClient;
-const { acrossApi, coingecko, defiLlama } = priceClient.adapters;
-
 export class ProfitClient {
-  private readonly priceClient;
+  private readonly priceClient: PriceClient;
   protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenSymbolMap: { [symbol: string]: string } = {};
   protected tokenPrices: { [address: string]: BigNumber } = {};
@@ -196,6 +193,11 @@ export class ProfitClient {
     if (ethersUtils.isAddress(token)) {
       return toAddressType(token, CHAIN_IDs.MAINNET);
     }
+    try {
+      return SvmAddress.from(token);
+    } catch {
+      // The token address is neither an SVM address nor an EVM address, so it must be a symbol.
+    }
     const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
     // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
     // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
@@ -218,7 +220,7 @@ export class ProfitClient {
    */
   getPriceOfToken(token: string): BigNumber {
     const address = this.resolveTokenAddress(token);
-    const price = this.tokenPrices[address.toBytes32()];
+    const price = this.tokenPrices[address.toNative()];
     if (!isDefined(price)) {
       this.logger.warn({ at: "ProfitClient#getPriceOfToken", message: `Token ${token} not in price list.`, address });
       return bnZero;
@@ -610,13 +612,13 @@ export class ProfitClient {
     // Pre-populate any new addresses.
     Object.entries(tokens).forEach(([symbol, address]) => {
       this.tokenSymbolMap[symbol] ??= address;
-      this.tokenPrices[toBytes32(address)] ??= bnZero;
+      this.tokenPrices[address] ??= bnZero;
     });
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[toBytes32(address)] = toBNWei(price)));
+      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
@@ -651,33 +653,39 @@ export class ProfitClient {
       [CHAIN_IDs.TATARA]: "WETH",
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
-    const [defaultTestSymbol, relayer] =
+    const [defaultTestSymbol, _relayer] =
       this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
-
-    // @dev The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead,
-    // use the main RL address because it has all supported tokens and approvals in place on all chains.
-    const sampleDeposit = {
-      depositId: bnZero,
-      depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-      recipient: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-      inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
-      inputAmount: outputAmount.add(bnOne),
-      outputToken: "", // SpokePool-specific, overwritten later.
-      outputAmount,
-      originChainId: 0, // Not verified by the SpokePool.
-      destinationChainId: 0, // SpokePool-specific, overwritten later.
-      quoteTimestamp: currentTime - 60,
-      fillDeadline: currentTime + 60,
-      exclusivityDeadline: 0,
-      exclusiveRelayer: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET),
-      message: EMPTY_MESSAGE,
-      fromLiteChain: false,
-      toLiteChain: false,
-    };
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+        // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
+        const destinationAddress = toAddressType(
+          chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
+          destinationChainId
+        );
+        const relayer = chainIsEvm(destinationChainId) ? _relayer : SVM_RELAYER;
+        const sampleDeposit = {
+          depositId: bnZero,
+          depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
+          recipient: destinationAddress,
+          inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
+          inputAmount: outputAmount.add(bnOne),
+          outputToken: "", // SpokePool-specific, overwritten later.
+          outputAmount,
+          originChainId: 0, // Not verified by the SpokePool.
+          destinationChainId: 0, // SpokePool-specific, overwritten later.
+          quoteTimestamp: currentTime - 60,
+          fillDeadline: currentTime + 60,
+          exclusivityDeadline: 0,
+          exclusiveRelayer: toAddressType(
+            chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
+            destinationChainId
+          ),
+          message: EMPTY_MESSAGE,
+          fromLiteChain: false,
+          toLiteChain: false,
+        };
         const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
         const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =

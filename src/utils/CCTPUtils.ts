@@ -832,7 +832,7 @@ async function _getCCTPDepositEventsSvm(
   // Return undefined if we need to filter out the deposit event.
   const _depositsWithAttestations = await mapAsync(depositForBurnEvents, async (event) => {
     const eventData = event.data as MinimalSvmDepositForBurnData;
-    const depositor = SvmAddress.from(eventData.depositor, "base58");
+    const depositor = SvmAddress.from(eventData.depositor);
     const destinationDomain = eventData.destinationDomain;
 
     if (
