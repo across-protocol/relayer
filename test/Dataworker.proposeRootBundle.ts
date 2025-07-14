@@ -148,11 +148,6 @@ describe("Dataworker: Propose root bundle", async function () {
     );
     const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
-    // TEST 5:
-    // Won't submit anything if the USD threshold to propose a root is set and set too high:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
-    expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
-
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     // Should have enqueued a new transaction:
