@@ -169,32 +169,14 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
-export async function overrideRedisKey(
-  key: string,
-  value: string,
-  ttl: number,
-  redisClient: CachingMechanismInterface,
-  logger: winston.Logger
-) {
-  const existingValue = await redisClient.get(key);
-  if (existingValue === value) {
-    return false;
-  }
-
-  logger.debug({ at: "OverrideKey#run", message: `Taking over from ${key} instance ${existingValue}.` });
-  await redisClient.set(key, value, ttl);
-  logger.debug({ at: "OverrideKey#run", message: `Handing over to ${key} instance ${value}.` });
-
-  return true;
-}
-
 export async function waitForPubSub(
   redisClient: CachingMechanismInterface,
   channel: string,
   message: string,
   maxWaitMs = 60000
 ): Promise<boolean> {
-  return new Promise((resolve, _) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return new Promise((resolve, _reject) => {
     const abortController = new AbortController();
     const signal = abortController.signal;
     const listener = (msg: string, chl: string) => {
@@ -202,7 +184,7 @@ export async function waitForPubSub(
         abortController.abort();
       }
     };
-    redisClient.sub(channel, listener);
+    void redisClient.sub(channel, listener);
 
     signal.addEventListener("abort", () => {
       resolve(true);

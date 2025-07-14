@@ -30,14 +30,11 @@ import { PendingRootBundle, BundleData } from "../interfaces";
 config();
 let logger: winston.Logger;
 
-const ACTIVE_DATAWORKER_EXPIRY = 600; // 10 minutes.
 const {
   RUN_IDENTIFIER: runIdentifier,
   BOT_IDENTIFIER: botIdentifier = "across-dataworker",
-  DATAWORKER_MAX_AWAIT_DELAY = "600",
+  AWAIT_CHALANGE_PERIOD: awaitChallengePeriod = "false",
 } = process.env;
-
-const maxAwaitDelay = Number(DATAWORKER_MAX_AWAIT_DELAY);
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -281,9 +278,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
-      // wait
-
-      if (config.l1ExecutorEnabled && redis && runIdentifier) {
+      if (config.l1ExecutorEnabled && redis && runIdentifier && awaitChallengePeriod === "true") {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         let counter = 0;
 
