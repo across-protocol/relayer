@@ -2,16 +2,13 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
 import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
-  bnZero,
   BigNumber,
-  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   convertFromWei,
   formatFeePct,
   shortenHexString,
   shortenHexStrings,
   toBN,
-  toBNWei,
   winston,
   assert,
   getNetworkName,
@@ -20,7 +17,6 @@ import {
   Address,
   isDefined,
 } from "../utils";
-import { DataworkerClients } from "./DataworkerClientHelper";
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],

@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { BigNumber, assert, getArweaveJWKSigner, toBNWei } from "../utils";
+import { assert, getArweaveJWKSigner } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
