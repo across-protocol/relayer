@@ -43,7 +43,7 @@ export class SvmFillerClient {
     readonly chainId: number,
     private readonly logger: winston.Logger
   ) {
-    this.relayerAddress = SvmAddress.from(this.signer.address, "base58");
+    this.relayerAddress = SvmAddress.from(this.signer.address);
   }
 
   static async from(
