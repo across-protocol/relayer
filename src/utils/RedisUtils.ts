@@ -66,7 +66,7 @@ export class RedisClient {
     await this.client.subscribe(channel, listener);
     return 1;
   }
-  
+
   async disconnect(): Promise<void> {
     await disconnectRedisClient(this.client, this.logger);
   }

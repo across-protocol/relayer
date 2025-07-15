@@ -211,7 +211,12 @@ export function finalizeCCTPV1Messages(
 ): Promise<string[]> {
   return mapAsync(attestedMessages, async (message) => {
     const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
-    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(solanaClient, signer, attestedCCTPMessage, hubChainId);
+    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
+      solanaClient,
+      signer,
+      attestedCCTPMessage,
+      hubChainId
+    );
 
     if (simulate) {
       const result = await solanaClient
