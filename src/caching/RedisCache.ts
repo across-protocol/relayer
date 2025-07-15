@@ -35,12 +35,11 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     return key;
   }
 
-  // @TODO: Implement these methods.
-  public async sub(topic: string, callback: (message: string, channel: string) => unknown): Promise<number> {
-    throw new Error(`Not implemented: ${topic}, ${callback}`);
+  public async pub(channel: string, message: string): Promise<number> {
+    return await this.redisClient.pub(channel, message);
   }
 
-  public async pub(topic: string, message: string): Promise<number> {
-    throw new Error(`Not implemented: ${topic}, ${message}`);
+  public async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    return await this.redisClient.sub(channel, listener);
   }
 }

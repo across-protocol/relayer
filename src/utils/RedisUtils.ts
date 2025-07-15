@@ -58,6 +58,15 @@ export class RedisClient {
     }
   }
 
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    await this.client.subscribe(channel, listener);
+    return 1;
+  }
+  
   async disconnect(): Promise<void> {
     await disconnectRedisClient(this.client, this.logger);
   }
