@@ -31,6 +31,7 @@ config();
 let logger: winston.Logger;
 
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
+const MAINNET_BLOCK_TIME = 12;
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -90,6 +91,15 @@ async function getChallengeRemaining(chainId: number): Promise<number> {
   return Math.max(challengePeriodEndTimestamp - currentTime, 0);
 }
 
+async function canProposeRootBundle(chainId: number): Promise<boolean> {
+  const provider = await getProvider(chainId);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const proposal = await hubPool.rootBundleProposal();
+  const { unclaimedPoolRebalanceLeafCount } = proposal;
+  return unclaimedPoolRebalanceLeafCount === 0;
+}
+
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
     at: "Dataworker#index",
@@ -101,13 +111,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
 
-  if (challengeRemaining > config.minChallengeLeadTime && (config.proposerEnabled || config.l1ExecutorEnabled)) {
+  if (
+    isDefined(runIdentifier) &&
+    challengeRemaining > config.minChallengeLeadTime &&
+    (config.proposerEnabled || config.l1ExecutorEnabled)
+  ) {
     logger[startupLogLevel(config)]({
       at: "Dataworker#index",
       message: `${personality} aborting (not ready)`,
       challengeRemaining,
     });
-    // return;
+    return;
   }
 
   const { clients, dataworker } = await profiler.measureAsync(
@@ -294,7 +308,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             redis,
             botIdentifier,
             runIdentifier,
-            (updatedChallengeRemaining + 12) * 1000
+            (updatedChallengeRemaining + MAINNET_BLOCK_TIME) * 1000
           );
           if (handover) {
             logger.debug({
@@ -310,6 +324,33 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           }
 
           updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        }
+        if (config.proposerEnabled) {
+          let canPropose = await canProposeRootBundle(config.hubPoolChainId);
+          while (!canPropose && ++counter < 10) {
+            logger.debug({
+              at: "Dataworker#index",
+              message: "Waiting for the l1 executor to execute pool rebalance roots.",
+            });
+            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, MAINNET_BLOCK_TIME * 1000);
+            if (handover) {
+              logger.debug({
+                at: "Dataworker#index",
+                message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+              });
+              return;
+            } else {
+              logger.debug({
+                at: "Dataworker#index",
+                message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+              });
+            }
+            canPropose = await canProposeRootBundle(config.hubPoolChainId);
+          }
+          // The proposer waited ~10 blocks for the executor's transaction to succeed before exiting.
+          if (!canPropose) {
+            return;
+          }
         }
       }
 

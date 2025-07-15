@@ -334,7 +334,7 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
-    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
+    if (!this.forceProposal && hubPoolClient.hasPendingProposal() && !this.config.awaitChallengePeriod) {
       this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
