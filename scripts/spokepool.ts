@@ -46,7 +46,6 @@ type RelayerFeeQuery = {
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
-const { isAddress } = ethers.utils;
 
 const DEPOSIT_EVENT = "FundsDeposited";
 const FILL_EVENT = "FilledRelay";
