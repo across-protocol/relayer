@@ -288,8 +288,18 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
-      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier) {
+      const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        if (updatedChallengeRemaining > challengeRemaining) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: `Exiting due to ${personality} collision.`,
+            challengeRemaining,
+            updatedChallengeRemaining,
+          });
+          return;
+        }
         let counter = 0;
 
         // publish so that other instances can see that we're running
