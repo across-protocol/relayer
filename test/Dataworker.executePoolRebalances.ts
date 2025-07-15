@@ -135,7 +135,14 @@ describe("Dataworker: Execute pool rebalances", async function () {
     await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
     await multiCallerClient.executeTxnQueues();
 
-    // Executing leaves before bundle challenge period should still execute leaves
+    // Executing leaves before bundle challenge period has passed should do nothing:
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "Challenge period not passed")).to.be.true;
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
     await updateAllClients();
     leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
     expect(leafCount).to.equal(2);
