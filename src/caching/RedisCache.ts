@@ -34,4 +34,13 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     // Return key to indicate that the value was set successfully.
     return key;
   }
+
+  // @TODO: Implement these methods.
+  public async sub(topic: string, callback: (message: string, channel: string) => unknown): Promise<number> {
+    throw new Error("Not implemented");
+  }
+
+  public async pub(topic: string, message: string): Promise<number> {
+    throw new Error("Not implemented");
+  }
 }
