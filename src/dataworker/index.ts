@@ -30,11 +30,7 @@ import { PendingRootBundle, BundleData } from "../interfaces";
 config();
 let logger: winston.Logger;
 
-const {
-  RUN_IDENTIFIER: runIdentifier,
-  BOT_IDENTIFIER: botIdentifier = "across-dataworker",
-  AWAIT_CHALANGE_PERIOD: awaitChallengePeriod = "false",
-} = process.env;
+const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -265,7 +261,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
         pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if (proposalCollision) {
+    if (proposalCollision || (executorCollision && !config.awaitChallengePeriod)) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
@@ -278,7 +274,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
-      if (config.l1ExecutorEnabled && redis && runIdentifier && awaitChallengePeriod === "true") {
+      if (config.l1ExecutorEnabled && redis && runIdentifier) {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         let counter = 0;
 
