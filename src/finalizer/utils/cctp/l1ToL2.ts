@@ -33,10 +33,7 @@ import {
   KeyPairSigner,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
-import {
-  getCCTPV1ReceiveMessageTx,
-  AttestedCCTPMessage as SvmAttestedCCTPMessage,
-} from "@across-protocol/sdk/src/arch/svm";
+import { arch } from "@across-protocol/sdk";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -214,7 +211,7 @@ export function finalizeCCTPV1Messages(
 ): Promise<string[]> {
   return mapAsync(attestedMessages, async (message) => {
     const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
-    const receiveMessageIx = await getCCTPV1ReceiveMessageTx(solanaClient, signer, attestedCCTPMessage, hubChainId);
+    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(solanaClient, signer, attestedCCTPMessage, hubChainId);
 
     if (simulate) {
       const result = await solanaClient
@@ -242,7 +239,7 @@ export function finalizeCCTPV1Messages(
   });
 }
 
-function attestedCCTPMessageToSvmAttestedCCTPMessage(message: AttestedCCTPMessage): SvmAttestedCCTPMessage {
+function attestedCCTPMessageToSvmAttestedCCTPMessage(message: AttestedCCTPMessage): arch.svm.AttestedCCTPMessage {
   return {
     nonce: message.nonce,
     sourceDomain: message.sourceDomain,
