@@ -1590,6 +1590,19 @@ export class Dataworker {
       return leafCount;
     }
 
+    // Exit early if challenge period timestamp has not passed:
+    if (
+      !this.config.awaitChallengePeriod &&
+      this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp
+    ) {
+      this.logger.debug({
+        at: "Dataworker#executePoolRebalanceLeaves",
+        message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
+        expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
+      });
+      return leafCount;
+    }
+
     // At this point, check again that there are still unexecuted pool rebalance leaves. This is done because the above
     // logic, to reconstruct this pool rebalance root and the prerequisite spoke pool client updates, can take a while.
     const pendingProposal: PendingRootBundle = await this.clients.hubPoolClient.hubPool.rootBundleProposal();
