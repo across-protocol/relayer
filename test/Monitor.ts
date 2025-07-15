@@ -10,7 +10,7 @@ import {
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { spokePoolClientsToProviders } from "../src/common";
 import { Dataworker } from "../src/dataworker/Dataworker";
-import { BalanceType, L1Token, V3DepositWithBlock } from "../src/interfaces";
+import { BalanceType, L1Token, DepositWithBlock } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
 import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, toBytes32 } from "../src/utils";
@@ -98,7 +98,7 @@ describe("Monitor", async function () {
     }
   };
 
-  const computeRelayerRefund = async (request: V3DepositWithBlock & { paymentChainId: number }): Promise<BigNumber> => {
+  const computeRelayerRefund = async (request: DepositWithBlock & { paymentChainId: number }): Promise<BigNumber> => {
     // @dev Monitor currently doesn't factor in LP fee into relayer refund calculation for simplicity and speed.
     return request.inputAmount;
   };
