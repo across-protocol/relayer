@@ -107,7 +107,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       message: `${personality} aborting (not ready)`,
       challengeRemaining,
     });
-    return;
+    // return;
   }
 
   const { clients, dataworker } = await profiler.measureAsync(
@@ -261,7 +261,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
         pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if (proposalCollision || (executorCollision && !config.awaitChallengePeriod)) {
+    if ((proposalCollision || executorCollision) && !config.awaitChallengePeriod) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
@@ -274,7 +274,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
-      if (config.l1ExecutorEnabled && redis && runIdentifier) {
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier) {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         let counter = 0;
 
