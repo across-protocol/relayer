@@ -32,6 +32,7 @@ import {
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
 import { MultiCallerClient } from "../clients";
+import { groupBy } from "lodash";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -262,21 +263,13 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    const badAddress = [
-      deposit.depositor,
-      deposit.recipient,
-      deposit.exclusiveRelayer,
-      deposit.inputToken,
-      deposit.outputToken,
-    ].some((address) => {
-      try {
-        address.toEvmAddress();
-      } catch {
-        return true;
-      }
+    const badOriginChainAddrs = [deposit.depositor, deposit.inputToken].some((address) => {
+      return !address.isValidOn(deposit.originChainId);
     });
-
-    if (badAddress) {
+    const badDestChainAddrs = [deposit.recipient, deposit.exclusiveRelayer, deposit.outputToken].some((address) => {
+      return !address.isValidOn(deposit.destinationChainId);
+    });
+    if (badOriginChainAddrs || badDestChainAddrs) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to invalid address.`,
@@ -285,7 +278,10 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (addressFilter?.has(getAddress(depositor.toNative())) || addressFilter?.has(getAddress(recipient.toNative()))) {
+    if (
+      (depositor.isEVM() && addressFilter?.has(getAddress(depositor.toNative()))) ||
+      (recipient.isEVM() && addressFilter?.has(getAddress(recipient.toNative())))
+    ) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
