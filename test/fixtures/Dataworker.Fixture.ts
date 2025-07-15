@@ -231,6 +231,7 @@ export async function setupDataworker(
     spyLogger,
     {
       executorIgnoreChains: [],
+      sendingTransactionsEnabled: true,
     } as DataworkerConfig,
     dataworkerClients,
     testChainIdList,
