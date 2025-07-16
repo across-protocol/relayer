@@ -14,6 +14,7 @@ import {
   getSvmSignerFromEvmSigner,
   getRedisCache,
   waitForPubSub,
+  averageBlockTime,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -31,7 +32,6 @@ config();
 let logger: winston.Logger;
 
 const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
-const MAINNET_BLOCK_TIME = 12;
 
 export async function createDataworker(
   _logger: winston.Logger,
@@ -111,6 +111,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
 
+  // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
+  // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
+  // from botIdentifier -> runIdentifier).
   if (
     isDefined(runIdentifier) &&
     challengeRemaining > config.minChallengeLeadTime &&
@@ -133,6 +136,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   );
 
   await config.update(logger); // Update address filter.
+  const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
@@ -288,9 +292,15 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
+      // If the proposer/executor is expected to await its challenge period:
+      // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
+      // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
+      //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
       if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
+        // an executor instance executed the pending root bundle out of the hub _and_ a proposer instance proposed a new root bundle.
         if (updatedChallengeRemaining > challengeRemaining) {
           logger.debug({
             at: "Dataworker#index",
@@ -318,7 +328,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             redis,
             botIdentifier,
             runIdentifier,
-            (updatedChallengeRemaining + MAINNET_BLOCK_TIME) * 1000
+            (updatedChallengeRemaining + l1BlockTime) * 1000
           );
           if (handover) {
             logger.debug({
@@ -330,19 +340,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             logger.debug({
               at: "Dataworker#index",
               message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+              retries: counter,
             });
           }
 
           updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
         }
         if (config.proposerEnabled) {
+          // Clear the counter
+          counter = 0;
           let canPropose = await canProposeRootBundle(config.hubPoolChainId);
           while (!canPropose && ++counter < 10) {
             logger.debug({
               at: "Dataworker#index",
               message: "Waiting for the l1 executor to execute pool rebalance roots.",
             });
-            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, MAINNET_BLOCK_TIME * 1000);
+            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, l1BlockTime * 1000);
             if (handover) {
               logger.debug({
                 at: "Dataworker#index",
@@ -353,6 +366,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
               logger.debug({
                 at: "Dataworker#index",
                 message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+                retries: counter,
               });
             }
             canPropose = await canProposeRootBundle(config.hubPoolChainId);
