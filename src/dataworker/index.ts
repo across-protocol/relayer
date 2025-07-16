@@ -97,7 +97,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   logger = _logger;
 
-
   const config = new DataworkerConfig(process.env);
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
