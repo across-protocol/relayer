@@ -30,8 +30,6 @@ import { PendingRootBundle, BundleData } from "../interfaces";
 config();
 let logger: winston.Logger;
 
-const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
-
 export async function createDataworker(
   _logger: winston.Logger,
   baseSigner: Signer,
@@ -91,7 +89,7 @@ async function getChallengeRemaining(chainId: number): Promise<number> {
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const { RUN_IDENTIFIER: runIdentifier } = process.env;
+  const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
 
   const profiler = new Profiler({
     at: "Dataworker#index",
@@ -104,7 +102,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
 
   if (
-    !isDefined(runIdentifier) &&
+    isDefined(runIdentifier) &&
     challengeRemaining > config.minChallengeLeadTime &&
     ((config.proposerEnabled && !config.forcePropose) || config.l1ExecutorEnabled)
   ) {
