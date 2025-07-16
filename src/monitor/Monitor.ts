@@ -298,7 +298,7 @@ export class Monitor {
             })
           );
           this.logger.warn({
-            at: "Reporter#reportInvalidFillsRelatedToSvm",
+            at: "Monitor##reportInvalidFillsRelatedToSvm",
             destinationChainId: deposit.destinationChainId,
             message: `Invalid fills found matching SVM ${getNetworkName(deposit.originChainId)} deposit.`,
             deposit,
@@ -315,7 +315,7 @@ export class Monitor {
       const deposit = originClient.getDepositForFill(fill);
       if (!deposit) {
         this.logger.warn({
-          at: "Reporter#reportInvalidFillsRelatedToSvm",
+          at: "Monitor##reportInvalidFillsRelatedToSvm",
           originChainId: deposit.originChainId,
           message: `Invalid SVM fill found with no matching deposit for origin chain ${getNetworkName(
             fill.originChainId
