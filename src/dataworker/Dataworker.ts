@@ -1558,7 +1558,10 @@ export class Dataworker {
     }
 
     // Exit early if challenge period timestamp has not passed:
-    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+    if (
+      !this.config.awaitChallengePeriod &&
+      this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp
+    ) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,

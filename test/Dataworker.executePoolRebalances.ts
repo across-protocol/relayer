@@ -14,6 +14,7 @@ import {
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   ZERO_ADDRESS,
+  originChainId as defaultOriginChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -148,8 +149,104 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
     // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
+    expect(multiCallerClient.transactionCount()).to.equal(4);
+    await multiCallerClient.executeTxnQueues();
+
+    // If we attempt execution again, the hub pool client should show them as already executed.
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+
+    // TEST 3:
+    // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
+    // yet. In the bundle block range, all chains should have increased their start block, including those without
+    // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
+    // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
+    await updateAllClients();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+  it("Awaiting challenge period", async function () {
+    ({
+      hubPool,
+      spokePool_1,
+      spokePool_4,
+      erc20_1,
+      erc20_2,
+      spokePool_2,
+      hubPoolClient,
+      l1Token_1,
+      depositor,
+      dataworkerInstance,
+      multiCallerClient,
+      updateAllClients,
+      spokePoolClients,
+      spy,
+    } = await setupDataworker(
+      ethers,
+      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+      0,
+      destinationChainId,
+      defaultOriginChainId,
+      undefined,
+      true
+    ));
+
+    await updateAllClients();
+
+    // Send a deposit and a fill so that dataworker builds simple roots.
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
+    await updateAllClients();
+
+    // Executing leaves before there is a bundle should do nothing:
+    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "No pending proposal")).to.be.true;
+
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Execute queue and check that root bundle is pending:
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTxnQueues();
+
+    // Executing leaves before bundle challenge period should still execute leaves
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(2);
+
+    // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
+    // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
     // console.log(spy.getCall(-1))
     expect(multiCallerClient.transactionCount()).to.equal(4);
+    await multiCallerClient.executeTxnQueues();
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(2);
+
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 to update the exchangeRate to execute the destination chain leaf.
+    // extra ETH for arbitrum gas fees has been sent in the previous call to executeTxnQueues.
+    // console.log(spy.getCall(-1))
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTxnQueues();
 
     // If we attempt execution again, the hub pool client should show them as already executed.
