@@ -5,6 +5,7 @@ import {
   BundleAction,
   DepositWithBlock,
   FillStatus,
+  FillWithBlock,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
@@ -276,6 +277,71 @@ export class Monitor {
     if (mrkdwn) {
       this.logger.info({ at: "Monitor#reportUnfilledDeposits", message: "Unfilled deposits ⏱", mrkdwn });
     }
+  }
+
+  // @dev This is a temporary function to report invalid fills related to SVM deposits. It will be removed once
+  // we gain enough confidence that the SVM fills are working correctly.
+  async reportInvalidFillsRelatedToSvm(): Promise<void> {
+    const { spokePoolClients } = this.clients;
+    const svmClient = spokePoolClients[CHAIN_IDs.SOLANA];
+    const svmDeposits = svmClient.getDeposits();
+
+    // Check for invalid fills related to svm deposits.
+    await mapAsync(
+      svmDeposits.filter(({ destinationChainId }) => destinationChainId !== CHAIN_IDs.SOLANA),
+      async (deposit) => {
+        const destinationClient = spokePoolClients[deposit.destinationChainId];
+        const { invalidFills: invalid } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
+        if (deposit.depositId < bnUint32Max && invalid.length > 0) {
+          const invalidFills = Object.fromEntries(
+            invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+              return [relayer, { destinationChainId, depositId, txnRef }];
+            })
+          );
+          this.logger.warn({
+            at: "Reporter#reportInvalidFillsRelatedToSvm",
+            destinationChainId: deposit.destinationChainId,
+            message: `Invalid fills found matching SVM ${getNetworkName(deposit.originChainId)} deposit.`,
+            deposit,
+            invalidFills,
+            notificationPath: "across-invalid-fills",
+          });
+        }
+      }
+    );
+
+    // Check for invalid SVM fills related to EVM deposits.
+    svmClient.getFills().map((fill) => {
+      const originClient = spokePoolClients[fill.originChainId];
+      const deposit = originClient.getDepositForFill(fill);
+      if (!deposit) {
+        this.logger.warn({
+          at: "Reporter#reportInvalidFillsRelatedToSvm",
+          originChainId: deposit.originChainId,
+          message: `Invalid SVM fill found with no matching deposit for origin chain ${getNetworkName(
+            fill.originChainId
+          )}.`,
+          fill,
+          notificationPath: "across-invalid-fills",
+        });
+      }
+      const { invalidFills: invalid } = svmClient.getValidUnfilledAmountForDeposit(deposit);
+      if (deposit.depositId < bnUint32Max && invalid.length > 0) {
+        const invalidFills = Object.fromEntries(
+          invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+            return [relayer, { destinationChainId, depositId, txnRef }];
+          })
+        );
+        this.logger.warn({
+          at: "Reporter#reportInvalidFillsRelatedToSvm",
+          destinationChainId: deposit.destinationChainId,
+          message: `Invalid SVM fills found matching ${getNetworkName(deposit.originChainId)} deposit.`,
+          deposit,
+          invalidFills,
+          notificationPath: "across-invalid-fills",
+        });
+      }
+    });
   }
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
