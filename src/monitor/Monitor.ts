@@ -5,7 +5,6 @@ import {
   BundleAction,
   DepositWithBlock,
   FillStatus,
-  FillWithBlock,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
