@@ -153,7 +153,6 @@ export async function binanceFinalizer(
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
       for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
-        // await mapAsync([DepositNetwork.Ethereum, DepositNetwork.BSC], async (depositNetwork) => {
         const withdrawNetwork =
           depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
@@ -226,7 +225,6 @@ export async function binanceFinalizer(
             message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
           });
         }
-        // });
       }
     });
   });
