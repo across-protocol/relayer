@@ -49,12 +49,17 @@ export async function cctpL1toL2Finalizer(
     to: l1SpokePoolClient.latestHeightSearched,
     maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
+  let signer: KeyPairSigner;
+  if (isSVMSpokePoolClient(l2SpokePoolClient)) {
+    signer = await getKitKeypairFromEvmSigner(hubPoolClient.hubPool.signer);
+  }
   const outstandingMessages = await getAttestedCCTPMessages(
     senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
-    searchConfig
+    searchConfig,
+    signer
   );
   const unprocessedMessages = outstandingMessages.filter(
     (message) => message.status === "ready" && message.attestation !== "PENDING"
@@ -84,7 +89,6 @@ export async function cctpL1toL2Finalizer(
     assert(isSVMSpokePoolClient(l2SpokePoolClient));
     const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
-    const signer = await getKitKeypairFromEvmSigner(hubPoolClient.hubPool.signer);
     const signatures = await finalizeCCTPV1Messages(
       l2SpokePoolClient.svmEventsClient.getRpc(),
       unprocessedMessages,
@@ -250,6 +254,6 @@ function attestedCCTPMessageToSvmAttestedCCTPMessage(message: AttestedCCTPMessag
     sourceDomain: message.sourceDomain,
     messageBytes: message.messageBytes,
     attestation: message.attestation,
-    type: "message", // TODO: Handle how to handle message type (transfer or message)
+    type: isDepositForBurnEvent(message) ? "transfer" : "message",
   };
 }
