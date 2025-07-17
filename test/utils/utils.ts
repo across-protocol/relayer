@@ -21,6 +21,7 @@ import {
   ZERO_ADDRESS,
   getMessageHash,
   toBytes32,
+  toAddressType,
 } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -328,19 +329,20 @@ export async function depositV3(
   const { blockNumber, transactionHash: txnRef, transactionIndex: txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
-  const depositObject = {
+  const depositArgs = spreadEvent(args);
+  const depositObject: DepositWithBlock = {
     blockNumber,
     txnRef,
     txnIndex,
     logIndex,
-    ...(spreadEvent(args) as Deposit),
+    ...(depositArgs as Deposit),
     originChainId: Number(originChainId),
     quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
   };
-  if (isLegacyDeposit) {
-    depositObject.outputToken = outputToken;
-  }
+
+  depositObject.outputToken = toAddressType(depositArgs.outputToken, depositArgs.destinationChainId);
+
   return depositObject;
 }
 
