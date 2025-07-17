@@ -346,10 +346,11 @@ export class ProfitClient {
 
     const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${dstChainId}`;
     let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[destinationChainKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
@@ -472,12 +473,12 @@ export class ProfitClient {
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
-      const { depositId } = deposit;
+      const { depositId, destinationChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${symbol} deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit: convertRelayDataParamsToBytes32(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),

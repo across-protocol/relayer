@@ -334,7 +334,7 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
-    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
+    if (!this.forceProposal && !this.config.awaitChallengePeriod && hubPoolClient.hasPendingProposal()) {
       this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
@@ -354,11 +354,12 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
+    const nextBundleMainnetStartBlock = this.getOptimisticChainBundleStartBlock();
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      nextBundleMainnetStartBlock
+      nextBundleMainnetStartBlock,
+      true
     );
     const mainnetBlockRange = getBlockRangeForChain(blockRangesForProposal, hubPoolClient.chainId, chainIds);
 
@@ -387,6 +388,15 @@ export class Dataworker {
   getNextHubChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
     const hubPoolClient = this.clients.hubPoolClient;
     return hubPoolClient.getNextBundleStartBlockNumber(
+      chainIdList,
+      hubPoolClient.latestHeightSearched,
+      hubPoolClient.chainId
+    );
+  }
+
+  getOptimisticChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
+    const hubPoolClient = this.clients.hubPoolClient;
+    return hubPoolClient.getOptimisticBundleStartBlockNumber(
       chainIdList,
       hubPoolClient.latestHeightSearched,
       hubPoolClient.chainId
@@ -2778,7 +2788,8 @@ export class Dataworker {
    */
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
-    mainnetBundleStartBlock: number
+    mainnetBundleStartBlock: number,
+    optimistic = false
   ): Promise<number[][]> {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     return getWidestPossibleExpectedBlockRange(
@@ -2789,7 +2800,8 @@ export class Dataworker {
       this.clients,
       this.clients.hubPoolClient.latestHeightSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
-      this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
+      this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock),
+      optimistic
     );
   }
 
