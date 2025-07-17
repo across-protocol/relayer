@@ -65,7 +65,8 @@ export async function setupDataworker(
   defaultEndBlockBuffer: number,
   destinationChainId = defaultDestinationChainId,
   originChainId = defaultOriginChainId,
-  lookbackForAllChains?: number
+  lookbackForAllChains?: number,
+  awaitChallengePeriod?: boolean
 ): Promise<{
   hubPool: Contract;
   spokePool_1: Contract;
@@ -231,7 +232,8 @@ export async function setupDataworker(
     spyLogger,
     {
       executorIgnoreChains: [],
-    } as DataworkerConfig,
+      awaitChallengePeriod: awaitChallengePeriod ?? false,
+    } as unknown as DataworkerConfig,
     dataworkerClients,
     testChainIdList,
     maxRefundPerRelayerRefundLeaf,

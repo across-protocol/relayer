@@ -169,6 +169,33 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
+export async function waitForPubSub(
+  redisClient: CachingMechanismInterface,
+  channel: string,
+  message: string,
+  maxWaitMs = 60000
+): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return new Promise((resolve, _reject) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const listener = (msg: string, chl: string) => {
+      if (chl === channel && msg !== message) {
+        abortController.abort();
+      }
+    };
+    void redisClient.sub(channel, listener);
+
+    signal.addEventListener("abort", () => {
+      resolve(true);
+    });
+
+    setTimeout(() => {
+      resolve(false);
+    }, maxWaitMs);
+  });
+}
+
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
   // todo understand why redisClients arent't GCed automagically.
   const clients = Object.entries(redisClients);
