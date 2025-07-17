@@ -473,12 +473,12 @@ export class ProfitClient {
 
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
-      const { depositId } = deposit;
+      const { depositId, destinationChainId } = deposit;
       const profitable = fill.profitable ? "profitable" : "unprofitable";
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${symbol} deposit ${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit: convertRelayDataParamsToBytes32(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
