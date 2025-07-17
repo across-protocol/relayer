@@ -290,6 +290,9 @@ export class Monitor {
       svmDeposits.filter(({ destinationChainId }) => destinationChainId !== CHAIN_IDs.SOLANA),
       async (deposit) => {
         const destinationClient = spokePoolClients[deposit.destinationChainId];
+        if (!destinationClient) {
+          return;
+        }
         const { invalidFills: invalid } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
         if (deposit.depositId < bnUint32Max && invalid.length > 0) {
           const invalidFills = Object.fromEntries(
@@ -300,7 +303,9 @@ export class Monitor {
           this.logger.warn({
             at: "Monitor##reportInvalidFillsRelatedToSvm",
             destinationChainId: deposit.destinationChainId,
-            message: `Invalid fills found matching SVM ${getNetworkName(deposit.originChainId)} deposit.`,
+            message: `Invalid ${invalid.length} fills found matching SVM ${getNetworkName(
+              deposit.originChainId
+            )} deposit.`,
             deposit,
             invalidFills,
             notificationPath: "across-invalid-fills",
@@ -312,6 +317,9 @@ export class Monitor {
     // Check for invalid SVM fills related to EVM deposits.
     svmClient.getFills().map((fill) => {
       const originClient = spokePoolClients[fill.originChainId];
+      if (!originClient) {
+        return;
+      }
       const deposit = originClient.getDepositForFill(fill);
       if (!deposit) {
         this.logger.warn({
@@ -334,7 +342,9 @@ export class Monitor {
         this.logger.warn({
           at: "Reporter#reportInvalidFillsRelatedToSvm",
           destinationChainId: deposit.destinationChainId,
-          message: `Invalid SVM fills found matching ${getNetworkName(deposit.originChainId)} deposit.`,
+          message: `Found ${invalidFills.length} invalid SVM fills found matching ${getNetworkName(
+            deposit.originChainId
+          )} deposit.`,
           deposit,
           invalidFills,
           notificationPath: "across-invalid-fills",
