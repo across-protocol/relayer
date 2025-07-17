@@ -51,7 +51,7 @@ export async function cctpL1toL2Finalizer(
   };
   let signer: KeyPairSigner;
   if (isSVMSpokePoolClient(l2SpokePoolClient)) {
-    signer = await getKitKeypairFromEvmSigner(hubPoolClient.hubPool.signer);
+    signer = await getKitKeypairFromEvmSigner(_signer);
   }
   const outstandingMessages = await getAttestedCCTPMessages(
     senderAddresses,
