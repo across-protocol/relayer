@@ -743,16 +743,7 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.LISK]: {
     l1: {
-      AddressManager: "0x2dF7057d3F25212E51aFEA8dA628668229Ea423f",
-      L1CrossDomainMessenger: "0x31B72D76FB666844C41EdF08dF0254875Dbb7edB",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_1135.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x26dB93F8b8b4f7016240af62F7730979d353f9A7",
-      L2OutputOracle: "0x113cB99283AF242Da0A0C54347667edF531Aa7d6",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
+      DisputeGameFactory: "0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
