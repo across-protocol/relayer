@@ -346,7 +346,9 @@ export class ProfitClient {
 
     const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
+    const destinationChainKey = `${dstChainId}`;
+    let minRelayerFeePct =
+      this.minRelayerFees[routeKey] ?? this.minRelayerFees[destinationChainKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
       const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
