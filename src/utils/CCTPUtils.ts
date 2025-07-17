@@ -551,7 +551,8 @@ async function getCCTPMessagesWithStatus(
       if (!processed) {
         return {
           ...messageEvent,
-          status: "pending", // We'll flip to ready once we get the attestation.
+          status: "pending" as CCTPMessageStatus,
+          attestation: undefined,
         };
       } else {
         return {
@@ -1008,9 +1009,14 @@ async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<C
   return attestationResponse;
 }
 
-// This function compares message we need to finalize with the api response message. It skips the `nonce` part of comparison as it's not set at the time of emitting an on-chain `MessageSent` event
-// It also skips finalityThresholdExecuted comparison for the same reason. See https://github.com/circlefin/evm-cctp-contracts/blob/6e7513cdb2bee6bb0cddf331fe972600fc5017c9/src/messages/v2/MessageV2.sol#L89
-function cmpAPIToEventMessageBytesV2(apiResponseMessage: string, eventMessageBytes: string): boolean {
+//
+// NOTE: Exported so that unit tests outside this module can reuse the same
+// comparison logic without needing to duplicate code.
+//
+export function cmpAPIToEventMessageBytesV2(
+  apiResponseMessage: string,
+  eventMessageBytes: string
+): boolean {
   // Source https://developers.circle.com/stablecoins/message-format
   const normalize = (hex: string) => (hex.startsWith("0x") ? hex.substring(2) : hex).toLowerCase();
   const normApiMsg = normalize(apiResponseMessage);
