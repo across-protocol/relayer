@@ -1469,7 +1469,7 @@ export class Relayer {
                   .toString()
               ) +
               ` inbound L1->L2 ${symbol} transfers. `
-            : undefined;
+            : "";
         }
         mrkdwn +=
           ` - ${symbol} cumulative shortfall of ` +
