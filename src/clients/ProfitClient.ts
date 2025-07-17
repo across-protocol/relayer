@@ -478,7 +478,7 @@ export class ProfitClient {
 
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
-        message: `${symbol} deposit to ${destinationChainId}${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
+        message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
         deposit: convertRelayDataParamsToBytes32(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
