@@ -346,12 +346,11 @@ export class ProfitClient {
 
     const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
-    const destinationChainKey = `${dstChainId}`;
-    let minRelayerFeePct =
-      this.minRelayerFees[routeKey] ?? this.minRelayerFees[destinationChainKey] ?? this.minRelayerFees[tokenKey];
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${dstChainId}`;
+    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
 
     if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[routeKey] ?? process.env[tokenKey];
+      const _minRelayerFeePct = process.env[routeKey] ?? process.env[destinationChainKey] ?? process.env[tokenKey];
       minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
 
       // Save the route for next time.
