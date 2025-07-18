@@ -1917,7 +1917,7 @@ export class Dataworker {
     // If the root bundle is still in the liveness period, then allow reverts in simulation since there may be differences between the read and write time on chain.
     let optimisticExecution = false;
     if (this.config.awaitChallengePeriod) {
-      const challengeRemaining = await getChallengeRemaining(hubPoolChainId);
+      const challengeRemaining = await getChallengeRemaining(hubPoolChainId, this.clients.hubPoolClient);
       optimisticExecution = challengeRemaining !== 0;
     }
     // Execute the leaves:
