@@ -21,6 +21,7 @@ export interface BotModes {
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
+  closePDAsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -82,6 +83,7 @@ export class MonitorConfig extends CommonConfig {
       BUNDLES_COUNT,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
+      CLOSE_PDAS_ENABLED,
     } = env;
 
     this.botModes = {
@@ -92,6 +94,7 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };

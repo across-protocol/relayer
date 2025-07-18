@@ -5,6 +5,7 @@ import {
   BundleAction,
   DepositWithBlock,
   FillStatus,
+  FillWithBlock,
   L1Token,
   RelayerBalanceReport,
   RelayerBalanceTable,
@@ -56,16 +57,20 @@ import {
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
   chainIsEvm,
+  getFillStatusPda,
+  getKitKeypairFromEvmSigner,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
+import { address, getBase64EncodedWireTransaction, signTransactionMessageWithSigners } from "@solana/kit";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
 export const REBALANCE_FINALIZE_GRACE_PERIOD = Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD ?? 60 * 60);
+export const PDAS_CLOSE_GRACE_PERIOD = Number(process.env.PDAS_CLOSE_GRACE_PERIOD ?? 60 * 60 * 6);
 
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
@@ -1100,6 +1105,47 @@ export class Monitor {
           });
         }
       }
+    }
+  }
+
+  async closePDAs(): Promise<void> {
+    const svmSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.SOLANA];
+    if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
+      return;
+    }
+    const fills: FillWithBlock[] = [];
+    for (const relayers of this.monitorConfig.monitoredRelayers) {
+      const relayerFills = await svmSpokePoolClient.getFillsForRelayer(relayers);
+      fills.push(...relayerFills);
+    }
+    const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
+    const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
+    const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
+    for (const fill of fills) {
+      const spokePoolClient = this.clients.spokePoolClients[fill.originChainId];
+      if (!spokePoolClient) {
+        continue;
+      }
+      const deposit = spokePoolClient.getDepositForFill(fill);
+      if (!deposit) {
+        continue;
+      }
+
+      const { ...relayData } = deposit;
+      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId);
+      const fillTime = await svmSpokePoolClient.getTimeAt(fill.blockNumber);
+      if (
+        fillStatus !== FillStatus.Filled ||
+        fillTime < svmSpokePoolClient.getCurrentTime() - PDAS_CLOSE_GRACE_PERIOD
+      ) {
+        continue;
+      }
+
+      const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
+      const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
+      const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
+      const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+      await svmRpc.sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" }).send();
     }
   }
 
