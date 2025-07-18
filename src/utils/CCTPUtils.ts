@@ -545,15 +545,19 @@ async function getCCTPMessagesWithStatus(
           status: "pending",
         };
       }
-      const processed =
-        chainIsSvm(destinationChainId) && signer
-          ? await arch.svm.hasCCTPV1MessageBeenProcessed(
-              getSvmProvider(),
-              signer,
-              messageEvent.nonce,
-              messageEvent.sourceDomain
-            )
-          : await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      let processed;
+      if (chainIsSvm(destinationChainId)) {
+        assert(signer, "Signer is required for Solana CCTP messages");
+        processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
+          getSvmProvider(),
+          signer,
+          messageEvent.nonce,
+          messageEvent.sourceDomain
+        );
+      } else {
+        processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      }
+
       if (!processed) {
         return {
           ...messageEvent,
