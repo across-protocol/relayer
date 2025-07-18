@@ -46,6 +46,7 @@ import {
   mapAsync,
   getAccountMeta,
   chainIsSvm,
+  getChallengeRemaining,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -1913,6 +1914,12 @@ export class Dataworker {
       executableLeaves.push(leaf);
     }
 
+    // If the root bundle is still in the liveness period, then allow reverts in simulation since there may be differences between the read and write time on chain.
+    let optimisticExecution = false;
+    if (this.config.awaitChallengePeriod) {
+      const challengeRemaining = await getChallengeRemaining(hubPoolChainId);
+      optimisticExecution = challengeRemaining !== 0;
+    }
     // Execute the leaves:
     executableLeaves.forEach((leaf) => {
       // Add balances to spoke pool on mainnet since we know it will be sent atomically.
@@ -1949,7 +1956,7 @@ export class Dataworker {
           unpermissioned: true,
           // If simulating execution of leaves for non-mainnet chains, can fail as it may require funds to be returned
           // from relayer refund leaves.
-          canFailInSimulation: leaf.chainId !== hubPoolChainId,
+          canFailInSimulation: leaf.chainId !== hubPoolChainId || optimisticExecution,
         });
       } else {
         this.logger.debug({ at: "Dataworker#_executePoolRebalanceLeaves", message: mrkdwn });
