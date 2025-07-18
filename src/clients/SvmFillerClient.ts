@@ -139,19 +139,20 @@ export class SvmFillerClient {
       queue.map(({ txPromise }) => txPromise.then((tx) => signAndSimulateTransaction(this.provider, tx)))
     );
 
-    const successfulSims: { logs: string[] }[] = [];
-    const failedSims: { error: any }[] = [];
+    const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
+    const failedSims: { error: any; message: string; mrkdwn: string }[] = [];
 
-    simulationResults.forEach((result) => {
+    simulationResults.forEach((result, idx) => {
+      const { message, mrkdwn } = queue[idx];
       if (result.status === "fulfilled") {
         const simValue = result.value.value;
         if (simValue.err === null) {
-          successfulSims.push({ logs: simValue.logs });
+          successfulSims.push({ logs: simValue.logs, message, mrkdwn });
         } else {
-          failedSims.push({ error: simValue.err });
+          failedSims.push({ error: simValue.err, message, mrkdwn });
         }
       } else {
-        failedSims.push({ error: result.reason });
+        failedSims.push({ error: result.reason, message, mrkdwn });
       }
     });
 
@@ -159,7 +160,7 @@ export class SvmFillerClient {
       this.logger.error({
         at: "SvmFillerClient#simulateQueue",
         message: `${failedSims.length}/${queue.length} simulations failed.`,
-        errors: failedSims.map((f) => f.error),
+        errors: failedSims.map((f) => `${String(f.error)}\n${f.message}\n${f.mrkdwn}`).join("\n\n"),
         notificationPath: "across-error",
       });
     }
@@ -168,6 +169,7 @@ export class SvmFillerClient {
       this.logger.info({
         at: "SvmFillerClient#simulateQueue",
         message: `Successfully simulated ${successfulSims.length}/${queue.length} transactions.`,
+        auxiliary: successfulSims.map((s) => `${s.message}\n${s.mrkdwn}`).join("\n\n"),
       });
     }
   }
