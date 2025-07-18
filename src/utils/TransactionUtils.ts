@@ -22,10 +22,9 @@ import {
 } from "../utils";
 import {
   CompilableTransactionMessage,
-  compileTransaction,
   KeyPairSigner,
-  signTransaction,
   getBase64EncodedWireTransaction,
+  signTransactionMessageWithSigners,
   type Blockhash,
 } from "@solana/kit";
 
@@ -200,10 +199,11 @@ export async function runTransactionSvm(
   signer: KeyPairSigner,
   provider: SVMProvider
 ): Promise<string> {
-  const compiledTx = compileTransaction(unsignedTransaction);
-  const signedTx = await signTransaction([signer.keyPair], compiledTx);
+  const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
-  return provider.sendTransaction(serializedTx, { encoding: "base64" }).send();
+  return provider
+    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
+    .send();
 }
 
 export async function getGasPrice(
