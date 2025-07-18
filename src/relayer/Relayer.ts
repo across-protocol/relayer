@@ -277,10 +277,7 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    if (
-      (depositor.isEVM() && addressFilter?.has(getAddress(depositor.toNative()))) ||
-      (recipient.isEVM() && addressFilter?.has(getAddress(recipient.toNative())))
-    ) {
+    if (addressFilter?.has(depositor.toNative()) || addressFilter?.has(recipient.toNative())) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
