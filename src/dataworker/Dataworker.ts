@@ -1175,6 +1175,9 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
+        if (chainId !== CHAIN_IDs.SOLANA) {
+          return;
+        }
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
         );
@@ -2273,6 +2276,9 @@ export class Dataworker {
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
     for (const client of Object.values(spokePoolClients)) {
       const { chainId } = client;
+      if (chainId !== CHAIN_IDs.SOLANA) {
+        continue;
+      }
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
         (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
       );
@@ -2864,7 +2870,11 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Relayer refund leaf accounts",
-      leaf,
+      leaf: {
+        ...leaf,
+        l2TokenAddress: leaf.l2TokenAddress.toNative(),
+        refundAddresses: leaf.refundAddresses.map((address) => address.toNative()),
+      },
       rootBundleId,
       eventAuthority,
       statePda,
@@ -2909,7 +2919,7 @@ export class Dataworker {
         isDefined(closeInstructionParamsIx) ? appendTransactionMessageInstructions([closeInstructionParamsIx], tx) : tx,
       (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
     );
-    let txSignature = runTransactionSvm(initInstructionParamsTx, kitKeypair, provider);
+    let txSignature = await runTransactionSvm(initInstructionParamsTx, kitKeypair, provider);
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Initialized instruction params account",
@@ -2935,25 +2945,27 @@ export class Dataworker {
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
-      txSignature = runTransactionSvm(writeInstructionParamsTx, kitKeypair, provider);
+      txSignature = await runTransactionSvm(writeInstructionParamsTx, kitKeypair, provider);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Wrote relayer refund leaf data to instruction params account",
-        fragment,
+        txSignature,
+        fragmentLength: fragment.length,
         writeNumber: i,
       });
     }
 
     // Get the lookup table Pda.
+    const recentSlot = (await provider.getSlot({ commitment: "finalized" }).send()) as bigint;
     const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
-      recentSlot: recentBlockhash.value.lastValidBlockHeight,
+      recentSlot,
     });
     const lookupTablePda = lookupTable[0];
     const lookupTableIx = getCreateLookupTableInstruction({
       address: lookupTable,
       authority: kitKeypair,
-      recentSlot: recentBlockhash.value.lastValidBlockHeight,
+      recentSlot,
     });
     const createLookupTableTx = pipe(
       createTransactionMessage({ version: 0 }),
@@ -2961,7 +2973,8 @@ export class Dataworker {
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
-    txSignature = runTransactionSvm(createLookupTableTx, kitKeypair, provider);
+    txSignature = await runTransactionSvm(createLookupTableTx, kitKeypair, provider);
+
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Created relayer refund address lookup table",
@@ -3003,6 +3016,7 @@ export class Dataworker {
       const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
         [lookupTablePda]: lutAddresses,
       };
+
       const extendLookupTableIx = getExtendLookupTableInstruction({
         address: lookupTablePda,
         authority: kitKeypair,
@@ -3010,15 +3024,22 @@ export class Dataworker {
         addresses: lutAddresses,
       });
 
+      const extendLutTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+        (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
+      );
+      await runTransactionSvm(extendLutTx, kitKeypair, provider);
+
       const executeRelayerRefundLeafTx = pipe(
         createTransactionMessage({ version: 0 }),
         (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-        // @dev This RPC response returns an unknown, so we need to cast it to the proper return type.
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-        (tx) => appendTransactionMessageInstructions([extendLookupTableIx, executeRelayerRefundLeafIx], tx),
+        (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
         (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
-      return runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
+      return await runTransactionSvm(executeRelayerRefundLeafTx, kitKeypair, provider);
     } catch (e) {
       this.logger.warn({
         at: "Dataworker#executeRelayerRefundLeafSvm",
@@ -3067,7 +3088,7 @@ export class Dataworker {
         (tx) => appendTransactionMessageInstructions([extendLookupTableIx, executeRelayerRefundLeafDeferredIx], tx),
         (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
       );
-      const refundLeafSignature = runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
+      const refundLeafSignature = await runTransactionSvm(executeRelayerRefundLeafDeferredTx, kitKeypair, provider);
 
       // We should clean up the LUT now before returning.
       const deleteLutIx = getCloseLookupTableInstruction({
@@ -3081,7 +3102,7 @@ export class Dataworker {
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([deleteLutIx], tx)
       );
-      txSignature = runTransactionSvm(closeLutTx, kitKeypair, provider);
+      txSignature = await runTransactionSvm(closeLutTx, kitKeypair, provider);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Closed address LUT",
