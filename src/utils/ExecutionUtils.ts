@@ -1,4 +1,5 @@
-import { delay, winston } from "./";
+import { delay, winston, getProvider, getDeployedContract, isDefined } from "./";
+import { HubPoolClient } from "../clients";
 
 export function exit(code: number): void {
   // eslint-disable-next-line no-process-exit
@@ -31,4 +32,20 @@ export function rejectAfterDelay(seconds: number, message = ""): Promise<never> 
       message: `Execution took longer than ${seconds}s. ${message}`,
     });
   });
+}
+
+export async function getChallengeRemaining(chainId: number, hubPoolClient?: HubPoolClient): Promise<number> {
+  const getHubPool = async () => {
+    if (isDefined(hubPoolClient)) {
+      return hubPoolClient.hubPool;
+    }
+    const provider = await getProvider(chainId);
+    return getDeployedContract("HubPool", chainId).connect(provider);
+  };
+  const hubPool = await getHubPool();
+
+  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
+  const { challengePeriodEndTimestamp } = proposal;
+
+  return Math.max(challengePeriodEndTimestamp - currentTime, 0);
 }
