@@ -38,7 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { SvmAddress, EvmAddress, toAddressType } from "../src/utils";
+import { SvmAddress, EvmAddress } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested

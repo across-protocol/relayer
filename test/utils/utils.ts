@@ -362,8 +362,9 @@ export async function updateDeposit(
   depositor: SignerWithAddress
 ): Promise<string> {
   const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
-  if (updatedRecipientAddress === undefined)
+  if (updatedRecipientAddress === undefined) {
     throw `updateDeposit cannot have updatedRecipientAddress undefined ${depositV3IntoPrimitiveEvm(deposit)}`;
+  }
   const updatedRecipient = updatedRecipientAddress.toBytes32();
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));

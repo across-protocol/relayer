@@ -1,13 +1,6 @@
 import assert from "assert";
-import { Contract, bnZero, spreadEvent, toAddressType, toBytes32 } from "../../src/utils";
-import {
-  Deposit,
-  DepositWithBlock,
-  Fill,
-  FillType,
-  SlowFillRequest,
-  SlowFillRequestWithBlock,
-} from "../../src/interfaces";
+import { Contract, bnZero, spreadEvent, toAddressType } from "../../src/utils";
+import { Deposit, DepositWithBlock, Fill, FillType, SlowFillRequestWithBlock } from "../../src/interfaces";
 import { SignerWithAddress, slowFillRequestFromArgs } from "./utils";
 
 export function V3FillFromDeposit(
