@@ -442,7 +442,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.
       // Verify that the relayer can immediately fill the first deposit, and both after the exclusivity window.
-      for (const exclusiveRelayer of [randomAddress(), relayerAddress]) {
+      for (const exclusiveRelayer of [randomAddress(), relayerAddress.toNative()]) {
         const deposit = await depositV3(
           spokePool_1,
           destinationChainId,
@@ -464,7 +464,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       deposits.forEach((deposit) => {
         const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
         const status =
-          deposit.exclusiveRelayer === relayerAddress.toEvmAddress() ? FillStatus.Filled : FillStatus.Unfilled;
+          deposit.exclusiveRelayer.toString() === relayerAddress.toString() ? FillStatus.Filled : FillStatus.Unfilled;
         expect(fillStatus[depositHash] ?? FillStatus.Unfilled).to.equal(status);
       });
 
@@ -473,7 +473,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
       const exclusiveDeposit = deposits.find(
-        ({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress.toEvmAddress()
+        ({ exclusiveRelayer }) => exclusiveRelayer.toString() !== relayerAddress.toString()
       );
       expect(exclusiveDeposit).to.exist;
       await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
@@ -593,7 +593,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       );
       const fillAmount = profitClient.getFillAmountInUsd({
         ...deposit1,
-        outputToken: toAddressType(deposit1.outputToken, destinationChainId),
+        outputToken: deposit1.outputToken,
       })!;
       expect(fillAmount).to.exist;
 
@@ -644,14 +644,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
 
       originChainCommitment = relayerInstance.computeOriginChainCommitment(originChainId, 0, Number.MAX_SAFE_INTEGER);
-      expect(
-        originChainCommitment.eq(
-          getFillAmount(
-            { ...deposit1, outputToken: toAddressType(deposit1.outputToken, destinationChainId) },
-            tokenPrice
-          )
-        )
-      ).to.be.true;
+      expect(originChainCommitment.eq(getFillAmount({ ...deposit1, outputToken: deposit1.outputToken }, tokenPrice))).to
+        .be.true;
 
       let originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
       expect(isChainOvercommitted(originChainLimits)).to.be.false;
@@ -955,7 +949,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           spokePool_1,
           {
             ...deposit,
-            updatedRecipient: update.recipient,
+            updatedRecipient: toAddressType(update.recipient, destinationChainId),
             updatedOutputAmount: update.outputAmount,
             updatedMessage: update.message,
           },
@@ -1022,7 +1016,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       const updatedRecipient = randomAddress();
       await updateDeposit(
         spokePool_1,
-        { ...deposit, updatedRecipient, updatedOutputAmount, updatedMessage },
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount,
+          updatedMessage,
+        },
         depositor
       );
 
@@ -1039,7 +1038,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       updatedMessage = EMPTY_MESSAGE;
       await updateDeposit(
         spokePool_1,
-        { ...deposit, updatedRecipient, updatedOutputAmount, updatedMessage },
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount,
+          updatedMessage,
+        },
         depositor
       );
 

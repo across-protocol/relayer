@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Contract, bnZero, spreadEvent, toBytes32 } from "../../src/utils";
+import { Contract, bnZero, spreadEvent, toAddressType, toBytes32 } from "../../src/utils";
 import {
   Deposit,
   DepositWithBlock,
@@ -8,7 +8,7 @@ import {
   SlowFillRequest,
   SlowFillRequestWithBlock,
 } from "../../src/interfaces";
-import { SignerWithAddress } from "./utils";
+import { SignerWithAddress, slowFillRequestFromArgs } from "./utils";
 
 export function V3FillFromDeposit(
   deposit: DepositWithBlock,
@@ -19,7 +19,7 @@ export function V3FillFromDeposit(
   const { blockNumber, txnRef, logIndex, txnIndex, quoteTimestamp, ...relayData } = deposit;
   const fill: Fill = {
     ...relayData,
-    relayer,
+    relayer: toAddressType(relayer, deposit.destinationChainId),
     realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
     repaymentChainId: repaymentChainId ?? deposit.destinationChainId,
     relayExecutionInfo: {
@@ -40,11 +40,11 @@ export async function requestSlowFill(
   await spokePool
     .connect(relayer)
     .requestSlowFill([
-      toBytes32(deposit.depositor),
-      toBytes32(deposit.recipient),
-      toBytes32(deposit.exclusiveRelayer),
-      toBytes32(deposit.inputToken),
-      toBytes32(deposit.outputToken),
+      deposit.depositor.toBytes32(),
+      deposit.recipient.toBytes32(),
+      deposit.exclusiveRelayer.toBytes32(),
+      deposit.inputToken.toBytes32(),
+      deposit.outputToken.toBytes32(),
       deposit.inputAmount,
       deposit.outputAmount,
       deposit.originChainId,
@@ -59,8 +59,9 @@ export async function requestSlowFill(
   ]);
   const lastEvent = events.at(-1);
   assert(lastEvent);
+  const slowFillRequest = slowFillRequestFromArgs(spreadEvent(lastEvent.args!));
   const requestObject: SlowFillRequestWithBlock = {
-    ...(spreadEvent(lastEvent.args!) as SlowFillRequest),
+    ...slowFillRequest,
     destinationChainId,
     blockNumber: lastEvent.blockNumber,
     txnRef: lastEvent.transactionHash,

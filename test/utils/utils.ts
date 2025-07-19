@@ -9,7 +9,15 @@ import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { Deposit, DepositWithBlock, Fill, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  FillWithBlock,
+  RelayData,
+  SlowFillLeaf,
+  SlowFillRequest,
+} from "../../src/interfaces";
 import {
   BigNumber,
   isDefined,
@@ -228,8 +236,8 @@ export async function deployNewTokenMapping(
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
-  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], null, 100);
-  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], null, 100);
+  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], undefined, 100);
+  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], undefined, 100);
 
   // Set time to provider time so blockfinder can find block for deposit quote time.
   await spokePool.setCurrentTime(await getLastBlockTime(spokePool.provider));
@@ -335,13 +343,15 @@ export async function depositV3(
     txnRef,
     txnIndex,
     logIndex,
-    ...(depositArgs as Deposit),
+    ...depositFromArgs(depositArgs),
     originChainId: Number(originChainId),
     quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
   };
 
-  depositObject.outputToken = toAddressType(depositArgs.outputToken, depositArgs.destinationChainId);
+  if (isLegacyDeposit) {
+    depositObject.outputToken = toAddressType(outputToken, originChainId);
+  }
 
   return depositObject;
 }
@@ -352,7 +362,9 @@ export async function updateDeposit(
   depositor: SignerWithAddress
 ): Promise<string> {
   const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
-  const updatedRecipient = sdkUtils.toBytes32(updatedRecipientAddress!);
+  if (updatedRecipientAddress === undefined)
+    throw `updateDeposit cannot have updatedRecipientAddress undefined ${depositV3IntoPrimitiveEvm(deposit)}`;
+  const updatedRecipient = updatedRecipientAddress.toBytes32();
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));
   assert.ok(isDefined(updatedMessage));
@@ -389,11 +401,11 @@ export async function fillV3Relay(
   await spokePool.connect(signer).fillRelay(
     {
       ...deposit,
-      depositor: toBytes32(deposit.depositor),
-      recipient: toBytes32(deposit.recipient),
-      inputToken: toBytes32(deposit.inputToken),
-      outputToken: toBytes32(deposit.outputToken),
-      exclusiveRelayer: toBytes32(deposit.exclusiveRelayer),
+      depositor: deposit.depositor.toBytes32(),
+      recipient: deposit.recipient.toBytes32(),
+      inputToken: deposit.inputToken.toBytes32(),
+      outputToken: deposit.outputToken.toBytes32(),
+      exclusiveRelayer: deposit.exclusiveRelayer.toBytes32(),
     },
     repaymentChainId ?? destinationChainId,
     toBytes32(await signer.getAddress())
@@ -414,7 +426,7 @@ export async function fillV3Relay(
     txnRef: transactionHash,
     txnIndex: transactionIndex,
     logIndex,
-    ...(parsedEvent as Fill),
+    ...fillFromArgs(parsedEvent),
     messageHash: args.messageHash ?? getMessageHash(args.message),
     relayExecutionInfo: {
       ...parsedEvent.relayExecutionInfo,
@@ -491,5 +503,90 @@ export function createRefunds(
     [toBytes32(repaymentToken)]: {
       [toBytes32(outputToken)]: refundAmount,
     },
+  };
+}
+
+// A helper function to parse key - value map into a Deposit object
+export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
+  const obj = { ...fillArgs };
+
+  obj.relayExecutionInfo.updatedRecipient = toAddressType(
+    fillArgs.relayExecutionInfo.updatedRecipient,
+    fillArgs.destinationChainId
+  );
+
+  obj.relayer = toAddressType(fillArgs.relayer, fillArgs.destinationChainId);
+
+  obj.depositor = toAddressType(fillArgs.depositor, fillArgs.originChainId);
+  obj.recipient = toAddressType(fillArgs.recipient, fillArgs.destinationChainId);
+  obj.inputToken = toAddressType(fillArgs.inputToken, fillArgs.originChainId);
+  obj.outputToken = toAddressType(fillArgs.outputToken, fillArgs.destinationChainId);
+  obj.exclusiveRelayer = toAddressType(fillArgs.exclusiveRelayer, fillArgs.destinationChainId);
+
+  return obj as Fill;
+}
+
+// decomposes Fill into primitive types suitable for === comparions
+export function fillIntoPrimitiveEvm(fill: Fill) {
+  return {
+    ...fill,
+    inputToken: fill.inputToken.toEvmAddress(),
+    outputToken: fill.outputToken.toEvmAddress(),
+    depositor: fill.depositor.toEvmAddress(),
+    recipient: fill.recipient.toEvmAddress(),
+    exclusiveRelayer: fill.exclusiveRelayer.toEvmAddress(),
+    relayer: fill.relayer.toEvmAddress(), // todo? consider using .toNative() and dropping the `...Evm` suffix
+    relayExecutionInfo: {
+      ...fill.relayExecutionInfo,
+      updatedRecipient: fill.relayExecutionInfo.updatedRecipient?.toEvmAddress(),
+    },
+  };
+}
+
+export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
+  const obj = { ...relayDataArgs };
+
+  obj.depositor = toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId);
+  obj.recipient = toAddressType(relayDataArgs.recipient, relayDataArgs.destinationChainId);
+  obj.inputToken = toAddressType(relayDataArgs.inputToken, relayDataArgs.originChainId);
+  obj.outputToken = toAddressType(relayDataArgs.outputToken, relayDataArgs.destinationChainId);
+  obj.exclusiveRelayer = toAddressType(relayDataArgs.exclusiveRelayer, relayDataArgs.destinationChainId);
+
+  return obj as RelayData;
+}
+
+export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
+  const obj = { ...slowFillRequestArgs, ...(relayDataFromArgs(slowFillRequestArgs) as any) };
+
+  return obj as SlowFillRequest;
+}
+
+// A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
+export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
+  const obj = { ...depositArgs };
+
+  obj.depositor = toAddressType(depositArgs.depositor, depositArgs.originChainId);
+  obj.recipient = toAddressType(depositArgs.recipient, depositArgs.destinationChainId);
+  obj.inputToken = toAddressType(depositArgs.inputToken, depositArgs.originChainId);
+  obj.outputToken = toAddressType(depositArgs.outputToken, depositArgs.destinationChainId);
+  obj.exclusiveRelayer = toAddressType(depositArgs.exclusiveRelayer, depositArgs.destinationChainId);
+
+  if (depositArgs.updatedRecipient !== undefined) {
+    obj.updatedRecipient = toAddressType(depositArgs.updatedRecipient, depositArgs.destinationChainId);
+  }
+
+  return obj as Deposit;
+}
+
+// decomposes Deposit into primitive types suitable for === comparions
+export function depositV3IntoPrimitiveEvm(deposit: Deposit) {
+  return {
+    ...deposit,
+    inputToken: deposit.inputToken.toEvmAddress(),
+    outputToken: deposit.outputToken.toEvmAddress(),
+    depositor: deposit.depositor.toEvmAddress(),
+    recipient: deposit.recipient.toEvmAddress(),
+    exclusiveRelayer: deposit.exclusiveRelayer.toEvmAddress(),
+    updatedRecipient: deposit.updatedRecipient?.toEvmAddress(),
   };
 }
