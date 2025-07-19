@@ -109,9 +109,12 @@ export class RelayerConfig extends CommonConfig {
     this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
       toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
     );
-    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) =>
-      toAddressType(ethers.utils.getAddress(depositor), CHAIN_IDs.MAINNET)
-    );
+
+    // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
+    this.slowDepositors = JSON.parse(SLOW_DEPOSITORS ?? "[]").map((depositor) => {
+      const chainId = ethers.utils.isHexString(depositor) ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
+      return toAddressType(depositor, chainId);
+    });
 
     this.minRelayerFeePct = toBNWei(MIN_RELAYER_FEE_PCT || Constants.RELAYER_MIN_FEE_PCT);
 
