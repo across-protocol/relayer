@@ -125,6 +125,8 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
+  // We can run this in parallel since in practice each relayer has different balance of tokens.
+  // If in the future we want to have relayer relay the same tokens then this logic needs to change to run in series.
   await mapAsync(senderAddresses, async (address) => {
     // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
     // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
