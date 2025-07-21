@@ -3,34 +3,23 @@ import { encodeMessageHeader } from "@across-protocol/contracts/dist/src/svm/web
 import { signature } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
-import { arch, clients } from "@across-protocol/sdk";
+import { arch } from "@across-protocol/sdk";
 import { signer } from "./Solana.setup";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
-import { finalizeCCTPV1Messages, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp/l1ToL2";
+import { finalizeCCTPV1Messages } from "../src/finalizer/utils/cctp/l1ToL2";
 import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
-import { FinalizerPromise } from "../src/finalizer/types";
-import { ethers, getContractFactory, SignerWithAddress } from "./utils";
-import { ZERO_ADDRESS } from "@uma/common";
-import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 
 // Define an extended interface for our Solana client with chainId
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
   chainId: number;
 }
 
-// Mock logger
-const mockLogger = {
-  debug: (data: any) => console.log("DEBUG:", data),
-  info: (data: any) => console.log("INFO:", data),
-  error: (data: any) => console.log("ERROR:", data),
-};
-
 // Helper function for the new tests
 const getAttestedMessage = async (
   messageBody: Buffer,
   nonce: number,
-  sourceDomain: number = 0,
-  destinationDomain: number = 5
+  sourceDomain = 0,
+  destinationDomain = 5
 ): Promise<AttestedCCTPMessage[]> => {
   const testSolanaClient = createDefaultSolanaClient();
   const stateData = await SvmSpokeClient.fetchState(
@@ -84,7 +73,7 @@ describe("finalizeCCTPV1Messages", () => {
   it("should simulate CCTP message finalization successfully", async () => {
     const nonce = 100;
     const attestedMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), nonce, 0, 5);
-    let isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce, 0);
+    const isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce, 0);
 
     expect(isNonceUsed).to.equal(false);
 
@@ -133,7 +122,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    let state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
+    const state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
 
     expect(state.data.pausedDeposits).to.equal(false);
 
@@ -145,7 +134,7 @@ describe("finalizeCCTPV1Messages", () => {
   it("should handle multiple messages in batch", async () => {
     const nonce1 = 102;
     const nonce2 = 103;
-    
+
     const message1 = await getAttestedMessage(encodePauseDepositsMessageBody(true), nonce1, 0, 5);
     const message2 = await getAttestedMessage(encodePauseDepositsMessageBody(false), nonce2, 0, 5);
 
@@ -155,7 +144,7 @@ describe("finalizeCCTPV1Messages", () => {
     expect(isNonceUsed).to.equal(false);
 
     const statePda = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
-    
+
     const attestedMessages = [...message1, ...message2];
 
     const signatures = await finalizeCCTPV1Messages(
@@ -187,7 +176,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    let state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
+    const state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
 
     expect(state.data.pausedDeposits).to.equal(true);
 

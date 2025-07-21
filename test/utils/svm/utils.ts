@@ -31,7 +31,7 @@ import {
 } from "@solana/kit";
 import { ethers } from "ethers";
 import { arrayify, hexlify } from "ethers/lib/utils";
-import { arch, utils as sdkUtils } from "@across-protocol/sdk";
+import { arch } from "@across-protocol/sdk";
 import { RelayData } from "../../../src/interfaces";
 import {
   BigNumber,
@@ -55,7 +55,10 @@ export const createDefaultSolanaClient = () => {
 /** Wallet & Transaction */
 
 // Generates a new key‑pair signer and airdrops SOL to it.
-export const generateKeyPairSignerWithSol = async (rpcClient: arch.svm.RpcClient, putativeLamports: bigint = 1_000_000_000n) => {
+export const generateKeyPairSignerWithSol = async (
+  rpcClient: arch.svm.RpcClient,
+  putativeLamports = 1_000_000_000n
+) => {
   const signer = await generateKeyPairSigner();
   await airdropFactory(rpcClient)({
     recipientAddress: signer.address,
@@ -128,7 +131,11 @@ export async function mintTokens(
   amount: bigint,
   tokenProgram: Address = TOKEN_2022_PROGRAM_ADDRESS
 ) {
-  const payerAta = await arch.svm.getAssociatedTokenAddress(SvmAddress.from(payer.address), SvmAddress.from(mint), tokenProgram);
+  const payerAta = await arch.svm.getAssociatedTokenAddress(
+    SvmAddress.from(payer.address),
+    SvmAddress.from(mint),
+    tokenProgram
+  );
 
   const createAssociatedTokenIdempotentIx = getCreateAssociatedTokenIdempotentInstruction({
     payer,
@@ -349,7 +356,11 @@ export const sendRequestSlowFill = async (
     eventAuthority: await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS),
     signer,
   };
-  const requestSlowFillTx = await arch.svm.createRequestSlowFillInstruction(signer, solanaClient.rpc, requestSlowFillInput);
+  const requestSlowFillTx = await arch.svm.createRequestSlowFillInstruction(
+    signer,
+    solanaClient.rpc,
+    requestSlowFillInput
+  );
   const signature = await signAndSendTransaction(solanaClient, requestSlowFillTx);
   return { signature, relayData };
 };
@@ -368,7 +379,11 @@ export const sendCreateDeposit = async (
 
   const state = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const tokenProgram = TOKEN_2022_PROGRAM_ADDRESS;
-  const vault = await arch.svm.getAssociatedTokenAddress(SvmAddress.from(state), SvmAddress.from(mint.address), tokenProgram);
+  const vault = await arch.svm.getAssociatedTokenAddress(
+    SvmAddress.from(state),
+    SvmAddress.from(mint.address),
+    tokenProgram
+  );
 
   const depositInput: SvmSpokeClient.DepositInput = {
     depositor: signer.address,
