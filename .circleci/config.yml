@@ -31,7 +31,7 @@ jobs:
           name: Restore Yarn Package Cache
           keys:
             - cache-node-v1-{{ checksum "yarn.lock" }}
-      
+
       # Extract Solana version from across-protocol/contracts
       - run:
           name: Extract Solana version
@@ -62,36 +62,36 @@ jobs:
 
             echo "Using Solana version: $SOLANA_VERSION"
             echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
-            
+
       # Install Solana CLI
       - run:
           name: Install Solana CLI
           command: |
             source $BASH_ENV
             echo "Installing Solana version: $SOLANA_VERSION"
-            
+
             # Parse version numbers
             MAJOR=$(echo $SOLANA_VERSION | cut -d. -f1)
             MINOR=$(echo $SOLANA_VERSION | cut -d. -f2)
             PATCH=$(echo $SOLANA_VERSION | cut -d. -f3)
-            
+
             # Determine which URL to use based on version (same logic as GitHub Actions)
             if [ "$MAJOR" -eq 1 ] && [ "$MINOR" -eq 18 ] && [ "$PATCH" -le 23 ]; then
               INSTALL_URL="https://release.solana.com/v${SOLANA_VERSION}/install"
             else
               INSTALL_URL="https://release.anza.xyz/v${SOLANA_VERSION}/install"
             fi
-            
+
             echo "Installing Solana from: $INSTALL_URL"
-            
+
             # Use a more robust installation method
             curl -sSfL $INSTALL_URL -o /tmp/solana-install.sh
             chmod +x /tmp/solana-install.sh
             /tmp/solana-install.sh
-            
+
             # Add to PATH
             echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
-            
+
             # Verify installation
             source $BASH_ENV
             solana --version
