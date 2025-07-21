@@ -24,6 +24,9 @@ import {
   toBN,
   toBytes32,
   toAddressType,
+  chainIsEvm,
+  chainIsSvm,
+  ZERO_BYTES,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -43,7 +46,6 @@ type RelayerFeeQuery = {
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
-const { isAddress } = ethers.utils;
 
 const DEPOSIT_EVENT = "FundsDeposited";
 const FILL_EVENT = "FilledRelay";
@@ -139,6 +141,19 @@ async function getRelayerQuote(
   fillDeadline: number;
 }> {
   const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
+  // todo: use API to build a proper quote when it's ready
+  // If the destination chain is an SVM network (e.g., Solana), construct a synthetic quote locally
+  // instead of calling the HTTP suggested-fees endpoint. The quote obeys the interface contract
+  if (chainIsSvm(toChainId)) {
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      outputAmount: amount.mul(9).div(10), // 90 % of input
+      exclusiveRelayer: ZERO_BYTES,
+      exclusivityDeadline: 0,
+      quoteTimestamp: now,
+      fillDeadline: now + 4 * 60 * 60, // +4 hours
+    };
+  }
   let quoteAccepted = false;
 
   const params = {
@@ -205,9 +220,11 @@ async function getRelayerQuote(
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
+  // todo: only EVM `fromChainId`s are supported now
+  assert(chainIsEvm(fromChainId));
   const [recipient, message] = [args.recipient ?? depositor, args.message ?? sdkConsts.EMPTY_MESSAGE].map(String);
-  const exclusiveRelayer = String(args.exclusiveRelayer);
-  const exclusivityDeadline = Number(args.exclusivityDeadline);
+  const exclusiveRelayer = args.exclusiveRelayer ? String(args.exclusiveRelayer) : undefined;
+  const exclusivityDeadline = args.exclusivityDeadline ? Number(args.exclusivityDeadline) : undefined;
 
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
@@ -215,7 +232,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   }
   const network = getNetworkName(fromChainId);
 
-  if (!isAddress(recipient)) {
+  const recipientAddress = toAddressType(recipient, toChainId);
+  if (!recipientAddress.isValidOn(toChainId)) {
     console.log(`Invalid recipient address (${recipient}).`);
     return false;
   }
@@ -237,20 +255,35 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     await approval.wait();
     console.log("Approval complete...");
   }
-  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
+  const depositQuote = await getRelayerQuote(
+    fromChainId,
+    toChainId,
+    token,
+    amount,
+    recipientAddress.toBytes32(),
+    message
+  );
+
+  // Use the exclusiveRelayer provided by the user if present; otherwise fall back to the
+  // value supplied by the quote (for SVM chains this will be the zero address).
+  const finalExclusiveRelayer = toAddressType(exclusiveRelayer ?? depositQuote.exclusiveRelayer, toChainId);
+  const finalExclusivityDeadline =
+    exclusivityDeadline !== undefined && !isNaN(exclusivityDeadline)
+      ? exclusivityDeadline
+      : depositQuote.exclusivityDeadline;
 
   const deposit = await spokePool.deposit(
     toBytes32(depositor),
-    toBytes32(recipient),
+    recipientAddress.toBytes32(),
     toBytes32(token.address),
     toBytes32(AddressZero), // outputToken
     amount,
     depositQuote.outputAmount,
     toChainId,
-    toBytes32(exclusiveRelayer ?? depositQuote.exclusiveRelayer),
+    finalExclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
     depositQuote.fillDeadline,
-    exclusivityDeadline ?? depositQuote.exclusivityDeadline,
+    finalExclusivityDeadline,
     message
   );
   const { hash: transactionHash } = deposit;
