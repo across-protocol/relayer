@@ -670,8 +670,8 @@ export class Monitor {
               });
             } else {
               const nativeSymbolForChain = getNativeTokenSymbol(chainId);
-              // To send a raw transaction, we need to create a fake Contract instance with an empty ABI and
-              // an address set to the recipient of the refill transfer.
+              // To send a raw transaction, we need to create a fake Contract instance with an empty ABI,
+              // an empty method param, and an address set to the recipient of the refill transfer.
               const sendRawTransactionContract = new Contract(
                 account.toEvmAddress(),
                 [], // ABI should be left empty when sending raw transactions
