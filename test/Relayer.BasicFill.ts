@@ -463,8 +463,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       deposits.forEach((deposit) => {
         const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
-        const status =
-          deposit.exclusiveRelayer.toString() === relayerAddress.toString() ? FillStatus.Filled : FillStatus.Unfilled;
+        const status = deposit.exclusiveRelayer.eq(relayerAddress) ? FillStatus.Filled : FillStatus.Unfilled;
         expect(fillStatus[depositHash] ?? FillStatus.Unfilled).to.equal(status);
       });
 
@@ -472,9 +471,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
-      const exclusiveDeposit = deposits.find(
-        ({ exclusiveRelayer }) => exclusiveRelayer.toString() !== relayerAddress.toString()
-      );
+      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer.eq(relayerAddress));
       expect(exclusiveDeposit).to.exist;
       await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
       await updateAllClients();
@@ -591,10 +588,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         outputToken,
         outputAmount
       );
-      const fillAmount = profitClient.getFillAmountInUsd({
-        ...deposit1,
-        outputToken: deposit1.outputToken,
-      })!;
+      const fillAmount = profitClient.getFillAmountInUsd(deposit1)!;
       expect(fillAmount).to.exist;
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
@@ -644,8 +638,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       await updateAllClients();
 
       originChainCommitment = relayerInstance.computeOriginChainCommitment(originChainId, 0, Number.MAX_SAFE_INTEGER);
-      expect(originChainCommitment.eq(getFillAmount({ ...deposit1, outputToken: deposit1.outputToken }, tokenPrice))).to
-        .be.true;
+      expect(originChainCommitment.eq(getFillAmount(deposit1, tokenPrice))).to.be.true;
 
       let originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
       expect(isChainOvercommitted(originChainLimits)).to.be.false;
