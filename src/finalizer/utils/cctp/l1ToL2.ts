@@ -6,7 +6,7 @@ import {
   TokenMessengerMinterIdl,
 } from "@across-protocol/contracts";
 import { web3, BN, Program } from "@coral-xyz/anchor";
-import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { TOKEN_2022_PROGRAM_ADDRESS } from "@solana-program/token-2022";
 import { HubPoolClient, SpokePoolClient, SVMSpokePoolClient } from "../../../clients";
 import {
   Contract,
@@ -351,7 +351,7 @@ async function getAccountMetasForDepositMessage(
     {
       isSigner: false,
       isWritable: false,
-      pubkey: toPublicKey(TOKEN_PROGRAM_ADDRESS),
+      pubkey: toPublicKey(TOKEN_2022_PROGRAM_ADDRESS),
     },
     {
       isSigner: false,

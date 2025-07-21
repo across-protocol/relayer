@@ -94,7 +94,7 @@ import {
   fetchEncodedAccount,
   type KeyPairSigner,
 } from "@solana/kit";
-import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { TOKEN_2022_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token-2022";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
@@ -3035,7 +3035,7 @@ export class Dataworker {
         mint: l2TokenAddress,
         ata: recipientTokenAccount,
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
       });
     }
 
