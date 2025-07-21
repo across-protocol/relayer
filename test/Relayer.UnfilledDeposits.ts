@@ -43,8 +43,8 @@ import {
   randomAddress,
   setupTokensForWallet,
   deployMulticall3,
-  depositV3IntoPrimitiveEvm,
-  fillIntoPrimitiveEvm,
+  depositIntoPrimitiveTypes,
+  fillIntoPrimitiveTypes,
 } from "./utils";
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
@@ -235,7 +235,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       unfilledDeposits.map((unfilledDeposit) => {
         return {
           ...unfilledDeposit,
-          deposit: depositV3IntoPrimitiveEvm(unfilledDeposit.deposit),
+          deposit: depositIntoPrimitiveTypes(unfilledDeposit.deposit),
         };
       })
     )
@@ -244,7 +244,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
-            deposit: depositV3IntoPrimitiveEvm(deposit),
+            deposit: depositIntoPrimitiveTypes(deposit),
             unfilledAmount: deposit.outputAmount,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
@@ -282,7 +282,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       unfilledDeposits.map((unfilledDeposit) => {
         return {
           ...unfilledDeposit,
-          deposit: depositV3IntoPrimitiveEvm(unfilledDeposit.deposit),
+          deposit: depositIntoPrimitiveTypes(unfilledDeposit.deposit),
         };
       })
     )
@@ -291,7 +291,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         deposits
           .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
           .map((deposit) => ({
-            deposit: depositV3IntoPrimitiveEvm(deposit),
+            deposit: depositIntoPrimitiveTypes(deposit),
             unfilledAmount: deposit.outputAmount,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
@@ -321,7 +321,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     unfilledDeposits = _getAllUnfilledDeposits();
     expect(
       unfilledDeposits.map((unfilledDeposit) => {
-        const depositV3PrimitiveEvmArgs = depositV3IntoPrimitiveEvm(unfilledDeposit.deposit);
+        const depositV3PrimitiveEvmArgs = depositIntoPrimitiveTypes(unfilledDeposit.deposit);
         return {
           ...unfilledDeposit,
           deposit: {
@@ -351,14 +351,14 @@ describe("Relayer: Unfilled Deposits", async function () {
         {
           deposit: {
             ...deposit,
-            ...depositV3IntoPrimitiveEvm(deposit),
+            ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
           unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
-              ...fillIntoPrimitiveEvm(invalidFill),
+              ...fillIntoPrimitiveTypes(invalidFill),
               depositId: sdkUtils.toBN(invalidFill.depositId),
             },
           ],
@@ -601,7 +601,7 @@ describe("Relayer: Unfilled Deposits", async function () {
           ...unfilledDeposit,
           deposit: {
             ...unfilledDeposit.deposit,
-            ...depositV3IntoPrimitiveEvm(unfilledDeposit.deposit),
+            ...depositIntoPrimitiveTypes(unfilledDeposit.deposit),
           },
           invalidFills: [
             {
@@ -625,14 +625,14 @@ describe("Relayer: Unfilled Deposits", async function () {
       .to.deep.equal([
         {
           deposit: {
-            ...depositV3IntoPrimitiveEvm(deposit),
+            ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
           unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
-              ...fillIntoPrimitiveEvm(invalidFill),
+              ...fillIntoPrimitiveTypes(invalidFill),
               depositId: sdkUtils.toBN(invalidFill.depositId),
             },
           ],
