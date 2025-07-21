@@ -31,12 +31,51 @@ jobs:
           name: Restore Yarn Package Cache
           keys:
             - cache-node-v1-{{ checksum "yarn.lock" }}
+      
+      # Extract Solana version from across-protocol/contracts
+      - run:
+          name: Extract Solana version
+          command: |
+            set -euo pipefail
+            
+            REPO="across-protocol/contracts"
+            REF="main"
+            WORKDIR="/tmp/contracts"
+            mkdir -p "$WORKDIR"
+            
+            curl -sSfL "https://raw.githubusercontent.com/${REPO}/${REF}/Cargo.lock" \
+                 -o "${WORKDIR}/Cargo.lock" || true
+            
+            cd "$WORKDIR"
+            
+            if [[ -n "${OVERRIDE_SOLANA_VERSION:-}" ]]; then
+              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
+            else
+              if [[ -f Cargo.lock ]]; then
+                SOLANA_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
+                                 | grep 'version' | head -n1 | cut -d'"' -f2 || true)
+              fi
+            fi
+            
+            SOLANA_VERSION=$(echo "$SOLANA_VERSION" \
+                             | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+            echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
+            
+      # Install Solana CLI
+      - run:
+          name: Install Solana CLI
+          command: |
+            source $BASH_ENV
+            sh -c "$(curl -sSfL https://release.solana.com/v${SOLANA_VERSION}/install)"
+            echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
+            
       - run:
           name: Run build
           command: yarn build
       - run:
           name: Run tests
           command: |
+            source $BASH_ENV
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:
