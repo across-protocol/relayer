@@ -8,7 +8,7 @@ import { Address } from "@solana/kit";
 import { spawn } from "child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import tar from "tar";
+import * as tar from "tar";
 import contractsPkg from "@across-protocol/contracts/package.json" assert { type: "json" };
 
 // Helper function to get the @across-protocol/contracts version from the package.json
