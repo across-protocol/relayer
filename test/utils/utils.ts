@@ -40,6 +40,7 @@ import {
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 import { INFINITE_FILL_DEADLINE } from "../../src/common";
+import { assert as ssAssert, number, string, boolean, optional, any, type } from "superstruct";
 
 export {
   SpyTransport,
@@ -280,6 +281,8 @@ export async function depositV3(
     fillDeadline?: number;
     exclusivityDeadline?: number;
     exclusiveRelayer?: string;
+    fromLiteChain?: boolean;
+    toLiteChain?: boolean;
   } = {}
 ): Promise<DepositWithBlock> {
   const depositor = signer.address;
@@ -344,10 +347,14 @@ export async function depositV3(
     txnRef,
     txnIndex,
     logIndex,
-    ...depositFromArgs(depositArgs),
-    originChainId: Number(originChainId),
+    ...depositFromArgs({
+      ...depositArgs,
+      originChainId: Number(originChainId),
+      messageHash: args.messageHash ?? getMessageHash(args.message),
+      fromLiteChain: opts.fromLiteChain ?? false,
+      toLiteChain: opts.toLiteChain ?? false,
+    }),
     quoteBlockNumber: 0,
-    messageHash: args.messageHash ?? getMessageHash(args.message),
   };
 
   if (isLegacyDeposit) {
@@ -502,9 +509,95 @@ export function createRefunds(
   };
 }
 
+// Superstruct validation schemas to ensure expected properties exist in argument maps.
+const RelayDataFields = {
+  originChainId: number(),
+  depositor: string(),
+  recipient: string(),
+  depositId: any(),
+  inputToken: string(),
+  inputAmount: any(),
+  outputToken: string(),
+  outputAmount: any(),
+  message: string(),
+  fillDeadline: any(),
+  exclusiveRelayer: string(),
+  exclusivityDeadline: any(),
+};
+
+// This one isn't from the SDK, but a requirement for the test util helpers
+const DestinationChainIdField = {
+  destinationChainId: number(),
+};
+
+// The raw args for relay data need destinationChainId for creating Address types
+const RelayDataArgsStruct = type({ ...RelayDataFields, ...DestinationChainIdField });
+
+// Now for the specific event types
+const { message, ...OmittedMessageRelayDataFields } = RelayDataFields;
+
+const BaseRelayArgsStruct = type({
+  ...OmittedMessageRelayDataFields,
+  ...DestinationChainIdField,
+});
+
+const DepositArgsStruct = type({
+  ...RelayDataFields,
+  ...DestinationChainIdField,
+  messageHash: string(),
+  quoteTimestamp: number(),
+  fromLiteChain: boolean(),
+  toLiteChain: boolean(),
+  speedUpSignature: optional(string()),
+  updatedRecipient: optional(string()),
+  updatedOutputAmount: optional(any()),
+  updatedMessage: optional(string()),
+});
+
+const RelayExecutionEventInfoStruct = type({
+  updatedRecipient: string(),
+  updatedOutputAmount: any(), // BigNumber
+  updatedMessage: optional(string()),
+  updatedMessageHash: string(),
+  fillType: any(), // enum FillType
+});
+
+const FillArgsStruct = type({
+  ...OmittedMessageRelayDataFields,
+  ...DestinationChainIdField,
+  messageHash: string(),
+  relayer: string(),
+  repaymentChainId: number(),
+  relayExecutionInfo: RelayExecutionEventInfoStruct,
+});
+
+const SlowFillRequestArgsStruct = type({
+  ...OmittedMessageRelayDataFields,
+  ...DestinationChainIdField,
+  messageHash: string(),
+});
+
+function _getRelayDataFields(relayDataArgs: { [key: string]: any }): Omit<RelayData, "message"> {
+  ssAssert(relayDataArgs, BaseRelayArgsStruct);
+  return {
+    originChainId: relayDataArgs.originChainId,
+    depositor: toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId),
+    recipient: toAddressType(relayDataArgs.recipient, relayDataArgs.destinationChainId),
+    depositId: relayDataArgs.depositId,
+    inputToken: toAddressType(relayDataArgs.inputToken, relayDataArgs.originChainId),
+    inputAmount: relayDataArgs.inputAmount,
+    outputToken: toAddressType(relayDataArgs.outputToken, relayDataArgs.destinationChainId),
+    outputAmount: relayDataArgs.outputAmount,
+    fillDeadline: relayDataArgs.fillDeadline,
+    exclusiveRelayer: toAddressType(relayDataArgs.exclusiveRelayer, relayDataArgs.destinationChainId),
+    exclusivityDeadline: relayDataArgs.exclusivityDeadline,
+  };
+}
+
 // A helper function to parse key - value map into a Fill object
 export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
-  const { message, ...relayData } = relayDataFromArgs(fillArgs);
+  ssAssert(fillArgs, FillArgsStruct);
+  const relayData = _getRelayDataFields(fillArgs);
   const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
   const relayExecutionInfo: RelayExecutionEventInfo = {
     updatedRecipient: toAddressType(relayExecutionInfoArgs.updatedRecipient, fillArgs.destinationChainId),
@@ -543,33 +636,26 @@ export function fillIntoPrimitiveTypes(fill: Fill) {
 }
 
 export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
+  ssAssert(relayDataArgs, RelayDataArgsStruct);
   return {
-    originChainId: relayDataArgs.originChainId,
-    depositor: toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId),
-    recipient: toAddressType(relayDataArgs.recipient, relayDataArgs.destinationChainId),
-    depositId: relayDataArgs.depositId,
-    inputToken: toAddressType(relayDataArgs.inputToken, relayDataArgs.originChainId),
-    inputAmount: relayDataArgs.inputAmount,
-    outputToken: toAddressType(relayDataArgs.outputToken, relayDataArgs.destinationChainId),
-    outputAmount: relayDataArgs.outputAmount,
+    ..._getRelayDataFields(relayDataArgs),
     message: relayDataArgs.message,
-    fillDeadline: relayDataArgs.fillDeadline,
-    exclusiveRelayer: toAddressType(relayDataArgs.exclusiveRelayer, relayDataArgs.destinationChainId),
-    exclusivityDeadline: relayDataArgs.exclusivityDeadline,
   };
 }
 
 export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
-  const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
+  ssAssert(slowFillRequestArgs, SlowFillRequestArgsStruct);
+  const relayData = _getRelayDataFields(slowFillRequestArgs);
   return {
     ...relayData,
     destinationChainId: slowFillRequestArgs.destinationChainId,
-    messageHash: slowFillRequestArgs.messageHash ?? getMessageHash(slowFillRequestArgs.message),
+    messageHash: slowFillRequestArgs.messageHash,
   };
 }
 
 // A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
 export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
+  ssAssert(depositArgs, DepositArgsStruct);
   const deposit: Deposit = {
     ...relayDataFromArgs(depositArgs),
     destinationChainId: depositArgs.destinationChainId,
