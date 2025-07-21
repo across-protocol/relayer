@@ -52,10 +52,12 @@ export async function requestSlowFill(
   ]);
   const lastEvent = events.at(-1);
   assert(lastEvent);
-  const slowFillRequest = slowFillRequestFromArgs(spreadEvent(lastEvent.args!));
+  const slowFillRequest = slowFillRequestFromArgs({
+    ...spreadEvent(lastEvent.args!),
+    destinationChainId: Number(destinationChainId),
+  });
   const requestObject: SlowFillRequestWithBlock = {
     ...slowFillRequest,
-    destinationChainId,
     blockNumber: lastEvent.blockNumber,
     txnRef: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
