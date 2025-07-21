@@ -173,10 +173,7 @@ export class Relayer {
     }
 
     tokenClient.clearTokenData();
-    await Promise.all([
-      tokenClient.update(),
-      profitClient.update()
-    ]);
+    await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
     if (this.config.sendingRebalancesEnabled) {
