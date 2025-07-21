@@ -106,19 +106,19 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
     ]);
     const counted = new Set<number>();
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, l2Event) => {
-      const matchingFinalizedEvent = withdrawalFinalizedEvents.find((l1Event, idx) => {
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
+      const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
         // and we will need to adjust this logic.
-        if (counted.has(idx) || l1Event.args.amount.ne(l2Event.args.amount)) {
+        if (counted.has(idx) || !toBN(l1Args.amount.toString()).eq(toBN(l2Args.amount.toString()))) {
           return false;
         }
 
         counted.add(idx);
         return true;
       });
-      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(l2Event.args.amount);
+      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(l2Args.amount);
     }, bnZero);
     return withdrawalAmount;
   }
