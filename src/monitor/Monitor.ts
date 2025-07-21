@@ -22,7 +22,6 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
-  getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
