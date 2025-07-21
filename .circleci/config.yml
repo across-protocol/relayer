@@ -39,7 +39,7 @@ jobs:
             set -euo pipefail
 
             REPO="across-protocol/contracts"
-            REF="main"
+            REF="master"
 
             if [[ -n "${OVERRIDE_SOLANA_VERSION:-}" ]]; then
               SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
