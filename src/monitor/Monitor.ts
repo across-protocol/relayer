@@ -1,5 +1,5 @@
 import { BalanceAllocator } from "../clients";
-import { CONTRACT_ADDRESSES, EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
+import { EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
   BundleAction,
