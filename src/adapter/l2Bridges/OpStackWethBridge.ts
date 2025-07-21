@@ -111,7 +111,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       });
 
       return isDefined(received) ? totalAmount : totalAmount.add(l2Args.amount);
-    }, bnZero);    
+    }, bnZero);
     return withdrawalAmount;
   }
 }
