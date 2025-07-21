@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -17,7 +17,6 @@ import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   bundleDataClient: BundleDataClient;
-  priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
@@ -41,13 +40,6 @@ export async function constructDataworkerClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // The proposer needs prices to calculate bundle volumes.
-  const priceClient = new PriceClient(logger, [
-    new acrossApi.PriceFeed(),
-    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-    new defiLlama.PriceFeed(),
-  ]);
-
   // Define the Arweave client. We need to use a read-write signer for the
   // dataworker to persist bundle data if `persistingBundleData` is enabled.
   // Otherwise, we can use a read-only signer.
@@ -62,7 +54,6 @@ export async function constructDataworkerClients(
   return {
     ...commonClients,
     bundleDataClient,
-    priceClient,
     arweaveClient,
   };
 }
