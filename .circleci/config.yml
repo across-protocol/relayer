@@ -68,9 +68,19 @@ jobs:
           name: Install Solana CLI
           command: |
             source $BASH_ENV
-            sh -c "$(curl -sSfL https://release.solana.com/v${SOLANA_VERSION}/install)"
+            echo "Installing Solana version: $SOLANA_VERSION"
+            
+            # Use a more robust installation method
+            curl -sSfL https://release.solana.com/v${SOLANA_VERSION}/install -o /tmp/solana-install.sh
+            chmod +x /tmp/solana-install.sh
+            /tmp/solana-install.sh
+            
+            # Add to PATH
             echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
             
+            # Verify installation
+            source $BASH_ENV
+            solana --version
       - run:
           name: Run build
           command: yarn build
