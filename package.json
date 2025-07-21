@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.68",
     "@across-protocol/contracts": "^4.1.0",
-    "@across-protocol/sdk": "4.3.15",
+    "@across-protocol/sdk": "4.3.17",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@coral-xyz/anchor": "^0.31.1",
@@ -127,6 +127,7 @@
     "access": "public"
   },
   "resolutions": {
+    "@solana/kit": "2.1.0",
     "secp256k1": "4.0.4",
     "**/secp256k1": "4.0.4",
     "eccrypto/secp256k1": "3.8.1"
