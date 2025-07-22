@@ -177,12 +177,12 @@ export async function runTransaction(
         at: "TxUtil#runTransaction",
         message: "Error executing tx",
         retriesRemaining,
-        sendRawTransaction,
         target: getTarget(contract.address),
         method,
         args,
         value,
         nonce,
+        sendRawTxn: sendRawTransaction,
         notificationPath: "across-error",
       };
       if (isEthersError(error)) {
