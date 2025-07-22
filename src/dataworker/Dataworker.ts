@@ -250,7 +250,8 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
-      expiredDepositsToRefundV3
+      expiredDepositsToRefundV3,
+      spokePoolClients
     );
   }
 
@@ -515,7 +516,7 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -523,7 +524,8 @@ export class Dataworker {
       bundleFillsV3,
       bundleSlowFillsV3,
       unexecutableSlowFills,
-      expiredDepositsToRefundV3
+      expiredDepositsToRefundV3,
+      spokePoolClients
     );
 
     const relayerRefundRoot = _buildRelayerRefundRoot(
@@ -2603,7 +2605,7 @@ export class Dataworker {
     );
   }
 
-  _getPoolRebalanceRoot(
+  async _getPoolRebalanceRoot(
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2611,15 +2613,16 @@ export class Dataworker {
     bundleV3Fills: BundleFillsV3,
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
-    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): PoolRebalanceRoot {
+    expiredDepositsToRefundV3: ExpiredDepositsToRefundV3,
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
+      this.rootCache[key] = await _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
         bundleV3Deposits,
@@ -2627,7 +2630,7 @@ export class Dataworker {
         bundleSlowFills,
         unexecutableSlowFills,
         expiredDepositsToRefundV3,
-        this.clients,
+        { ...this.clients, spokePoolClients },
         this.maxL1TokenCountOverride
       );
     }
