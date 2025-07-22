@@ -1,11 +1,11 @@
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { encodeMessageHeader } from "@across-protocol/contracts/dist/src/svm/web3-v1";
-import { signature } from "@solana/kit";
+import { signature, airdropFactory, createKeyPairSignerFromBytes, lamports } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
-import { signer } from "./Solana.setup";
-import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
+import { createDefaultSolanaClient, encodePauseDepositsMessageBody, initializeSvmSpoke } from "./utils/svm/utils";
+import { validatorSetup, validatorTeardown } from "./utils/svm/validator.setup";
 import { finalizeCCTPV1Messages, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp/l1ToL2";
 import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
 import { FinalizerPromise } from "../src/finalizer/types";
@@ -15,6 +15,8 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import sinon from "sinon";
 import * as CCTPUtils from "../src/utils/CCTPUtils";
 import * as svmSignerUtils from "../src/utils/SvmSignerUtils";
+import fs from "fs/promises";
+import path from "node:path";
 
 // Define an extended interface for our Solana client with chainId
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
@@ -77,6 +79,43 @@ const getAttestedMessage = async (
 describe("finalizeCCTPV1Messages", () => {
   const solanaClient = createDefaultSolanaClient() as ExtendedSolanaClient;
   const { spyLogger } = createSpyLogger();
+  let signer: Awaited<ReturnType<typeof createKeyPairSignerFromBytes>>;
+  let hubPoolClient: clients.HubPoolClient;
+
+  beforeEach(async function () {
+    ({ hubPoolClient } = await setupDataworker(ethers, 25, 25, 0));
+    await hubPoolClient.update();
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  before(async function () {
+    // Set up Solana environment
+    const keyFilePath = path.resolve(__dirname, "utils", "svm", "keys", "localnet-wallet.json");
+    const fileContents = await fs.readFile(keyFilePath, "utf-8");
+    const secretKey = new Uint8Array(JSON.parse(fileContents));
+    signer = await createKeyPairSignerFromBytes(secretKey);
+
+    /* Local validator spin‑up can take a few seconds */
+    this.timeout(60_000);
+    await validatorSetup(signer.address);
+
+    // Airdrop SOL to the signer
+    await airdropFactory(solanaClient)({
+      recipientAddress: signer.address,
+      lamports: lamports(1_000_000_000n),
+      commitment: "confirmed",
+    });
+
+    // Initialize the program and get the state
+    await initializeSvmSpoke(signer, solanaClient, signer.address);
+  });
+
+  after(() => {
+    validatorTeardown();
+  });
 
   it("should simulate CCTP message finalization successfully", async () => {
     const nonce = 100;
@@ -254,20 +293,6 @@ describe("finalizeCCTPV1Messages", () => {
 
     expect(signatures).to.be.an("array");
     expect(signatures).to.have.length(0);
-  });
-});
-
-describe("cctpL1toL2Finalizer", () => {
-  let hubPoolClient: clients.HubPoolClient;
-  const { spyLogger } = createSpyLogger();
-
-  beforeEach(async function () {
-    ({ hubPoolClient } = await setupDataworker(ethers, 25, 25, 0));
-    await hubPoolClient.update();
-  });
-
-  afterEach(() => {
-    sinon.restore();
   });
 
   it("should simulate Solana CCTP messages successfully", async () => {
