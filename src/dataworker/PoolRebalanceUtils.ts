@@ -2,16 +2,13 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
 import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
-  bnZero,
   BigNumber,
-  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   convertFromWei,
   formatFeePct,
   shortenHexString,
   shortenHexStrings,
   toBN,
-  toBNWei,
   winston,
   assert,
   getNetworkName,
@@ -20,44 +17,6 @@ import {
   Address,
   isDefined,
 } from "../utils";
-import { DataworkerClients } from "./DataworkerClientHelper";
-
-// TODO: Is summing up absolute values really the best way to compute a root bundle's "volume"? Said another way,
-// how do we measure a root bundle's "impact" or importance?
-export async function computePoolRebalanceUsdVolume(
-  leaves: PoolRebalanceLeaf[],
-  clients: DataworkerClients
-): Promise<BigNumber> {
-  // Fetch the set of unique token addresses from the array of PoolRebalanceLeave objects.
-  // Map the resulting HubPool token addresses to symbol, decimals, and price.
-  const hubPoolTokens = Object.fromEntries(
-    Array.from(new Set(leaves.map(({ l1Tokens }) => l1Tokens).flat()))
-      .map((address) => clients.hubPoolClient.getTokenInfoForL1Token(address))
-      .map(({ symbol, decimals, address }) => [address, { symbol, decimals, price: bnZero }])
-  );
-
-  // Fetch all relevant token prices.
-  const prices = await clients.priceClient.getPricesByAddress(
-    Object.keys(hubPoolTokens).map((address) => address),
-    "usd"
-  );
-
-  // Scale token price to 18 decimals.
-  prices.forEach(({ address, price }) => (hubPoolTokens[address].price = toBNWei(price)));
-
-  const bn10 = toBN(10);
-  return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
-    return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: EvmAddress, index: number) => {
-      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token.toEvmAddress()];
-
-      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const volume = netSendAmount.abs().mul(bn10.pow(18 - decimals)); // Scale volume to 18 decimals.
-
-      const usdVolume = volume.mul(usdTokenPrice).div(fixedPoint);
-      return sum.add(usdVolume);
-    }, result);
-  }, bnZero);
-}
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],
