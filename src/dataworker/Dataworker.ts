@@ -97,9 +97,6 @@ import {
   compressTransactionMessageUsingAddressLookupTables,
   type KeyPairSigner,
   type AddressesByLookupTableAddress,
-  getU64Encoder,
-  getU32Encoder,
-  getProgramDerivedAddress,
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
@@ -1146,9 +1143,6 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
-        if (chainId !== CHAIN_IDs.SOLANA) {
-          return;
-        }
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
         );
@@ -2247,9 +2241,6 @@ export class Dataworker {
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
     for (const client of Object.values(spokePoolClients)) {
       const { chainId } = client;
-      if (chainId !== CHAIN_IDs.SOLANA) {
-        continue;
-      }
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
         (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
       );
@@ -2817,26 +2808,8 @@ export class Dataworker {
     rootBundleId: number,
     relayerRefundLeafHexProof: string[]
   ): Promise<string> {
-    const spokePoolProgramId = address(spokePoolClient.spokePoolAddress.toBase58());
-
-    /**
-     * Returns the PDA for the SVM Spoke's root bundle account.
-     * @param programId the address of the spoke pool.
-     * @param rootBundleId the associated root bundle ID.
-     */
-    const getRootBundlePda = async () => {
-      const seedEncoder = getU64Encoder();
-      const seed = seedEncoder.encode(0); // Default seed.
-
-      const intEncoder = getU32Encoder();
-      const [pda] = await getProgramDerivedAddress({
-        programAddress: spokePoolProgramId,
-        seeds: ["root_bundle", seed, intEncoder.encode(rootBundleId)],
-      });
-      return pda;
-    };
-
     // Parse relevant info from the relayer refund leaf/dataworker.
+    const spokePoolProgramId = address(spokePoolClient.spokePoolAddress.toBase58());
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const _l2TokenAddress = leaf.l2TokenAddress;
     assert(
@@ -2857,7 +2830,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
-      getRootBundlePda(/* spokePoolProgramId, statePda, rootBundleId*/),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getInstructionParamsPda(spokePoolProgramId, kitKeypair.address),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.l2TokenAddress),
     ]);
@@ -3207,7 +3180,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
-      getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getAssociatedTokenAddress(SvmAddress.from(recipient.toString()), leaf.relayData.outputToken),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.relayData.outputToken),
     ]);
