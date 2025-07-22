@@ -194,16 +194,35 @@ export async function runTransaction(
   }
 }
 
-export async function runTransactionSvm(
+export async function sendAndConfirmSolanaTransaction(
   unsignedTransaction: CompilableTransactionMessage,
   signer: KeyPairSigner,
-  provider: SVMProvider
+  provider: SVMProvider,
+  cycles = 25,
+  pollingDelay = 600 // 1.5 slots on Solana.
 ): Promise<string> {
+  const delay = (ms: number) => {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  };
   const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
-  return provider
+  const txSignature = await provider
     .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
     .send();
+  let confirmed = false;
+  let _cycles = 0;
+  while (!confirmed && ++_cycles < cycles) {
+    const txStatus = await provider.getSignatureStatuses([txSignature]).send();
+    // Index 0 since we are only sending a single transaction in this method.
+    confirmed =
+      txStatus?.value?.[0]?.confirmationStatus === "confirmed" ||
+      txStatus?.value?.[0]?.confirmationStatus === "finalized";
+    // If the transaction wasn't confirmed, wait `pollingInterval` and retry.
+    if (!confirmed) {
+      await delay(pollingDelay);
+    }
+  }
+  return txSignature;
 }
 
 export async function getGasPrice(
