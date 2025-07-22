@@ -2818,7 +2818,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
-      getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getInstructionParamsPda(spokePoolProgramId, kitKeypair.address),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.l2TokenAddress),
     ]);
@@ -2993,7 +2993,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
-      getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getAssociatedTokenAddress(SvmAddress.from(recipient.toString()), leaf.relayData.outputToken),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.relayData.outputToken),
     ]);
