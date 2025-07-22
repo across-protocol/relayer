@@ -113,7 +113,6 @@ const config: HardhatUserConfig = {
   namedAccounts: { deployer: 0 },
   mocha: {
     timeout: 100000,
-    require: ["./test/Solana.setup.ts"],
   },
 };
 
