@@ -523,5 +523,3 @@ describe("cctpL1toL2Finalizer", () => {
     }
   });
 });
-
-

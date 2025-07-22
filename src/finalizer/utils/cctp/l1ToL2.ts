@@ -239,7 +239,7 @@ export function finalizeCCTPV1Messages(
       }
       return "";
     }
-    
+
     try {
       const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
       const signature = getSignatureFromTransaction(signedTransaction);
