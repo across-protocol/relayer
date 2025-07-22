@@ -5,12 +5,12 @@ import { intToU8Array32 } from "@across-protocol/contracts/dist/src/svm/web3-v1"
 import { SYSTEM_PROGRAM_ADDRESS, getCreateAccountInstruction } from "@solana-program/system";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS,
   getCreateAssociatedTokenIdempotentInstruction,
   getInitializeMintInstruction,
   getMintSize,
   getMintToInstruction,
-} from "@solana-program/token-2022";
+} from "@solana-program/token";
 import {
   Address,
   Commitment,
@@ -87,7 +87,7 @@ export async function createMint(
   payer: KeyPairSigner,
   client: arch.svm.RpcClient,
   decimals = 6,
-  tokenProgram: Address = TOKEN_2022_PROGRAM_ADDRESS,
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
   mintSize = getMintSize()
 ) {
   const [mint, mintRent] = await Promise.all([
@@ -129,7 +129,7 @@ export async function mintTokens(
   client: arch.svm.RpcClient,
   mint: Address,
   amount: bigint,
-  tokenProgram: Address = TOKEN_2022_PROGRAM_ADDRESS
+  tokenProgram: Address = TOKEN_PROGRAM_ADDRESS
 ) {
   const payerAta = await arch.svm.getAssociatedTokenAddress(
     SvmAddress.from(payer.address),
@@ -256,13 +256,13 @@ export const sendCreateFill = async (
   const payerAta = await arch.svm.getAssociatedTokenAddress(
     SvmAddress.from(signer.address),
     SvmAddress.from(mint.address),
-    TOKEN_2022_PROGRAM_ADDRESS
+    TOKEN_PROGRAM_ADDRESS
   );
 
   const recipientAta = await arch.svm.getAssociatedTokenAddress(
     relayData.recipient,
     SvmAddress.from(mint.address),
-    TOKEN_2022_PROGRAM_ADDRESS
+    TOKEN_PROGRAM_ADDRESS
   );
 
   const delegatePda = await arch.svm.getFillRelayDelegatePda(
@@ -290,7 +290,7 @@ export const sendCreateFill = async (
     relayerTokenAccount: payerAta,
     recipientTokenAccount: recipientAta,
     fillStatus: fillStatusPda,
-    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
     associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
     systemProgram: SYSTEM_PROGRAM_ADDRESS,
     eventAuthority: await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS),
@@ -378,7 +378,7 @@ export const sendCreateDeposit = async (
   const currentTime = await getCurrentTime(solanaClient);
 
   const state = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
-  const tokenProgram = TOKEN_2022_PROGRAM_ADDRESS;
+  const tokenProgram = TOKEN_PROGRAM_ADDRESS;
   const vault = await arch.svm.getAssociatedTokenAddress(
     SvmAddress.from(state),
     SvmAddress.from(mint.address),
