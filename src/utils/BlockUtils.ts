@@ -1,4 +1,4 @@
-import { interfaces, utils } from "@across-protocol/sdk";
+import { arch, interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
 import {
   BlockFinderHints,
@@ -78,10 +78,9 @@ export async function getTimestampsForBundleStartBlocks(
             (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
           ];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
-          return [
-            chainId,
-            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlockToQuery)).send()),
-          ];
+          const provider = spokePoolClient.svmEventsClient.getRpc();
+          const { timestamp } = await arch.svm.findNearestTime(provider, BigInt(startBlockToQuery));
+          return [chainId, timestamp];
         }
       })
     ).filter(isDefined)
