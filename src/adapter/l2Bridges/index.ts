@@ -4,3 +4,4 @@ export * from "./BinanceCEXBridge";
 export * from "./OpStackBridge";
 export * from "./OpStackUSDCBridge";
 export * from "./OpStackWethBridge";
+export * from "./UsdcCCTPBridge";
