@@ -3,11 +3,18 @@ import { encodeMessageHeader } from "@across-protocol/contracts/dist/src/svm/web
 import { signature } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
-import { arch } from "@across-protocol/sdk";
+import { arch, clients } from "@across-protocol/sdk";
 import { signer } from "./Solana.setup";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
-import { finalizeCCTPV1Messages } from "../src/finalizer/utils/cctp/l1ToL2";
+import { finalizeCCTPV1Messages, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp/l1ToL2";
 import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
+import { FinalizerPromise } from "../src/finalizer/types";
+import { createSpyLogger, ethers, getContractFactory } from "./utils";
+import { ZERO_ADDRESS } from "@uma/common";
+import { setupDataworker } from "./fixtures/Dataworker.Fixture";
+import sinon from "sinon";
+import * as CCTPUtils from "../src/utils/CCTPUtils";
+import * as svmSignerUtils from "../src/utils/SvmSignerUtils";
 
 // Define an extended interface for our Solana client with chainId
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
@@ -243,3 +250,272 @@ describe("finalizeCCTPV1Messages", () => {
     expect(signatures).to.have.length(0);
   });
 });
+
+describe("cctpL1toL2Finalizer", () => {
+  let hubPoolClient: clients.HubPoolClient;
+  const { spyLogger } = createSpyLogger();
+
+  beforeEach(async function () {
+    ({ hubPoolClient } = await setupDataworker(ethers, 25, 25, 0));
+    await hubPoolClient.update();
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it("should simulate Solana CCTP messages successfully", async () => {
+    // Create a test message
+    const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
+    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
+    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    });
+    sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
+
+    let originalSendTransactions: string | undefined;
+    try {
+      // Set environment to not send transactions (simulate mode)
+      originalSendTransactions = process.env.SEND_TRANSACTIONS;
+      process.env.SEND_TRANSACTIONS = "false";
+
+      // Create a proper EVM client using MockSpokePool contract
+      const [deployer] = await ethers.getSigners();
+      const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
+      const evmSpokePoolClient = new clients.EVMSpokePoolClient(
+        spyLogger,
+        spokePool, // This should be the contract, not null
+        hubPoolClient, // hubPoolClient
+        1, // chainId
+        0, // deploymentBlock
+        { from: 0 } // eventSearchConfig
+      );
+
+      // Create a proper l2SpokePoolClient for Solana
+      const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+        spyLogger,
+        hubPoolClient,
+        5, // chainId
+        0n, // deploymentBlock
+        { from: 0 },
+        createDefaultSolanaClient().rpc // eventSearchConfig
+      );
+
+      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+        spyLogger,
+        hubPoolClient.hubPool.signer,
+        hubPoolClient as any, // Cast to local HubPoolClient type
+        l2SpokePoolClient,
+        evmSpokePoolClient,
+        ["0x1234567890123456789012345678901234567890"] as any
+      );
+
+      // Verify the result structure
+      expect(result).to.have.property("crossChainMessages");
+      expect(result).to.have.property("callData");
+      expect(result.crossChainMessages).to.be.an("array");
+      expect(result.callData).to.be.an("array");
+
+      // For Solana, crossChainMessages should be empty and callData should be empty
+      // because the finalization happens directly in the function
+      expect(result.crossChainMessages).to.have.length(0);
+      expect(result.callData).to.have.length(0);
+    } finally {
+      if (originalSendTransactions !== undefined) {
+        process.env.SEND_TRANSACTIONS = originalSendTransactions;
+      }
+    }
+  });
+
+  it("should process Solana CCTP messages successfully", async () => {
+    // Create a test message
+    const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
+    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
+    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    });
+    sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
+
+    let originalSendTransactions: string | undefined;
+    try {
+      // Set environment to not send transactions (simulate mode)
+      originalSendTransactions = process.env.SEND_TRANSACTIONS;
+      process.env.SEND_TRANSACTIONS = "true";
+
+      // Create a proper EVM client using MockSpokePool contract
+      const [deployer] = await ethers.getSigners();
+      const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
+      const evmSpokePoolClient = new clients.EVMSpokePoolClient(
+        spyLogger,
+        spokePool, // This should be the contract, not null
+        hubPoolClient, // hubPoolClient
+        1, // chainId
+        0, // deploymentBlock
+        { from: 0 } // eventSearchConfig
+      );
+
+      // Create a proper l2SpokePoolClient for Solana
+      const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+        spyLogger,
+        hubPoolClient,
+        5, // chainId
+        0n, // deploymentBlock
+        { from: 0 },
+        createDefaultSolanaClient().rpc // eventSearchConfig
+      );
+
+      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+        spyLogger,
+        hubPoolClient.hubPool.signer,
+        hubPoolClient as any, // Cast to local HubPoolClient type
+        l2SpokePoolClient,
+        evmSpokePoolClient,
+        ["0x1234567890123456789012345678901234567890"] as any
+      );
+
+      // Verify the result structure
+      expect(result).to.have.property("crossChainMessages");
+      expect(result).to.have.property("callData");
+      expect(result.crossChainMessages).to.be.an("array");
+      expect(result.callData).to.be.an("array");
+
+      // For Solana, crossChainMessages should be empty and callData should be empty
+      // because the finalization happens directly in the function
+      expect(result.crossChainMessages).to.have.length(0);
+      expect(result.callData).to.have.length(0);
+    } finally {
+      if (originalSendTransactions !== undefined) {
+        process.env.SEND_TRANSACTIONS = originalSendTransactions;
+      }
+    }
+  });
+
+  it("should handle empty message list", async () => {
+    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves([]);
+    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    });
+    sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
+
+    let originalSendTransactions: string | undefined;
+    try {
+      // Set environment to not send transactions (simulate mode)
+      originalSendTransactions = process.env.SEND_TRANSACTIONS;
+      process.env.SEND_TRANSACTIONS = "false";
+
+      // Create a proper EVM client using MockSpokePool contract
+      const [deployer] = await ethers.getSigners();
+      const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
+      const evmSpokePoolClient = new clients.EVMSpokePoolClient(
+        spyLogger,
+        spokePool,
+        hubPoolClient, // hubPoolClient
+        1, // chainId
+        0, // deploymentBlock
+        { from: 0 } // eventSearchConfig
+      );
+
+      const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+        spyLogger,
+        hubPoolClient,
+        5, // chainId
+        0n, // deploymentBlock
+        { from: 0 },
+        createDefaultSolanaClient().rpc // eventSearchConfig
+      );
+
+      // Call the finalizer
+      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+        spyLogger,
+        hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
+        hubPoolClient as any, // Cast to local HubPoolClient type
+        l2SpokePoolClient,
+        evmSpokePoolClient,
+        ["0x1234567890123456789012345678901234567890"] as any
+      );
+
+      // Verify the result structure
+      expect(result).to.have.property("crossChainMessages");
+      expect(result).to.have.property("callData");
+      expect(result.crossChainMessages).to.be.an("array");
+      expect(result.callData).to.be.an("array");
+      expect(result.crossChainMessages).to.have.length(0);
+      expect(result.callData).to.have.length(0);
+    } finally {
+      if (originalSendTransactions !== undefined) {
+        process.env.SEND_TRANSACTIONS = originalSendTransactions;
+      }
+    }
+  });
+
+  it("should handle mixed deposit and tokenless messages", async () => {
+    // Create mixed messages (deposit + tokenless)
+    const depositMessage = await getAttestedMessage(encodePauseDepositsMessageBody(true), 201, 0, 5);
+    const tokenlessMessage = await getAttestedMessage(encodePauseDepositsMessageBody(false), 202, 0, 5);
+
+    // Mock deposit message to have amount property (casting to any to add properties)
+    (depositMessage[0] as any).amount = "1000000"; // 1 USDC in wei
+    (depositMessage[0] as any).type = "transfer";
+
+    const mixedMessages = [...depositMessage, ...tokenlessMessage];
+
+    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(mixedMessages);
+    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+      address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
+    });
+    sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
+
+    let originalSendTransactions: string | undefined;
+    try {
+      // Set environment to not send transactions (simulate mode)
+      originalSendTransactions = process.env.SEND_TRANSACTIONS;
+      process.env.SEND_TRANSACTIONS = "false";
+
+      // Create a proper EVM client using MockSpokePool contract
+      const [deployer] = await ethers.getSigners();
+      const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
+      const evmSpokePoolClient = new clients.EVMSpokePoolClient(
+        spyLogger,
+        spokePool,
+        hubPoolClient, // hubPoolClient
+        1, // chainId
+        0, // deploymentBlock
+        { from: 0 } // eventSearchConfig
+      );
+
+      // Create a proper l2SpokePoolClient for Solana
+      const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+        spyLogger,
+        hubPoolClient,
+        5, // chainId
+        0n, // deploymentBlock
+        { from: 0 },
+        createDefaultSolanaClient().rpc // eventSearchConfig
+      );
+
+      // Call the finalizer
+      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+        spyLogger,
+        hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
+        hubPoolClient as any, // Cast to local HubPoolClient type
+        l2SpokePoolClient,
+        evmSpokePoolClient,
+        ["0x1234567890123456789012345678901234567890"] as any
+      );
+
+      // Verify the result structure
+      expect(result).to.have.property("crossChainMessages");
+      expect(result).to.have.property("callData");
+      expect(result.crossChainMessages).to.be.an("array");
+      expect(result.callData).to.be.an("array");
+      expect(result.crossChainMessages).to.have.length(0);
+      expect(result.callData).to.have.length(0);
+    } finally {
+      if (originalSendTransactions !== undefined) {
+        process.env.SEND_TRANSACTIONS = originalSendTransactions;
+      }
+    }
+  });
+});
+
+
