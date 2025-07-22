@@ -76,6 +76,7 @@ const getAttestedMessage = async (
 
 describe("finalizeCCTPV1Messages", () => {
   const solanaClient = createDefaultSolanaClient() as ExtendedSolanaClient;
+  const { spyLogger } = createSpyLogger();
 
   it("should simulate CCTP message finalization successfully", async () => {
     const nonce = 100;
@@ -89,6 +90,7 @@ describe("finalizeCCTPV1Messages", () => {
       solanaClient.rpc,
       attestedMessages,
       signer,
+      spyLogger,
       true, // simulate = true
       0 // hubChainId
     );
@@ -110,6 +112,7 @@ describe("finalizeCCTPV1Messages", () => {
       solanaClient.rpc,
       attestedMessages,
       signer,
+      spyLogger,
       false, // simulate = false
       0 // hubChainId
     );
@@ -158,6 +161,7 @@ describe("finalizeCCTPV1Messages", () => {
       solanaClient.rpc,
       attestedMessages,
       signer,
+      spyLogger,
       false, // simulate = false
       0 // hubChainId
     );
@@ -228,6 +232,7 @@ describe("finalizeCCTPV1Messages", () => {
         solanaClient.rpc,
         [invalidMessage],
         signer,
+        spyLogger,
         true, // simulate = true
         0 // hubChainId
       );
@@ -242,6 +247,7 @@ describe("finalizeCCTPV1Messages", () => {
       solanaClient.rpc,
       [], // empty array
       signer,
+      spyLogger,
       false,
       0
     );

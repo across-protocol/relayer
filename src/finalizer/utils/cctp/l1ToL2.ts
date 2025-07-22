@@ -18,6 +18,7 @@ import {
   Address,
   SVMProvider,
   getKitKeypairFromEvmSigner,
+  CHAIN_IDs,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
@@ -93,6 +94,7 @@ export async function cctpL1toL2Finalizer(
       l2SpokePoolClient.svmEventsClient.getRpc(),
       unprocessedMessages,
       signer,
+      logger,
       simulate,
       hubPoolClient.chainId
     );
@@ -210,6 +212,7 @@ export function finalizeCCTPV1Messages(
   solanaClient: SVMProvider,
   attestedMessages: AttestedCCTPMessage[],
   signer: KeyPairSigner,
+  logger: winston.Logger,
   simulate = false,
   hubChainId = 1
 ): Promise<string[]> {
@@ -236,15 +239,23 @@ export function finalizeCCTPV1Messages(
       }
       return "";
     }
+    
+    try {
+      const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
+      const signature = getSignatureFromTransaction(signedTransaction);
+      const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+      await solanaClient
+        .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
+        .send();
 
-    const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
-    const signature = getSignatureFromTransaction(signedTransaction);
-    const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-    await solanaClient
-      .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
-      .send();
-
-    return signature;
+      return signature;
+    } catch (err) {
+      logger.error({
+        at: `Finalizer#finalizeSvmMessages:${CHAIN_IDs.SOLANA}`,
+        message: `Failed to finalize CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+        error: err,
+      });
+    }
   });
 }
 
