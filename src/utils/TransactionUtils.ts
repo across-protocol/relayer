@@ -134,7 +134,6 @@ export async function runTransaction(
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
-      sendRawTransaction,
       target: getTarget(contract.address),
       method,
       args,
@@ -142,6 +141,7 @@ export async function runTransaction(
       nonce,
       gas,
       gasLimit,
+      sendRawTxn: sendRawTransaction,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
