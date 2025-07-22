@@ -3031,7 +3031,7 @@ export class Dataworker {
     if (!associatedTokenAccountExists) {
       const mint = arch.svm.toAddress(leaf.relayData.outputToken);
       const mintInfo = await fetchMint(spokePoolClient.svmEventsClient.getRpc(), mint);
-      const programAddress = mintInfo.programAddress
+      const programAddress = mintInfo.programAddress;
       recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
         owner: statePda,
