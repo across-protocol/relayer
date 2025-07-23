@@ -82,13 +82,13 @@ async function scrapeEvents(
   opts: ScraperOpts & { to: bigint }
 ): Promise<void> {
   const provider = eventsClient.getRpc();
-  const [currentTime, ...events] = await Promise.all([
+  const [{ timestamp: currentTime }, ...events] = await Promise.all([
     arch.svm.getNearestSlotTime(provider),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
   if (!abortController.signal.aborted) {
-    if (!postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent))) {
+    if (!postEvents(Number(opts.to), currentTime, events.flat().map(logFromEvent))) {
       abortController.abort();
     }
   }
