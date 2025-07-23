@@ -284,6 +284,12 @@ export class Monitor {
     const svmClient = spokePoolClients[CHAIN_IDs.SOLANA];
     const svmDeposits = svmClient.getDeposits();
 
+    this.logger.debug({
+      at: "Monitor#reportInvalidFillsRelatedToSvm",
+      message: "Checking for invalid fills related to SVM deposits",
+      svmDeposits: svmDeposits.length,
+    });
+
     // Check for invalid fills related to svm deposits.
     await mapAsync(
       svmDeposits.filter(({ destinationChainId }) => destinationChainId !== CHAIN_IDs.SOLANA),
@@ -312,6 +318,12 @@ export class Monitor {
       }
     );
 
+    this.logger.debug({
+      at: "Monitor#reportInvalidFillsRelatedToSvm",
+      message: "Checking for invalid SVM fills related to EVM deposits",
+      svmFills: svmClient.getFills().length,
+    });
+
     // Check for invalid SVM fills related to EVM deposits.
     svmClient.getFills().map((fill) => {
       const { originChainId, destinationChainId } = fill;
@@ -328,6 +340,7 @@ export class Monitor {
           fill,
           notificationPath: "across-invalid-fills",
         });
+        return;
       }
       const { invalidFills: invalid } = svmClient.getValidUnfilledAmountForDeposit(deposit);
       if (deposit.depositId < bnUint32Max && invalid.length > 0) {
