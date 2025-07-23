@@ -191,8 +191,6 @@ describe("finalizeCCTPV1Messages", () => {
     isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce2, 0);
     expect(isNonceUsed).to.equal(false);
 
-    const statePda = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
-
     const attestedMessages = [...message1, ...message2];
 
     const signatures = await finalizeCCTPV1Messages(
