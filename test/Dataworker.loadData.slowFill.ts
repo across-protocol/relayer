@@ -576,7 +576,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
 
   it("Slow fill request for deposit that isn't eligible for slow fill", async function () {
     const invalidOutputToken = erc20_1;
-    const _depositObject = await depositV3(
+    const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
@@ -585,14 +585,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       invalidOutputToken.address,
       amountToDeposit
     );
-    const depositObject = {
-      ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken, originChainId),
-      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
-      depositor: toAddressType(_depositObject.depositor, originChainId),
-      recipient: toAddressType(_depositObject.recipient, destinationChainId),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
-    };
+
     await spokePoolClient_1.update();
 
     await requestSlowFill(spokePool_2, relayer, depositObject);
@@ -621,7 +614,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await mockConfigStore.update();
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
-    const _depositObject = await depositV3(
+    const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
@@ -630,14 +623,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_2.address,
       amountToDeposit
     );
-    const depositObject = {
-      ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken, originChainId),
-      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
-      depositor: toAddressType(_depositObject.depositor, originChainId),
-      recipient: toAddressType(_depositObject.recipient, destinationChainId),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
-    };
+
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
     expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
@@ -667,7 +653,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
     await mockConfigStore.update();
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
-    const _depositObject = await depositV3(
+    const depositObject = await depositV3(
       spokePool_1,
       destinationChainId,
       depositor,
@@ -676,14 +662,7 @@ describe("Dataworker: Load bundle data: Computing slow fills", async function ()
       erc20_2.address,
       amountToDeposit
     );
-    const depositObject = {
-      ..._depositObject,
-      inputToken: toAddressType(_depositObject.inputToken, originChainId),
-      outputToken: toAddressType(_depositObject.outputToken, destinationChainId),
-      depositor: toAddressType(_depositObject.depositor, originChainId),
-      recipient: toAddressType(_depositObject.recipient, destinationChainId),
-      exclusiveRelayer: toAddressType(_depositObject.exclusiveRelayer, destinationChainId),
-    };
+
     await spokePoolClient_1.update();
     expect(mockConfigStore.liteChainIndicesUpdates.length).to.equal(1);
     expect(mockConfigStore.liteChainIndicesUpdates[0].timestamp).to.be.lt(depositObject.quoteTimestamp);
