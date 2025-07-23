@@ -266,15 +266,19 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
+export async function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
   const nodeUrlList = getNodeUrlList(chainId);
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const maxConcurrency = getMaxConcurrency(chainId);
+  const redisClient = await getRedisCache(logger);
+  const pctRpcCallsLogged = Number(
+    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0"
+  );
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
     redisClient,
     maxConcurrency,
-    0,
+    pctRpcCallsLogged,
     logger,
     Object.values(nodeUrlList)[0],
     chainId
