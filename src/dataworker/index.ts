@@ -270,7 +270,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // leaves to be executed but the proposed bundle was already executed, then exit early.
     const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
-    const proposalCollision = isDefined(proposedBundleData) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+    const proposalCollision =
+      isDefined(proposedBundleData) &&
+      pendingProposal.unclaimedPoolRebalanceLeafCount > 0 &&
+      !config.awaitChallengePeriod;
     // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
     // does not match the number of leaves the executor wants to execute, or the pending root bundle's
     // challenge period timestamp is in the future. This latter case is rarer but it can
@@ -278,8 +281,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-        pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if ((proposalCollision || executorCollision) && !config.awaitChallengePeriod) {
+        (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
+          !config.awaitChallengePeriod));
+    if (proposalCollision || executorCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
