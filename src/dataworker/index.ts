@@ -137,6 +137,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
+  const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
@@ -327,7 +328,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             redis,
             botIdentifier,
             runIdentifier,
-            (updatedChallengeRemaining + l1BlockTime) * 1000
+            (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
           );
           if (handover) {
             logger.debug({
