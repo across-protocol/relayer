@@ -71,15 +71,15 @@ export async function getTimestampsForBundleStartBlocks(
         // is lower than a deployment block, than we know that all possible spoke pool clients can be found by the
         // spoke pool client. In other words, the spoke pool's deployment timestamp is the earliest timestamp we
         // should care about.
-        const startBlockToQuery = Math.max(spokePoolClient.deploymentBlock, startBlock);
+        const startAt = Math.max(spokePoolClient.deploymentBlock, startBlock);
         if (isEVMSpokePoolClient(spokePoolClient)) {
           return [
             chainId,
-            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
+            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber(),
           ];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           const provider = spokePoolClient.svmEventsClient.getRpc();
-          const { timestamp } = await arch.svm.findNearestTime(provider, BigInt(startBlockToQuery));
+          const { timestamp } = await arch.svm.getNearestSlotTime(provider, { slot: BigInt(startAt) });
           return [chainId, timestamp];
         }
       })

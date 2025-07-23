@@ -83,7 +83,7 @@ async function scrapeEvents(
 ): Promise<void> {
   const provider = eventsClient.getRpc();
   const [currentTime, ...events] = await Promise.all([
-    arch.svm.findNearestTime(provider),
+    arch.svm.getNearestSlotTime(provider),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
