@@ -173,8 +173,7 @@ async function run(argv: string[]): Promise<void> {
 
   const provider = getSvmProvider();
   const blockFinder = undefined;
-  const latestSlot = await provider.getSlot({ commitment: "confirmed" }).send();
-  assert(typeof latestSlot === "bigint", `fuck ${latestSlot}`); // Should be unnecessary; tsc still complains.
+  const { slot: latestSlot } = await arch.svm.getNearestSlotTime(provider);
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
