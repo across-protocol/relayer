@@ -94,17 +94,26 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
         l1EventConfig
       ),
     ]);
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, event) => {
-      if (event.args.l1Token === l1Token) {
-        const matchingFinalizedEvent = withdrawalFinalizedEvents.find((e) =>
-          toBN(e.args._amount.toString()).eq(toBN(event.args._amount.toString()))
-        );
-        if (!isDefined(matchingFinalizedEvent)) {
-          return totalAmount.add(event.args._amount);
-        }
+    const counted = new Set<number>();
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
+      if (l2Args.l1Token !== l1Token) {
+        return totalAmount;
       }
-      return totalAmount;
+      const received = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
+        // Protect against double-counting the same l1 withdrawal events.
+        // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
+        // and we will need to adjust this logic.
+        if (counted.has(idx) || !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))) {
+          return false;
+        }
+
+        counted.add(idx);
+        return true;
+      });
+
+      return isDefined(received) ? totalAmount : totalAmount.add(l2Args._amount);
     }, bnZero);
+
     return withdrawalAmount;
   }
 }
