@@ -1311,8 +1311,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token,
-              l2Token,
+              l1Token: l1Token.toEvmAddress(),
+              l2Token: l2Token.toEvmAddress(),
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1378,7 +1378,19 @@ export class InventoryClient {
       this.log("No excess balances to withdraw");
       return;
     } else {
-      this.log("Excess balances to withdraw", { withdrawalsRequired });
+      this.log("Excess balances to withdraw", {
+        withdrawalsRequired: Object.entries(withdrawalsRequired).map(([chainIds, withdrawals]) => {
+          return [
+            chainIds,
+            withdrawals.map((withdrawal) => {
+              return {
+                ...withdrawal,
+                l2Token: withdrawal.l2Token.toEvmAddress(),
+              };
+            }),
+          ];
+        }),
+      });
     }
 
     // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
@@ -1503,7 +1515,7 @@ export class InventoryClient {
       return;
     }
     const l1Tokens = this.getL1Tokens();
-    this.log("Checking token approvals", { l1Tokens });
+    this.log("Checking token approvals", { l1Tokens: l1Tokens.map((token) => token.toEvmAddress()) });
 
     await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }

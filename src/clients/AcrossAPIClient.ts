@@ -77,7 +77,7 @@ export class AcrossApiClient {
       at: "AcrossAPIClient",
       message: "Querying /liquid-reserves",
       timeout: this.timeout,
-      tokens,
+      tokens: tokens.map((token) => token.toEvmAddress()),
       endpoint: this.endpoint,
     });
     this.updatedLimits = false;
