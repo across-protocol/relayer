@@ -48,6 +48,7 @@ import {
   getClaimAccountPda,
   chainIsSvm,
   filterAsync,
+  getAddressLookupTableInstructions,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -96,14 +97,12 @@ import {
   fetchEncodedAccount,
   compressTransactionMessageUsingAddressLookupTables,
   type KeyPairSigner,
-  type AddressesByLookupTableAddress,
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import {
   findAddressLookupTablePda,
-  getExtendLookupTableInstruction,
   getCreateLookupTableInstruction,
   getDeactivateLookupTableInstruction,
 } from "@solana-program/address-lookup-table";
@@ -2961,6 +2960,7 @@ export class Dataworker {
       lookupTable,
     });
 
+    // Add logic to deactivate the LUT. The LUT should be deactivated whether or not the relayer refund execution fails.
     const deactivateLut = async () => {
       // We should clean up the LUT now before returning.
       const deactivateLutIx = getDeactivateLookupTableInstruction({
@@ -2986,15 +2986,16 @@ export class Dataworker {
     try {
       // There are two modes of refunding relayers on SVM:
       // Case 1: All relayers have an initialized ATA, so we call the spoke pool's `executeRelayerRefundLeaf` instruction.
-      // Case 2: One or more relayers do not have an initialized ATA, so we call `executeRelayerRefundLeafDeferred` and allow the refunds to be
+      // Case 2: One or more refund accounts do not have an initialized ATA, so we call `executeRelayerRefundLeafDeferred` and allow the refunds to be
       // pulled from the spoke pool at any later date.
-      // We prefer to run case 1; however, if case 1 cannot be completed, then we fallback to case 2.
+      // We prefer to run case 1; however, if case 1 cannot be completed (since one or more of the `refundAddresses` do not have ATAs for `l2TokenAddress`, then we fallback to case 2.
       const recipientAccountsWithNoATAs = await filterAsync(leaf.refundAddresses, async (refundAddress) => {
         assert(refundAddress.isSVM());
         const refundATA = await getAssociatedTokenAddress(refundAddress, _l2TokenAddress);
         const encodedAccount = await fetchEncodedAccount(provider, refundATA);
         return !encodedAccount.exists;
       });
+      // This is case 1. All refundAddresses have a defined ATA.
       if (recipientAccountsWithNoATAs.length === 0) {
         const executeRelayerRefundLeafIx = SvmSpokeClient.getExecuteRelayerRefundLeafInstruction({
           signer: kitKeypair,
@@ -3017,40 +3018,38 @@ export class Dataworker {
         const lutAddresses = Object.values(executeRelayerRefundLeafIx.accounts).map((account) =>
           address(account.address)
         );
-        const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
-          [lookupTablePda]: lutAddresses,
-        };
-
-        const extendLookupTableIx = getExtendLookupTableInstruction({
-          address: lookupTablePda,
-          authority: kitKeypair,
-          payer: kitKeypair,
-          addresses: lutAddresses,
-        });
-
-        const extendLutTx = pipe(
-          createTransactionMessage({ version: 0 }),
-          (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-          (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
+        // Extend the lookup table with both the static and remaining accounts.
+        const addressLookupTableDefinitions = getAddressLookupTableInstructions(
+          lookupTablePda,
+          kitKeypair,
+          lutAddresses
         );
-        await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+
+        for (const extendLookupTableIx of addressLookupTableDefinitions.instructions) {
+          const extendLutTx = pipe(
+            createTransactionMessage({ version: 0 }),
+            (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+            (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
+          );
+          await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+        }
 
         const executeRelayerRefundLeafTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
           (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
-          (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
+          (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
         refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafTx, kitKeypair, provider);
       } else {
+        // This is case 2. Some refundAddresses do not have ATAs for the l2TokenAddress.
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "Cannot refund all refund address since some ATAs do not exist.",
           recipientAccountsWithNoATAs,
         });
-        // If we failed on case 1, log the error and continue to case 2, where we assume that the leaf execution failed since one or more relayers did not have an ATA defined.
         const executeRelayerRefundLeafDeferredIx = SvmSpokeClient.getExecuteRelayerRefundLeafDeferredInstruction({
           signer: kitKeypair,
           instructionParams: instructionParamsPda,
@@ -3078,6 +3077,7 @@ export class Dataworker {
           const account = await fetchEncodedAccount(provider, claimAccount.accountMeta.address);
           return !account.exists;
         });
+
         // We then need to create all claim accounts which do not already exist. Do this in series to avoid transaction collision issues.
         if (claimAccountsToInitialize.length !== 0) {
           this.logger.debug({
@@ -3108,32 +3108,32 @@ export class Dataworker {
           }
         }
 
+        // Then extend the ALT with all static and remaining accounts.
         const lutAddresses = Object.values(executeRelayerRefundLeafDeferredIx.accounts).map((account) =>
           address(account.address)
         );
-        const addressByLookupTableAddresses: AddressesByLookupTableAddress = {
-          [lookupTablePda]: lutAddresses,
-        };
-        const extendLookupTableIx = getExtendLookupTableInstruction({
-          address: lookupTablePda,
-          authority: kitKeypair,
-          payer: kitKeypair,
-          addresses: lutAddresses,
-        });
-        const extendLutTx = pipe(
-          createTransactionMessage({ version: 0 }),
-          (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
-          (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-          (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
+        const addressLookupTableDefinitions = getAddressLookupTableInstructions(
+          lookupTablePda,
+          kitKeypair,
+          lutAddresses
         );
-        txSignature = await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+
+        for (const extendLookupTableIx of addressLookupTableDefinitions.instructions) {
+          const extendLutTx = pipe(
+            createTransactionMessage({ version: 0 }),
+            (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
+            (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
+            (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
+          );
+          await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+        }
 
         const executeRelayerRefundLeafDeferredTx = pipe(
           createTransactionMessage({ version: 0 }),
           (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
           (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
-          (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressByLookupTableAddresses)
+          (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
         refundLeafSignature = await sendAndConfirmSolanaTransaction(
           executeRelayerRefundLeafDeferredTx,
