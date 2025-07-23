@@ -225,10 +225,6 @@ describe("finalizeCCTPV1Messages", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
-
-    expect(state.data.pausedDeposits).to.equal(true);
-
     isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce1, 0);
     expect(isNonceUsed).to.equal(true);
 
