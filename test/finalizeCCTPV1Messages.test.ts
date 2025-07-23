@@ -90,6 +90,15 @@ describe("finalizeCCTPV1Messages", () => {
 
   it("should simulate CCTP message finalization successfully", async () => {
     // This test is trying to simulate the finalization of a CCTP pauseDeposits message.
+    // Create a proper l2SpokePoolClient for Solana
+    const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+      spyLogger,
+      hubPoolClient,
+      5, // chainId
+      0n, // deploymentBlock
+      { from: 0 },
+      solanaClient.rpc // eventSearchConfig
+    );
     const nonce = 100;
     const attestedMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), nonce, 0, 5);
     const isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce, 0);
@@ -98,7 +107,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     // Test simulation mode
     const signatures = await finalizeCCTPV1Messages(
-      solanaClient.rpc,
+      l2SpokePoolClient,
       attestedMessages,
       signer,
       spyLogger,
@@ -113,6 +122,14 @@ describe("finalizeCCTPV1Messages", () => {
 
   it("should finalize CCTP messages successfully", async () => {
     // This test is trying to finalize a CCTP pauseDeposits message.
+    const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+      spyLogger,
+      hubPoolClient,
+      5, // chainId
+      0n, // deploymentBlock
+      { from: 0 },
+      solanaClient.rpc // eventSearchConfig
+    );
     const nonce = 101;
     const attestedMessages = await getAttestedMessage(encodePauseDepositsMessageBody(false), nonce, 0, 5);
     const statePda = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
@@ -121,7 +138,7 @@ describe("finalizeCCTPV1Messages", () => {
     expect(isNonceUsed).to.equal(false);
     // Test actual finalization
     const signatures = await finalizeCCTPV1Messages(
-      solanaClient.rpc,
+      l2SpokePoolClient,
       attestedMessages,
       signer,
       spyLogger,
@@ -155,6 +172,14 @@ describe("finalizeCCTPV1Messages", () => {
 
   it("should handle multiple messages in batch", async () => {
     // This test is trying to finalize pause and unpause deposits messages in a batch.
+    const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+      spyLogger,
+      hubPoolClient,
+      5, // chainId
+      0n, // deploymentBlock
+      { from: 0 },
+      solanaClient.rpc // eventSearchConfig
+    );
     const nonce1 = 102;
     const nonce2 = 103;
 
@@ -171,7 +196,7 @@ describe("finalizeCCTPV1Messages", () => {
     const attestedMessages = [...message1, ...message2];
 
     const signatures = await finalizeCCTPV1Messages(
-      solanaClient.rpc,
+      l2SpokePoolClient,
       attestedMessages,
       signer,
       spyLogger,
@@ -213,6 +238,14 @@ describe("finalizeCCTPV1Messages", () => {
 
   it("should throw error when simulation fails", async () => {
     // This test is trying to simulate finalization of invalid messages to test error handling.
+    const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+      spyLogger,
+      hubPoolClient,
+      5, // chainId
+      0n, // deploymentBlock
+      { from: 0 },
+      solanaClient.rpc // eventSearchConfig
+    );
     // Create an invalid message that should cause simulation to fail
     const invalidMessage: AttestedCCTPMessage = {
       cctpVersion: 1,
@@ -243,7 +276,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     try {
       await finalizeCCTPV1Messages(
-        solanaClient.rpc,
+        l2SpokePoolClient,
         [invalidMessage],
         signer,
         spyLogger,
@@ -257,8 +290,16 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should handle empty messages array", async () => {
+    const l2SpokePoolClient = await clients.SVMSpokePoolClient.create(
+      spyLogger,
+      hubPoolClient,
+      5, // chainId
+      0n, // deploymentBlock
+      { from: 0 },
+      solanaClient.rpc // eventSearchConfig
+    );
     const signatures = await finalizeCCTPV1Messages(
-      solanaClient.rpc,
+      l2SpokePoolClient,
       [], // empty array
       signer,
       spyLogger,
@@ -274,6 +315,7 @@ describe("finalizeCCTPV1Messages", () => {
     // This test is trying to simulate the finalization of a CCTP pauseDeposits message.
     // It tests cctpL1toL2Finalizer function.
     // Create a test message
+
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
     sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
