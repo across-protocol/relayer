@@ -255,6 +255,7 @@ export function finalizeCCTPV1Messages(
         message: `Failed to finalize CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
         error: err,
       });
+      throw err;
     }
   });
 }
