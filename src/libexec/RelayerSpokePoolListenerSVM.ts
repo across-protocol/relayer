@@ -171,7 +171,7 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = getSvmProvider();
+  const provider = await getSvmProvider();
   const blockFinder = undefined;
   const latestSlot = await provider.getSlot({ commitment: "confirmed" }).send();
   assert(typeof latestSlot === "bigint", `fuck ${latestSlot}`); // Should be unnecessary; tsc still complains.
