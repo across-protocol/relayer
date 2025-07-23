@@ -262,7 +262,7 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export async function getSvmProvider(logger: winston.Logger = Logger): SVMProvider {
+export async function getSvmProvider(logger: winston.Logger = Logger): Promise<SVMProvider> {
   const nodeUrlList = getNodeUrlList(MAINNET_CHAIN_IDs.SOLANA);
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const redisClient = await getRedisCache(logger);
