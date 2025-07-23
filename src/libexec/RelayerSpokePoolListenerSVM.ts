@@ -215,7 +215,7 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
-  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(await getSvmProvider());
   if (latestSlot > startSlot) {
     const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });
