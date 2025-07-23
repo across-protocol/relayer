@@ -73,10 +73,7 @@ export async function getTimestampsForBundleStartBlocks(
         // should care about.
         const startAt = Math.max(spokePoolClient.deploymentBlock, startBlock);
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          return [
-            chainId,
-            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber(),
-          ];
+          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           const provider = spokePoolClient.svmEventsClient.getRpc();
           const { timestamp } = await arch.svm.getNearestSlotTime(provider, { slot: BigInt(startAt) });
