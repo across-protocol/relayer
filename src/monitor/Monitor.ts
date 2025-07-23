@@ -23,7 +23,6 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
-  getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -654,8 +653,8 @@ export class Monitor {
       currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
         return {
           chainId,
-          token,
-          account,
+          token: token.toEvmAddress(),
+          account: account.toEvmAddress(),
           currentBalance: currentBalances[i].toString(),
           target: parseUnits(target.toString(), decimalValues[i]),
         };
@@ -725,11 +724,11 @@ export class Monitor {
               at: "Monitor#refillBalances",
               message: "Balance below trigger and can refill to target",
               from: signerAddress,
-              to: account,
+              to: account.toEvmAddress(),
               balanceTrigger,
               balanceTarget,
               deficit,
-              token,
+              token: token.toEvmAddress(),
               chainId,
               isHubPool,
             });
@@ -748,20 +747,22 @@ export class Monitor {
                 value: deficit,
               });
             } else {
-              // Note: We don't multicall sending ETH as its not a contract call.
-              const gas = await getGasPrice(spokePoolClient.spokePool.provider);
               const nativeSymbolForChain = getNativeTokenSymbol(chainId);
-              const tx = await (
-                await spokePoolClient.spokePool.signer
-              ).sendTransaction({ to: account.toEvmAddress(), value: deficit, ...gas });
-              const receipt = await tx.wait();
+              // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
+              // set the method param to be an empty string.
+              const sendRawTransactionContract = new Contract(
+                account.toEvmAddress(),
+                [],
+                spokePoolClient.spokePool.signer
+              );
+              const txn = await (await runTransaction(this.logger, sendRawTransactionContract, "", [], deficit)).wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
                 message: `Reloaded ${formatUnits(
                   deficit,
                   decimals
                 )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
+                transactionHash: blockExplorerLink(txn.transactionHash, chainId),
               });
             }
           } else {
