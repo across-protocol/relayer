@@ -1,11 +1,11 @@
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { encodeMessageHeader } from "@across-protocol/contracts/dist/src/svm/web3-v1";
-import { signature, airdropFactory, createKeyPairSignerFromBytes, lamports } from "@solana/kit";
+import { signature } from "@solana/kit";
 import { PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
-import { createDefaultSolanaClient, encodePauseDepositsMessageBody, initializeSvmSpoke } from "./utils/svm/utils";
-import { validatorSetup, validatorTeardown } from "./utils/svm/validator.setup";
+import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
+import { signer } from "./Solana.setup";
 import { finalizeCCTPV1Messages, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp/l1ToL2";
 import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
 import { FinalizerPromise } from "../src/finalizer/types";
@@ -15,8 +15,6 @@ import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import sinon from "sinon";
 import * as CCTPUtils from "../src/utils/CCTPUtils";
 import * as svmSignerUtils from "../src/utils/SvmSignerUtils";
-import fs from "fs/promises";
-import path from "node:path";
 
 // Define an extended interface for our Solana client with chainId
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
@@ -79,7 +77,6 @@ const getAttestedMessage = async (
 describe("finalizeCCTPV1Messages", () => {
   const solanaClient = createDefaultSolanaClient() as ExtendedSolanaClient;
   const { spyLogger } = createSpyLogger();
-  let signer: Awaited<ReturnType<typeof createKeyPairSignerFromBytes>>;
   let hubPoolClient: clients.HubPoolClient;
 
   beforeEach(async function () {
@@ -91,33 +88,8 @@ describe("finalizeCCTPV1Messages", () => {
     sinon.restore();
   });
 
-  before(async function () {
-    // Set up Solana environment
-    const keyFilePath = path.resolve(__dirname, "utils", "svm", "keys", "localnet-wallet.json");
-    const fileContents = await fs.readFile(keyFilePath, "utf-8");
-    const secretKey = new Uint8Array(JSON.parse(fileContents));
-    signer = await createKeyPairSignerFromBytes(secretKey);
-
-    /* Local validator spin‑up can take a few seconds */
-    this.timeout(60_000);
-    await validatorSetup(signer.address);
-
-    // Airdrop SOL to the signer
-    await airdropFactory(solanaClient)({
-      recipientAddress: signer.address,
-      lamports: lamports(1_000_000_000n),
-      commitment: "confirmed",
-    });
-
-    // Initialize the program and get the state
-    await initializeSvmSpoke(signer, solanaClient, signer.address);
-  });
-
-  after(() => {
-    validatorTeardown();
-  });
-
   it("should simulate CCTP message finalization successfully", async () => {
+    // This test is trying to simulate the finalization of a CCTP pauseDeposits message.
     const nonce = 100;
     const attestedMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), nonce, 0, 5);
     const isNonceUsed = await arch.svm.hasCCTPV1MessageBeenProcessed(solanaClient.rpc, signer, nonce, 0);
@@ -140,6 +112,7 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should finalize CCTP messages successfully", async () => {
+    // This test is trying to finalize a CCTP pauseDeposits message.
     const nonce = 101;
     const attestedMessages = await getAttestedMessage(encodePauseDepositsMessageBody(false), nonce, 0, 5);
     const statePda = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
@@ -181,6 +154,7 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should handle multiple messages in batch", async () => {
+    // This test is trying to finalize pause and unpause deposits messages in a batch.
     const nonce1 = 102;
     const nonce2 = 103;
 
@@ -238,6 +212,7 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should throw error when simulation fails", async () => {
+    // This test is trying to simulate finalization of invalid messages to test error handling.
     // Create an invalid message that should cause simulation to fail
     const invalidMessage: AttestedCCTPMessage = {
       cctpVersion: 1,
@@ -296,6 +271,8 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should simulate Solana CCTP messages successfully", async () => {
+    // This test is trying to simulate the finalization of a CCTP pauseDeposits message.
+    // It tests cctpL1toL2Finalizer function.
     // Create a test message
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
@@ -359,6 +336,8 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should process Solana CCTP messages successfully", async () => {
+    // This test is trying to finalize the a CCTP pauseDeposits message.
+    // It tests cctpL1toL2Finalizer function.
     // Create a test message
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
     sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
@@ -422,6 +401,8 @@ describe("finalizeCCTPV1Messages", () => {
   });
 
   it("should handle empty message list", async () => {
+    // This test is trying to handle empty message list.
+    // It tests cctpL1toL2Finalizer function.
     sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves([]);
     sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
