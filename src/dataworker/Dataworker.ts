@@ -49,6 +49,7 @@ import {
   chainIsSvm,
   filterAsync,
   getAddressLookupTableInstructions,
+  waitForNewSolanaBlock,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -3033,6 +3034,9 @@ export class Dataworker {
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
           await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+          // @dev Every time we extend an ALT, we need to wait for a new solana block so that the table has
+          // sufficient time to "activate." https://solana.com/developers/courses/program-optimization/lookup-tables#6-modify-main-to-use-lookup-tables
+          await waitForNewSolanaBlock(provider, 1);
         }
 
         const executeRelayerRefundLeafTx = pipe(
