@@ -24,7 +24,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "bridgeERC20",
-      args: [l1Token.toAddress(), l2Token.toAddress(), amount, this.l2Gas, "0x"],
+      args: [l1Token.toNative(), l2Token.toNative(), amount, this.l2Gas, "0x"],
     });
   }
 
@@ -37,7 +37,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
       l1Bridge,
-      l1Bridge.filters.ERC20BridgeInitiated(l1Token.toAddress(), undefined, fromAddress.toAddress()),
+      l1Bridge.filters.ERC20BridgeInitiated(l1Token.toNative(), undefined, fromAddress.toNative()),
       eventConfig
     );
     return {
@@ -54,7 +54,7 @@ export class BlastBridge extends BaseBridgeAdapter {
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(
       l2Bridge,
-      l2Bridge.filters.ERC20BridgeFinalized(undefined, l1Token.toAddress(), fromAddress.toAddress()),
+      l2Bridge.filters.ERC20BridgeFinalized(undefined, l1Token.toNative(), fromAddress.toNative()),
       eventConfig
     );
     return {

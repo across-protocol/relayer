@@ -7,12 +7,14 @@ import {
   MerkleTree,
   RelayerRefundLeaf,
   toBNWei,
+  toAddressType,
 } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   ZERO_ADDRESS,
+  originChainId as defaultOriginChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -147,8 +149,104 @@ describe("Dataworker: Execute pool rebalances", async function () {
 
     // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
     // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
+    expect(multiCallerClient.transactionCount()).to.equal(4);
+    await multiCallerClient.executeTxnQueues();
+
+    // If we attempt execution again, the hub pool client should show them as already executed.
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+
+    // TEST 3:
+    // Submit another root bundle proposal and check bundle block range. There should be no leaves in the new range
+    // yet. In the bundle block range, all chains should have increased their start block, including those without
+    // pool rebalance leaves because they should use the chain's end block from the latest fully executed proposed
+    // root bundle, which should be the bundle block in expectedPoolRebalanceRoot2 + 1.
+    await updateAllClients();
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+    expect(multiCallerClient.transactionCount()).to.equal(0);
+  });
+  it("Awaiting challenge period", async function () {
+    ({
+      hubPool,
+      spokePool_1,
+      spokePool_4,
+      erc20_1,
+      erc20_2,
+      spokePool_2,
+      hubPoolClient,
+      l1Token_1,
+      depositor,
+      dataworkerInstance,
+      multiCallerClient,
+      updateAllClients,
+      spokePoolClients,
+      spy,
+    } = await setupDataworker(
+      ethers,
+      MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
+      MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
+      0,
+      destinationChainId,
+      defaultOriginChainId,
+      undefined,
+      true
+    ));
+
+    await updateAllClients();
+
+    // Send a deposit and a fill so that dataworker builds simple roots.
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
+    await updateAllClients();
+
+    // Executing leaves before there is a bundle should do nothing:
+    let leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(0);
+    expect(lastSpyLogIncludes(spy, "No pending proposal")).to.be.true;
+
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+
+    // Execute queue and check that root bundle is pending:
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await multiCallerClient.executeTxnQueues();
+
+    // Executing leaves before bundle challenge period should still execute leaves
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(2);
+
+    // Should be 4 transactions: 1 for the to chain, 1 for the from chain, 1 for the extra ETH sent to cover
+    // arbitrum gas fees, and 1 to update the exchangeRate to execute the destination chain leaf.
     // console.log(spy.getCall(-1))
     expect(multiCallerClient.transactionCount()).to.equal(4);
+    await multiCallerClient.executeTxnQueues();
+
+    // Advance time and execute leaves:
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    await updateAllClients();
+    leafCount = await dataworkerInstance.executePoolRebalanceLeaves(spokePoolClients, getNewBalanceAllocator());
+    expect(leafCount).to.equal(2);
+
+    // Should be 3 transactions: 1 for the to chain, 1 for the from chain, and 1 to update the exchangeRate to execute the destination chain leaf.
+    // extra ETH for arbitrum gas fees has been sent in the previous call to executeTxnQueues.
+    // console.log(spy.getCall(-1))
+    expect(multiCallerClient.transactionCount()).to.equal(3);
     await multiCallerClient.executeTxnQueues();
 
     // If we attempt execution again, the hub pool client should show them as already executed.
@@ -241,7 +339,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, bnZero);
 
       // Make sure post-sync reserves are greater than the net send amount.
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token_1.address, hubPool.address, toBNWei("2"));
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId),
+        toBNWei("2")
+      );
 
       const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
         {
@@ -251,7 +354,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("1")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: 10,
@@ -260,7 +363,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("1")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
@@ -303,8 +406,8 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const postUpdateLiquidReserves = toBNWei("2");
       balanceAllocator.testSetBalance(
         hubPoolClient.chainId,
-        l1Token_1.address,
-        hubPool.address,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId),
         postUpdateLiquidReserves
       );
 
@@ -316,7 +419,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: hubPoolClient.chainId,
@@ -325,7 +428,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
@@ -366,7 +469,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: hubPoolClient.chainId,
@@ -375,22 +478,22 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("0")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
       // Need to set a balance for the spoke pool to make the dataworker believe this leaf can be executed.
       balanceAllocator.testSetBalance(
         hubPoolClient.chainId,
-        l1Token_1.address,
-        spokePoolClients[hubPoolClient.chainId].spokePool.address,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(spokePoolClients[hubPoolClient.chainId].spokePool.address, hubPoolClient.chainId),
         netSendAmount
       );
 
       const relayerRefundLeaves: RelayerRefundLeaf[] = [
         {
           chainId: hubPoolClient.chainId,
-          l2TokenAddress: l1Token_1.address,
+          l2TokenAddress: toAddressType(l1Token_1.address, hubPoolClient.chainId),
           amountToReturn: netSendAmount,
           refundAddresses: [],
           refundAmounts: [],
@@ -435,31 +538,31 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("0")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
       // Need to set a balance for the spoke pool to make the dataworker believe this leaf can be executed.
       balanceAllocator.testSetBalance(
         hubPoolClient.chainId,
-        l1Token_1.address,
-        spokePoolClients[hubPoolClient.chainId].spokePool.address,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(spokePoolClients[hubPoolClient.chainId].spokePool.address, hubPoolClient.chainId),
         slowFillAmount
       );
       const slowFillLeaves: SlowFillLeaf[] = [
         {
           relayData: {
             originChainId: 10,
-            depositor: randomAddress(),
-            recipient: randomAddress(),
+            depositor: toAddressType(randomAddress(), hubPoolClient.chainId),
+            recipient: toAddressType(randomAddress(), hubPoolClient.chainId),
             depositId: bnZero,
-            inputToken: randomAddress(),
+            inputToken: toAddressType(randomAddress(), hubPoolClient.chainId),
             inputAmount: slowFillAmount,
-            outputToken: l1Token_1.address,
+            outputToken: toAddressType(l1Token_1.address, hubPoolClient.chainId),
             outputAmount: slowFillAmount,
             message: "0x",
             fillDeadline: 0,
-            exclusiveRelayer: randomAddress(),
+            exclusiveRelayer: toAddressType(randomAddress(), hubPoolClient.chainId),
             exclusivityDeadline: 0,
           },
           chainId: hubPoolClient.chainId,
@@ -497,15 +600,15 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("0")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
       // Need to set a balance for the spoke pool to make the dataworker believe this leaf can be executed.
       balanceAllocator.testSetBalance(
         hubPoolClient.chainId,
-        l1Token_1.address,
-        spokePoolClients[hubPoolClient.chainId].spokePool.address,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(spokePoolClients[hubPoolClient.chainId].spokePool.address, hubPoolClient.chainId),
         slowFillAmount
       );
 
@@ -517,16 +620,16 @@ describe("Dataworker: Execute pool rebalances", async function () {
         {
           relayData: {
             originChainId: 10,
-            depositor: randomAddress(),
-            recipient: randomAddress(),
+            depositor: toAddressType(randomAddress(), hubPoolClient.chainId),
+            recipient: toAddressType(randomAddress(), hubPoolClient.chainId),
             depositId: bnZero,
-            inputToken: randomAddress(),
+            inputToken: toAddressType(randomAddress(), hubPoolClient.chainId),
             inputAmount: slowFillAmount,
-            outputToken: l1Token_1.address,
+            outputToken: toAddressType(l1Token_1.address, hubPoolClient.chainId),
             outputAmount: slowFillAmount,
             message: "0x",
             fillDeadline: currentTime - 1, // Set a value here lower than client.getCurrentTime()
-            exclusiveRelayer: randomAddress(),
+            exclusiveRelayer: toAddressType(randomAddress(), hubPoolClient.chainId),
             exclusivityDeadline: 0,
           },
           chainId: hubPoolClient.chainId,
@@ -566,7 +669,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
@@ -594,7 +697,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       const nonHubChainNetSendAmount = toBNWei("1");
       const liquidReserves = toBNWei("1");
       mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token_1.address, hubPool.address, liquidReserves);
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId),
+        liquidReserves
+      );
 
       const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
         {
@@ -604,7 +712,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [nonHubChainNetSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: hubPoolClient.chainId,
@@ -613,7 +721,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [hubChainNetSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
@@ -641,7 +749,12 @@ describe("Dataworker: Execute pool rebalances", async function () {
       // This liquid reserve is only sufficient to execute one of the non-mainnet leaves.
       const liquidReserves = toBNWei("1");
       mockHubPoolClient.setLpTokenInfo(l1Token_1.address, 0, liquidReserves);
-      balanceAllocator.testSetBalance(hubPoolClient.chainId, l1Token_1.address, hubPool.address, liquidReserves);
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        toAddressType(hubPool.address, hubPoolClient.chainId),
+        liquidReserves
+      );
 
       const poolRebalanceLeaves: PoolRebalanceLeaf[] = [
         {
@@ -651,7 +764,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: 137,
@@ -660,7 +773,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [netSendAmount],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
         {
           chainId: hubPoolClient.chainId,
@@ -669,7 +782,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("0")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 
@@ -706,7 +819,7 @@ describe("Dataworker: Execute pool rebalances", async function () {
           netSendAmounts: [toBNWei("0")],
           runningBalances: [toBNWei("1")],
           leafId: 0,
-          l1Tokens: [l1Token_1.address],
+          l1Tokens: [toAddressType(l1Token_1.address, hubPoolClient.chainId)],
         },
       ];
 

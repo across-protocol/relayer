@@ -42,10 +42,10 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 
     // Pass in the WETH ABI as the ERC20 ABI. This is fine to do since we only call `transfer` on `this.l1Bridge`.
-    this.l1Bridge = new Contract(l1Token.toAddress(), ERC20_ABI, l1Signer);
+    this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
 
     // Get the required token/network context needed to query the Binance API.
-    const _tokenSymbol = getTokenInfo(l1Token.toAddress(), this.hubChainId).symbol;
+    const _tokenSymbol = getTokenInfo(l1Token, this.hubChainId).symbol;
     // Handle the special case for when we are bridging WBNB to BNB on L2.
     this.tokenSymbol = _tokenSymbol === "WBNB" ? "BNB" : _tokenSymbol;
 
@@ -59,7 +59,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     _l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(l1Token.toAddress() === this.getL1Bridge().address);
+    assert(l1Token.toNative() === this.getL1Bridge().address);
     // Fetch the deposit address from the binance API.
 
     const binanceApiClient = await this.getBinanceClient();
@@ -88,7 +88,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     if (isL1OrL2Contract) {
       return {};
     }
-    assert(l1Token.toAddress() === this.getL1Bridge().address);
+    assert(l1Token.toNative() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.getL1Bridge().provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
     const binanceApiClient = await this.getBinanceClient();
@@ -104,10 +104,10 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       async (transactionHash) => this.getL1Bridge().provider.getTransactionReceipt(transactionHash as string)
     );
     // FilterMap to remove all deposits which originated from another EOA.
-    const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
+    const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
     const processedDeposits = depositHistory
       .map((deposit, idx) => {
-        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toAddress())) {
+        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toNative())) {
           return undefined;
         }
         return {
@@ -141,7 +141,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       return {};
     }
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
-    assert(l1Token.toAddress() === this.getL1Bridge().address);
+    assert(l1Token.toNative() === this.getL1Bridge().address);
     const fromTimestamp = (await getTimestampForBlock(this.l2Provider, eventConfig.from)) * 1_000; // Convert timestamp to ms.
 
     const binanceApiClient = await this.getBinanceClient();
@@ -152,13 +152,13 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     });
     // Filter withdrawals based on whether their destination network was BSC.
     const withdrawalHistory = _withdrawalHistory.filter(
-      (withdrawal) => withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.address, toAddress.toAddress())
+      (withdrawal) => withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.address, toAddress.toNative())
     );
     const withdrawalTxReceipts = await mapAsync(
       withdrawalHistory.map((withdrawal) => withdrawal.txId as string),
       async (transactionHash) => this.l2Provider.getTransactionReceipt(transactionHash as string)
     );
-    const { decimals: l1Decimals } = getTokenInfo(l1Token.toAddress(), this.hubChainId);
+    const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
     return {
       [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal, idx) => {
@@ -178,8 +178,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
   private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
     const [isL1Contract, isL2Contract] = await Promise.all([
-      isContractDeployedToAddress(address.toAddress(), this.l1Signer.provider),
-      isContractDeployedToAddress(address.toAddress(), this.l2Provider),
+      isContractDeployedToAddress(address.toNative(), this.l1Signer.provider),
+      isContractDeployedToAddress(address.toNative(), this.l2Provider),
     ]);
     return isL1Contract || isL2Contract;
   }

@@ -12,13 +12,14 @@ import {
   getCurrentTime,
   getRedisCache,
   getBlockForTimestamp,
-  compareAddressesSimple,
   Multicall2Call,
   TOKEN_SYMBOLS_MAP,
   sortEventsAscending,
   toBNWei,
   getTokenInfo,
   getL1TokenAddress,
+  toAddressType,
+  EvmAddress,
 } from "../../utils";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -74,7 +75,7 @@ export async function polygonFinalizer(
   // but we do need to add in more TokensBridged events so that the call to `getUniqueLogIndex` will work.
   recentTokensBridgedEvents.forEach((e) => {
     if (
-      compareAddressesSimple(e.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_ID]) &&
+      e.l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_ID], chainId)) &&
       e.amountToReturn.gt(CCTP_WITHDRAWAL_LIMIT_WEI)
     ) {
       // Inject one TokensBridged event for each CCTP withdrawal that needs to be processed.
@@ -146,7 +147,7 @@ async function getFinalizableTransactions(
       // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
       // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
       // until after we've computed payloads.
-      if (compareAddressesSimple(l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[chainId])) {
+      if (l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId))) {
         return { status: "USDC_CCTP_L2_WITHDRAWAL" };
       }
 
@@ -207,7 +208,6 @@ async function multicallPolygonFinalizations(
   logger: winston.Logger
 ): Promise<FinalizerPromise> {
   const finalizableMessages = await getFinalizableTransactions(logger, tokensBridged, posClient);
-
   const finalizedBridges = await resolvePolygonBridgeFinalizations(finalizableMessages, posClient, hubPoolClient);
   const finalizedRetrievals = await resolvePolygonRetrievalFinalizations(finalizableMessages, hubSigner, hubPoolClient);
 
@@ -281,9 +281,9 @@ function getMainnetTokenBridger(mainnetSigner: Signer): Contract {
 }
 
 async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSigner: Signer): Promise<Multicall2Call> {
-  const l1Token = getL1TokenAddress(l2Token, CHAIN_ID);
+  const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
-  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token);
+  const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token.toNative());
   return {
     callData: callData.data,
     target: callData.to,
@@ -292,7 +292,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
 
 function getL2TokensToFinalize(events: TokensBridged[]): string[] {
   const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
-    l2TokenDictionary[event.l2TokenAddress] = true;
+    l2TokenDictionary[event.l2TokenAddress.toEvmAddress()] = true;
     return l2TokenDictionary;
   }, {});
   return Object.keys(l2TokenCountInBridgeEvents).filter((token) => l2TokenCountInBridgeEvents[token] === true);

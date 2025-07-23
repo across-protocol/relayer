@@ -4,11 +4,17 @@ import {
   SvmAddress,
   winston,
   config,
+  getDeployedContract,
+  getProvider,
   startupLogLevel,
   Signer,
   disconnectRedisClients,
   isDefined,
   Profiler,
+  getSvmSignerFromEvmSigner,
+  getRedisCache,
+  waitForPubSub,
+  averageBlockTime,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -25,15 +31,18 @@ import { PendingRootBundle, BundleData } from "../interfaces";
 config();
 let logger: winston.Logger;
 
+const { RUN_IDENTIFIER: runIdentifier, BOT_IDENTIFIER: botIdentifier = "across-dataworker" } = process.env;
+
 export async function createDataworker(
   _logger: winston.Logger,
-  baseSigner: Signer
+  baseSigner: Signer,
+  config?: DataworkerConfig
 ): Promise<{
   config: DataworkerConfig;
   clients: DataworkerClients;
   dataworker: Dataworker;
 }> {
-  const config = new DataworkerConfig(process.env);
+  config ??= new DataworkerConfig(process.env);
   const clients = await constructDataworkerClients(_logger, config, baseSigner);
 
   const dataworker = new Dataworker(
@@ -56,6 +65,41 @@ export async function createDataworker(
   };
 }
 
+function resolvePersonality(config: DataworkerConfig): string {
+  if (config.proposerEnabled) {
+    return config.l1ExecutorEnabled ? "Proposer/Executor" : "Proposer";
+  }
+
+  if (config.l1ExecutorEnabled || config.l2ExecutorEnabled) {
+    return "Executor";
+  }
+
+  if (config.disputerEnabled) {
+    return "Disputer";
+  }
+
+  return "Dataworker"; // unknown
+}
+
+async function getChallengeRemaining(chainId: number): Promise<number> {
+  const provider = await getProvider(chainId);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
+  const { challengePeriodEndTimestamp } = proposal;
+
+  return Math.max(challengePeriodEndTimestamp - currentTime, 0);
+}
+
+async function canProposeRootBundle(chainId: number): Promise<boolean> {
+  const provider = await getProvider(chainId);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const proposal = await hubPool.rootBundleProposal();
+  const { unclaimedPoolRebalanceLeafCount } = proposal;
+  return unclaimedPoolRebalanceLeafCount === 0;
+}
+
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
     at: "Dataworker#index",
@@ -63,8 +107,28 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   });
   logger = _logger;
 
-  const { clients, config, dataworker } = await profiler.measureAsync(
-    createDataworker(logger, baseSigner),
+  const config = new DataworkerConfig(process.env);
+  const personality = resolvePersonality(config);
+  const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+
+  // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
+  // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
+  // from botIdentifier -> runIdentifier).
+  if (
+    isDefined(runIdentifier) &&
+    challengeRemaining > config.minChallengeLeadTime &&
+    (config.proposerEnabled || config.l1ExecutorEnabled)
+  ) {
+    logger[startupLogLevel(config)]({
+      at: "Dataworker#index",
+      message: `${personality} aborting (not ready)`,
+      challengeRemaining,
+    });
+    return;
+  }
+
+  const { clients, dataworker } = await profiler.measureAsync(
+    createDataworker(logger, baseSigner, config),
     "createDataworker",
     {
       message: "Time to update non-spoke clients",
@@ -72,12 +136,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   );
 
   await config.update(logger); // Update address filter.
+  const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
+  const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
+
+  const redis = await getRedisCache(logger);
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
-    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Dataworker started 👩‍🔬", loggedConfig });
+    logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} started 👩‍🔬`, loggedConfig });
 
     profiler.mark("loopStart");
     // Determine the spoke client's lookback:
@@ -141,10 +209,16 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         const tokenClient = new TokenClient(
           logger,
           EvmAddress.from(await baseSigner.getAddress()),
-          SvmAddress.from("11111111111111111111111111111111"), // Not used for mainnet.
+          SvmAddress.from(getSvmSignerFromEvmSigner(baseSigner).publicKey.toBase58()),
           {}, // SpokePoolClients not required
           clients.hubPoolClient
         );
+        logger[startupLogLevel(config)]({
+          at: "Dataworker#index",
+          message: "Dataworker addresses",
+          evmAddress: tokenClient.relayerEvmAddress.toNative(),
+          svmAddress: tokenClient.relayerSvmAddress.toNative(),
+        });
         await tokenClient.update();
         // Run approval on hub pool.
         await tokenClient.setBondTokenAllowance();
@@ -153,7 +227,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
       proposedBundleData = await dataworker.proposeRootBundle(
         spokePoolClients,
-        config.rootBundleExecutionThreshold,
         config.sendingTransactionsEnabled,
         fromBlocks
       );
@@ -197,7 +270,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // leaves to be executed but the proposed bundle was already executed, then exit early.
     const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
-    const proposalCollision = isDefined(proposedBundleData) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+    const proposalCollision =
+      isDefined(proposedBundleData) &&
+      pendingProposal.unclaimedPoolRebalanceLeafCount > 0 &&
+      !config.awaitChallengePeriod;
     // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
     // does not match the number of leaves the executor wants to execute, or the pending root bundle's
     // challenge period timestamp is in the future. This latter case is rarer but it can
@@ -205,7 +281,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-        pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
+        (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
+          !config.awaitChallengePeriod));
     if (proposalCollision || executorCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
@@ -219,6 +296,92 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         pendingProposal,
       });
     } else {
+      // If the proposer/executor is expected to await its challenge period:
+      // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
+      // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
+      //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
+      const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
+        let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
+        // an executor instance executed the pending root bundle out of the hub _and_ a proposer instance proposed a new root bundle.
+        if (updatedChallengeRemaining > challengeRemaining) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: `Exiting due to ${personality} collision.`,
+            challengeRemaining,
+            updatedChallengeRemaining,
+          });
+          return;
+        }
+        let counter = 0;
+
+        // publish so that other instances can see that we're running
+        await redis.pub(botIdentifier, runIdentifier);
+        logger.debug({
+          at: "Dataworker#index",
+          message: `Published signal to ${botIdentifier} instances.`,
+        });
+
+        while (updatedChallengeRemaining > 0 && ++counter < 5) {
+          logger.debug({
+            at: "Dataworker#index",
+            message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
+          });
+          const handover = await waitForPubSub(
+            redis,
+            botIdentifier,
+            runIdentifier,
+            (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
+          );
+          if (handover) {
+            logger.debug({
+              at: "Dataworker#index",
+              message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+            });
+            return;
+          } else {
+            logger.debug({
+              at: "Dataworker#index",
+              message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+              retries: counter,
+            });
+          }
+
+          updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        }
+        if (config.proposerEnabled) {
+          // Clear the counter
+          counter = 0;
+          let canPropose = await canProposeRootBundle(config.hubPoolChainId);
+          while (!canPropose && ++counter < 10) {
+            logger.debug({
+              at: "Dataworker#index",
+              message: "Waiting for the l1 executor to execute pool rebalance roots.",
+            });
+            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, l1BlockTime * 1000);
+            if (handover) {
+              logger.debug({
+                at: "Dataworker#index",
+                message: `Handover signal received from ${botIdentifier} instance ${runIdentifier}.`,
+              });
+              return;
+            } else {
+              logger.debug({
+                at: "Dataworker#index",
+                message: `No handover signal received from ${botIdentifier} instance ${runIdentifier}. Continuing...`,
+                retries: counter,
+              });
+            }
+            canPropose = await canProposeRootBundle(config.hubPoolChainId);
+          }
+          // The proposer waited ~10 blocks for the executor's transaction to succeed before exiting.
+          if (!canPropose) {
+            return;
+          }
+        }
+      }
+
       await clients.multiCallerClient.executeTxnQueues();
     }
     profiler.mark("dataworkerFunctionLoopTimerEnd");

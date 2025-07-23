@@ -30,10 +30,10 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress
   ) {
-    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toAddress()];
+    const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toNative()];
     assert(
       isDefined(l1RouterAddressStr),
-      `No L1 Hyperlane router found for token ${l1Token.toAddress()} on chain ${hubChainId}`
+      `No L1 Hyperlane router found for token ${l1Token.toNative()} on chain ${hubChainId}`
     );
     const l1RouterEvmAddress = EvmAddress.from(l1RouterAddressStr);
 
@@ -116,7 +116,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     );
 
     return {
-      [this.dstToken.toAddress()]: events.map((event) => {
+      [this.dstToken.toNative()]: events.map((event) => {
         return processEvent(event, "amount");
       }),
     };
@@ -144,7 +144,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     );
 
     return {
-      [this.dstToken.toAddress()]: events.map((event) => {
+      [this.dstToken.toNative()]: events.map((event) => {
         return processEvent(event, "amount");
       }),
     };

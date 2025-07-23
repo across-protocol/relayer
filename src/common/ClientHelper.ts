@@ -225,7 +225,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
         // TODO: initialize using typechain factory after V3.5 migration.
         // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
         const spokePoolContract = new ethers.Contract(
-          spokePoolAddr,
+          spokePoolAddr.toEvmAddress(),
           [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
           spokePoolSigners[chainId]
         );

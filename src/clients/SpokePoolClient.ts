@@ -12,6 +12,7 @@ import {
   getRelayEventKey,
   getMessageHash,
   spreadEventWithBlockNumber,
+  toAddressType,
 } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
@@ -100,7 +101,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         eventSearchConfig: { from, maxLookBack: blockrange },
         spokePoolAddress: spokepool,
       } = this;
-      const opts = { spokepool: spokepool.toAddress(), blockrange, lookback: `@${from}` };
+      const opts = { spokepool: spokepool.toNative(), blockrange, lookback: `@${from}` };
 
       const args = Object.entries(opts)
         .map(([k, v]) => [`--${k}`, `${v}`])
@@ -246,11 +247,24 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
       // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
       if (eventName === "FundsDeposited") {
-        const { depositId } = event.args;
+        const { depositId, destinationChainId } = event.args;
         assert(isDefined(depositId));
 
+        const spreadEvent = spreadEventWithBlockNumber(event) as DepositWithBlock & {
+          inputToken: string;
+          outputToken: string;
+          depositor: string;
+          recipient: string;
+          exclusiveRelayer: string;
+        };
+
         const depositEvent = {
-          ...spreadEventWithBlockNumber(event),
+          ...spreadEvent,
+          inputToken: toAddressType(spreadEvent.inputToken, this.chainId),
+          outputToken: toAddressType(spreadEvent.outputToken, destinationChainId),
+          depositor: toAddressType(spreadEvent.depositor, this.chainId),
+          recipient: toAddressType(spreadEvent.recipient, destinationChainId),
+          exclusiveRelayer: toAddressType(spreadEvent.exclusiveRelayer, destinationChainId),
           messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
         } as DepositWithBlock;
         const depositHash = getRelayEventKey(depositEvent);

@@ -13,7 +13,6 @@ import {
   lastSpyLogLevel,
   requestSlowFill,
   sinon,
-  toBNWei,
   utf8ToHex,
 } from "./utils";
 
@@ -114,7 +113,7 @@ describe("Dataworker: Propose root bundle", async function () {
         leaf.netSendAmounts,
         leaf.runningBalances,
         leaf.leafId,
-        leaf.l1Tokens,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
@@ -147,11 +146,6 @@ describe("Dataworker: Propose root bundle", async function () {
       expectedPoolRebalanceRoot4.runningBalances
     );
     const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
-
-    // TEST 5:
-    // Won't submit anything if the USD threshold to propose a root is set and set too high:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
-    expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
 
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);

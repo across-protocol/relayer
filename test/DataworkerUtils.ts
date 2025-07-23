@@ -1,7 +1,17 @@
 import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
 import { _buildSlowRelayRoot, _getRefundLeaves } from "../src/dataworker/DataworkerUtils";
 import { BundleDepositsV3, BundleFillsV3, BundleSlowFills, DepositWithBlock } from "../src/interfaces";
-import { _buildPoolRebalanceRoot, BigNumber, bnOne, bnZero, toBNWei, toWei, winston, ZERO_ADDRESS } from "../src/utils";
+import {
+  _buildPoolRebalanceRoot,
+  BigNumber,
+  bnOne,
+  bnZero,
+  toBNWei,
+  toWei,
+  winston,
+  ZERO_ADDRESS,
+  toAddressType,
+} from "../src/utils";
 import { repaymentChainId } from "./constants";
 import { assert, createSpyLogger, deployConfigStore, expect, hubPoolFixture, randomAddress, ethers } from "./utils";
 
@@ -63,8 +73,8 @@ describe("RelayerRefund utils", function () {
       maxRefundsPerLeaf
     );
     expect(result.length).to.equal(1);
-    expect(result[0].refundAddresses[0]).to.equal(recipient2);
-    expect(result[0].refundAddresses[1]).to.equal(recipient1);
+    expect(result[0].refundAddresses[0].toEvmAddress()).to.equal(recipient2);
+    expect(result[0].refundAddresses[1].toEvmAddress()).to.equal(recipient1);
   });
 });
 
@@ -93,14 +103,14 @@ describe("SlowFill utils", function () {
     const destinationChainId = originChainId + 1;
     const deposit: DepositWithBlock = {
       inputAmount: amountToFill,
-      inputToken: randomAddress(),
+      inputToken: toAddressType(randomAddress(), 1),
       outputAmount: bnOne,
-      outputToken: randomAddress(),
-      depositor: randomAddress(),
+      outputToken: toAddressType(randomAddress(), destinationChainId),
+      depositor: toAddressType(randomAddress(), 1),
       depositId: BigNumber.from(depositId),
       originChainId: 1,
-      recipient: randomAddress(),
-      exclusiveRelayer: ZERO_ADDRESS,
+      recipient: toAddressType(randomAddress(), destinationChainId),
+      exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
       exclusivityDeadline: 0,
       message,
       destinationChainId,
@@ -228,7 +238,7 @@ describe("PoolRebalanceLeaf utils", function () {
             [originToken]: [
               {
                 inputAmount: toWei("1"),
-                inputToken: originToken,
+                inputToken: toAddressType(originToken, originChainId),
                 originChainId,
               },
             ],

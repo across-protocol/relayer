@@ -1,7 +1,7 @@
-import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { interfaces } from "@across-protocol/sdk";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { RelayerRefundLeaf, RunningBalances } from "../src/interfaces";
-import { assert, bnZero, fixedPointAdjustment } from "../src/utils";
+import { assert, bnZero, fixedPointAdjustment, toAddressType } from "../src/utils";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupFastDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -309,6 +309,8 @@ describe("Dataworker: Build merkle roots", async function () {
       leaves,
       runningBalances
     );
+    const [leaf1Addr, leaf2Addr] = merkleRoot1.leaves.map(({ l2TokenAddress }) => l2TokenAddress);
+    const [refundAddresses1, refundAddresses2] = merkleRoot1.leaves.map(({ refundAddresses }) => refundAddresses);
 
     // Origin chain should have negative running balance and therefore positive amount to return.
     const lpFeePct = (
@@ -320,21 +322,24 @@ describe("Dataworker: Build merkle roots", async function () {
       {
         chainId: originChainId,
         amountToReturn: runningBalances[originChainId][l1Token_1.address].mul(-1),
-        l2TokenAddress: erc20_1.address,
+        l2TokenAddress: leaf1Addr,
         leafId: 0,
-        refundAddresses: [],
+        refundAddresses: refundAddresses1,
         refundAmounts: [],
       },
       {
         chainId: repaymentChainId,
         amountToReturn: bnZero,
-        l2TokenAddress: l1Token_1.address,
+        l2TokenAddress: leaf2Addr,
         leafId: 1,
-        refundAddresses: [relayer.address],
+        refundAddresses: refundAddresses2,
         refundAmounts: [refundAmount],
       },
     ];
     expect(expectedLeaves).to.deep.equal(merkleRoot1.leaves);
+    expect(leaf1Addr.toNative()).to.eq(erc20_1.address, originChainId);
+    expect(leaf2Addr.toNative()).to.eq(l1Token_1.address, repaymentChainId);
+    refundAddresses2.forEach((addr) => expect(addr.toEvmAddress()).to.eq(relayer.address));
   });
   it("All fills are slow fill executions", async function () {
     await depositV3(
@@ -395,7 +400,7 @@ describe("Dataworker: Build merkle roots", async function () {
       {
         chainId: originChainId,
         amountToReturn: poolRebalanceRoot.runningBalances[originChainId][l1Token_1.address].mul(-1),
-        l2TokenAddress: erc20_1.address,
+        l2TokenAddress: refundRoot.leaves[0].l2TokenAddress,
         leafId: 0,
         refundAddresses: [],
         refundAmounts: [],
@@ -403,6 +408,7 @@ describe("Dataworker: Build merkle roots", async function () {
       // No leaf for destination chain.
     ];
     expect(expectedLeaves).to.deep.equal(refundRoot.leaves);
+    expect(erc20_1.address).to.eq(refundRoot.leaves[0].l2TokenAddress.toNative());
   });
   it("Adds expired deposit refunds to relayer refund root", async function () {
     const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
@@ -441,11 +447,13 @@ describe("Dataworker: Build merkle roots", async function () {
     // Origin chain running balance starts negative because of the deposit
     // but is cancelled out by the refund such that the running balance is 0
     // and there is no amount to return.
+    const l2TokenAddress = toAddressType(erc20_1.address, originChainId);
+    l2TokenAddress.toNative();
     const expectedLeaves: RelayerRefundLeaf[] = [
       {
         chainId: originChainId,
         amountToReturn: bnZero,
-        l2TokenAddress: erc20_1.address,
+        l2TokenAddress,
         leafId: 0,
         refundAddresses: [deposit.depositor],
         refundAmounts: [deposit.inputAmount],
@@ -474,15 +482,6 @@ describe("Dataworker: Build merkle roots", async function () {
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
     const expectedSlowFillLeaves = buildV3SlowRelayLeaves([deposit], lpFeePct);
-    expect(merkleRoot1.leaves).to.deep.equal(
-      expectedSlowFillLeaves.map((leaf) => {
-        leaf.relayData.inputToken = sdkUtils.toAddress(leaf.relayData.inputToken);
-        leaf.relayData.outputToken = sdkUtils.toAddress(leaf.relayData.outputToken);
-        leaf.relayData.depositor = sdkUtils.toAddress(leaf.relayData.depositor);
-        leaf.relayData.recipient = sdkUtils.toAddress(leaf.relayData.recipient);
-        leaf.relayData.exclusiveRelayer = sdkUtils.toAddress(leaf.relayData.exclusiveRelayer);
-        return leaf;
-      })
-    );
+    expect(merkleRoot1.leaves).to.deep.equal(expectedSlowFillLeaves);
   });
 });

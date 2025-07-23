@@ -32,7 +32,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositTo",
-      args: [toAddress.toAddress(), amount],
+      args: [toAddress.toNative(), amount],
     });
   }
 
@@ -54,7 +54,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     fromAddress = isSpokePool ? hubPoolAddress : fromAddress;
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(fromAddress.toAddress()),
+      this.getL1Bridge().filters.DepositInitiated(fromAddress.toNative()),
       eventConfig
     );
     return {
@@ -70,7 +70,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(toAddress.toAddress()),
+      this.getL2Bridge().filters.DepositFinalized(toAddress.toNative()),
       eventConfig
     );
     return {
@@ -87,6 +87,6 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   }
 
   private isL2ChainContract(address: EvmAddress): Promise<boolean> {
-    return isContractDeployedToAddress(address.toAddress(), this.getL2Bridge().provider);
+    return isContractDeployedToAddress(address.toNative(), this.getL2Bridge().provider);
   }
 }

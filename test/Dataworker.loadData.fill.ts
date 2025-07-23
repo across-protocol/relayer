@@ -27,7 +27,17 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBN, toBNWei, fixedPointAdjustment, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
+import {
+  getCurrentTime,
+  toBN,
+  toBNWei,
+  fixedPointAdjustment,
+  ZERO_ADDRESS,
+  BigNumber,
+  bnZero,
+  toAddressType,
+  toBytes32,
+} from "../src/utils";
 import {
   MockBundleDataClient,
   MockConfigStoreClient,
@@ -177,9 +187,9 @@ describe("Dataworker: Load bundle data", async function () {
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.deposit({
-        inputToken: erc20_1.address,
+        inputToken: toAddressType(erc20_1.address, originChainId),
         inputAmount: eventOverride?.inputAmount ?? undefined,
-        outputToken: eventOverride?.outputToken ?? erc20_2.address,
+        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -202,8 +212,17 @@ describe("Dataworker: Load bundle data", async function () {
       const fill = {
         ...fillObject,
         message,
+        inputToken: deposit.inputToken,
+        outputToken: deposit.outputToken,
+        depositor: deposit.depositor,
+        recipient: deposit.recipient,
+        exclusiveRelayer: deposit.exclusiveRelayer,
+        relayer: toAddressType(_relayer, destinationChainId),
         relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedRecipient: toAddressType(
+            fillObject.relayExecutionInfo.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+            destinationChainId
+          ),
           updatedMessageHash: sdkUtils.getMessageHash(fillObject.relayExecutionInfo.updatedMessage ?? message),
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
@@ -227,11 +246,16 @@ describe("Dataworker: Load bundle data", async function () {
       const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillRelay({
         ...args,
-        relayer: _relayer,
+        inputToken: toAddressType(args.inputToken, originChainId),
+        outputToken: toAddressType(args.outputToken, destinationChainId),
+        depositor: toAddressType(args.depositor, originChainId),
+        recipient: toAddressType(args.recipient, destinationChainId),
+        exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+        relayer: toAddressType(_relayer, destinationChainId),
         outputAmount,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          updatedRecipient: depositEvent.args.updatedRecipient,
+          updatedRecipient: toAddressType(depositEvent.args.updatedRecipient ?? args.recipient, destinationChainId),
           updatedMessage: depositEvent.args.updatedMessage,
           updatedOutputAmount: updatedOutputAmount,
           fillType,
@@ -309,8 +333,8 @@ describe("Dataworker: Load bundle data", async function () {
         // Bundle should refund duplicate deposits to filler
         const bundleBlockRanges = getDefaultBlockRange(5);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(3);
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(3);
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
         expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       });
 
@@ -333,14 +357,14 @@ describe("Dataworker: Load bundle data", async function () {
         // Bundle should refund duplicate deposits to depositor
         const bundleBlockRanges = getDefaultBlockRange(5);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills.length).to.equal(1);
-        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].refunds).to.deep.equal({});
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][0].txnRef).to.equal(
+        expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills.length).to.equal(1);
+        expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].refunds).to.deep.equal({});
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
+        expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
+        expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)][0].txnRef).to.equal(
           dupe1.transactionHash
         );
-        expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address][1].txnRef).to.equal(
+        expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)][1].txnRef).to.equal(
           dupe2.transactionHash
         );
       });
@@ -379,8 +403,8 @@ describe("Dataworker: Load bundle data", async function () {
         bundleBlockRanges[originChainIndex] = originChainBlockRange;
         await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(2);
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(2);
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
         expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       });
 
@@ -396,7 +420,7 @@ describe("Dataworker: Load bundle data", async function () {
 
         // Fill deposit with invalid repayment information.
         const invalidRelayer = ethers.utils.randomBytes(32);
-        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, invalidRelayer);
+        const invalidFillEvent = generateV3FillFromDeposit(deposits[0], {}, ethers.utils.hexlify(invalidRelayer));
         await mockDestinationSpokePoolClient.update(["FilledRelay"]);
         // Replace the dataworker providers to use mock providers. We need to explicitly do this since we do not actually perform a contract call, so
         // we must inject a transaction response into the provider to simulate the case when the relayer repayment address is invalid. In this case,
@@ -415,7 +439,7 @@ describe("Dataworker: Load bundle data", async function () {
         const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
         expect(data1.bundleFillsV3).to.deep.equal({});
         expect(spy.getCalls().filter((e) => e.lastArg.message.includes("unrepayable")).length).to.equal(1);
-        expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
+        expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
         expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
       });
     });
@@ -482,27 +506,31 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
 
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(depositV3Events.length);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-        fillV3Events.map((event) => event.args.depositId)
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(
+        depositV3Events.length
       );
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
-        fillV3Events.map(() => lpFeePct)
-      );
+      expect(
+        data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.map((e) => e.depositId)
+      ).to.deep.equal(fillV3Events.map((event) => event.args.depositId));
+      expect(
+        data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.map((e) => e.lpFeePct)
+      ).to.deep.equal(fillV3Events.map(() => lpFeePct));
       const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
       const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
-      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].realizedLpFees);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].totalRefundAmount).to.equal(
+      expect(totalV3LpFees).to.equal(
+        data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].realizedLpFees
+      );
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].totalRefundAmount).to.equal(
         totalGrossRefundAmount.sub(totalV3LpFees)
       );
       const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].refunds).to.deep.equal({
-        [relayer.address]: fillV3Events
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].refunds).to.deep.equal({
+        [toBytes32(relayer.address)]: fillV3Events
           .slice(0, fillV3Events.length - 1)
           .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
-        [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+        [toBytes32(relayer2)]: fillV3Events[fillV3Events.length - 1].args.inputAmount
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
       });
@@ -566,27 +594,29 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
 
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(depositV3Events.length);
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-        fillV3Events.map((event) => event.args.depositId)
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(
+        depositV3Events.length
       );
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
+      expect(
+        data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.depositId)
+      ).to.deep.equal(fillV3Events.map((event) => event.args.depositId));
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.lpFeePct)).to.deep.equal(
         fillV3Events.map(() => lpFeePct)
       );
       const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
       const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
-      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][erc20_1.address].realizedLpFees);
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].totalRefundAmount).to.equal(
+      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].realizedLpFees);
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].totalRefundAmount).to.equal(
         totalGrossRefundAmount.sub(totalV3LpFees)
       );
       const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].refunds).to.deep.equal({
-        [relayer.address]: fillV3Events
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].refunds).to.deep.equal({
+        [toBytes32(relayer.address)]: fillV3Events
           .slice(0, fillV3Events.length - 1)
           .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
           .mul(refundAmountPct)
           .div(fixedPointAdjustment),
-        [relayer2]: fillV3Events.at(-1).args.inputAmount.mul(refundAmountPct).div(fixedPointAdjustment),
+        [toBytes32(relayer2)]: fillV3Events.at(-1).args.inputAmount.mul(refundAmountPct).div(fixedPointAdjustment),
       });
     });
 
@@ -628,7 +658,7 @@ describe("Dataworker: Load bundle data", async function () {
         [destinationChainId]: spokePoolClient_2,
       });
       expect(spyLogIncludes(spy, -4, "Located deposit outside of SpokePoolClient's search range")).is.true;
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
     it("Does not validate fill against deposit in future bundle if deposit is not in-memory", async function () {
@@ -736,7 +766,7 @@ describe("Dataworker: Load bundle data", async function () {
       // Ensure the repayment chain id is not in the bundle data.
       expect(data1.bundleFillsV3[repaymentChainId]).to.be.undefined;
       // Make sure that the origin data is in fact populated
-      expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.eq(1);
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.eq(1);
       expect(data1.bundleDepositsV3).to.deep.equal({});
     });
     it("Searches for old deposit for fill but cannot find matching one", async function () {
@@ -820,8 +850,8 @@ describe("Dataworker: Load bundle data", async function () {
       await mockDestinationSpokePoolClient.update(["FilledRelay"]);
       expect(mockDestinationSpokePoolClient.getFills().length).to.equal(fills.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills[0].depositId).to.equal(
         fills[1].args.depositId
       );
     });
@@ -859,7 +889,7 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
       expect(spyLogIncludes(spy, -2, "invalid fills in range")).to.be.true;
     });
     it("Matches fill with deposit with outputToken = 0x0", async function () {
@@ -881,7 +911,29 @@ describe("Dataworker: Load bundle data", async function () {
         [originChainId]: spokePoolClient_1,
         [destinationChainId]: spokePoolClient_2,
       });
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
+    });
+
+    it("Matches fill with deposit with originChainId == destinationChainId", async function () {
+      await depositV3(
+        spokePool_1,
+        originChainId,
+        depositor,
+        erc20_1.address,
+        amountToDeposit,
+        erc20_1.address,
+        amountToDeposit
+      );
+      await spokePoolClient_1.update();
+      const deposit = spokePoolClient_1.getDeposits()[0];
+      await fillV3Relay(spokePool_1, deposit, relayer);
+      await spokePoolClient_1.update();
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(getDefaultBlockRange(5), {
+        ...spokePoolClients,
+        [originChainId]: spokePoolClient_1,
+        [destinationChainId]: spokePoolClient_2,
+      });
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(1);
     });
 
     it("getBundleTimestampsFromCache and setBundleTimestampsInCache", async function () {
@@ -929,14 +981,17 @@ describe("Dataworker: Load bundle data", async function () {
         const bundleFillsV3 = {};
         deposits.forEach((deposit) => {
           bundleDepositsV3[deposit.originChainId] ??= {};
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
+          bundleDepositsV3[deposit.originChainId][toBytes32(deposit.inputToken)] ??= [];
+          bundleDepositsV3[deposit.originChainId][toBytes32(deposit.inputToken)].push(deposit);
         });
         fills.forEach((fill) => {
           bundleFillsV3[fill.originChainId] ??= {};
-          bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
-          bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
-          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)] ??= {};
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["refunds"] ??= {
+            [randomAddress()]: bnZero,
+          };
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)].fills.push(fill);
         });
         const mockArweaveData = [
           {
@@ -980,14 +1035,17 @@ describe("Dataworker: Load bundle data", async function () {
         const bundleFillsV3 = {};
         deposits.forEach((deposit) => {
           bundleDepositsV3[deposit.originChainId] ??= {};
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken] ??= [];
-          bundleDepositsV3[deposit.originChainId][deposit.inputToken].push(deposit);
+          bundleDepositsV3[deposit.originChainId][toBytes32(deposit.inputToken)] ??= [];
+          bundleDepositsV3[deposit.originChainId][toBytes32(deposit.inputToken)].push(deposit);
         });
         fills.forEach((fill) => {
           bundleFillsV3[fill.originChainId] ??= {};
-          bundleFillsV3[fill.originChainId][fill.inputToken] ??= {};
-          bundleFillsV3[fill.originChainId][fill.inputToken]["fills"] ??= [];
-          bundleFillsV3[fill.originChainId][fill.inputToken].fills.push(fill);
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)] ??= {};
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["fills"] ??= [];
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)]["refunds"] ??= {
+            [randomAddress()]: bnZero,
+          };
+          bundleFillsV3[fill.originChainId][toBytes32(fill.inputToken)].fills.push(fill);
         });
         const mockArweaveData = [
           {
@@ -1047,13 +1105,13 @@ describe("Dataworker: Load bundle data", async function () {
           spokePoolClients
         );
         // Fill with invalid repayment address gets repaid on destination chain now.
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[0].depositId).to.equal(
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills[0].depositId).to.equal(
           fillV3Events[0].args.depositId
         );
-        expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills[1].depositId).to.equal(
+        expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills[1].depositId).to.equal(
           fillV3Events[1].args.depositId
         );
-        expect(data1.bundleFillsV3[destinationChainId][erc20_2.address].fills[0].depositId).to.equal(
+        expect(data1.bundleFillsV3[destinationChainId][toBytes32(erc20_2.address)].fills[0].depositId).to.equal(
           fillV3Events[2].args.depositId
         );
       });
@@ -1094,27 +1152,29 @@ describe("Dataworker: Load bundle data", async function () {
           getDefaultBlockRange(5),
           spokePoolClients
         );
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.length).to.equal(depositV3Events.length);
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.depositId)).to.deep.equal(
-          fillV3Events.map((event) => event.args.depositId)
+        expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(
+          depositV3Events.length
         );
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].fills.map((e) => e.lpFeePct)).to.deep.equal(
-          fillV3Events.map(() => lpFeePct)
-        );
+        expect(
+          data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.depositId)
+        ).to.deep.equal(fillV3Events.map((event) => event.args.depositId));
+        expect(
+          data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.lpFeePct)
+        ).to.deep.equal(fillV3Events.map(() => lpFeePct));
         const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
         const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
-        expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][erc20_1.address].realizedLpFees);
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].totalRefundAmount).to.equal(
+        expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].realizedLpFees);
+        expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].totalRefundAmount).to.equal(
           totalGrossRefundAmount.sub(totalV3LpFees)
         );
         const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
-        expect(data1.bundleFillsV3[originChainId][erc20_1.address].refunds).to.deep.equal({
-          [relayer.address]: fillV3Events
+        expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].refunds).to.deep.equal({
+          [toBytes32(relayer.address)]: fillV3Events
             .slice(0, fillV3Events.length - 1)
             .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
             .mul(refundAmountPct)
             .div(fixedPointAdjustment),
-          [relayer2]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+          [toBytes32(relayer2)]: fillV3Events[fillV3Events.length - 1].args.inputAmount
             .mul(refundAmountPct)
             .div(fixedPointAdjustment),
         });
@@ -1159,8 +1219,8 @@ describe("Dataworker: Load bundle data", async function () {
       );
       const expectedRefunds = {
         [repaymentChainId]: {
-          [l1Token_1.address]: {
-            [relayer.address]: BigNumber.from(amountToDeposit.mul(2)).toString(),
+          [toBytes32(l1Token_1.address)]: {
+            [toBytes32(relayer.address)]: BigNumber.from(amountToDeposit.mul(2)).toString(),
           },
         },
       };
@@ -1175,7 +1235,7 @@ describe("Dataworker: Load bundle data", async function () {
             [chainId]: Object.entries(refunds).reduce(
               (acc, [token, refunds]) => ({
                 ...acc,
-                [token]: Object.entries(refunds).reduce(
+                [toBytes32(token)]: Object.entries(refunds).reduce(
                   (acc, [address, amount]) => ({ ...acc, [address]: amount.toString() }),
                   {}
                 ),
@@ -1200,8 +1260,8 @@ describe("Dataworker: Load bundle data", async function () {
         )
       ).to.deep.equal({
         [repaymentChainId]: {
-          [l1Token_1.address]: {
-            [relayer.address]: amountToDeposit.mul(2).toString(),
+          [toBytes32(l1Token_1.address)]: {
+            [toBytes32(relayer.address)]: amountToDeposit.mul(2).toString(),
           },
         },
       });

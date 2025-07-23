@@ -15,10 +15,10 @@ import {
   SvmAddress,
   toPublicKey,
   chainIsSvm,
+  Address,
 } from "../../../utils";
 import {
   AttestedCCTPDeposit,
-  cctpBytes32ToAddress,
   CCTPMessageStatus,
   getAttestedCCTPDeposits,
   getCctpMessageTransmitter,
@@ -32,7 +32,7 @@ export async function cctpL2toL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   const searchConfig: EventSearchConfig = {
     from: spokePoolClient.eventSearchConfig.from,
@@ -130,20 +130,18 @@ async function generateWithdrawalData(
  * to have SpokePool address in the `senderAddresses`. We instead need SpokePool's `statePda` in there, because that is
  * what gets recorded as `depositor` in the `DepositForBurn` event
  */
-// TODO: this function is fragile, because it assumes the format of `senderAddresses` and how it gets populated
-// TODO: When we fully move to using the `Address` class, this problem should be alleviated by using `Address.eq` instead
-function augmentSendersListForSolana(senderAddresses: string[], spokePoolClient: SpokePoolClient) {
+function augmentSendersListForSolana(senderAddresses: Address[], spokePoolClient: SpokePoolClient): Address[] {
   const spokeAddress = spokePoolClient.spokePoolAddress;
   // This format is taken from `src/finalizer/index.ts`
-  if (senderAddresses.includes(spokeAddress.toEvmAddress())) {
+  if (senderAddresses.some((address) => address.eq(spokeAddress))) {
     const seed = new BN("0"); // Seed is always 0 for the state account PDA in public networks.
-    const [statePda] = web3.PublicKey.findProgramAddressSync(
+    const [_statePda] = web3.PublicKey.findProgramAddressSync(
       [Buffer.from("state"), seed.toArrayLike(Buffer, "le", 8)],
       toPublicKey(spokeAddress.toBase58())
     );
     // This format has to match format in CCTPUtils.ts >
-    const trimmedStatePda = cctpBytes32ToAddress(SvmAddress.from(statePda.toBase58(), "base58").toBytes32());
-    return [...senderAddresses, trimmedStatePda];
+    const statePda = SvmAddress.from(_statePda.toBase58());
+    return [...senderAddresses, statePda];
   } else {
     return senderAddresses;
   }

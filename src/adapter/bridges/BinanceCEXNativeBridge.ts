@@ -35,7 +35,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     _l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    assert(l1Token.toAddress() === this.getL1Bridge().address);
+    assert(l1Token.toNative() === this.getL1Bridge().address);
     // Fetch the deposit address from the binance API.
 
     const binanceApiClient = await this.getBinanceClient();
