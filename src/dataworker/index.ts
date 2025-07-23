@@ -15,7 +15,6 @@ import {
   getRedisCache,
   waitForPubSub,
   averageBlockTime,
-  getChallengeRemaining,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -82,6 +81,16 @@ function resolvePersonality(config: DataworkerConfig): string {
   return "Dataworker"; // unknown
 }
 
+async function getChallengeRemaining(chainId: number): Promise<number> {
+  const provider = await getProvider(chainId);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
+  const { challengePeriodEndTimestamp } = proposal;
+
+  return Math.max(challengePeriodEndTimestamp - currentTime, 0);
+}
+
 async function canProposeRootBundle(chainId: number): Promise<boolean> {
   const provider = await getProvider(chainId);
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
@@ -128,6 +137,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
+  const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
@@ -318,7 +328,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             redis,
             botIdentifier,
             runIdentifier,
-            (updatedChallengeRemaining + l1BlockTime) * 1000
+            (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
           );
           if (handover) {
             logger.debug({
