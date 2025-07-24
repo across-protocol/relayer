@@ -1259,6 +1259,7 @@ export class InventoryClient {
     const chainIds = this.getEnabledL2Chains();
     type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
+    const chainMrkdwns: { [chainId: number]: string } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
       const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
@@ -1276,6 +1277,7 @@ export class InventoryClient {
         if (chainId === this.hubPoolClient.chainId || !this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
+        let mrkdwn = `*Withdrawals from ${getNetworkName(chainId)}:*\n`;
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
@@ -1388,7 +1390,25 @@ export class InventoryClient {
             l2Token,
             amountToWithdraw: desiredWithdrawalAmount,
           });
+
+          mrkdwn +=
+            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+              l1TokenInfo.symbol
+            } withdrawn. This meets target allocation of ` +
+            `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
+            `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
+            `${formatter(cumulativeBalance.toString())} ${
+              l1TokenInfo.symbol
+            } over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
+            `${l2TokenFormatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${
+              l1TokenInfo.symbol
+            }.` +
+            ` This chain's current allocation is ${this.formatWei(currentAllocPct.mul(100).toString())}%\n`;
         });
+
+        if (withdrawalsRequired[chainId] && withdrawalsRequired[chainId].length > 0) {
+          chainMrkdwns[chainId] = mrkdwn;
+        }
       });
     });
 
@@ -1444,6 +1464,7 @@ export class InventoryClient {
         }),
         txnReceipt: txnReceipts[chainId],
       });
+      this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
     });
   }
 
