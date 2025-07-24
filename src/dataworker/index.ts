@@ -137,6 +137,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
+  const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
@@ -191,14 +192,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     profiler.mark("dataworkerFunctionLoopTimerStart");
     // Validate and dispute pending proposal before proposing a new one
     if (config.disputerEnabled) {
-      await dataworker.validatePendingRootBundle(
-        spokePoolClients,
-        config.sendingTransactionsEnabled,
-        fromBlocks,
-        // @dev Opportunistically publish bundle data to external storage layer since we're reconstructing it in this
-        // process, if user has configured it so.
-        config.persistingBundleData
-      );
+      await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
     }
@@ -224,11 +218,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
-      proposedBundleData = await dataworker.proposeRootBundle(
-        spokePoolClients,
-        config.sendingTransactionsEnabled,
-        fromBlocks
-      );
+      proposedBundleData = await dataworker.proposeRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
@@ -240,25 +230,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingTransactionsEnabled,
           fromBlocks
         );
       }
 
       if (config.l2ExecutorEnabled) {
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingTransactionsEnabled,
-          fromBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingTransactionsEnabled,
-          fromBlocks
-        );
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, fromBlocks);
+        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator, fromBlocks);
       }
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
@@ -269,7 +248,10 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // leaves to be executed but the proposed bundle was already executed, then exit early.
     const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
-    const proposalCollision = isDefined(proposedBundleData) && pendingProposal.unclaimedPoolRebalanceLeafCount > 0;
+    const proposalCollision =
+      isDefined(proposedBundleData) &&
+      pendingProposal.unclaimedPoolRebalanceLeafCount > 0 &&
+      !config.awaitChallengePeriod;
     // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
     // does not match the number of leaves the executor wants to execute, or the pending root bundle's
     // challenge period timestamp is in the future. This latter case is rarer but it can
@@ -277,8 +259,9 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
       (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
-        pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime);
-    if ((proposalCollision || executorCollision) && !config.awaitChallengePeriod) {
+        (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
+          !config.awaitChallengePeriod));
+    if (proposalCollision || executorCollision) {
       logger[startupLogLevel(config)]({
         at: "Dataworker#index",
         message: "Exiting early due to dataworker function collision",
@@ -327,7 +310,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             redis,
             botIdentifier,
             runIdentifier,
-            (updatedChallengeRemaining + l1BlockTime) * 1000
+            (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
           );
           if (handover) {
             logger.debug({
