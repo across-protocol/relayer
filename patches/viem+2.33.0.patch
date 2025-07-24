@@ -1,0 +1,304 @@
+diff --git a/node_modules/viem/_cjs/op-stack/abis.js b/node_modules/viem/_cjs/op-stack/abis.js
+index ea6834a..5e72c7a 100644
+--- a/node_modules/viem/_cjs/op-stack/abis.js
++++ b/node_modules/viem/_cjs/op-stack/abis.js
+@@ -1,6 +1,6 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.portalAbi = exports.portal2Abi = exports.disputeGameFactoryAbi = exports.l2ToL1MessagePasserAbi = exports.l2OutputOracleAbi = exports.gasPriceOracleAbi = void 0;
++exports.anchorStateRegistryAbi = exports.portalAbi = exports.portal2Abi = exports.disputeGameFactoryAbi = exports.l2ToL1MessagePasserAbi = exports.l2OutputOracleAbi = exports.gasPriceOracleAbi = void 0;
+ exports.gasPriceOracleAbi = [
+     { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
+     {
+@@ -1483,6 +1483,19 @@ exports.portal2Abi = [
+         stateMutability: 'view',
+         type: 'function',
+     },
++    {
++        inputs: [],
++        name: 'anchorStateRegistry',
++        outputs: [
++            {
++                internalType: 'contract IAnchorStateRegistry',
++                name: '',
++                type: 'address',
++            },
++        ],
++        stateMutability: 'view',
++        type: 'function',
++    },
+     {
+         inputs: [],
+         name: 'version',
+@@ -1750,6 +1763,31 @@ exports.portal2Abi = [
+         name: 'Unproven',
+         type: 'error',
+     },
++    {
++        inputs: [],
++        name: 'OptimismPortal_AlreadyFinalized',
++        type: 'error',
++    },
++    {
++        inputs: [],
++        name: 'OptimismPortal_Unproven',
++        type: 'error',
++    },
++    {
++        inputs: [],
++        name: 'OptimismPortal_InvalidProofTimestamp',
++        type: 'error',
++    },
++    {
++        inputs: [],
++        name: 'OptimismPortal_ProofNotOldEnough',
++        type: 'error',
++    },
++    {
++        inputs: [],
++        name: 'OptimismPortal_InvalidRootClaim',
++        type: 'error',
++    },
+ ];
+ exports.portalAbi = [
+     { stateMutability: 'nonpayable', type: 'constructor', inputs: [] },
+@@ -2068,4 +2106,27 @@ exports.portalAbi = [
+     },
+     { stateMutability: 'payable', type: 'receive' },
+ ];
++exports.anchorStateRegistryAbi = [
++    {
++        stateMutability: 'view',
++        type: 'function',
++        inputs: [{ name: '_game', internalType: 'address', type: 'address' }],
++        name: 'isGameProper',
++        outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
++    },
++    {
++        stateMutability: 'view',
++        type: 'function',
++        inputs: [{ name: '_game', internalType: 'address', type: 'address' }],
++        name: 'isGameRespected',
++        outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
++    },
++    {
++        stateMutability: 'view',
++        type: 'function',
++        inputs: [{ name: '_game', internalType: 'address', type: 'address' }],
++        name: 'isGameFinalized',
++        outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
++    },
++];
+ //# sourceMappingURL=abis.js.map
+\ No newline at end of file
+diff --git a/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js b/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
+index 20166aa..7746395 100644
+--- a/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
++++ b/node_modules/viem/_cjs/op-stack/actions/getWithdrawalStatus.js
+@@ -94,12 +94,18 @@ async function getWithdrawalStatus(client, parameters) {
+         functionName: 'proofSubmitters',
+         args: [withdrawal.withdrawalHash, numProofSubmitters - 1n],
+     }).catch(() => withdrawal.sender);
+-    const [disputeGameResult, checkWithdrawalResult, finalizedResult] = await Promise.allSettled([
++    const [disputeGameResult, provenWithdrawalsResult, checkWithdrawalResult, finalizedResult] = await Promise.allSettled([
+         (0, getGame_js_1.getGame)(client, {
+             ...parameters,
+             l2BlockNumber,
+             limit: gameLimit,
+         }),
++        (0, readContract_js_1.readContract)(client, {
++            abi: abis_js_1.portal2Abi,
++            address: portalAddress,
++            functionName: 'provenWithdrawals',
++            args: [withdrawal.withdrawalHash, proofSubmitter],
++        }),
+         (0, readContract_js_1.readContract)(client, {
+             abi: abis_js_1.portal2Abi,
+             address: portalAddress,
+@@ -115,6 +121,8 @@ async function getWithdrawalStatus(client, parameters) {
+     ]);
+     if (finalizedResult.status === 'fulfilled' && finalizedResult.value)
+         return 'finalized';
++    if (provenWithdrawalsResult.status === 'rejected')
++        throw provenWithdrawalsResult.reason;
+     if (disputeGameResult.status === 'rejected') {
+         const error = disputeGameResult.reason;
+         if (error.name === 'GameNotFoundError')
+@@ -133,6 +141,9 @@ async function getWithdrawalStatus(client, parameters) {
+                     'InvalidGameType',
+                     'LegacyGame',
+                     'Unproven',
++                    // After U16
++                    'OptimismPortal_Unproven',
++                    'OptimismPortal_InvalidProofTimestamp',
+                 ],
+                 'waiting-to-finalize': [
+                     'OptimismPortal: proven withdrawal has not matured yet',
+@@ -144,6 +155,83 @@ async function getWithdrawalStatus(client, parameters) {
+                 error.cause.data?.errorName,
+                 error.cause.data?.args?.[0],
+             ];
++            
++            // After U16 we get a generic error message (OptimismPortal_InvalidRootClaim) because the
++            // OptimismPortal will call AnchorStateRegistry.isGameClaimValid which simply returns
++            // true/false. If we get this generic error, we need to figure out why the function returned
++            // false and return a proper status accordingly. We can also check these conditions when we
++            // get ProofNotOldEnough so users can be notified when their pending proof becomes invalid
++            // before it can be finalized.
++            if (errors.includes('OptimismPortal_InvalidRootClaim') ||
++                errors.includes('OptimismPortal_ProofNotOldEnough')) {
++                // Get the dispute game address from the proven withdrawal.
++                const disputeGameAddress = provenWithdrawalsResult.value[0];
++                
++                // Get the AnchorStateRegistry address from the portal.
++                const anchorStateRegistry = await (0, readContract_js_1.readContract)(client, {
++                    abi: abis_js_1.portal2Abi,
++                    address: portalAddress,
++                    functionName: 'anchorStateRegistry',
++                });
++                
++                // Check if the game is proper, respected, and finalized.
++                const [
++                    isGameProperResult,
++                    isGameRespectedResult,
++                    isGameFinalizedResult,
++                ] = await Promise.allSettled([
++                    (0, readContract_js_1.readContract)(client, {
++                        abi: abis_js_1.anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameProper',
++                        args: [disputeGameAddress],
++                    }),
++                    (0, readContract_js_1.readContract)(client, {
++                        abi: abis_js_1.anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameRespected',
++                        args: [disputeGameAddress],
++                    }),
++                    (0, readContract_js_1.readContract)(client, {
++                        abi: abis_js_1.anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameFinalized',
++                        args: [disputeGameAddress],
++                    }),
++                ]);
++                
++                // If any of the calls failed, throw the error.
++                if (isGameProperResult.status === 'rejected')
++                    throw isGameProperResult.reason;
++                if (isGameRespectedResult.status === 'rejected')
++                    throw isGameRespectedResult.reason;
++                if (isGameFinalizedResult.status === 'rejected')
++                    throw isGameFinalizedResult.reason;
++                
++                // If the game isn't proper, the user needs to re-prove.
++                if (!isGameProperResult.value) {
++                    return 'ready-to-prove';
++                }
++                
++                // If the game isn't respected, the user needs to re-prove.
++                if (!isGameRespectedResult.value) {
++                    return 'ready-to-prove';
++                }
++                
++                // If the game isn't finalized, the user needs to wait to finalize.
++                if (!isGameFinalizedResult.value) {
++                    return 'waiting-to-finalize';
++                }
++                
++                // If the actual error was ProofNotOldEnough, then at this point the game is probably
++                // completely fine but the proof hasn't passed the waiting period. Otherwise, the only
++                // reason we'd be here is if the game resolved in favor of the challenger, which means the
++                // user needs to re-prove the withdrawal.
++                if (errors.includes('OptimismPortal_ProofNotOldEnough')) {
++                    return 'waiting-to-finalize';
++                }
++                return 'ready-to-prove';
++            }
+             if (errorCauses['ready-to-prove'].some((cause) => errors.includes(cause)))
+                 return 'ready-to-prove';
+             if (errorCauses['waiting-to-finalize'].some((cause) => errors.includes(cause)))
+diff --git a/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js b/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
+index f94214b..93b102b 100644
+--- a/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
++++ b/node_modules/viem/_esm/op-stack/actions/getWithdrawalStatus.js
+@@ -1,6 +1,6 @@
+ import { readContract, } from '../../actions/public/readContract.js';
+ import { ContractFunctionRevertedError } from '../../errors/contract.js';
+-import { portal2Abi, portalAbi } from '../abis.js';
++import { anchorStateRegistryAbi, portal2Abi, portalAbi } from '../abis.js';
+ import { ReceiptContainsNoWithdrawalsError, } from '../errors/withdrawal.js';
+ import { getWithdrawals, } from '../utils/getWithdrawals.js';
+ import { getGame, } from './getGame.js';
+@@ -178,6 +178,71 @@ export async function getWithdrawalStatus(client, parameters) {
+                 error.cause.data?.errorName,
+                 error.cause.data?.args?.[0],
+             ];
++            // After U16 we get a generic error message (OptimismPortal_InvalidRootClaim) because the
++            // OptimismPortal will call AnchorStateRegistry.isGameClaimValid which simply returns
++            // true/false. If we get this generic error, we need to figure out why the function returned
++            // false and return a proper status accordingly. We can also check these conditions when we
++            // get ProofNotOldEnough so users can be notified when their pending proof becomes invalid
++            // before it can be finalized.
++            if (errors.includes('OptimismPortal_InvalidRootClaim') ||
++                errors.includes('OptimismPortal_ProofNotOldEnough')) {
++                // Get the dispute game address from the proven withdrawal.
++                const disputeGameAddress = provenWithdrawalsResult.value[0];
++                // Get the AnchorStateRegistry address from the portal.
++                const anchorStateRegistry = await readContract(client, {
++                    abi: portal2Abi,
++                    address: portalAddress,
++                    functionName: 'anchorStateRegistry',
++                });
++                // Check if the game is proper, respected, and finalized.
++                const [isGameProperResult, isGameRespectedResult, isGameFinalizedResult,] = await Promise.allSettled([
++                    readContract(client, {
++                        abi: anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameProper',
++                        args: [disputeGameAddress],
++                    }),
++                    readContract(client, {
++                        abi: anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameRespected',
++                        args: [disputeGameAddress],
++                    }),
++                    readContract(client, {
++                        abi: anchorStateRegistryAbi,
++                        address: anchorStateRegistry,
++                        functionName: 'isGameFinalized',
++                        args: [disputeGameAddress],
++                    }),
++                ]);
++                // If any of the calls failed, throw the error.
++                if (isGameProperResult.status === 'rejected')
++                    throw isGameProperResult.reason;
++                if (isGameRespectedResult.status === 'rejected')
++                    throw isGameRespectedResult.reason;
++                if (isGameFinalizedResult.status === 'rejected')
++                    throw isGameFinalizedResult.reason;
++                // If the game isn't proper, the user needs to re-prove.
++                if (!isGameProperResult.value) {
++                    return 'ready-to-prove';
++                }
++                // If the game isn't respected, the user needs to re-prove.
++                if (!isGameRespectedResult.value) {
++                    return 'ready-to-prove';
++                }
++                // If the game isn't finalized, the user needs to wait to finalize.
++                if (!isGameFinalizedResult.value) {
++                    return 'waiting-to-finalize';
++                }
++                // If the actual error was ProofNotOldEnough, then at this point the game is probably
++                // completely fine but the proof hasn't passed the waiting period. Otherwise, the only
++                // reason we'd be here is if the game resolved in favor of the challenger, which means the
++                // user needs to re-prove the withdrawal.
++                if (errors.includes('OptimismPortal_ProofNotOldEnough')) {
++                    return 'waiting-to-finalize';
++                }
++                return 'ready-to-prove';
++            }
+             if (errorCauses['ready-to-prove'].some((cause) => errors.includes(cause)))
+                 return 'ready-to-prove';
+             if (errorCauses['waiting-to-finalize'].some((cause) => errors.includes(cause)))
