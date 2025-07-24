@@ -222,8 +222,9 @@ export async function setupDataworker(
   const dataworkerInstance = new Dataworker(
     spyLogger,
     {
-      executorIgnoreChains: [],
       awaitChallengePeriod: awaitChallengePeriod ?? false,
+      executorIgnoreChains: [],
+      sendingTransactionsEnabled: true,
     } as unknown as DataworkerConfig,
     dataworkerClients,
     testChainIdList,
