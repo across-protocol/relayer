@@ -192,14 +192,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     profiler.mark("dataworkerFunctionLoopTimerStart");
     // Validate and dispute pending proposal before proposing a new one
     if (config.disputerEnabled) {
-      await dataworker.validatePendingRootBundle(
-        spokePoolClients,
-        config.sendingTransactionsEnabled,
-        fromBlocks,
-        // @dev Opportunistically publish bundle data to external storage layer since we're reconstructing it in this
-        // process, if user has configured it so.
-        config.persistingBundleData
-      );
+      await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Disputer disabled" });
     }
@@ -225,11 +218,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       }
 
       // Bundle data is defined if and only if there is a new bundle proposal transaction enqueued.
-      proposedBundleData = await dataworker.proposeRootBundle(
-        spokePoolClients,
-        config.sendingTransactionsEnabled,
-        fromBlocks
-      );
+      proposedBundleData = await dataworker.proposeRootBundle(spokePoolClients, fromBlocks);
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Proposer disabled" });
     }
@@ -241,25 +230,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         poolRebalanceLeafExecutionCount = await dataworker.executePoolRebalanceLeaves(
           spokePoolClients,
           balanceAllocator,
-          config.sendingTransactionsEnabled,
           fromBlocks
         );
       }
 
       if (config.l2ExecutorEnabled) {
         // Execute slow relays before relayer refunds to give them priority for any L2 funds.
-        await dataworker.executeSlowRelayLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingTransactionsEnabled,
-          fromBlocks
-        );
-        await dataworker.executeRelayerRefundLeaves(
-          spokePoolClients,
-          balanceAllocator,
-          config.sendingTransactionsEnabled,
-          fromBlocks
-        );
+        await dataworker.executeSlowRelayLeaves(spokePoolClients, balanceAllocator, fromBlocks);
+        await dataworker.executeRelayerRefundLeaves(spokePoolClients, balanceAllocator, fromBlocks);
       }
     } else {
       logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Executor disabled" });
