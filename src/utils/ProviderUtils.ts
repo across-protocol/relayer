@@ -79,6 +79,20 @@ function getMaxConcurrency(chainId): number {
   return Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY);
 }
 
+function getPctRpcCallsLogged(chainId: number): number {
+  return Number(process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || process.env.NODE_PCT_RPC_CALLS_LOGGED || "0");
+}
+
+function getRetryParams(chainId: number): { retries: number; retryDelay: number } {
+  const { NODE_RETRIES, NODE_RETRY_DELAY } = process.env;
+  return {
+    // Default to 2 retries.
+    retries: Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "2"),
+    // Default to a delay of 1 second between retries.
+    retryDelay: Number(process.env[`NODE_RETRY_DELAY_${chainId}`] || NODE_RETRY_DELAY || "1"),
+  };
+}
+
 /**
  * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
@@ -97,24 +111,17 @@ export async function getProvider(
     }
   }
   const {
-    NODE_RETRIES,
-    NODE_RETRY_DELAY,
     NODE_TIMEOUT,
     NODE_DISABLE_PROVIDER_CACHING,
     NODE_PROVIDER_CACHE_NAMESPACE,
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
     NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
-    NODE_PCT_RPC_CALLS_LOGGED,
     PROVIDER_CACHE_TTL,
   } = process.env;
 
   const timeout = Number(process.env[`NODE_TIMEOUT_${chainId}`] || NODE_TIMEOUT || defaultTimeout);
 
-  // Default to 2 retries.
-  const retries = Number(process.env[`NODE_RETRIES_${chainId}`] || NODE_RETRIES || "2");
-
-  // Default to a delay of 1 second between retries.
-  const retryDelay = Number(process.env[`NODE_RETRY_DELAY_${chainId}`] || NODE_RETRY_DELAY || "1");
+  const { retries, retryDelay } = getRetryParams(chainId);
 
   const nodeQuorumThreshold = getChainQuorum(chainId);
 
@@ -156,9 +163,7 @@ export async function getProvider(
 
   const logEveryNRateLimitErrors = Number(NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS || "100");
 
-  const pctRpcCallsLogged = Number(
-    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0"
-  );
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
 
   // Custom delay + logging for RPC rate-limiting.
   let rateLimitLogCounter = 0;
@@ -266,15 +271,24 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
+export async function getSvmProvider(
+  logger: winston.Logger = Logger,
+  chainId = MAINNET_CHAIN_IDs.SOLANA
+): Promise<SVMProvider> {
   const nodeUrlList = getNodeUrlList(chainId);
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const maxConcurrency = getMaxConcurrency(chainId);
+  // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
+  // const redisClient = await getRedisCache(logger);
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
+  const { retries, retryDelay } = getRetryParams(chainId);
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
-    undefined,
+    undefined, // redisClient
+    retries,
+    retryDelay,
     maxConcurrency,
-    0,
+    pctRpcCallsLogged,
     logger,
     Object.values(nodeUrlList)[0],
     chainId
