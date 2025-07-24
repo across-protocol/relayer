@@ -49,7 +49,6 @@ import {
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { typeguards } from "@across-protocol/sdk";
 import { BaseError } from "viem";
 const { utils } = ethers;
 
