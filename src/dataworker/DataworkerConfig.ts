@@ -3,6 +3,7 @@ import { assert, getArweaveJWKSigner } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
+  readonly awaitChallengePeriod: boolean;
   readonly maxPoolRebalanceLeafSizeOverride: number;
   readonly maxRelayerRepaymentLeafSizeOverride: number;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
@@ -55,10 +56,12 @@ export class DataworkerConfig extends CommonConfig {
       PERSIST_BUNDLES_TO_ARWEAVE,
       EXECUTOR_IGNORE_CHAINS,
       MIN_CHALLENGE_LEAD_TIME = "600",
+      AWAIT_CHALLENGE_PERIOD = "false",
     } = env;
     super(env);
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
+    this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?

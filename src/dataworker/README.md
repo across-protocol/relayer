@@ -35,7 +35,7 @@ Relayer --> [*]
 
 ### What is a canonical bridge?
 
-An L2's "canonical bridge" is one that is secured by the same trusted agents that secure the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://docs.avax.network/learn/avalanche/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumptions.
+An L2's "canonical bridge" is one that is secured by the same trusted agents that secure the consensus of the network. For example, Optimism, Arbitrum and Polygon have canonical burn-and-mint bridges, while Avalanche bridge is secured by a [wardens-based system](https://li.fi/knowledge-hub/avalanche-bridge-a-deep-dive/) that is separate from the [Avalanche validators](https://build.avax.network/docs/quick-start/avalanche-consensus). Ultimately, it is required to read the code of an L2's bridge to determine whether it introduces additional trust assumptions.
 
 ### Supporting capital deficits on SpokePools without canonical bridges
 

@@ -94,7 +94,7 @@ import {
   fetchEncodedAccount,
   type KeyPairSigner,
 } from "@solana/kit";
-import { TOKEN_PROGRAM_ADDRESS, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { fetchMint, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
@@ -334,7 +334,7 @@ export class Dataworker {
     if (!hubPoolClient.isUpdated) {
       throw new Error("HubPoolClient not updated");
     }
-    if (!this.forceProposal && hubPoolClient.hasPendingProposal()) {
+    if (!this.forceProposal && !this.config.awaitChallengePeriod && hubPoolClient.hasPendingProposal()) {
       this.logger.debug({ at: "Dataworker#propose", message: "Has pending proposal, cannot propose" });
       return;
     }
@@ -354,11 +354,12 @@ export class Dataworker {
     // Construct a list of ending block ranges for each chain that we want to include
     // relay events for. The ending block numbers for these ranges will be added to a "bundleEvaluationBlockNumbers"
     // list, and the order of chain ID's is hardcoded in the ConfigStore client.
-    const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
+    const nextBundleMainnetStartBlock = this.getOptimisticChainBundleStartBlock();
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      nextBundleMainnetStartBlock
+      nextBundleMainnetStartBlock,
+      true
     );
     const mainnetBlockRange = getBlockRangeForChain(blockRangesForProposal, hubPoolClient.chainId, chainIds);
 
@@ -387,6 +388,15 @@ export class Dataworker {
   getNextHubChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
     const hubPoolClient = this.clients.hubPoolClient;
     return hubPoolClient.getNextBundleStartBlockNumber(
+      chainIdList,
+      hubPoolClient.latestHeightSearched,
+      hubPoolClient.chainId
+    );
+  }
+
+  getOptimisticChainBundleStartBlock(chainIdList = this.chainIdListForBundleEvaluationBlockNumbers): number {
+    const hubPoolClient = this.clients.hubPoolClient;
+    return hubPoolClient.getOptimisticBundleStartBlockNumber(
       chainIdList,
       hubPoolClient.latestHeightSearched,
       hubPoolClient.chainId
@@ -1555,7 +1565,10 @@ export class Dataworker {
     }
 
     // Exit early if challenge period timestamp has not passed:
-    if (this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp) {
+    if (
+      !this.config.awaitChallengePeriod &&
+      this.clients.hubPoolClient.currentTime <= pendingRootBundle.challengePeriodEndTimestamp
+    ) {
       this.logger.debug({
         at: "Dataworker#executePoolRebalanceLeaves",
         message: `Challenge period not passed, cannot execute until ${pendingRootBundle.challengePeriodEndTimestamp}`,
@@ -2727,7 +2740,8 @@ export class Dataworker {
    */
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
-    mainnetBundleStartBlock: number
+    mainnetBundleStartBlock: number,
+    optimistic = false
   ): Promise<number[][]> {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     return getWidestPossibleExpectedBlockRange(
@@ -2738,7 +2752,8 @@ export class Dataworker {
       this.clients,
       this.clients.hubPoolClient.latestHeightSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
-      this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock)
+      this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock),
+      optimistic
     );
   }
 
@@ -2785,7 +2800,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.l2TokenAddress.isSVM());
     const [rootBundlePda, instructionParamsPda, vault] = await Promise.all([
-      getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getInstructionParamsPda(spokePoolProgramId, kitKeypair.address),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.l2TokenAddress),
     ]);
@@ -2960,7 +2975,7 @@ export class Dataworker {
     const recentBlockhash = _recentBlockhash as { value: LatestBlockhash };
     assert(leaf.relayData.outputToken.isSVM());
     const [rootBundlePda, recipientTokenAccount, vault] = await Promise.all([
-      getRootBundlePda(spokePoolProgramId, statePda, rootBundleId),
+      getRootBundlePda(spokePoolProgramId, rootBundleId),
       getAssociatedTokenAddress(SvmAddress.from(recipient.toString()), leaf.relayData.outputToken),
       getAssociatedTokenAddress(SvmAddress.from(statePda.toString()), leaf.relayData.outputToken),
     ]);
@@ -2999,13 +3014,16 @@ export class Dataworker {
     let recipientCreateTokenAccountInstruction;
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
+      const mint = arch.svm.toAddress(leaf.relayData.outputToken);
+      const mintInfo = await fetchMint(spokePoolClient.svmEventsClient.getRpc(), mint);
+      const programAddress = mintInfo.programAddress;
       recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
         owner: statePda,
         mint: l2TokenAddress,
         ata: recipientTokenAccount,
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        tokenProgram: programAddress,
       });
     }
 
