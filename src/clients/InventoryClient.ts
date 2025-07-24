@@ -135,7 +135,12 @@ export class InventoryClient {
    * @param l2Token Optional l2 token address to narrow the balance reporting.
    * @returns Balance of l1Token on chainId.
    */
-  protected getBalanceOnChain(chainId: number, l1Token: EvmAddress, l2Token?: Address): BigNumber {
+  protected getBalanceOnChain(
+    chainId: number,
+    l1Token: EvmAddress,
+    l2Token?: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
 
@@ -146,7 +151,9 @@ export class InventoryClient {
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
       balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
       return balance.add(
-        crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
+        ignoreL1ToL2PendingAmount
+          ? bnZero
+          : crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
       );
     }
 
@@ -158,7 +165,11 @@ export class InventoryClient {
       })
       .reduce((acc, curr) => acc.add(curr), bnZero);
 
-    return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
+    return balance.add(
+      ignoreL1ToL2PendingAmount
+        ? bnZero
+        : crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+    );
   }
 
   /**
@@ -204,7 +215,12 @@ export class InventoryClient {
   }
 
   // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
-  getCurrentAllocationPct(l1Token: EvmAddress, chainId: number, l2Token: Address): BigNumber {
+  getCurrentAllocationPct(
+    l1Token: EvmAddress,
+    chainId: number,
+    l2Token: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(bnZero)) {
@@ -217,7 +233,7 @@ export class InventoryClient {
       l2TokenDecimals,
       l1TokenDecimals
     )(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token));
-    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token).sub(shortfall);
+    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount).sub(shortfall);
 
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -1287,7 +1303,9 @@ export class InventoryClient {
             return;
           }
 
-          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          // Ignore L1->L2 pending amounts for the current allocation % calculation because we never want to cancel
+          // out a deposit from L1 to L2 by immediately withdrawing it.
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token, true);
 
           // We apply a discount on the effective target % because the repayment chain choice
           // algorithm should never allow the inventory to get above the target pct * target overage buffer.
