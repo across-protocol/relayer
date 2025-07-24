@@ -49,6 +49,7 @@ import {
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage } from "../types";
+import { BaseError } from "viem";
 const { utils } = ethers;
 
 interface CrossChainMessageWithEvent {
@@ -390,12 +391,26 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus: GetWithdrawalStatusReturnType = await getWithdrawalStatus(publicClientL1 as viem.Client, {
-      receipt,
-      chain: publicClientL1.chain as viem.Chain,
-      targetChain: viemOpStackTargetChainParam,
-      logIndex: logIndexesForMessage[i],
-    });
+    let withdrawalStatus: GetWithdrawalStatusReturnType;
+    try {
+      withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+        receipt,
+        chain: publicClientL1.chain as viem.Chain,
+        targetChain: viemOpStackTargetChainParam,
+        logIndex: logIndexesForMessage[i],
+      });
+    } catch (error: unknown) {
+      // @dev: This is a temporary fix necessary because the latest version of Viem does not correctly handle the
+      // OptimismPortal_ProofNotOldEnough() revert error correctly and therefore the getWithdrawalStatus function
+      // does not correctly return the withdrawal status. We can remove this once this error reason is added
+      // here: https://github.com/wevm/viem/blob/4751e43e9c7b88de415f89a9d606d972104386b9/src/op-stack/actions/getWithdrawalStatus.ts#L286
+      // Note: 0xd9bc01be is the signature of the OptimismPortal_ProofNotOldEnough() revert error.
+      if ((error as BaseError).shortMessage.includes("0xd9bc01be")) {
+        withdrawalStatus = "waiting-to-finalize";
+      } else {
+        throw error;
+      }
+    }
     withdrawalStatuses.push(withdrawalStatus);
     if (withdrawalStatus === "ready-to-prove") {
       const l2Output = await getL2Output(publicClientL1 as viem.Client, {
