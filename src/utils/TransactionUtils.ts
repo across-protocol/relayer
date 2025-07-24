@@ -87,6 +87,8 @@ export async function getMultisender(chainId: number, baseSigner: Signer): Promi
 
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
+// @dev: If the method value is an empty string (e.g. ""), then this function
+// will submit a raw transaction to the contract address.
 export async function runTransaction(
   logger: winston.Logger,
   contract: Contract,
@@ -105,6 +107,8 @@ export async function runTransaction(
     nonceReset[chainId] = true;
   }
 
+  const sendRawTransaction = method === "";
+
   try {
     const priorityFeeScaler =
       Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
@@ -117,7 +121,9 @@ export async function runTransaction(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
-      await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      sendRawTransaction
+        ? undefined
+        : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
 
     // Check if the chain requires legacy transactions
@@ -135,6 +141,7 @@ export async function runTransaction(
       nonce,
       gas,
       gasLimit,
+      sendRawTxn: sendRawTransaction,
     });
     // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
     // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -143,7 +150,11 @@ export async function runTransaction(
       (a, [k, v]) => (v ? ((a[k] = v), a) : a),
       {}
     );
-    return await contract[method](...(args as Array<unknown>), txConfig);
+    if (sendRawTransaction) {
+      return await (await contract.signer).sendTransaction({ to: contract.address, value, ...gas });
+    } else {
+      return await contract[method](...(args as Array<unknown>), txConfig);
+    }
   } catch (error) {
     if (retriesRemaining > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
@@ -171,6 +182,7 @@ export async function runTransaction(
         args,
         value,
         nonce,
+        sendRawTxn: sendRawTransaction,
         notificationPath: "across-error",
       };
       if (isEthersError(error)) {
