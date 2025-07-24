@@ -5,7 +5,6 @@ import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
   getWithdrawals,
-  GetWithdrawalStatusReturnType,
   buildProveWithdrawal,
   getWithdrawalStatus,
   getL2Output,
@@ -49,7 +48,6 @@ import {
 import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import { BaseError } from "viem";
 const { utils } = ethers;
 
 interface CrossChainMessageWithEvent {
