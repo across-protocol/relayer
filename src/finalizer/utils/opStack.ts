@@ -408,6 +408,8 @@ async function viem_multicallOptimismFinalizations(
       // Note: 0xd9bc01be is the signature of the OptimismPortal_ProofNotOldEnough() revert error.
       if ((error as BaseError).shortMessage.includes("0xd9bc01be")) {
         withdrawalStatus = "waiting-to-finalize";
+      } else {
+        throw error;
       }
     }
     withdrawalStatuses.push(withdrawalStatus);
