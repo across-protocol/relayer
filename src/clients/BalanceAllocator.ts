@@ -178,7 +178,7 @@ export class BalanceAllocator {
     } else {
       assert(token.isSVM());
       assert(holder.isSVM());
-      return getSolanaTokenBalance(getSvmProvider(), token, holder);
+      return getSolanaTokenBalance(await getSvmProvider(), token, holder);
     }
   }
 }

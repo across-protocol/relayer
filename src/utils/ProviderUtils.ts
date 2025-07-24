@@ -79,6 +79,10 @@ function getMaxConcurrency(chainId): number {
   return Number(process.env[`NODE_MAX_CONCURRENCY_${chainId}`] || NODE_MAX_CONCURRENCY);
 }
 
+function getPctRpcCallsLogged(chainId: number): number {
+  return Number(process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || process.env.NODE_PCT_RPC_CALLS_LOGGED || "0");
+}
+
 /**
  * @notice Returns retry provider for specified chain ID. Optimistically tries to instantiate the provider
  * with a redis client attached so that all RPC requests are cached. Will load the provider from an in memory
@@ -104,7 +108,6 @@ export async function getProvider(
     NODE_PROVIDER_CACHE_NAMESPACE,
     NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS,
     NODE_DISABLE_INFINITE_TTL_PROVIDER_CACHING,
-    NODE_PCT_RPC_CALLS_LOGGED,
     PROVIDER_CACHE_TTL,
   } = process.env;
 
@@ -156,9 +159,7 @@ export async function getProvider(
 
   const logEveryNRateLimitErrors = Number(NODE_LOG_EVERY_N_RATE_LIMIT_ERRORS || "100");
 
-  const pctRpcCallsLogged = Number(
-    process.env[`NODE_PCT_RPC_CALLS_LOGGED_${chainId}`] || NODE_PCT_RPC_CALLS_LOGGED || "0"
-  );
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
 
   // Custom delay + logging for RPC rate-limiting.
   let rateLimitLogCounter = 0;
@@ -266,15 +267,20 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
+export async function getSvmProvider(
+  logger: winston.Logger = Logger,
+  chainId = MAINNET_CHAIN_IDs.SOLANA
+): Promise<SVMProvider> {
   const nodeUrlList = getNodeUrlList(chainId);
   const namespace = process.env["NODE_PROVIDER_CACHE_NAMESPACE"] ?? "default_svm_provider";
   const maxConcurrency = getMaxConcurrency(chainId);
+  const redisClient = await getRedisCache(logger);
+  const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
-    undefined,
+    redisClient,
     maxConcurrency,
-    0,
+    pctRpcCallsLogged,
     logger,
     Object.values(nodeUrlList)[0],
     chainId
