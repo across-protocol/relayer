@@ -319,7 +319,7 @@ export async function getSpokePoolClientsForContract(
         chainId,
         BigInt(registrationBlock),
         spokePoolClientSearchSettings,
-        await getSvmProvider()
+        getSvmProvider()
       );
     }
   });
