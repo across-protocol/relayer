@@ -7,13 +7,13 @@ import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClie
 import {
   CONTRACT_ADDRESSES,
   Clients,
+  CommonConfig,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
   updateSpokePoolClients,
 } from "../common";
-import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
   BigNumber,
@@ -529,7 +529,7 @@ async function updateFinalizerClients(clients: Clients) {
   await clients.hubPoolClient.update();
 }
 
-export class FinalizerConfig extends DataworkerConfig {
+export class FinalizerConfig extends CommonConfig {
   readonly maxFinalizerLookback: number;
   readonly finalizationStrategy: FinalizationType;
   readonly finalizerEnabled: boolean;
