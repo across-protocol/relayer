@@ -535,7 +535,6 @@ export class FinalizerConfig extends CommonConfig {
 
   constructor(env: ProcessEnv) {
     const {
-      FINALIZER_ENABLED,
       FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
       FINALIZER_CHAINS = "[]",
       FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
@@ -547,7 +546,6 @@ export class FinalizerConfig extends CommonConfig {
     assert(Array.isArray(userAddresses), "FINALIZER_WITHDRAWAL_TO_ADDRESSES must be a JSON string array");
     this.userAddresses = userAddresses.map(ethers.utils.getAddress);
 
-    this.finalizerEnabled = FINALIZER_ENABLED === "true";
     this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
