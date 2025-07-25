@@ -401,12 +401,16 @@ async function viem_multicallOptimismFinalizations(
       });
     } catch (error: unknown) {
       // @dev: This is a temporary fix necessary because the latest version of Viem does not correctly handle the
-      // OptimismPortal_ProofNotOldEnough() revert error correctly and therefore the getWithdrawalStatus function
+      // new OptimismPortal2's custom revert errors correctly and therefore the getWithdrawalStatus function
       // does not correctly return the withdrawal status. We can remove this once this error reason is added
       // here: https://github.com/wevm/viem/blob/4751e43e9c7b88de415f89a9d606d972104386b9/src/op-stack/actions/getWithdrawalStatus.ts#L286
       // Note: 0xd9bc01be is the signature of the OptimismPortal_ProofNotOldEnough() revert error.
       if ((error as BaseError).shortMessage.includes("0xd9bc01be")) {
+        // 0xd9bc01be = bytes4(keccak256("OptimismPortal_ProofNotOldEnough()"))
         withdrawalStatus = "waiting-to-finalize";
+      } else if ((error as BaseError).shortMessage.includes("0xcca6afda")) {
+        // 0xcca6afda = bytes4(keccak256("OptimismPortal_Unproven()"))
+        withdrawalStatus = "waiting-to-prove";
       } else {
         throw error;
       }
