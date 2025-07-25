@@ -82,13 +82,13 @@ async function scrapeEvents(
   opts: ScraperOpts & { to: bigint }
 ): Promise<void> {
   const provider = eventsClient.getRpc();
-  const [currentTime, ...events] = await Promise.all([
-    provider.getBlockTime(opts.to).send(),
+  const [{ timestamp: currentTime }, ...events] = await Promise.all([
+    arch.svm.getNearestSlotTime(provider),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
   if (!abortController.signal.aborted) {
-    if (!postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent))) {
+    if (!postEvents(Number(opts.to), currentTime, events.flat().map(logFromEvent))) {
       abortController.abort();
     }
   }
@@ -171,10 +171,9 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = getSvmProvider();
+  const provider = await getSvmProvider();
   const blockFinder = undefined;
-  const latestSlot = await provider.getSlot({ commitment: "confirmed" }).send();
-  assert(typeof latestSlot === "bigint", `fuck ${latestSlot}`); // Should be unnecessary; tsc still complains.
+  const { slot: latestSlot } = await arch.svm.getNearestSlotTime(provider);
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
@@ -215,7 +214,7 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
-  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(await getSvmProvider());
   if (latestSlot > startSlot) {
     const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });
