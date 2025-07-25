@@ -27,7 +27,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositERC20",
-      args: [l1Token.toAddress(), l2Token.toAddress(), amount, this.l2Gas, "0x"],
+      args: [l1Token.toNative(), l2Token.toNative(), amount, this.l2Gas, "0x"],
     });
   }
 
@@ -39,7 +39,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ERC20DepositInitiated(l1Token.toAddress(), undefined, fromAddress.toAddress()),
+      this.getL1Bridge().filters.ERC20DepositInitiated(l1Token.toNative(), undefined, fromAddress.toNative()),
       eventConfig
     );
     return {
@@ -55,7 +55,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token.toAddress(), undefined, fromAddress.toAddress()),
+      this.getL2Bridge().filters.DepositFinalized(l1Token.toNative(), undefined, fromAddress.toNative()),
       eventConfig
     );
     return {

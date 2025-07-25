@@ -17,7 +17,7 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, ZERO_ADDRESS, BigNumber, bnZero } from "../src/utils";
+import { getCurrentTime, toBNWei, ZERO_ADDRESS, BigNumber, bnZero, toAddressType, toBytes32 } from "../src/utils";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 
@@ -120,9 +120,9 @@ describe("Dataworker: Load bundle data", async function () {
 
     function generateV3Deposit(eventOverride?: Partial<interfaces.DepositWithBlock>): interfaces.Log {
       return mockOriginSpokePoolClient.deposit({
-        inputToken: erc20_1.address,
+        inputToken: toAddressType(erc20_1.address, originChainId),
         inputAmount: eventOverride?.inputAmount ?? undefined,
-        outputToken: eventOverride?.outputToken ?? erc20_2.address,
+        outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
         quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
         fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
@@ -142,8 +142,17 @@ describe("Dataworker: Load bundle data", async function () {
       const fillObject = V3FillFromDeposit(deposit, _relayer, _repaymentChainId);
       return mockDestinationSpokePoolClient.fillRelay({
         ...fillObject,
+        relayer: toAddressType(_relayer, destinationChainId),
+        inputToken: deposit.inputToken,
+        outputToken: deposit.outputToken,
+        exclusiveRelayer: deposit.exclusiveRelayer,
+        depositor: deposit.depositor,
+        recipient: deposit.recipient,
         relayExecutionInfo: {
-          updatedRecipient: fillObject.relayExecutionInfo.updatedRecipient,
+          updatedRecipient: toAddressType(
+            fillObject.relayExecutionInfo?.updatedRecipient ?? deposit.recipient.toEvmAddress(),
+            destinationChainId
+          ),
           updatedMessage: fillObject.relayExecutionInfo.updatedMessage,
           updatedOutputAmount: fillObject.relayExecutionInfo.updatedOutputAmount,
           fillType,
@@ -165,11 +174,16 @@ describe("Dataworker: Load bundle data", async function () {
       const { args } = depositEvent;
       return mockDestinationSpokePoolClient.fillRelay({
         ...args,
-        relayer: _relayer,
+        inputToken: toAddressType(args.inputToken, originChainId),
+        outputToken: toAddressType(args.outputToken, destinationChainId),
+        exclusiveRelayer: toAddressType(args.exclusiveRelayer, destinationChainId),
+        depositor: toAddressType(args.depositor, originChainId),
+        recipient: toAddressType(args.recipient, destinationChainId),
+        relayer: toAddressType(_relayer),
         outputAmount,
         repaymentChainId: _repaymentChainId,
         relayExecutionInfo: {
-          updatedRecipient: depositEvent.args.updatedRecipient,
+          updatedRecipient: toAddressType(depositEvent.args?.updatedRecipient ?? args.recipient, destinationChainId),
           updatedMessage: depositEvent.args.updatedMessage,
           updatedOutputAmount: updatedOutputAmount,
           fillType,
@@ -195,11 +209,11 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
 
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
       expect(
-        data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].map((deposit) => deposit.depositId)
+        data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].map((deposit) => deposit.depositId)
       ).to.deep.equal(expiredDeposits.map((event) => event.args.depositId));
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
 
     it("Ignores disabled chains", async function () {
@@ -267,7 +281,31 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+    });
+
+    it("Can refund expired deposits where originChain == destinationChain", async function () {
+      const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
+        [originChainId, destinationChainId],
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      generateV3Deposit({
+        outputToken: erc20_1.address,
+        destinationChainId: originChainId,
+        fillDeadline: bundleBlockTimestamps[destinationChainId][1] - 1,
+      });
+
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      // Includes this deposit as part of bundleDeposits and refunds it once expired:
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
 
     it("Does not consider expired zero value deposits from prior bundle", async function () {
@@ -309,8 +347,10 @@ describe("Dataworker: Load bundle data", async function () {
       await mockOriginSpokePoolClient.update(["FundsDeposited"]);
       expect(mockOriginSpokePoolClient.getDeposits().length).to.equal(deposits.length);
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].depositId).to.equal(deposits[1].args.depositId);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)][0].depositId).to.equal(
+        deposits[1].args.depositId
+      );
     });
     it("Includes duplicate deposits in bundle data", async function () {
       const deposit = generateV3Deposit();
@@ -326,10 +366,16 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(3);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][0].txnRef).to.equal(deposit.transactionHash);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][1].txnRef).to.equal(dupe1.transactionHash);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address][2].txnRef).to.equal(dupe2.transactionHash);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(3);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)][0].txnRef).to.equal(
+        deposit.transactionHash
+      );
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)][1].txnRef).to.equal(
+        dupe1.transactionHash
+      );
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)][2].txnRef).to.equal(
+        dupe2.transactionHash
+      );
     });
     it("Filters duplicate deposits out of block range", async function () {
       const deposit = generateV3Deposit({ blockNumber: mockOriginSpokePoolClient.eventManager.blockNumber + 1 });
@@ -347,7 +393,7 @@ describe("Dataworker: Load bundle data", async function () {
       // Substitute origin chain bundle block range.
       const bundleBlockRanges = [originChainBlockRange].concat(getDefaultBlockRange(5).slice(1));
       const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(bundleBlockRanges, spokePoolClients);
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
     it("Ignores expired deposits that were filled in same bundle", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
@@ -362,8 +408,8 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
 
       // Now, send a fill for the deposit that would be in the same bundle. This should eliminate the expired
       // deposit from a refund.
@@ -374,7 +420,7 @@ describe("Dataworker: Load bundle data", async function () {
         spokePoolClients
       );
       expect(data2.expiredDepositsToRefundV3).to.deep.equal({});
-      expect(data2.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data2.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
     });
 
     it("Returns prior bundle expired deposits", async function () {
@@ -392,8 +438,8 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(1);
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
 
       // Now, load a bundle that doesn't include the deposit in its range.
       const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
@@ -404,7 +450,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Now, there is no bundle deposit but still an expired deposit to refund.
       expect(data2.bundleDepositsV3).to.deep.equal({});
-      expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(1);
+      expect(data2.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(1);
     });
     it("Includes duplicate prior bundle expired deposits", async function () {
       const bundleBlockTimestamps = await dataworkerInstance.clients.bundleDataClient.getBundleBlockTimestamps(
@@ -423,8 +469,8 @@ describe("Dataworker: Load bundle data", async function () {
         getDefaultBlockRange(5),
         spokePoolClients
       );
-      expect(data1.bundleDepositsV3[originChainId][erc20_1.address].length).to.equal(2);
-      expect(data1.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data1.bundleDepositsV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
+      expect(data1.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
 
       // Now, load a bundle that doesn't include the deposits in its range.
       const originChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(originChainId);
@@ -435,7 +481,7 @@ describe("Dataworker: Load bundle data", async function () {
 
       // Now, there is no bundle deposit but still two expired deposits to refund.
       expect(data2.bundleDepositsV3).to.deep.equal({});
-      expect(data2.expiredDepositsToRefundV3[originChainId][erc20_1.address].length).to.equal(2);
+      expect(data2.expiredDepositsToRefundV3[originChainId][toBytes32(erc20_1.address)].length).to.equal(2);
     });
     it("Handles when deposit is greater than origin bundle end block but fill is within range", async function () {
       // Send deposit after origin chain block range.
@@ -509,7 +555,7 @@ describe("Dataworker: Load bundle data", async function () {
       // There should be no expired deposit to refund.
       expect(data1.bundleDepositsV3).to.deep.equal({});
       expect(data1.expiredDepositsToRefundV3).to.deep.equal({});
-      expect(data1.bundleFillsV3[repaymentChainId][l1Token_1.address].fills.length).to.equal(1);
+      expect(data1.bundleFillsV3[repaymentChainId][toBytes32(l1Token_1.address)].fills.length).to.equal(1);
     });
   });
 
@@ -535,32 +581,36 @@ describe("Dataworker: Load bundle data", async function () {
         amountToDeposit
       );
       await updateAllClients();
-      expect(await bundleDataClient.getUpcomingDepositAmount(originChainId, erc20_1.address, 0)).to.equal(
-        amountToDeposit
-      );
-      expect(await bundleDataClient.getUpcomingDepositAmount(destinationChainId, erc20_2.address, 0)).to.equal(
-        amountToDeposit
-      );
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(originChainId, toAddressType(erc20_1.address, originChainId), 0)
+      ).to.equal(amountToDeposit);
+      expect(
+        await bundleDataClient.getUpcomingDepositAmount(
+          destinationChainId,
+          toAddressType(erc20_2.address, destinationChainId),
+          0
+        )
+      ).to.equal(amountToDeposit);
 
       // Removes deposits using block, token, and chain filters.
       expect(
         await bundleDataClient.getUpcomingDepositAmount(
           originChainId,
-          erc20_1.address,
+          toAddressType(erc20_1.address, originChainId),
           spokePoolClient_1.latestHeightSearched // block higher than the deposit
         )
       ).to.equal(0);
       expect(
         await bundleDataClient.getUpcomingDepositAmount(
           originChainId,
-          erc20_2.address, // diff token
+          toAddressType(erc20_2.address, originChainId), // diff token
           0
         )
       ).to.equal(0);
       expect(
         await bundleDataClient.getUpcomingDepositAmount(
           destinationChainId, // diff chain
-          erc20_1.address,
+          toAddressType(erc20_1.address, destinationChainId),
           0
         )
       ).to.equal(0);
@@ -569,7 +619,7 @@ describe("Dataworker: Load bundle data", async function () {
       expect(
         await bundleDataClient.getUpcomingDepositAmount(
           originChainId + destinationChainId + repaymentChainId + 1, // spoke pool client for chain is not defined in BundleDataClient
-          erc20_1.address,
+          toAddressType(erc20_1.address, originChainId),
           0
         )
       ).to.equal(0);

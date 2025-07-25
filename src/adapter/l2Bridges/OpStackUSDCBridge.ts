@@ -15,6 +15,7 @@ import {
   Signer,
   EvmAddress,
   getTokenInfo,
+  toBN,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 
@@ -46,10 +47,10 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const { l2chainId: chainId, l2Bridge } = this;
 
     const txns: AugmentedTransaction[] = [];
-    const { decimals, symbol } = getTokenInfo(l2Token.toAddress(), this.l2chainId);
+    const { decimals, symbol } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    const erc20 = new Contract(l2Token.toAddress(), ERC20_ABI, this.l2Signer);
+    const erc20 = new Contract(l2Token.toNative(), ERC20_ABI, this.l2Signer);
     const formattedAmount = formatter(amount.toString());
     const chain = getNetworkName(chainId);
     const nonMulticall = true;
@@ -72,7 +73,7 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
         chainId,
         contract: l2Bridge,
         method: "sendMessage",
-        args: [to.toAddress(), amount.toString(), this.minGasLimit],
+        args: [to.toNative(), amount.toString(), this.minGasLimit],
         nonMulticall,
         unpermissioned,
         message: `🎰 Withdrew ${formattedAmount} Circle Bridged (upgradable) ${symbol} from ${chain} to L1`,
@@ -90,8 +91,8 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     _l2Token; // unused
 
-    const sentFilter = this.l2Bridge.filters.MessageSent(from.toAddress());
-    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toAddress());
+    const sentFilter = this.l2Bridge.filters.MessageSent(from.toNative());
+    const receiveFilter = this.l1Bridge.filters.MessageReceived(from.toNative());
 
     const [l2Events, l1Events] = await Promise.all([
       paginatedEventQuery(this.l2Bridge, sentFilter, l2EventConfig),
@@ -102,7 +103,9 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const withdrawalAmount = l2Events.reduce((totalAmount, { args: l2Args }) => {
       const received = l1Events.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
-        if (counted.has(idx) || l1Args._amount.ne(l2Args._amount)) {
+        // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
+        // and we will need to adjust this logic.
+        if (counted.has(idx) || !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))) {
           return false;
         }
 

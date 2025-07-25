@@ -8,7 +8,7 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
+import { Signer, getArweaveJWKSigner } from "../utils";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
@@ -17,7 +17,6 @@ import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   bundleDataClient: BundleDataClient;
-  priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
@@ -25,7 +24,13 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.dataworkerFastLookbackCount
+  // exceeds ~720 then we'll just use the gensis block since in that case, this dataworker is being used for
+  // non-production circumstances (i.e. to execute a very old leaf). 720 is chosen because it's roughly equal to
+  // one month worth of bundles assuming 1 bundle an hour.
+  const BUNDLES_PER_MONTH = 720;
+  const hubPoolLookback = config.dataworkerFastLookbackCount > BUNDLES_PER_MONTH ? undefined : 3600 * 24 * 30;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
@@ -41,13 +46,6 @@ export async function constructDataworkerClients(
     config.blockRangeEndBlockBuffer
   );
 
-  // The proposer needs prices to calculate bundle volumes.
-  const priceClient = new PriceClient(logger, [
-    new acrossApi.PriceFeed(),
-    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-    new defiLlama.PriceFeed(),
-  ]);
-
   // Define the Arweave client. We need to use a read-write signer for the
   // dataworker to persist bundle data if `persistingBundleData` is enabled.
   // Otherwise, we can use a read-only signer.
@@ -62,7 +60,6 @@ export async function constructDataworkerClients(
   return {
     ...commonClients,
     bundleDataClient,
-    priceClient,
     arweaveClient,
   };
 }

@@ -30,8 +30,10 @@ import {
   EvmAddress,
   ethers,
   chainIsProd,
+  toBuffer,
   isSVMSpokePoolClient,
   getTypedAnchorProgram,
+  Address,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
@@ -48,7 +50,7 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient));
   const searchConfig: EventSearchConfig = {
@@ -94,6 +96,7 @@ export async function cctpL1toL2Finalizer(
     const signatures = await finalizeSvmMessages(
       unprocessedMessages,
       hubPoolClient.hubPool.signer,
+      logger,
       simulate,
       hubPoolClient.chainId,
       l2SpokePoolClient
@@ -206,6 +209,7 @@ async function generateCrosschainMessages(
 async function finalizeSvmMessages(
   attestedMessages: AttestedCCTPMessage[],
   signer: Signer,
+  logger: winston.Logger,
   simulate = false,
   hubChainId = 1,
   svmSpokePoolClient: SVMSpokePoolClient
@@ -243,6 +247,12 @@ async function finalizeSvmMessages(
       ? await getAccountMetasForDepositMessage(message, hubChainId, tokenMessengerMinter, svmSigner)
       : await getAccountMetasForTokenlessMessage(svmSpokeProgram, svmSigner);
 
+    // Set a higher compute budget so we don’t immediately hit the default 200k CU ceiling.
+    const SOLANA_CCTP_FINALIZATION_CU_LIMIT = 500000;
+    const computeBudgetIxs: web3.TransactionInstruction[] = [
+      web3.ComputeBudgetProgram.setComputeUnitLimit({ units: SOLANA_CCTP_FINALIZATION_CU_LIMIT }),
+    ];
+
     const pendingTx = messageTransmitterProgram.methods
       .receiveMessage({
         message: Buffer.from(message.messageBytes.slice(2), "hex"),
@@ -257,12 +267,25 @@ async function finalizeSvmMessages(
         receiver: cctpMessageReceiver,
         systemProgram: web3.SystemProgram.programId,
       })
-      .remainingAccounts(accountMetas);
-    if (simulate) {
-      await pendingTx.simulate();
-      return "";
+      .remainingAccounts(accountMetas)
+      .preInstructions(computeBudgetIxs);
+
+    try {
+      if (simulate) {
+        await pendingTx.simulate();
+        return "";
+      } else {
+        const sig = await pendingTx.rpc();
+        return sig;
+      }
+    } catch (err) {
+      logger.error({
+        at: `Finalizer#finalizeSvmMessages:${svmSpokePoolClient.chainId}`,
+        message: `Failed to finalize CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+        error: err,
+      });
+      throw err; // re-throw so upstream handler can decide what to do
     }
-    return pendingTx.rpc();
   });
 }
 
@@ -283,7 +306,7 @@ async function getAccountMetasForDepositMessage(
   );
   const [tokenMinterPda] = web3.PublicKey.findProgramAddressSync([Buffer.from("token_minter")], tokenMessengerMinter);
   const [localTokenPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("local_token"), l2Usdc.toBuffer()],
+    [Buffer.from("local_token"), toBuffer(l2Usdc)],
     tokenMessengerMinter
   );
   const [tokenMessengerEventAuthorityPda] = web3.PublicKey.findProgramAddressSync(
@@ -291,7 +314,7 @@ async function getAccountMetasForDepositMessage(
     tokenMessengerMinter
   );
   const [custodyTokenAccountPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("custody"), l2Usdc.toBuffer()],
+    [Buffer.from("custody"), toBuffer(l2Usdc)],
     tokenMessengerMinter
   );
   const tokenAccount = await getAssociatedTokenAddress(SvmAddress.from(svmSigner.publicKey.toBase58()), l2Usdc);

@@ -40,7 +40,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("sendMessage", [
-      toAddress.toAddress(),
+      toAddress.toNative(),
       this.bridgeFee,
       "0x",
     ]);
@@ -59,7 +59,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toAddress()),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toNative()),
       eventConfig
     );
 
@@ -95,7 +95,7 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     };
     const initiatedQueryResult = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toAddress()),
+      this.getL1Bridge().filters.MessageSent(undefined, toAddress.toNative()),
       l1SearchConfig
     );
 

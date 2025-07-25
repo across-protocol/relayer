@@ -65,12 +65,12 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
             amount,
             this.l2DestinationDomain,
             toAddress.toBytes32(),
-            this.l1UsdcTokenAddress.toAddress(),
+            this.l1UsdcTokenAddress.toNative(),
             ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
             0, // maxFee set to 0 so this will be a "standard" speed transfer
             2000, // Hardcoded minFinalityThreshold value for standard transfer
           ]
-        : [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toAddress()],
+        : [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
     });
   }
 
@@ -82,8 +82,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
   ): Promise<BridgeEvents> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     const eventFilterArgs = this.IS_CCTP_V2
-      ? [this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()]
-      : [undefined, this.l1UsdcTokenAddress.toAddress(), undefined, fromAddress.toAddress()];
+      ? [this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()]
+      : [undefined, this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
     const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter(
       (event) =>
@@ -102,7 +102,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
-    const eventFilterArgs = [toAddress.toAddress(), undefined, this.resolveL2TokenAddress(this.l1UsdcTokenAddress)];
+    const eventFilterArgs = [toAddress.toNative(), undefined, this.resolveL2TokenAddress(this.l1UsdcTokenAddress)];
     const eventFilter = this.getL2Bridge().filters.MintAndWithdraw(...eventFilterArgs);
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.

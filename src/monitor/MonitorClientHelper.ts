@@ -1,5 +1,5 @@
 import { MonitorConfig } from "./MonitorConfig";
-import { Signer, winston, assert, isEVMSpokePoolClient } from "../utils";
+import { Signer, winston, assert, isEVMSpokePoolClient, toAddressType } from "../utils";
 import { BundleDataClient, HubPoolClient, TokenTransferClient } from "../clients";
 import {
   Clients,
@@ -25,7 +25,11 @@ export async function constructMonitorClients(
   baseSigner: Signer
 ): Promise<MonitorClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.maxRelayerLookBack
+  // exceeds half a month, then we'll just use the gensis block since in that case, this monitor is being used
+  // for non-production circumstances.
+  const hubPoolLookback = config.maxRelayerLookBack > 3600 * 24 * 15 ? undefined : 3600 * 24 * 30;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
@@ -50,22 +54,24 @@ export async function constructMonitorClients(
   );
 
   // Need to update HubPoolClient to get latest tokens.
-  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress.toEvmAddress());
+  const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
 
   // Cross-chain transfers will originate from the HubPool's address and target SpokePool addresses, so
   // track both.
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, [
-    signerAddr,
-    hubPoolClient.hubPool.address,
+    toAddressType(signerAddr, hubPoolClient.chainId),
+    toAddressType(hubPoolClient.hubPool.address, hubPoolClient.chainId),
     ...spokePoolAddresses,
   ]);
   const spokePoolChains = Object.keys(spokePoolClients).map((chainId) => Number(chainId));
   const providerPerChain = Object.fromEntries(
-    spokePoolChains.map((chainId) => {
-      const spokePoolClient = spokePoolClients[chainId];
-      assert(isEVMSpokePoolClient(spokePoolClient));
-      return [chainId, spokePoolClient.spokePool.provider];
-    })
+    spokePoolChains
+      .filter((chainId) => isEVMSpokePoolClient(spokePoolClients[chainId]))
+      .map((chainId) => {
+        const spokePoolClient = spokePoolClients[chainId];
+        assert(isEVMSpokePoolClient(spokePoolClient));
+        return [chainId, spokePoolClient.spokePool.provider];
+      })
   );
   const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 

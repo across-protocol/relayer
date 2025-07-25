@@ -16,6 +16,7 @@ import {
   getNetworkName,
   getAllUnfilledDeposits,
   getMessageHash,
+  toAddressType,
   EvmAddress,
   SvmAddress,
 } from "../src/utils";
@@ -290,6 +291,25 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits")).to.be.true;
     });
 
+    it("Ignores deposit with originChain == destinationChain", async function () {
+      const deposit = await depositV3(
+        spokePool_1,
+        originChainId, // Setting originChain == destinationChain
+        depositor,
+        inputToken,
+        inputAmount,
+        outputToken,
+        outputAmount
+      );
+
+      await updateAllClients();
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+
+      await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
+      expect(spokePoolClient_2.getFillsForOriginChain(deposit.originChainId).length).to.equal(0);
+    });
+
     it("Internally tracks fill status", async function () {
       const deposit = await depositV3(
         spokePool_1,
@@ -437,11 +457,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     it("Ignores exclusive deposits", async function () {
       const exclusivityDeadline = 7200;
       const deposits: Deposit[] = [];
-      const { fillStatus, relayerAddress } = relayerInstance;
+      const { fillStatus, relayerEvmAddress: relayerAddress } = relayerInstance;
 
       // Make two deposits - one with the relayer as exclusiveRelayer, and one with a random address.
       // Verify that the relayer can immediately fill the first deposit, and both after the exclusivity window.
-      for (const exclusiveRelayer of [randomAddress(), relayerAddress]) {
+      for (const exclusiveRelayer of [randomAddress(), relayerAddress.toNative()]) {
         const deposit = await depositV3(
           spokePool_1,
           destinationChainId,
@@ -462,7 +482,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       deposits.forEach((deposit) => {
         const depositHash = spokePoolClients[deposit.destinationChainId].getDepositHash(deposit);
-        const status = deposit.exclusiveRelayer === relayerAddress ? FillStatus.Filled : FillStatus.Unfilled;
+        const status = deposit.exclusiveRelayer.eq(relayerAddress) ? FillStatus.Filled : FillStatus.Unfilled;
         expect(fillStatus[depositHash] ?? FillStatus.Unfilled).to.equal(status);
       });
 
@@ -470,7 +490,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       expect(lastSpyLogIncludes(spy, "0 unfilled deposits found")).to.be.true;
 
-      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer !== relayerAddress);
+      const exclusiveDeposit = deposits.find(({ exclusiveRelayer }) => exclusiveRelayer.eq(relayerAddress));
       expect(exclusiveDeposit).to.exist;
       await spokePool_2.setCurrentTime(exclusiveDeposit!.exclusivityDeadline + 1);
       await updateAllClients();
@@ -941,7 +961,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           spokePool_1,
           {
             ...deposit,
-            updatedRecipient: update.recipient,
+            updatedRecipient: toAddressType(update.recipient, destinationChainId),
             updatedOutputAmount: update.outputAmount,
             updatedMessage: update.message,
           },
@@ -965,15 +985,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
 
           await spokePoolClient_2.update();
-          let fill = spokePoolClient_2.getFillsForRelayer(relayer.address).at(-1);
+          let fill = spokePoolClient_2.getFillsForRelayer(toAddressType(relayer.address, destinationChainId)).at(-1);
           expect(fill).to.exist;
           fill = fill!;
 
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(deposit.outputAmount)).to.be.false;
           expect(fill.relayExecutionInfo.updatedOutputAmount.eq(update.outputAmount)).to.be.true;
 
-          expect(fill.relayExecutionInfo.updatedRecipient).to.not.equal(deposit.recipient);
-          expect(fill.relayExecutionInfo.updatedRecipient).to.equal(update.recipient);
+          expect(fill.relayExecutionInfo.updatedRecipient.toEvmAddress()).to.not.equal(deposit.recipient);
+          expect(fill.relayExecutionInfo.updatedRecipient.toEvmAddress()).to.equal(update.recipient);
 
           expect(fill.relayExecutionInfo.updatedMessageHash).to.equal(deposit.messageHash);
           expect(fill.relayExecutionInfo.updatedMessageHash.toString()).to.equal(getMessageHash(update.message));
@@ -1008,7 +1028,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       const updatedRecipient = randomAddress();
       await updateDeposit(
         spokePool_1,
-        { ...deposit, updatedRecipient, updatedOutputAmount, updatedMessage },
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount,
+          updatedMessage,
+        },
         depositor
       );
 
@@ -1025,7 +1050,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       updatedMessage = EMPTY_MESSAGE;
       await updateDeposit(
         spokePool_1,
-        { ...deposit, updatedRecipient, updatedOutputAmount, updatedMessage },
+        {
+          ...deposit,
+          updatedRecipient: toAddressType(updatedRecipient, destinationChainId),
+          updatedOutputAmount,
+          updatedMessage,
+        },
         depositor
       );
 

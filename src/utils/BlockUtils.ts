@@ -1,4 +1,4 @@
-import { interfaces, utils } from "@across-protocol/sdk";
+import { arch, interfaces, utils } from "@across-protocol/sdk";
 import { isDefined } from "./";
 import {
   BlockFinderHints,
@@ -62,26 +62,23 @@ export async function getTimestampsForBundleStartBlocks(
       await utils.mapAsync(blockRanges, async ([startBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
-        if (spokePoolClient === undefined) {
+        if (spokePoolClient === undefined || startBlock === undefined) {
           return;
         }
+
         // If a block range starts before a spoke pool's deployment block, use the deployment block timestamp.
         // This is a simplification we can make because we know that the results of this function, the start of bundle
         // timestamps, are compared against spoke pool client search config fromBlock timestamps. So if a fromBlock
         // is lower than a deployment block, than we know that all possible spoke pool clients can be found by the
         // spoke pool client. In other words, the spoke pool's deployment timestamp is the earliest timestamp we
         // should care about.
-        const startBlockToQuery = Math.max(spokePoolClient.deploymentBlock, startBlock);
+        const startAt = Math.max(spokePoolClient.deploymentBlock, startBlock);
         if (isEVMSpokePoolClient(spokePoolClient)) {
-          return [
-            chainId,
-            (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startBlockToQuery })).toNumber(),
-          ];
+          return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
-          return [
-            chainId,
-            Number(await spokePoolClient.svmEventsClient.getRpc().getBlockTime(BigInt(startBlockToQuery)).send()),
-          ];
+          const provider = spokePoolClient.svmEventsClient.getRpc();
+          const { timestamp } = await arch.svm.getNearestSlotTime(provider, { slot: BigInt(startAt) });
+          return [chainId, timestamp];
         }
       })
     ).filter(isDefined)

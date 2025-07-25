@@ -58,6 +58,15 @@ export class RedisClient {
     }
   }
 
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    await this.client.subscribe(channel, listener);
+    return 1;
+  }
+
   async disconnect(): Promise<void> {
     await disconnectRedisClient(this.client, this.logger);
   }
@@ -158,6 +167,33 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   if (depositRaw) {
     return JSON.parse(depositRaw, objectWithBigNumberReviver);
   }
+}
+
+export async function waitForPubSub(
+  redisClient: CachingMechanismInterface,
+  channel: string,
+  message: string,
+  maxWaitMs = 60000
+): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return new Promise((resolve, _reject) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const listener = (msg: string, chl: string) => {
+      if (chl === channel && msg !== message) {
+        abortController.abort();
+      }
+    };
+    void redisClient.sub(channel, listener);
+
+    signal.addEventListener("abort", () => {
+      resolve(true);
+    });
+
+    setTimeout(() => {
+      resolve(false);
+    }, maxWaitMs);
+  });
 }
 
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {

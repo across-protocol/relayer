@@ -58,7 +58,7 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   protected resolveL2TokenAddress(l1Token: EvmAddress): string {
-    return getTranslatedTokenAddress(l1Token.toAddress(), this.hubChainId, this.l2chainId, false);
+    return getTranslatedTokenAddress(l1Token, this.hubChainId, this.l2chainId, false).toNative();
   }
 
   protected getL1Bridge(): Contract {

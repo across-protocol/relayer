@@ -2,6 +2,7 @@ import assert from "assert";
 import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch } from "@across-protocol/sdk";
+import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
 import {
@@ -81,13 +82,13 @@ async function scrapeEvents(
   opts: ScraperOpts & { to: bigint }
 ): Promise<void> {
   const provider = eventsClient.getRpc();
-  const [currentTime, ...events] = await Promise.all([
-    provider.getBlockTime(opts.to).send(),
+  const [{ timestamp: currentTime }, ...events] = await Promise.all([
+    arch.svm.getNearestSlotTime(provider),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
   if (!abortController.signal.aborted) {
-    if (!postEvents(Number(opts.to), Number(currentTime), events.flat().map(logFromEvent))) {
+    if (!postEvents(Number(opts.to), currentTime, events.flat().map(logFromEvent))) {
       abortController.abort();
     }
   }
@@ -112,7 +113,7 @@ async function listen(
   const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
-  const eventAuthority = await arch.svm.getEventAuthority();
+  const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
@@ -172,8 +173,7 @@ async function run(argv: string[]): Promise<void> {
 
   const provider = getSvmProvider();
   const blockFinder = undefined;
-  const latestSlot = await provider.getSlot({ commitment: "confirmed" }).send();
-  assert(typeof latestSlot === "bigint", `fuck ${latestSlot}`); // Should be unnecessary; tsc still complains.
+  const { slot: latestSlot } = await arch.svm.getNearestSlotTime(provider);
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;

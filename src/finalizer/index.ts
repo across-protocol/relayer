@@ -7,13 +7,13 @@ import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClie
 import {
   CONTRACT_ADDRESSES,
   Clients,
+  CommonConfig,
   FINALIZER_TOKENBRIDGE_LOOKBACK,
   ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
   updateSpokePoolClients,
 } from "../common";
-import { DataworkerConfig } from "../dataworker/DataworkerConfig";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
   BigNumber,
@@ -33,6 +33,8 @@ import {
   stringifyThrownValue,
   isEVMSpokePoolClient,
   chainIsEvm,
+  EvmAddress,
+  Address,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
@@ -245,15 +247,12 @@ export async function finalize(
     // or the recipient so its important to track for both, even if that means more RPC requests.
     // Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
     // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
-    const userSpecifiedAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-      ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-      : [];
-    const addressesToFinalize = [
+    const addressesToFinalize: Address[] = [
       hubPoolClient.hubPool.address,
-      spokePoolClients[chainId].spokePoolAddress.toEvmAddress(),
       CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ...userSpecifiedAddresses,
-    ].map(getAddress);
+      ...config.userAddresses,
+    ].map((address) => EvmAddress.from(getAddress(address)));
+    addressesToFinalize.push(spokePoolClients[chainId].spokePoolAddress);
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
@@ -527,16 +526,26 @@ async function updateFinalizerClients(clients: Clients) {
   await clients.hubPoolClient.update();
 }
 
-export class FinalizerConfig extends DataworkerConfig {
-  readonly maxFinalizerLookback: number;
-  readonly finalizationStrategy: FinalizationType;
+export class FinalizerConfig extends CommonConfig {
+  public readonly finalizationStrategy: FinalizationType;
+  public readonly maxFinalizerLookback: number;
+  public readonly userAddresses: string[];
   public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
-    const { FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
+    const {
+      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
+      FINALIZER_CHAINS = "[]",
+      FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
+      FINALIZATION_STRATEGY = "l1<->l2",
+    } = env;
     super(env);
 
-    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS ?? "[]");
+    const userAddresses = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
+    assert(Array.isArray(userAddresses), "FINALIZER_WITHDRAWAL_TO_ADDRESSES must be a JSON string array");
+    this.userAddresses = userAddresses.map(ethers.utils.getAddress);
+
+    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
@@ -545,7 +554,7 @@ export class FinalizerConfig extends DataworkerConfig {
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
 
-    const _finalizationStrategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
+    const _finalizationStrategy = FINALIZATION_STRATEGY.toLowerCase();
     ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
     this.finalizationStrategy = _finalizationStrategy;
   }
@@ -571,11 +580,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
       profiler.mark("loopStartPostSpokePoolUpdates");
 
-      if (config.finalizerEnabled) {
-        await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
-      } else {
-        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
-      }
+      await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
 
       profiler.mark("loopEndPostFinalizations");
 

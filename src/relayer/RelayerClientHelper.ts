@@ -11,6 +11,7 @@ import {
   TokenClient,
   MultiCallerClient,
   TryMulticallClient,
+  SvmFillerClient,
 } from "../clients";
 import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
@@ -33,6 +34,7 @@ import {
   SvmAddress,
   EvmAddress,
   getSvmSignerFromEvmSigner,
+  chainIsSvm,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -44,6 +46,7 @@ export interface RelayerClients extends Clients {
   inventoryClient: InventoryClient;
   acrossApiClient: AcrossApiClient;
   tryMulticallClient: MultiCallerClient;
+  svmFillerClient: SvmFillerClient | undefined;
 }
 
 async function indexedSpokePoolClient(
@@ -67,7 +70,7 @@ async function indexedSpokePoolClient(
   const searchConfig = { from, maxLookBack: opts.blockRange };
 
   if (chainIsEvm(chainId)) {
-    const contract = SpokePool.connect(spokePoolAddr, signer);
+    const contract = SpokePool.connect(spokePoolAddr.toEvmAddress(), signer);
     const SpokePoolClient = SpokeListener(EVMSpokePoolClient);
     const spokePoolClient = new SpokePoolClient(
       logger,
@@ -105,7 +108,8 @@ export async function constructRelayerClients(
   config: RelayerConfig,
   baseSigner: Signer
 ): Promise<RelayerClients> {
-  const signerAddr = await baseSigner.getAddress();
+  const _signerAddr = await baseSigner.getAddress();
+  const signerAddr = EvmAddress.from(_signerAddr);
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
   // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
   // almost all cases. Look back to genesis on testnets.
@@ -156,13 +160,13 @@ export async function constructRelayerClients(
 
   const relayerTokens = sdkUtils.dedupArray([
     ...config.relayerTokens,
-    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}),
+    ...Object.keys(config?.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)),
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const tokenClient = new TokenClient(
     logger,
-    EvmAddress.from(signerAddr),
+    signerAddr,
     SvmAddress.from(svmSigner.publicKey.toBase58()),
     spokePoolClients,
     hubPoolClient,
@@ -191,12 +195,7 @@ export async function constructRelayerClients(
   await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
-  const adapterManager = new AdapterManager(
-    logger,
-    spokePoolClients,
-    hubPoolClient,
-    monitoredAddresses.filter(() => sdkUtils.isDefined)
-  );
+  const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, monitoredAddresses);
 
   const bundleDataClient = new BundleDataClient(
     logger,
@@ -228,6 +227,15 @@ export async function constructRelayerClients(
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
 
+  const svmChainIds = enabledChainIds.filter(chainIsSvm);
+  if (svmChainIds.length > 1) {
+    throw new Error(`Multiple SVM chains detected: ${svmChainIds.join(", ")}. Only one SVM chain is supported.`);
+  }
+  const svmFillerClient =
+    svmChainIds.length === 1
+      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      : undefined;
+
   return {
     ...commonClients,
     spokePoolClients,
@@ -236,5 +244,6 @@ export async function constructRelayerClients(
     inventoryClient,
     acrossApiClient,
     tryMulticallClient,
+    svmFillerClient,
   };
 }

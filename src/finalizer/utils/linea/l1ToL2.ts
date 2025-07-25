@@ -15,6 +15,8 @@ import {
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
+  EvmAddress,
+  Address,
 } from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
@@ -50,9 +52,10 @@ export async function lineaL1ToL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: string[]
+  _senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");
@@ -156,7 +159,7 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(messageType.l1TokenAddress, l1ChainId);
+      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(EvmAddress.from(messageType.l1TokenAddress), l1ChainId);
       const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,
