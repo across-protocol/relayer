@@ -6,7 +6,7 @@ import winston from "winston";
 import assert from "assert";
 export { winston, assert };
 
-export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM } = sdkConstants;
+export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM, EMPTY_MESSAGE } = sdkConstants;
 export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
 export {
