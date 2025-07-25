@@ -527,7 +527,6 @@ async function updateFinalizerClients(clients: Clients) {
 }
 
 export class FinalizerConfig extends CommonConfig {
-  public readonly finalizerEnabled: boolean;
   public readonly finalizationStrategy: FinalizationType;
   public readonly maxFinalizerLookback: number;
   public readonly userAddresses: string[];
@@ -581,11 +580,7 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
       await updateSpokePoolClients(spokePoolClients, ["TokensBridged"]);
       profiler.mark("loopStartPostSpokePoolUpdates");
 
-      if (config.finalizerEnabled) {
-        await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
-      } else {
-        logger[startupLogLevel(config)]({ at: "Dataworker#index", message: "Finalizer disabled" });
-      }
+      await finalize(logger, commonClients.hubSigner, commonClients.hubPoolClient, spokePoolClients, config);
 
       profiler.mark("loopEndPostFinalizations");
 
