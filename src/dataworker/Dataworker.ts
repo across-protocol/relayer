@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Contract, utils as ethersUtils } from "ethers";
+import { Contract } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   bnZero,
@@ -42,7 +42,6 @@ import {
   toSvmSlowFillLeaf,
   forEachAsync,
   convertRelayDataParamsToBytes32,
-  convertFillParamsToBytes32,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
   mapAsync,
@@ -112,7 +111,6 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
-const { getAddress } = ethersUtils;
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
@@ -1300,10 +1298,7 @@ export class Dataworker {
       }
 
       const { addressFilter } = this.config;
-      if (
-        addressFilter?.has(depositor.toNative()) ||
-        addressFilter?.has(recipient.toNative())
-      ) {
+      if (addressFilter?.has(depositor.toNative()) || addressFilter?.has(recipient.toNative())) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",
