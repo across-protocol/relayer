@@ -94,7 +94,7 @@ import {
   fetchEncodedAccount,
   type KeyPairSigner,
 } from "@solana/kit";
-import { fetchMint, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
@@ -3003,7 +3003,7 @@ export class Dataworker {
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
       const mint = arch.svm.toAddress(leaf.relayData.outputToken);
-      const mintInfo = await fetchMint(spokePoolClient.svmEventsClient.getRpc(), mint);
+      const mintInfo = await arch.svm.getMintInfo(spokePoolClient.svmEventsClient.getRpc(), mint);
       const programAddress = mintInfo.programAddress;
       recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
