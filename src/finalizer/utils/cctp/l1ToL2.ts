@@ -1,13 +1,5 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
-import {
-  MessageTransmitterIdl,
-  SvmSpokeAnchor,
-  SvmSpokeIdl,
-  TokenMessengerMinterIdl,
-} from "@across-protocol/contracts";
-import { web3, BN, Program } from "@coral-xyz/anchor";
-import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { HubPoolClient, SpokePoolClient, SVMSpokePoolClient } from "../../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
   Contract,
   EventSearchConfig,
@@ -20,20 +12,10 @@ import {
   winston,
   convertFromWei,
   isEVMSpokePoolClient,
-  getAnchorProgram,
-  mapAsync,
-  getSvmSignerFromEvmSigner,
-  toPublicKey,
-  CHAIN_IDs,
-  getAssociatedTokenAddress,
-  SvmAddress,
-  EvmAddress,
   ethers,
-  chainIsProd,
-  toBuffer,
   isSVMSpokePoolClient,
-  getTypedAnchorProgram,
   Address,
+  getKitKeypairFromEvmSigner,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
@@ -43,6 +25,8 @@ import {
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { KeyPairSigner } from "@solana/kit";
+import { finalizeCCTPV1MessagesSVM } from "./svm/l1Tol2";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -58,12 +42,17 @@ export async function cctpL1toL2Finalizer(
     to: l1SpokePoolClient.latestHeightSearched,
     maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
+  let signer: KeyPairSigner;
+  if (isSVMSpokePoolClient(l2SpokePoolClient)) {
+    signer = await getKitKeypairFromEvmSigner(_signer);
+  }
   const outstandingMessages = await getAttestedCCTPMessages(
     senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
-    searchConfig
+    searchConfig,
+    signer
   );
   const unprocessedMessages = outstandingMessages.filter(
     (message) => message.status === "ready" && message.attestation !== "PENDING"
@@ -93,13 +82,13 @@ export async function cctpL1toL2Finalizer(
     assert(isSVMSpokePoolClient(l2SpokePoolClient));
     const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
-    const signatures = await finalizeSvmMessages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
+      l2SpokePoolClient,
       unprocessedMessages,
-      hubPoolClient.hubPool.signer,
+      signer,
       logger,
       simulate,
-      hubPoolClient.chainId,
-      l2SpokePoolClient
+      hubPoolClient.chainId
     );
 
     let depositMessagesCount = 0;
@@ -198,245 +187,4 @@ async function generateCrosschainMessages(
       };
     }
   });
-}
-
-/**
- * Finalizes CCTP deposits and messages on Solana.
- * @param attestedMessages The CCTP messages to Solana.
- * @param signer A base signer to be converted into a Solana signer.
- * @returns A list of executed transaction signatures.
- */
-async function finalizeSvmMessages(
-  attestedMessages: AttestedCCTPMessage[],
-  signer: Signer,
-  logger: winston.Logger,
-  simulate = false,
-  hubChainId = 1,
-  svmSpokePoolClient: SVMSpokePoolClient
-): Promise<string[]> {
-  const [svmSigner, messageTransmitterProgram, svmSpokeProgram] = await Promise.all([
-    getSvmSignerFromEvmSigner(signer),
-    getAnchorProgram(MessageTransmitterIdl, signer),
-    getTypedAnchorProgram(SvmSpokeIdl as SvmSpokeAnchor, signer, svmSpokePoolClient.spokePoolAddress.toBase58()),
-  ]);
-
-  const messageTransmitter = toPublicKey(MessageTransmitterIdl.address);
-  const tokenMessengerMinter = toPublicKey(TokenMessengerMinterIdl.address);
-
-  // Define global accounts to access.
-  const [messageTransmitterPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("message_transmitter")],
-    messageTransmitter
-  );
-  return mapAsync(attestedMessages, async (message) => {
-    const cctpMessageReceiver = isDepositForBurnEvent(message) ? tokenMessengerMinter : svmSpokeProgram.programId;
-
-    const [authorityPda] = web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("message_transmitter_authority"), cctpMessageReceiver.toBuffer()],
-      messageTransmitter
-    );
-
-    // Notice: message.nonce is only valid for v1 messages
-    const usedNonces = await messageTransmitterProgram.methods
-      .getNoncePda({ nonce: new BN(message.nonce), sourceDomain: message.sourceDomain })
-      .accounts({ messageTransmitter: messageTransmitterPda })
-      .view();
-
-    // Notice: for Svm tokenless messages, we currently only support very specific finalizations: Hub -> Spoke relayRootBundle calls
-    const accountMetas: web3.AccountMeta[] = isDepositForBurnEvent(message)
-      ? await getAccountMetasForDepositMessage(message, hubChainId, tokenMessengerMinter, svmSigner)
-      : await getAccountMetasForTokenlessMessage(svmSpokeProgram, svmSigner);
-
-    // Set a higher compute budget so we don’t immediately hit the default 200k CU ceiling.
-    const SOLANA_CCTP_FINALIZATION_CU_LIMIT = 500000;
-    const computeBudgetIxs: web3.TransactionInstruction[] = [
-      web3.ComputeBudgetProgram.setComputeUnitLimit({ units: SOLANA_CCTP_FINALIZATION_CU_LIMIT }),
-    ];
-
-    const pendingTx = messageTransmitterProgram.methods
-      .receiveMessage({
-        message: Buffer.from(message.messageBytes.slice(2), "hex"),
-        attestation: Buffer.from(message.attestation.slice(2), "hex"),
-      })
-      .accounts({
-        payer: svmSigner.publicKey,
-        caller: svmSigner.publicKey,
-        authorityPda,
-        messageTransmitter: messageTransmitterPda,
-        usedNonces,
-        receiver: cctpMessageReceiver,
-        systemProgram: web3.SystemProgram.programId,
-      })
-      .remainingAccounts(accountMetas)
-      .preInstructions(computeBudgetIxs);
-
-    try {
-      if (simulate) {
-        await pendingTx.simulate();
-        return "";
-      } else {
-        const sig = await pendingTx.rpc();
-        return sig;
-      }
-    } catch (err) {
-      logger.error({
-        at: `Finalizer#finalizeSvmMessages:${svmSpokePoolClient.chainId}`,
-        message: `Failed to finalize CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
-        error: err,
-      });
-      throw err; // re-throw so upstream handler can decide what to do
-    }
-  });
-}
-
-async function getAccountMetasForDepositMessage(
-  message: AttestedCCTPMessage,
-  hubChainId: number,
-  tokenMessengerMinter: web3.PublicKey,
-  svmSigner: web3.Keypair
-): Promise<web3.AccountMeta[]> {
-  const l1Usdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId]);
-  const l2Usdc = SvmAddress.from(
-    TOKEN_SYMBOLS_MAP.USDC.addresses[chainIsProd(hubChainId) ? CHAIN_IDs.SOLANA : CHAIN_IDs.SOLANA_DEVNET]
-  );
-
-  const [tokenMessengerPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("token_messenger")],
-    tokenMessengerMinter
-  );
-  const [tokenMinterPda] = web3.PublicKey.findProgramAddressSync([Buffer.from("token_minter")], tokenMessengerMinter);
-  const [localTokenPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("local_token"), toBuffer(l2Usdc)],
-    tokenMessengerMinter
-  );
-  const [tokenMessengerEventAuthorityPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("__event_authority")],
-    tokenMessengerMinter
-  );
-  const [custodyTokenAccountPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("custody"), toBuffer(l2Usdc)],
-    tokenMessengerMinter
-  );
-  const tokenAccount = await getAssociatedTokenAddress(SvmAddress.from(svmSigner.publicKey.toBase58()), l2Usdc);
-
-  // Define accounts dependent on deposit information.
-  const [tokenPairPda] = web3.PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("token_pair"),
-      Buffer.from(String(message.sourceDomain)),
-      Buffer.from(l1Usdc.toBytes32().slice(2), "hex"),
-    ],
-    tokenMessengerMinter
-  );
-  const [remoteTokenMessengerPda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("remote_token_messenger"), Buffer.from(String(message.sourceDomain))],
-    tokenMessengerMinter
-  );
-
-  return [
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: tokenMessengerPda,
-    },
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: remoteTokenMessengerPda,
-    },
-    {
-      isSigner: false,
-      isWritable: true,
-      pubkey: tokenMinterPda,
-    },
-    {
-      isSigner: false,
-      isWritable: true,
-      pubkey: localTokenPda,
-    },
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: tokenPairPda,
-    },
-    {
-      isSigner: false,
-      isWritable: true,
-      pubkey: toPublicKey(tokenAccount),
-    },
-    {
-      isSigner: false,
-      isWritable: true,
-      pubkey: custodyTokenAccountPda,
-    },
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: toPublicKey(TOKEN_PROGRAM_ADDRESS),
-    },
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: tokenMessengerEventAuthorityPda,
-    },
-    {
-      isSigner: false,
-      isWritable: false,
-      pubkey: tokenMessengerMinter,
-    },
-  ];
-}
-
-async function getAccountMetasForTokenlessMessage(
-  svmSpokeProgram: Program<SvmSpokeAnchor>,
-  svmSigner: web3.Keypair
-): Promise<web3.AccountMeta[]> {
-  const seed = new BN("0"); // Seed is always 0 for the state account PDA in public networks.
-  const [statePda] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("state"), seed.toArrayLike(Buffer, "le", 8)],
-    svmSpokeProgram.programId
-  );
-  const state = await svmSpokeProgram.account.state.fetch(statePda);
-
-  const [rootBundlePda] = getRootBundlePda(state.rootBundleId, seed, svmSpokeProgram.programId);
-
-  const [selfAuthority] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("self_authority")],
-    svmSpokeProgram.programId
-  );
-  const [eventAuthority] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("__event_authority")],
-    svmSpokeProgram.programId
-  );
-
-  // Add remaining accounts for tokenless messages to SpokePool, based on observations from tests.
-  return [
-    // state in HandleReceiveMessage accounts (used for remote domain and sender authentication)
-    { pubkey: statePda, isSigner: false, isWritable: false },
-    // self_authority in HandleReceiveMessage accounts, also signer in self-invoked CPIs
-    { pubkey: selfAuthority, isSigner: false, isWritable: false },
-    // program in HandleReceiveMessage accounts
-    { pubkey: svmSpokeProgram.programId, isSigner: false, isWritable: false },
-    // payer
-    { pubkey: svmSigner.publicKey, isSigner: false, isWritable: false },
-    // state in self-invoked CPIs (state can change as a result of remote call)
-    { pubkey: statePda, isSigner: false, isWritable: true },
-    // root_bundle
-    { pubkey: rootBundlePda, isSigner: false, isWritable: true },
-    // system_program
-    { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
-    // event_authority in self-invoked CPIs (appended by Anchor with event_cpi macro)
-    { pubkey: eventAuthority, isSigner: false, isWritable: true },
-    // program
-    { pubkey: svmSpokeProgram.programId, isSigner: false, isWritable: true },
-  ];
-}
-
-function getRootBundlePda(rootBundleId: number, seed: BN, svmSpokeProgramId: web3.PublicKey) {
-  const rootBundleIdBuffer = Buffer.alloc(4);
-  rootBundleIdBuffer.writeUInt32LE(rootBundleId);
-  return web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("root_bundle"), seed.toArrayLike(Buffer, "le", 8), rootBundleIdBuffer],
-    svmSpokeProgramId
-  );
 }

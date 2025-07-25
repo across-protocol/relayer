@@ -8,6 +8,11 @@ coverage.json
 typechain*
 dump.rdb*
 
+# Testing
+*.tar.gz
+.ledger
+/target
+
 # Hardhat files
 cache
 artifacts
