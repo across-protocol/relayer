@@ -51,35 +51,33 @@ export async function blockRangesAreInvalidForSpokeClients(
   spokePoolClients: Record<number, SpokePoolClient>,
   blockRanges: number[][],
   chainIdListForBundleEvaluationBlockNumbers: number[],
-  earliestValidBundleStartBlock: { [chainId: number]: number },
-  isV3 = false
+  earliestValidBundleStartBlock: { [chainId: number]: number }
 ): Promise<InvalidBlockRange[]> {
   assert(blockRanges.length === chainIdListForBundleEvaluationBlockNumbers.length);
   let earliestStartBlockTimestamp: { timestamp: number; chainId: number } | undefined = undefined;
-  if (isV3) {
-    const startBlockTimestamps = await getTimestampsForBundleStartBlocks(
-      spokePoolClients,
-      blockRanges,
-      chainIdListForBundleEvaluationBlockNumbers
-    );
-    // There should be a spoke pool client instantiated for every bundle timestamp.
-    assert(!Object.keys(startBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
-    earliestStartBlockTimestamp = Object.entries(startBlockTimestamps).reduce(
-      (currMax, [chainId, timestamp]) => {
-        if (timestamp < currMax.timestamp) {
-          currMax = {
-            chainId: Number(chainId),
-            timestamp,
-          };
-        }
-        return currMax;
-      },
-      {
-        timestamp: Object.values(startBlockTimestamps)[0],
-        chainId: Number(Object.keys(startBlockTimestamps)[0]),
+  const startBlockTimestamps = await getTimestampsForBundleStartBlocks(
+    spokePoolClients,
+    blockRanges,
+    chainIdListForBundleEvaluationBlockNumbers
+  );
+
+  // There should be a spoke pool client instantiated for every bundle timestamp.
+  assert(!Object.keys(startBlockTimestamps).some((chainId) => !isDefined(spokePoolClients[chainId])));
+  earliestStartBlockTimestamp = Object.entries(startBlockTimestamps).reduce(
+    (currMax, [chainId, timestamp]) => {
+      if (timestamp < currMax.timestamp) {
+        currMax = {
+          chainId: Number(chainId),
+          timestamp,
+        };
       }
-    );
-  }
+      return currMax;
+    },
+    {
+      timestamp: Object.values(startBlockTimestamps)[0],
+      chainId: Number(Object.keys(startBlockTimestamps)[0]),
+    }
+  );
 
   // Return an undefined object if the block ranges are valid
   return (

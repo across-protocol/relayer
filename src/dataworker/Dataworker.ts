@@ -94,7 +94,7 @@ import {
   fetchEncodedAccount,
   type KeyPairSigner,
 } from "@solana/kit";
-import { fetchMint, getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
+import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 
@@ -172,11 +172,6 @@ export class Dataworker {
         blockRangeEndBlockBuffer: this.blockRangeEndBlockBuffer,
       });
     }
-  }
-
-  isV3(_blockNumber: number): boolean {
-    _blockNumber; // lint
-    return true;
   }
 
   // This should be called whenever it's possible that the loadData information for a block range could have changed.
@@ -361,7 +356,6 @@ export class Dataworker {
       nextBundleMainnetStartBlock,
       true
     );
-    const mainnetBlockRange = getBlockRangeForChain(blockRangesForProposal, hubPoolClient.chainId, chainIds);
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
     // potential proposal
@@ -369,8 +363,7 @@ export class Dataworker {
       spokePoolClients,
       blockRangesForProposal,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      this.isV3(mainnetBlockRange[0])
+      earliestBlocksInSpokePoolClients
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
@@ -941,8 +934,7 @@ export class Dataworker {
       spokePoolClients,
       blockRangesImpliedByBundleEndBlocks,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      this.isV3(mainnetBlockRange[0])
+      earliestBlocksInSpokePoolClients
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
@@ -1192,8 +1184,7 @@ export class Dataworker {
             spokePoolClients,
             blockNumberRanges,
             chainIds,
-            earliestBlocksInSpokePoolClients,
-            this.isV3(mainnetBlockRange[0])
+            earliestBlocksInSpokePoolClients
           );
           if (invalidBlockRanges.length > 0) {
             this.logger.warn({
@@ -2271,8 +2262,7 @@ export class Dataworker {
           spokePoolClients,
           blockNumberRanges,
           chainIds,
-          earliestBlocksInSpokePoolClients,
-          this.isV3(mainnetBlockRanges[0])
+          earliestBlocksInSpokePoolClients
         );
         if (invalidBlockRanges.length > 0) {
           this.logger.warn({
@@ -2761,15 +2751,13 @@ export class Dataworker {
     spokePoolClients: SpokePoolClientsByChain,
     blockRanges: number[][],
     chainIds: number[],
-    earliestBlocksInSpokePoolClients: { [chainId: number]: number },
-    isV3: boolean
+    earliestBlocksInSpokePoolClients: { [chainId: number]: number }
   ): Promise<InvalidBlockRange[]> {
     return await blockRangesAreInvalidForSpokeClients(
       spokePoolClients,
       blockRanges,
       chainIds,
-      earliestBlocksInSpokePoolClients,
-      isV3
+      earliestBlocksInSpokePoolClients
     );
   }
 
@@ -3015,7 +3003,7 @@ export class Dataworker {
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
       const mint = arch.svm.toAddress(leaf.relayData.outputToken);
-      const mintInfo = await fetchMint(spokePoolClient.svmEventsClient.getRpc(), mint);
+      const mintInfo = await arch.svm.getMintInfo(spokePoolClient.svmEventsClient.getRpc(), mint);
       const programAddress = mintInfo.programAddress;
       recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
