@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Contract, utils as ethersUtils } from "ethers";
+import { Contract } from "ethers";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
   bnZero,
@@ -42,7 +42,8 @@ import {
   toSvmSlowFillLeaf,
   forEachAsync,
   convertRelayDataParamsToBytes32,
-  convertFillParamsToBytes32,
+  convertRelayDataParamsToNative,
+  convertFillParamsToNative,
   mapAsync,
   getAccountMeta,
   chainIsSvm,
@@ -110,7 +111,6 @@ const ERROR_DISPUTE_REASONS = new Set(["insufficient-dataworker-lookback", "out-
 const INSTRUCTION_PARAMS_MAX_WRITE_SIZE = 900;
 
 const { getMessageHash, getRelayEventKey } = sdkUtils;
-const { getAddress } = ethersUtils;
 
 // Create a type for storing a collection of roots
 type SlowRootBundle = {
@@ -672,7 +672,7 @@ export class Dataworker {
                 Object.fromEntries(
                   Object.entries(tokenToDeposits).map(([token, deposits]) => [
                     token,
-                    deposits.map(convertRelayDataParamsToBytes32),
+                    deposits.map(convertRelayDataParamsToNative),
                   ])
                 ),
               ])
@@ -683,7 +683,7 @@ export class Dataworker {
                 Object.fromEntries(
                   Object.entries(tokenToDeposits).map(([token, deposits]) => [
                     token,
-                    deposits.map(convertRelayDataParamsToBytes32),
+                    deposits.map(convertRelayDataParamsToNative),
                   ])
                 ),
               ])
@@ -696,7 +696,7 @@ export class Dataworker {
                     token,
                     {
                       ...fillObject,
-                      fills: fillObject.fills.map(convertFillParamsToBytes32),
+                      fills: fillObject.fills.map(convertFillParamsToNative),
                     },
                   ])
                 ),
@@ -708,7 +708,7 @@ export class Dataworker {
                 Object.fromEntries(
                   Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
                     token,
-                    slowFills.map(convertRelayDataParamsToBytes32),
+                    slowFills.map(convertRelayDataParamsToNative),
                   ])
                 ),
               ])
@@ -719,7 +719,7 @@ export class Dataworker {
                 Object.fromEntries(
                   Object.entries(tokenToSlowFills).map(([token, slowFills]) => [
                     token,
-                    slowFills.map(convertRelayDataParamsToBytes32),
+                    slowFills.map(convertRelayDataParamsToNative),
                   ])
                 ),
               ])
@@ -753,7 +753,7 @@ export class Dataworker {
             slowRelayLeaves: expectedTrees.slowRelayTree.leaves.map((leaf) => {
               return {
                 ...leaf,
-                relayData: convertRelayDataParamsToBytes32(leaf.relayData),
+                relayData: convertRelayDataParamsToNative(leaf.relayData),
                 proof: expectedTrees.slowRelayTree.tree.getHexProof(leaf),
               };
             }),
@@ -1289,10 +1289,7 @@ export class Dataworker {
       }
 
       const { addressFilter } = this.config;
-      if (
-        addressFilter?.has(getAddress(depositor.toNative())) ||
-        addressFilter?.has(getAddress(recipient.toNative()))
-      ) {
+      if (addressFilter?.has(depositor.toNative()) || addressFilter?.has(recipient.toNative())) {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",
