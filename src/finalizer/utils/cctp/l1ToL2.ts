@@ -1,5 +1,5 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
-import { HubPoolClient, SpokePoolClient, SVMSpokePoolClient } from "../../../clients";
+import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
   Contract,
   EventSearchConfig,
@@ -12,7 +12,6 @@ import {
   winston,
   convertFromWei,
   isEVMSpokePoolClient,
-  mapAsync,
   ethers,
   isSVMSpokePoolClient,
   Address,
@@ -26,13 +25,8 @@ import {
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import {
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  KeyPairSigner,
-  signTransactionMessageWithSigners,
-} from "@solana/kit";
-import { arch } from "@across-protocol/sdk";
+import { KeyPairSigner } from "@solana/kit";
+import { finalizeCCTPV1MessagesSVM } from "./svm/l1Tol2";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -88,7 +82,7 @@ export async function cctpL1toL2Finalizer(
     assert(isSVMSpokePoolClient(l2SpokePoolClient));
     const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
-    const signatures = await finalizeCCTPV1Messages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       unprocessedMessages,
       signer,
@@ -193,78 +187,4 @@ async function generateCrosschainMessages(
       };
     }
   });
-}
-
-/**
- * Finalizes CCTP deposits and messages on Solana.
- *
- * @param solanaClient The Solana client.
- * @param attestedMessages The CCTP messages to Solana.
- * @param signer A base signer to be converted into a Solana signer.
- * @param simulate Whether to simulate the transaction.
- * @param hubChainId The chain ID of the hub.
- * @returns A list of executed transaction signatures.
- */
-
-export function finalizeCCTPV1Messages(
-  solanaClient: SVMSpokePoolClient,
-  attestedMessages: AttestedCCTPMessage[],
-  signer: KeyPairSigner,
-  logger: winston.Logger,
-  simulate = false,
-  hubChainId = 1
-): Promise<string[]> {
-  const svmProvider = solanaClient.svmEventsClient.getRpc();
-  return mapAsync(attestedMessages, async (message) => {
-    const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
-    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
-      svmProvider,
-      signer,
-      attestedCCTPMessage,
-      hubChainId
-    );
-
-    if (simulate) {
-      const result = await svmProvider
-        .simulateTransaction(
-          getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(receiveMessageIx)),
-          {
-            encoding: "base64",
-          }
-        )
-        .send();
-      if (result.value.err) {
-        throw new Error(result.value.err.toString());
-      }
-      return "";
-    }
-
-    try {
-      const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
-      const signature = getSignatureFromTransaction(signedTransaction);
-      const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-      await svmProvider
-        .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
-        .send();
-
-      return signature;
-    } catch (err) {
-      logger.error({
-        at: `Finalizer#finalizeSvmMessages:${solanaClient.chainId}`,
-        message: `Failed to finalize CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
-        error: err,
-      });
-      throw err;
-    }
-  });
-}
-
-function attestedCCTPMessageToSvmAttestedCCTPMessage(message: AttestedCCTPMessage): arch.svm.AttestedCCTPMessage {
-  return {
-    nonce: message.nonce,
-    sourceDomain: message.sourceDomain,
-    messageBytes: message.messageBytes,
-    attestation: message.attestation,
-    type: isDepositForBurnEvent(message) ? "transfer" : "message",
-  };
 }

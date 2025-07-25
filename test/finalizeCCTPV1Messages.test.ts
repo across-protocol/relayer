@@ -6,7 +6,7 @@ import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
 import { signer } from "./Solana.setup";
-import { finalizeCCTPV1Messages, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp/l1ToL2";
+import { finalizeCCTPV1MessagesSVM, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp";
 import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
 import { FinalizerPromise } from "../src/finalizer/types";
 import { createSpyLogger, ethers, getContractFactory } from "./utils";
@@ -106,7 +106,7 @@ describe("finalizeCCTPV1Messages", () => {
     expect(isNonceUsed).to.equal(false);
 
     // Test simulation mode
-    const signatures = await finalizeCCTPV1Messages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       attestedMessages,
       signer,
@@ -137,7 +137,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     expect(isNonceUsed).to.equal(false);
     // Test actual finalization
-    const signatures = await finalizeCCTPV1Messages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       attestedMessages,
       signer,
@@ -193,7 +193,7 @@ describe("finalizeCCTPV1Messages", () => {
 
     const attestedMessages = [...message1, ...message2];
 
-    const signatures = await finalizeCCTPV1Messages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       attestedMessages,
       signer,
@@ -269,7 +269,7 @@ describe("finalizeCCTPV1Messages", () => {
     };
 
     try {
-      await finalizeCCTPV1Messages(
+      await finalizeCCTPV1MessagesSVM(
         l2SpokePoolClient,
         [invalidMessage],
         signer,
@@ -292,7 +292,7 @@ describe("finalizeCCTPV1Messages", () => {
       { from: 0 },
       solanaClient.rpc // eventSearchConfig
     );
-    const signatures = await finalizeCCTPV1Messages(
+    const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       [], // empty array
       signer,
