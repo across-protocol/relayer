@@ -171,7 +171,7 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = await getSvmProvider();
+  const provider = getSvmProvider();
   const blockFinder = undefined;
   const { slot: latestSlot } = await arch.svm.getNearestSlotTime(provider);
 
@@ -214,7 +214,7 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
-  const eventsClient = await arch.svm.SvmCpiEventsClient.create(await getSvmProvider());
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
   if (latestSlot > startSlot) {
     const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });
