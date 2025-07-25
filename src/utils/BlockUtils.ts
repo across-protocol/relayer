@@ -63,9 +63,10 @@ export async function getTimestampsForBundleStartBlocks(
       await utils.mapAsync(blockRanges, async ([startBlock], index) => {
         const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
         const spokePoolClient = spokePoolClients[chainId];
-        if (spokePoolClient === undefined) {
+        if (spokePoolClient === undefined || startBlock === undefined) {
           return;
         }
+
         // If a block range starts before a spoke pool's deployment block, use the deployment block timestamp.
         // This is a simplification we can make because we know that the results of this function, the start of bundle
         // timestamps, are compared against spoke pool client search config fromBlock timestamps. So if a fromBlock

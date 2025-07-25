@@ -5,7 +5,6 @@ import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
   getWithdrawals,
-  GetWithdrawalStatusReturnType,
   buildProveWithdrawal,
   getWithdrawalStatus,
   getL2Output,
@@ -390,7 +389,7 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus: GetWithdrawalStatusReturnType = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
       chain: publicClientL1.chain as viem.Chain,
       targetChain: viemOpStackTargetChainParam,

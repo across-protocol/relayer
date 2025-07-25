@@ -13,7 +13,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly proposerEnabled: boolean;
   readonly l2ExecutorEnabled: boolean;
   readonly l1ExecutorEnabled: boolean;
-  readonly finalizerEnabled: boolean;
 
   // This variable can be toggled to bypass the proposer logic and always attempt to propose
   // a bundle. This is useful for testing the disputer logic.
@@ -47,7 +46,6 @@ export class DataworkerConfig extends CommonConfig {
       L2_EXECUTOR_ENABLED,
       L1_EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
-      FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
@@ -89,7 +87,6 @@ export class DataworkerConfig extends CommonConfig {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
     }
-    this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";
 
