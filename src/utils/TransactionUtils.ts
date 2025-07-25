@@ -133,7 +133,9 @@ export async function runTransaction(
     if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
       gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
     } else {
-      gas.maxPriorityFeePerGas = (gas.maxPriorityFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxPriorityFeePerGas);
+      gas.maxPriorityFeePerGas = gas.maxPriorityFeePerGas.lt(flooredPriorityFeePerGas)
+        ? flooredPriorityFeePerGas
+        : gas.maxPriorityFeePerGas;
     }
 
     logger.debug({
