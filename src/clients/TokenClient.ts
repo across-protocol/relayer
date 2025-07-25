@@ -363,7 +363,7 @@ export class TokenClient {
     const spokePoolClient = this.spokePoolClients[chainId];
     assert(isSVMSpokePoolClient(spokePoolClient));
 
-    const provider = await getSvmProvider();
+    const provider = getSvmProvider();
     const solanaTokens = this.resolveSolanaTokens(chainId, hubPoolTokens);
 
     const tokenData = Object.fromEntries(
