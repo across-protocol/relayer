@@ -247,13 +247,10 @@ export async function finalize(
     // or the recipient so its important to track for both, even if that means more RPC requests.
     // Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
     // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
-    const userSpecifiedAddresses: string[] = process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES
-      ? JSON.parse(process.env.FINALIZER_WITHDRAWAL_TO_ADDRESSES).map((address) => ethers.utils.getAddress(address))
-      : [];
     const addressesToFinalize: Address[] = [
       hubPoolClient.hubPool.address,
       CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ...userSpecifiedAddresses,
+      ...config.userAddresses,
     ].map((address) => EvmAddress.from(getAddress(address)));
     addressesToFinalize.push(spokePoolClients[chainId].spokePoolAddress);
 
@@ -530,17 +527,28 @@ async function updateFinalizerClients(clients: Clients) {
 }
 
 export class FinalizerConfig extends CommonConfig {
-  readonly maxFinalizerLookback: number;
-  readonly finalizationStrategy: FinalizationType;
-  readonly finalizerEnabled: boolean;
+  public readonly finalizerEnabled: boolean;
+  public readonly finalizationStrategy: FinalizationType;
+  public readonly maxFinalizerLookback: number;
+  public readonly userAddresses: string[];
   public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
-    const { FINALIZER_ENABLED, FINALIZER_MAX_TOKENBRIDGE_LOOKBACK, FINALIZER_CHAINS } = env;
+    const {
+      FINALIZER_ENABLED,
+      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
+      FINALIZER_CHAINS = "[]",
+      FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
+      FINALIZATION_STRATEGY = "l1<->l2",
+    } = env;
     super(env);
 
+    const userAddresses = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
+    assert(Array.isArray(userAddresses), "FINALIZER_WITHDRAWAL_TO_ADDRESSES must be a JSON string array");
+    this.userAddresses = userAddresses.map(ethers.utils.getAddress);
+
     this.finalizerEnabled = FINALIZER_ENABLED === "true";
-    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS ?? "[]");
+    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
 
     // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
@@ -549,7 +557,7 @@ export class FinalizerConfig extends CommonConfig {
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
 
-    const _finalizationStrategy = (env.FINALIZATION_STRATEGY ?? "l1<->l2").toLowerCase();
+    const _finalizationStrategy = FINALIZATION_STRATEGY.toLowerCase();
     ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
     this.finalizationStrategy = _finalizationStrategy;
   }
