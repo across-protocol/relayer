@@ -24,7 +24,13 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.dataworkerFastLookbackCount
+  // exceeds ~720 then we'll just use the gensis block since in that case, this dataworker is being used for
+  // non-production circumstances (i.e. to execute a very old leaf). 720 is chosen because it's roughly equal to
+  // one month worth of bundles assuming 1 bundle an hour.
+  const BUNDLES_PER_MONTH = 720;
+  const hubPoolLookback = config.dataworkerFastLookbackCount > BUNDLES_PER_MONTH ? undefined : 3600 * 24 * 30;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
