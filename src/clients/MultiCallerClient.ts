@@ -45,6 +45,7 @@ export const knownRevertReasons = new Set([
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
   "execution reverted",
+  "Error",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
