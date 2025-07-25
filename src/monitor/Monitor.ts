@@ -7,6 +7,7 @@ import {
   FillStatus,
   FillWithBlock,
   L1Token,
+  RelayData,
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
@@ -58,6 +59,8 @@ import {
   chainIsEvm,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
+  ZERO_BYTES,
+  getRelayDataFromFill,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -1208,32 +1211,66 @@ export class Monitor {
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
+    // invalidFillsWithoutDeposit is an array of fills that have messageHash !== ZERO_BYTES
+    // and no deposit was found for that fill, so we can't close the PDAs for them
+    // because we don't have right relay data to close the PDAs. We should push these
+    // fills into the invalidFillsWithoutDeposit array so we can log them and possibly close them manually.
+    const invalidFillsWithoutDeposit = [];
     for (const fill of fills) {
-      const spokePoolClient = this.clients.spokePoolClients[fill.originChainId];
-      if (!spokePoolClient) {
-        continue;
-      }
-      const deposit = spokePoolClient.getDepositForFill(fill);
-      if (!deposit) {
-        continue;
+      let relayData: RelayData;
+
+      if (fill.messageHash === ZERO_BYTES) {
+        relayData = getRelayDataFromFill(fill);
+      } else {
+        const spokePoolClient = this.clients.spokePoolClients[fill.originChainId];
+        if (!spokePoolClient) {
+          // @TODO: Should we push this fill into the invalidFillsWithoutDeposit array?
+          invalidFillsWithoutDeposit.push(fill);
+          continue;
+        }
+        const deposit = spokePoolClient.getDepositForFill(fill);
+        if (!deposit) {
+          invalidFillsWithoutDeposit.push(fill);
+          continue;
+        }
+
+        relayData = {
+          originChainId: deposit.originChainId,
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          depositId: deposit.depositId,
+          inputToken: deposit.inputToken,
+          inputAmount: deposit.inputAmount,
+          outputToken: deposit.outputToken,
+          outputAmount: deposit.outputAmount,
+          message: deposit.message,
+          fillDeadline: deposit.fillDeadline,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          exclusivityDeadline: deposit.exclusivityDeadline,
+        };
       }
 
-      const { ...relayData } = deposit;
-      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId);
-      const fillTime = await svmSpokePoolClient.getTimeAt(fill.blockNumber);
-      if (
-        fillStatus !== FillStatus.Filled ||
-        fillTime < svmSpokePoolClient.getCurrentTime() - PDAS_CLOSE_GRACE_PERIOD
-      ) {
+      const [fillStatus, fillTime] = await Promise.all([
+        svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId),
+        svmSpokePoolClient.getTimeAt(fill.blockNumber),
+      ]);
+
+      // If fill PDA should not be closed, skip.
+      if (!this._shouldCloseFillPDA(fillStatus, fillTime, svmSpokePoolClient.getCurrentTime())) {
         continue;
       }
-
       const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
       await svmRpc.sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" }).send();
     }
+
+    this.logger.info({
+      at: "Monitor#closePDAs",
+      message: "InvalidFills that have open PDAs",
+      invalidFillsWithoutDeposit,
+    });
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
@@ -1548,5 +1585,9 @@ export class Monitor {
       }
     }
     return false;
+  }
+
+  private _shouldCloseFillPDA(fillStatus: FillStatus, fillTime: number, currentTime: number): boolean {
+    return fillStatus === FillStatus.Filled && fillTime >= currentTime - PDAS_CLOSE_GRACE_PERIOD;
   }
 }
