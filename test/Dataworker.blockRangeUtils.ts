@@ -6,7 +6,6 @@ import { DataworkerClients } from "../src/dataworker/DataworkerClientHelper";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, InvalidBlockRange } from "../src/dataworker/DataworkerUtils";
-import { getDeployedBlockNumber } from "@across-protocol/contracts";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { getTimestampsForBundleStartBlocks } from "../src/utils/BlockUtils";
 import { assert, Contract, getEndBlockBuffers, getWidestPossibleExpectedBlockRange } from "../src/utils";
@@ -241,16 +240,16 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(result[0].reason).to.contain("< earliestValidBundleStartBlockForChain");
 
     // Works even if the condition is true for one chain.
-    const optimismDeploymentBlock = getDeployedBlockNumber("SpokePool", 10);
+    const originDeploymentBlock = spokePoolClients[originChainId].deploymentBlock;
     result = await blockRangesAreInvalidForSpokeClients(
-      { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
+      { [chainId]: spokePoolClients[chainId], [originChainId]: spokePoolClients[originChainId] },
       [
         [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestHeightSearched],
-        [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
+        [originDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
       ],
-      [chainId, 10],
+      [chainId, originChainId],
       // hub chain start block is higher than block range from block passed in for hub chain above
-      { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
+      { [chainId]: mainnetDeploymentBlock + 2, [originChainId]: originDeploymentBlock + 2 }
     );
     expect(result.length).to.equal(1);
     expect(result[0].chainId).to.equal(chainIds[0]);
@@ -258,13 +257,13 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Now both from blocks are above the earliest invalid start block.
     result = await blockRangesAreInvalidForSpokeClients(
-      { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
+      { [chainId]: spokePoolClients[chainId], [originChainId]: spokePoolClients[originChainId] },
       [
         [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestHeightSearched],
-        [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
+        [originDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
       ],
-      [chainId, 10],
-      { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
+      [chainId, originChainId],
+      { [chainId]: mainnetDeploymentBlock + 2, [originChainId]: originDeploymentBlock + 2 }
     );
     expect(result.length).to.equal(0);
 
@@ -303,7 +302,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
     // current time so that computing bundle end block timestamps gives us realistic numbers.
     const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
-    fakeSpokePool.getCurrentTime.returns((originSpokePoolClient as unknown as { currentTime: number }).currentTime);
+    fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.getCurrentTime());
     const mockSpokePoolClient = new MockSpokePoolClient(
       originSpokePoolClient.logger,
       fakeSpokePool as unknown as Contract,
@@ -338,24 +337,12 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
+
     expect(result.length).to.equal(1);
     expect(result[0].chainId).to.equal(chainIds[0]);
     expect(result[0].reason).to.contain("cannot evaluate all possible expired deposits");
-
-    // Should be valid if not V3
-    result = await blockRangesAreInvalidForSpokeClients(
-      { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-      blockRanges,
-      chainIds,
-      {
-        [originChainId]: mainnetDeploymentBlock,
-      },
-      false // isV3
-    );
-    expect(result.length).to.equal(0);
 
     // Set oldest time older such that fill deadline buffer now exceeds the time between the start block and the oldest
     // time plus the conservative bundle time. Block ranges should now be valid.
@@ -369,8 +356,7 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
     expect(result.length).to.equal(0);
 
@@ -386,8 +372,7 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
     expect(result.length).to.equal(0);
   });
