@@ -49,6 +49,7 @@ export const unknownRevertReasons = [
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
+  "aggregate",
   "fillRelay",
   "fillRelayWithUpdatedFee",
   "fillRelayWithUpdatedDeposit",
