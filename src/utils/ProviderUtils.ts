@@ -276,20 +276,16 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export async function getSvmProvider(
-  logger: winston.Logger = Logger,
-  chainId = MAINNET_CHAIN_IDs.SOLANA
-): Promise<SVMProvider> {
+export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
   const nodeUrlList = getNodeUrlList(chainId);
   const namespace = getCacheNamespace(chainId);
   const maxConcurrency = getMaxConcurrency(chainId);
-  // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
-  // const redisClient = await getRedisCache(logger);
   const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
   const { retries, retryDelay } = getRetryParams(chainId);
   const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
     namespace,
     undefined, // redisClient
+    // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
     retries,
     retryDelay,
     maxConcurrency,
