@@ -1365,10 +1365,13 @@ export class Dataworker {
           }
 
           const { outputToken } = slowFill.relayData;
+          const holder = chainIsSvm(destinationChainId)
+            ? SvmAddress.from(await getStatePda(arch.svm.toAddress(client.spokePoolAddress)))
+            : client.spokePoolAddress;
           const success = await balanceAllocator.requestBalanceAllocation(
             destinationChainId,
             l2TokensToCountTowardsSpokePoolLeafExecutionCapital(outputToken, destinationChainId),
-            client.spokePoolAddress,
+            holder,
             amountRequired
           );
 
