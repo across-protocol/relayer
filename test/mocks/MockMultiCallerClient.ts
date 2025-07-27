@@ -4,7 +4,7 @@ import { Contract, winston } from "../utils";
 export class MockedMultiCallerClient extends MultiCallerClient {
   constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, readonly multisend?: Contract) {
     super(logger, chunkSize);
-    this.txnClient = new TransactionClient(logger, false);
+    this.txnClient = new TransactionClient(logger);
   }
 
   // By default return undefined multisender so dataworker can just fallback to calling Multicaller instead

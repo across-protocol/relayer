@@ -84,10 +84,7 @@ export class MultiCallerClient {
     readonly chunkSize: { [chainId: number]: number } = {},
     readonly baseSigner?: Signer
   ) {
-    // We don't want to log errors on failure for this class because we're handling the errors ourselves by
-    // simulating all transactions before submitting. Confirm that txnClient.submit() calls are made
-    // after calling txnClient.simulate() for each transaction.
-    this.txnClient = new TransactionClient(logger, false);
+    this.txnClient = new TransactionClient(logger);
   }
 
   getQueuedTransactions(chainId: number): AugmentedTransaction[] {
