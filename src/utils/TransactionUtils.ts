@@ -97,6 +97,7 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
+  logErrorOnFailure = true,
   retriesRemaining = 1
 ): Promise<TransactionResponse> {
   const { provider } = contract;
@@ -192,17 +193,19 @@ export async function runTransaction(
           ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
           topError = topError.error as EthersError;
         }
-        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+        logger[!logErrorOnFailure || ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
           ...commonFields,
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
+        logger[!logErrorOnFailure || txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
           ...commonFields,
           error: stringifyThrownValue(error),
         });
       }
-      throw error;
+      if (logErrorOnFailure) {
+        throw error;
+      }
     }
   }
 }

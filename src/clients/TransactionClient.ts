@@ -42,8 +42,13 @@ const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 export class TransactionClient {
   readonly nonces: { [chainId: number]: number } = {};
 
+  /**
+   * @param logger - The logger to use for logging.
+   * @param logErrorOnFailure - Whether to log errors on failure as `error` level logs. Set this to false if the
+   * caller plans to simulate all transactions and handle the errors themselves before submitting.
+   */
   // eslint-disable-next-line no-useless-constructor
-  constructor(readonly logger: winston.Logger) {}
+  constructor(readonly logger: winston.Logger, readonly logErrorOnFailure = true) {}
 
   protected _simulate(txn: AugmentedTransaction): Promise<TransactionSimulationResult> {
     return willSucceed(txn);
@@ -57,7 +62,7 @@ export class TransactionClient {
 
   protected _submit(txn: AugmentedTransaction, nonce: number | null = null): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit } = txn;
-    return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
+    return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, this.logErrorOnFailure);
   }
 
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {

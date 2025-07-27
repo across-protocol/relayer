@@ -69,7 +69,10 @@ export class BaseChainAdapter {
   ) {
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
-    this.transactionClient = new TransactionClient(logger);
+    // We don't want to log errors on failure for this class because we're handling the errors ourselves by
+    // simulating all transactions before submitting. Confirm that transactionClient.submit() calls are made
+    // after calling transactionClient.simulate() for each transaction.
+    this.transactionClient = new TransactionClient(logger, false);
   }
 
   public get adapterName(): string {
