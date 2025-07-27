@@ -41,6 +41,7 @@ const DEFAULT_GASLIMIT_MULTIPLIER = 1.0;
 
 export class TransactionClient {
   readonly nonces: { [chainId: number]: number } = {};
+  private _simulatedBeforeSubmit = false;
 
   // eslint-disable-next-line no-useless-constructor
   constructor(readonly logger: winston.Logger) {}
@@ -49,9 +50,16 @@ export class TransactionClient {
     return willSucceed(txn);
   }
 
-  // Each transaction is simulated in isolation; but on-chain execution may produce different
-  // results due to execution sequence or intermediate changes in on-chain state.
+  /**
+   * @notice Simulates transactions and returns the simulation results. Should not crash if any of the transactions fail
+   * and instead return the simulation results as either successful or failed results.
+   * @dev Each transaction is simulated in isolation; but on-chain execution may produce different
+   * results due to execution sequence or intermediate changes in on-chain state.
+   * @param txns - The transactions to simulate.
+   * @returns The simulation results.
+   */
   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
+    this._simulatedBeforeSubmit = true;
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
 
@@ -60,7 +68,27 @@ export class TransactionClient {
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
+  /**
+   * @notice This function submits transactions and returns the transaction responses. This should not
+   * crash if any of the transactions fail and instead return the transaction responses as either successful or failed
+   * responses.
+   * @dev The caller mshouldust call simulate() first and handle the error, otherwise this function might crash silently
+   * unexpectedly.
+   * @param chainId - The chain ID to submit the transactions to.
+   * @param txns - The transactions to submit.
+   * @returns The transaction responses.
+   */
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
+    if (!this._simulatedBeforeSubmit) {
+      // Force user to call simulateFirst() first and handle the error, otherwise this function might crash silently
+      // because any errors thrown by _submit() are caught.
+      this.logger.warn({
+        at: "TransactionClient#submit",
+        message: "TransactionClient#submit() called before simulate()",
+      });
+    }
+    this._simulatedBeforeSubmit = false;
+
     const networkName = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
 
