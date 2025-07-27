@@ -167,7 +167,17 @@ export async function runTransaction(
         retriesRemaining,
       });
 
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+      return await runTransaction(
+        logger,
+        contract,
+        method,
+        args,
+        value,
+        gasLimit,
+        null,
+        logErrorOnFailure,
+        retriesRemaining
+      );
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:
