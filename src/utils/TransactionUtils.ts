@@ -97,7 +97,6 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  logErrorOnFailure = true,
   retriesRemaining = 1
 ): Promise<TransactionResponse> {
   const { provider } = contract;
@@ -167,17 +166,7 @@ export async function runTransaction(
         retriesRemaining,
       });
 
-      return await runTransaction(
-        logger,
-        contract,
-        method,
-        args,
-        value,
-        gasLimit,
-        null,
-        logErrorOnFailure,
-        retriesRemaining
-      );
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:
@@ -203,19 +192,17 @@ export async function runTransaction(
           ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
           topError = topError.error as EthersError;
         }
-        logger[!logErrorOnFailure || ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+        logger["warn"]({
           ...commonFields,
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[!logErrorOnFailure || txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
+        logger["warn"]({
           ...commonFields,
           error: stringifyThrownValue(error),
         });
       }
-      if (logErrorOnFailure) {
-        throw error;
-      }
+      throw error;
     }
   }
 }
