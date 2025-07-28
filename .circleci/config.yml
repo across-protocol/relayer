@@ -41,19 +41,18 @@ jobs:
             REPO="across-protocol/contracts"
             REF="master"
 
-            if [[ -n "${OVERRIDE_SOLANA_VERSION:-}" ]]; then
+            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
               SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
             else
               # Clone the contracts repository to get Cargo.lock
               git clone --depth 1 --branch $REF https://github.com/$REPO.git /tmp/contracts
               cd /tmp/contracts
-
-              if [[ -f Cargo.lock ]]; then
+              if [ -f Cargo.lock ]; then
                 EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
                                    | grep 'version' | head -n1 | cut -d'"' -f2 || echo "")
-                if [[ -n "$EXTRACTED_VERSION" ]]; then
+                if [ -n "$EXTRACTED_VERSION" ]; then
                   VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "")
-                  if [[ -n "$VERSION_NUMBER" ]]; then
+                  if [ -n "$VERSION_NUMBER" ]; then
                     SOLANA_VERSION="$VERSION_NUMBER"
                   fi
                 fi
