@@ -31,12 +31,76 @@ jobs:
           name: Restore Yarn Package Cache
           keys:
             - cache-node-v1-{{ checksum "yarn.lock" }}
+
+      # Extract Solana version from across-protocol/contracts
+      - run:
+          name: Extract Solana version
+          command: |
+            set -euo pipefail
+
+            REPO="across-protocol/contracts"
+            REF="master"
+
+            if [ -n "${OVERRIDE_SOLANA_VERSION:-}" ]; then
+              SOLANA_VERSION="${OVERRIDE_SOLANA_VERSION}"
+            else
+              # Clone the contracts repository to get Cargo.lock
+              git clone --depth 1 --branch $REF https://github.com/$REPO.git /tmp/contracts
+              cd /tmp/contracts
+              if [ -f Cargo.lock ]; then
+                EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
+                                   | grep 'version' | head -n1 | cut -d'"' -f2)
+                if [ -n "$EXTRACTED_VERSION" ]; then
+                  VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+                  if [ -n "$VERSION_NUMBER" ]; then
+                    SOLANA_VERSION="$VERSION_NUMBER"
+                  fi
+                fi
+              fi
+            fi
+
+            echo "Using Solana version: $SOLANA_VERSION"
+            echo "export SOLANA_VERSION=$SOLANA_VERSION" >> $BASH_ENV
+
+      # Install Solana CLI
+      - run:
+          name: Install Solana CLI
+          command: |
+            source $BASH_ENV
+            echo "Installing Solana version: $SOLANA_VERSION"
+
+            # Parse version numbers
+            MAJOR=$(echo $SOLANA_VERSION | cut -d. -f1)
+            MINOR=$(echo $SOLANA_VERSION | cut -d. -f2)
+            PATCH=$(echo $SOLANA_VERSION | cut -d. -f3)
+
+            # Determine which URL to use based on version (same logic as GitHub Actions)
+            if [ "$MAJOR" -eq 1 ] && [ "$MINOR" -eq 18 ] && [ "$PATCH" -le 23 ]; then
+              INSTALL_URL="https://release.solana.com/v${SOLANA_VERSION}/install"
+            else
+              INSTALL_URL="https://release.anza.xyz/v${SOLANA_VERSION}/install"
+            fi
+
+            echo "Installing Solana from: $INSTALL_URL"
+
+            # Use a more robust installation method
+            curl -sSfL $INSTALL_URL -o /tmp/solana-install.sh
+            chmod +x /tmp/solana-install.sh
+            /tmp/solana-install.sh
+
+            # Add to PATH
+            echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> $BASH_ENV
+
+            # Verify installation
+            source $BASH_ENV
+            solana --version
       - run:
           name: Run build
           command: yarn build
       - run:
           name: Run tests
           command: |
+            source $BASH_ENV
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
             yarn test --bail $(cat /tmp/test-files)
   lint:

@@ -1,5 +1,5 @@
 import { arch, utils } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
@@ -19,10 +19,9 @@ import {
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
-import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
 import { assert, Provider } from ".";
-import { BN, web3 } from "@coral-xyz/anchor";
+import { KeyPairSigner } from "@solana/kit";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -518,7 +517,8 @@ async function getCCTPMessagesWithStatus(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig,
-  isSourceHubChain: boolean
+  isSourceHubChain: boolean,
+  signer?: KeyPairSigner
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const cctpMessageEvents = await getCCTPMessageEvents(
@@ -545,9 +545,19 @@ async function getCCTPMessagesWithStatus(
           status: "pending",
         };
       }
-      const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(messageEvent.nonce, messageEvent.sourceDomain)
-        : await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      let processed;
+      if (chainIsSvm(destinationChainId)) {
+        assert(signer, "Signer is required for Solana CCTP messages");
+        processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
+          getSvmProvider(),
+          signer,
+          messageEvent.nonce,
+          messageEvent.sourceDomain
+        );
+      } else {
+        processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      }
+
       if (!processed) {
         return {
           ...messageEvent,
@@ -623,7 +633,8 @@ export async function getAttestedCCTPMessages(
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  signer?: KeyPairSigner
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
@@ -645,7 +656,8 @@ export async function getAttestedCCTPMessages(
     destinationChainId,
     l2ChainId,
     sourceEventSearchConfig,
-    isSourceHubChain
+    isSourceHubChain,
+    signer
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
@@ -770,39 +782,6 @@ async function _hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethe
   const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
-}
-
-// A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
-async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
-  // Specifically retrieve the Solana MessageTransmitter contract.
-  try {
-    const bnNonce = new BN(nonce);
-    const messageTransmitterProgram = await getAnchorProgram(MessageTransmitterIdl);
-    const [messageTransmitterPda] = web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("message_transmitter")],
-      messageTransmitterProgram.programId
-    );
-    const noncePda = await messageTransmitterProgram.methods
-      .getNoncePda({
-        nonce: bnNonce,
-        sourceDomain,
-      })
-      .accounts({
-        messageTransmitter: messageTransmitterPda,
-      })
-      .view();
-    const nonceUsed = await messageTransmitterProgram.methods
-      .isNonceUsed({
-        nonce: bnNonce,
-      })
-      .accounts({
-        usedNonces: noncePda,
-      })
-      .view();
-    return nonceUsed;
-  } catch {
-    return false;
-  }
 }
 
 async function _getCCTPDepositEventsSvm(
