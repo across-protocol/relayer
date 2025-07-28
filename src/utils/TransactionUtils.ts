@@ -66,18 +66,6 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-const isFillRelayError = (error: unknown): boolean => {
-  const fillRelaySelector = "0xdeff4b24"; // keccak256("fillRelay()")[:4]
-  const multicallSelector = "0xac9650d8"; // keccak256("multicall()")[:4]
-
-  const errorStack = (error as Error).stack;
-  const isFillRelayError = errorStack?.includes(fillRelaySelector);
-  const isMulticallError = errorStack?.includes(multicallSelector);
-  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector);
-
-  return isFillRelayError && isFillRelayInMulticallError;
-};
-
 export function getNetworkError(err: unknown): string {
   return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
 }
@@ -200,12 +188,12 @@ export async function runTransaction(
           ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
           topError = topError.error as EthersError;
         }
-        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
+        logger["warn"]({
           ...commonFields,
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
+        logger["warn"]({
           ...commonFields,
           error: stringifyThrownValue(error),
         });
