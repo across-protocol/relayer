@@ -284,7 +284,7 @@ export async function finalize(
         logger.error({
           at: "finalizer",
           message: `Something errored in a finalizer for chain ${client.chainId}`,
-          errorMsg: stringifyThrownValue(_e),
+          error: stringifyThrownValue(_e),
         });
       }
     });
