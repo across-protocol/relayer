@@ -49,9 +49,9 @@ jobs:
               cd /tmp/contracts
               if [ -f Cargo.lock ]; then
                 EXTRACTED_VERSION=$(grep -A2 'name = "solana-program"' Cargo.lock \
-                                   | grep 'version' | head -n1 | cut -d'"' -f2 || echo "")
+                                   | grep 'version' | head -n1 | cut -d'"' -f2)
                 if [ -n "$EXTRACTED_VERSION" ]; then
-                  VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "")
+                  VERSION_NUMBER=$(echo "$EXTRACTED_VERSION" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
                   if [ -n "$VERSION_NUMBER" ]; then
                     SOLANA_VERSION="$VERSION_NUMBER"
                   fi
