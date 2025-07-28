@@ -1,6 +1,5 @@
 import {
   getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
   KeyPairSigner,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
@@ -54,13 +53,10 @@ export async function finalizeCCTPV1MessagesSVM(
 
     try {
       const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
-      const signature = getSignatureFromTransaction(signedTransaction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-      await svmProvider
+      return await svmProvider
         .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
         .send();
-
-      return signature;
     } catch (err) {
       logger.error({
         at: `Finalizer#finalizeSvmMessages:${solanaClient.chainId}`,

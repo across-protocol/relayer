@@ -549,7 +549,7 @@ async function getCCTPMessagesWithStatus(
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
-          await getSvmProvider(),
+          getSvmProvider(),
           signer,
           messageEvent.nonce,
           messageEvent.sourceDomain
