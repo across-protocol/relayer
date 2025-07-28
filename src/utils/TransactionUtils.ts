@@ -19,6 +19,7 @@ import {
   CHAIN_IDs,
   EvmGasPriceEstimate,
   SVMProvider,
+  parseUnits,
 } from "../utils";
 import {
   CompilableTransactionMessage,
@@ -126,9 +127,15 @@ export async function runTransaction(
         : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
 
+    const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+
     // Check if the chain requires legacy transactions
     if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-      gas = { gasPrice: gas.maxFeePerGas };
+      gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
+    } else {
+      gas.maxPriorityFeePerGas = gas.maxPriorityFeePerGas.lt(flooredPriorityFeePerGas)
+        ? flooredPriorityFeePerGas
+        : gas.maxPriorityFeePerGas;
     }
 
     logger.debug({
@@ -140,6 +147,7 @@ export async function runTransaction(
       value,
       nonce,
       gas,
+      flooredPriorityFeePerGas,
       gasLimit,
       sendRawTxn: sendRawTransaction,
     });
