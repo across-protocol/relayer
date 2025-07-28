@@ -1,8 +1,4 @@
-import {
-  getBase64EncodedWireTransaction,
-  KeyPairSigner,
-  signTransactionMessageWithSigners,
-} from "@solana/kit";
+import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageWithSigners } from "@solana/kit";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
 import { mapAsync, winston } from "../../../../utils";
