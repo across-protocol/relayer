@@ -114,7 +114,9 @@ export class TransactionClient {
         response = await this._submit(txn, nonce);
       } catch (error) {
         delete this.nonces[chainId];
-        this.logger.info({
+        // If the transaction can fail in simulation, then we do want to log an error if the following transaction
+        // fails, because otherwise the caller might not know that the transaction failed in a previous simulation step.
+        this.logger[txn.canFailInSimulation ? "error" : "info"]({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
