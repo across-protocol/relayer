@@ -8,7 +8,22 @@ import {
   EvmAddress,
   toAddressType,
 } from ".";
-import { AccountRole, type Address as KitAddress, type WritableAccount, type ReadonlyAccount } from "@solana/kit";
+import {
+  AccountRole,
+  type Address as KitAddress,
+  type WritableAccount,
+  type ReadonlyAccount,
+  type AddressesByLookupTableAddress,
+  type IInstruction,
+  type TransactionSigner,
+} from "@solana/kit";
+import { getExtendLookupTableInstruction } from "@solana-program/address-lookup-table";
+
+// Solana ALT utility type.
+interface LookupTableDefinitions {
+  instructions: IInstruction[];
+  lookupTableMap: AddressesByLookupTableAddress;
+}
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
   if (!isDefined(address)) {
@@ -88,4 +103,35 @@ export function getAccountMeta(value: KitAddress, isWritable: boolean): Writable
     address: value,
     role: isWritable ? AccountRole.WRITABLE : AccountRole.READONLY,
   });
+}
+
+export function getAddressLookupTableInstructions(
+  lookupTableAddress: KitAddress,
+  keypair: TransactionSigner,
+  lutAddresses: KitAddress[]
+): LookupTableDefinitions {
+  // @todo Fine-tune 32 to an appropriate number. For now, 32 is convenient since it divides 256, the maximum number of addresses an ALT can have.
+  const LUT_WRITE_SIZE = 32;
+  const nInstructions = Math.floor(lutAddresses.length / LUT_WRITE_SIZE) + 1;
+  // Create the instructions.
+  const instructions = [];
+  for (let idx = 0; idx < nInstructions; idx++) {
+    const offset = idx * LUT_WRITE_SIZE;
+    const offsetEnd = Math.min(offset + LUT_WRITE_SIZE, lutAddresses.length);
+    instructions.push(
+      getExtendLookupTableInstruction({
+        address: lookupTableAddress,
+        authority: keypair,
+        payer: keypair,
+        addresses: lutAddresses.slice(offset, offsetEnd),
+      })
+    );
+  }
+
+  // Define the lookupTableMap.
+  // @todo handle support for multiple lookup table addresses.
+  const lookupTableMap = {
+    [lookupTableAddress]: lutAddresses,
+  };
+  return { instructions, lookupTableMap };
 }

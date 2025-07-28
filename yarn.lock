@@ -4189,10 +4189,10 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/logger@^1.3.0":
-  version "1.3.0"
-  resolved "https://registry.yarnpkg.com/@uma/logger/-/logger-1.3.0.tgz#df5beb2efb4333aa3da320ba3a02168a627dbe72"
-  integrity sha512-8lCSA7kvH34kbp652toM9ZtANEW1bxT8NLyFSTZlegcHgQ1opR+GepTKerrOLU7SKdOJY1P0ZWCQN5vUKxrdHA==
+"@uma/logger@^1.3.1":
+  version "1.3.1"
+  resolved "https://registry.yarnpkg.com/@uma/logger/-/logger-1.3.1.tgz#1ce8bcb07749e91a3597502fb05f598f7d1de5a5"
+  integrity sha512-YUjnoAlrTYOf+1mf73l3iGN6Bz5WcVWUrpYJ+MWhgWDglvQaddKr82uz7AVimpxGZZyTNIUVSgpnYYJ9zB70jA==
   dependencies:
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"

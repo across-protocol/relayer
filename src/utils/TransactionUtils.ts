@@ -23,10 +23,9 @@ import {
 } from "../utils";
 import {
   CompilableTransactionMessage,
-  compileTransaction,
   KeyPairSigner,
-  signTransaction,
   getBase64EncodedWireTransaction,
+  signTransactionMessageWithSigners,
   type Blockhash,
 } from "@solana/kit";
 
@@ -203,15 +202,36 @@ export async function runTransaction(
   }
 }
 
-export async function runTransactionSvm(
+export async function sendAndConfirmSolanaTransaction(
   unsignedTransaction: CompilableTransactionMessage,
   signer: KeyPairSigner,
-  provider: SVMProvider
+  provider: SVMProvider,
+  cycles = 25,
+  pollingDelay = 600 // 1.5 slots on Solana.
 ): Promise<string> {
-  const compiledTx = compileTransaction(unsignedTransaction);
-  const signedTx = await signTransaction([signer.keyPair], compiledTx);
+  const delay = (ms: number) => {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  };
+  const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
-  return provider.sendTransaction(serializedTx, { encoding: "base64" }).send();
+  const txSignature = await provider
+    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
+    .send();
+  let confirmed = false;
+  let _cycles = 0;
+  while (!confirmed && _cycles < cycles) {
+    const txStatus = await provider.getSignatureStatuses([txSignature]).send();
+    // Index 0 since we are only sending a single transaction in this method.
+    confirmed =
+      txStatus?.value?.[0]?.confirmationStatus === "confirmed" ||
+      txStatus?.value?.[0]?.confirmationStatus === "finalized";
+    // If the transaction wasn't confirmed, wait `pollingInterval` and retry.
+    if (!confirmed) {
+      await delay(pollingDelay);
+      _cycles++;
+    }
+  }
+  return txSignature;
 }
 
 export async function getGasPrice(
