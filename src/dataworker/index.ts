@@ -10,7 +10,6 @@ import {
   Signer,
   disconnectRedisClients,
   isDefined,
-  Profiler,
   getSvmSignerFromEvmSigner,
   getRedisCache,
   waitForPubSub,
@@ -101,10 +100,6 @@ async function canProposeRootBundle(chainId: number): Promise<boolean> {
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const profiler = new Profiler({
-    at: "Dataworker#index",
-    logger: _logger,
-  });
   logger = _logger;
 
   const config = new DataworkerConfig(process.env);
@@ -127,14 +122,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     return;
   }
 
-  const { clients, dataworker } = await profiler.measureAsync(
-    createDataworker(logger, baseSigner, config),
-    "createDataworker",
-    {
-      message: "Time to update non-spoke clients",
-    }
-  );
-
+  const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
   const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
@@ -147,7 +135,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
     logger[startupLogLevel(config)]({ at: "Dataworker#index", message: `${personality} started 👩‍🔬`, loggedConfig });
 
-    profiler.mark("loopStart");
     // Determine the spoke client's lookback:
     // 1. We initiate the spoke client event search windows based on a start bundle's bundle block end numbers and
     //    how many bundles we want to look back from the start bundle blocks.
@@ -189,7 +176,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       fromBlocks,
       toBlocks
     );
-    profiler.mark("dataworkerFunctionLoopTimerStart");
     // Validate and dispute pending proposal before proposing a new one
     if (config.disputerEnabled) {
       await dataworker.validatePendingRootBundle(spokePoolClients, fromBlocks);
@@ -362,23 +348,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
       await clients.multiCallerClient.executeTxnQueues();
     }
-    profiler.mark("dataworkerFunctionLoopTimerEnd");
-    profiler.measure("timeToLoadSpokes", {
-      message: "Time to load spokes in data worker",
-      from: "loopStart",
-      to: "dataworkerFunctionLoopTimerStart",
-    });
-    profiler.measure("timeToRunDataworkerFunctions", {
-      message: "Time to run data worker functions in data worker",
-      from: "dataworkerFunctionLoopTimerStart",
-      to: "dataworkerFunctionLoopTimerEnd",
-    });
-    // do we need to add an additional log for the sum of the previous?
-    profiler.measure("dataWorkerTotal", {
-      message: "Total time taken for dataworker",
-      from: "loopStart",
-      to: "dataworkerFunctionLoopTimerEnd",
-    });
   } finally {
     await disconnectRedisClients(logger);
   }
