@@ -86,7 +86,7 @@ export async function getTimestampsForBundleStartBlocks(
   );
 }
 
-export async function waitForNewSolanaBlock(provider: SVMProvider, _offset: number): Promise<void> {
+export async function waitForNewSolanaBlock(provider: SVMProvider, _offset = 1): Promise<void> {
   const offset = BigInt(_offset);
   // Get the initial block height of the blockchain
   const { value: initialBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };

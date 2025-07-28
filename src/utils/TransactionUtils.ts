@@ -219,7 +219,7 @@ export async function sendAndConfirmSolanaTransaction(
     .send();
   let confirmed = false;
   let _cycles = 0;
-  while (!confirmed && ++_cycles < cycles) {
+  while (!confirmed && _cycles < cycles) {
     const txStatus = await provider.getSignatureStatuses([txSignature]).send();
     // Index 0 since we are only sending a single transaction in this method.
     confirmed =
@@ -228,6 +228,7 @@ export async function sendAndConfirmSolanaTransaction(
     // If the transaction wasn't confirmed, wait `pollingInterval` and retry.
     if (!confirmed) {
       await delay(pollingDelay);
+      _cycles++;
     }
   }
   return txSignature;
