@@ -96,6 +96,8 @@ export const {
   getTokenInfo,
   convertRelayDataParamsToBytes32,
   convertFillParamsToBytes32,
+  getRandomInt,
+  randomAddress,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
 } = sdk.utils;
