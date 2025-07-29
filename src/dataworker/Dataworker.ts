@@ -1513,6 +1513,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
+      hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
       pendingRootBundle: {
         ...pendingRootBundle,
         proposer: pendingRootBundle.proposer.toNative(),
