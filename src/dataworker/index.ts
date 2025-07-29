@@ -115,6 +115,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   const personality = resolvePersonality(config);
   const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId, 0, logger);
 
+  // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
+  // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
+  // from botIdentifier -> runIdentifier).
+  if (
+    isDefined(runIdentifier) &&
+    challengeRemaining > config.minChallengeLeadTime &&
+    (config.proposerEnabled || config.l1ExecutorEnabled)
+  ) {
+    logger[startupLogLevel(config)]({
+      at: "Dataworker#index",
+      message: `${personality} aborting (not ready)`,
+      challengeRemaining,
+    });
+    return;
+  }
+
   const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
 
   // If L1 Executor is enabled, block other instances from running for ~5 mins to prevent multiple executors from
