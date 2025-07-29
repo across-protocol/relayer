@@ -49,14 +49,8 @@ export class TransactionClient {
     return willSucceed(txn);
   }
 
-  /**
-   * @notice Simulates transactions and returns the simulation results. Should not crash if any of the transactions fail
-   * and instead return the simulation results as either successful or failed results.
-   * @dev Each transaction is simulated in isolation; but on-chain execution may produce different
-   * results due to execution sequence or intermediate changes in on-chain state.
-   * @param txns - The transactions to simulate.
-   * @returns The simulation results.
-   */
+  // Each transaction is simulated in isolation; but on-chain execution may produce different
+  // results due to execution sequence or intermediate changes in on-chain state.
   simulate(txns: AugmentedTransaction[]): Promise<TransactionSimulationResult[]> {
     return Promise.all(txns.map((txn: AugmentedTransaction) => this._simulate(txn)));
   }
@@ -66,16 +60,6 @@ export class TransactionClient {
     return runTransaction(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
-  /**
-   * @notice This function submits transactions and returns the transaction responses. This should not
-   * crash if any of the transactions fail and instead return the transaction responses as either successful or failed
-   * responses.
-   * @dev The caller should call simulate() first and handle the error, otherwise this function might crash silently
-   * unexpectedly.
-   * @param chainId - The chain ID to submit the transactions to.
-   * @param txns - The transactions to submit.
-   * @returns The transaction responses.
-   */
   async submit(chainId: number, txns: AugmentedTransaction[]): Promise<TransactionResponse[]> {
     const networkName = getNetworkName(chainId);
     const txnResponses: TransactionResponse[] = [];
@@ -114,9 +98,7 @@ export class TransactionClient {
         response = await this._submit(txn, nonce);
       } catch (error) {
         delete this.nonces[chainId];
-        // If the transaction can fail in simulation, then we do want to log an error if the following transaction
-        // fails, because otherwise the caller might not know that the transaction failed in a previous simulation step.
-        this.logger[txn.canFailInSimulation ? "error" : "info"]({
+        this.logger.info({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
           mrkdwn,
