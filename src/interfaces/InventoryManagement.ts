@@ -69,11 +69,11 @@ export interface InventoryConfig {
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
   return Object.keys(config).every((k) => {
-    if (typeof k === "string") {
-      const address = ethersUtils.arrayify(k);
-      return EvmAddress.validate(address) || SvmAddress.validate(address);
+    if (Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k])) {
+      return true;
     }
 
-    return Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k]);
+    const address = ethersUtils.arrayify(k);
+    return EvmAddress.validate(address) || SvmAddress.validate(address);
   });
 }
