@@ -253,7 +253,7 @@ describe("Monitor", async function () {
   it("Monitor should report balances", async function () {
     await monitorInstance.update();
     const reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayersEvm,
+      monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
@@ -293,7 +293,7 @@ describe("Monitor", async function () {
     await updateAllClients();
     await monitorInstance.update();
     let reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayersEvm,
+      monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
@@ -312,7 +312,7 @@ describe("Monitor", async function () {
     await updateAllClients();
     await monitorInstance.update();
     reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayersEvm,
+      monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
@@ -343,7 +343,7 @@ describe("Monitor", async function () {
     // Now, pending refunds should be 0.
     await monitorInstance.update();
     reports = monitorInstance.initializeBalanceReports(
-      monitorInstance.monitorConfig.monitoredRelayersEvm,
+      monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
       TEST_NETWORK_NAMES
     );
