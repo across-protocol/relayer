@@ -125,33 +125,31 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
-  // We can run this in parallel since in practice each relayer has different balance of tokens.
-  // If in the future we want to have relayer relay the same tokens then this logic needs to change to run in series.
-  await mapAsync(senderAddresses, async (address) => {
-    // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
-    // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
-    const depositsInScope = binanceDeposits.filter((deposit) =>
-      compareAddressesSimple(deposit.externalAddress, address)
-    );
-    if (depositsInScope.length === 0) {
-      logger.debug({
-        at: "BinanceFinalizer",
-        message: `No finalizable deposits found for ${address}`,
-      });
-      return;
-    }
+  // We can run this in parallel since deposits for each tokens are independent of each other.
+  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
+    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
+    symbol = symbol === "WBNB" ? "BNB" : symbol;
 
-    // The inner loop finalizes all deposits for all supported tokens for the address.
-    await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-      let symbol = _symbol === "WETH" ? "ETH" : _symbol;
-      symbol = symbol === "WBNB" ? "BNB" : symbol;
+    const coin = accountCoins.find((coin) => coin.symbol === symbol);
+    let coinBalance = coin.balance;
+    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+    const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
-      const coin = accountCoins.find((coin) => coin.symbol === symbol);
-      let coinBalance = coin.balance;
-      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+    for (const address of senderAddresses) {
+      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
+      const depositsInScope = binanceDeposits.filter((deposit) =>
+        compareAddressesSimple(deposit.externalAddress, address)
+      );
+      if (depositsInScope.length === 0) {
+        logger.debug({
+          at: "BinanceFinalizer",
+          message: `No finalizable deposits found for ${address}`,
+        });
+        return;
+      }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
       for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
@@ -229,7 +227,7 @@ export async function binanceFinalizer(
           });
         }
       }
-    });
+    }
   });
   return {
     callData: [],
