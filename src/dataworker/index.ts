@@ -133,28 +133,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
 
-  // If L1 Executor is enabled, block other instances from running for ~5 mins to prevent multiple executors from
-  // executing the same bundle.
-  if (config.l1ExecutorEnabled && process.env.L1_EXECUTOR_MUTEX_DISABLED !== "true") {
-    const _redis = await getRedisCache(logger);
-    const l1ExecutorMutexKey = "L1_EXECUTOR_RUNNING";
-    const redisMessage = await _redis.get(l1ExecutorMutexKey);
-    if (redisMessage) {
-      logger.debug({
-        at: "Dataworker#index",
-        message: "L1 Executor mutex already set, exiting early.",
-      });
-      return;
-    } else {
-      const mutexExpirySeconds = Number(process.env.L1_EXECUTOR_MUTEX_EXPIRY_SECONDS ?? 300); /* 5 minute lock */
-      await _redis.set(l1ExecutorMutexKey, "locked", mutexExpirySeconds);
-      logger.debug({
-        at: "Dataworker#index",
-        message: `L1 Executor mutex set for ${mutexExpirySeconds} seconds.`,
-      });
-    }
-  }
-
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
   const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
