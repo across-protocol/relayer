@@ -80,14 +80,14 @@ export async function cctpL1toL2Finalizer(
     };
   } else {
     assert(isSVMSpokePoolClient(l2SpokePoolClient));
-    const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
+    const send = process.env["SEND_TRANSACTIONS"] === "true";
     // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
     const signatures = await finalizeCCTPV1MessagesSVM(
       l2SpokePoolClient,
       unprocessedMessages,
       signer,
       logger,
-      simulate,
+      !send,
       hubPoolClient.chainId
     );
 
@@ -118,7 +118,7 @@ export async function cctpL1toL2Finalizer(
         logMessageParts.push(`${tokenlessMessagesCount} tokenless messages`);
       }
 
-      logger[simulate ? "debug" : "info"]({
+      logger[send ? "info" : "debug"]({
         at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
         message: `Finalized ${logMessageParts.join(" and ")} on Solana.`,
         signatures,
