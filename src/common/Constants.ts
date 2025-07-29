@@ -892,7 +892,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     // Amount of tokens required to send a single message to the L2
     amountWei: number;
     // Multiple of the required amount above to send to the feePayer in case
-    // we are short funds. For example, if set to 10, then everytime we need to load more funds
+    // we are short funds. For example, if set to 10, then every time we need to load more funds
     // we'll send 10x the required amount.
     amountMultipleToFund: number;
     // Account that pays the fees on-chain that we will load more fee tokens into.
