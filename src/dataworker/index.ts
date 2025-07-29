@@ -132,7 +132,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   }
 
   const { clients, dataworker } = await createDataworker(logger, baseSigner, config);
-
   await config.update(logger); // Update address filter.
   const l1BlockTime = (await averageBlockTime(clients.hubPoolClient.hubPool.provider)).average;
   const adjustedL1BlockTime = l1BlockTime + Number(process.env["L1_BLOCK_TIME_BUFFER"] ?? l1BlockTime); // Default adjustment is double l1BlockTime.
