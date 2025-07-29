@@ -153,7 +153,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   let poolRebalanceLeafExecutionCount = 0;
 
   const redis = await getRedisCache(logger);
-
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
