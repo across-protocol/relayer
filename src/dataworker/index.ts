@@ -80,14 +80,36 @@ function resolvePersonality(config: DataworkerConfig): string {
   return "Dataworker"; // unknown
 }
 
-async function getChallengeRemaining(chainId: number): Promise<number> {
+async function getChallengeRemaining(
+  chainId: number,
+  challengeBuffer: number,
+  logger: winston.Logger
+): Promise<number> {
   const provider = await getProvider(chainId);
+  const latestBlock = await provider.getBlockNumber();
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
-  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
+  const [proposal, currentTime] = await Promise.all([
+    hubPool.rootBundleProposal({
+      blockTag: latestBlock,
+    }),
+    hubPool.getCurrentTime({
+      blockTag: latestBlock,
+    }),
+  ]);
   const { challengePeriodEndTimestamp } = proposal;
+  const challengeRemaining = Math.max(challengePeriodEndTimestamp + challengeBuffer - currentTime, 0);
+  logger.debug({
+    at: "Dataworker#index::getChallengeRemaining",
+    message: "Challenge remaining",
+    challengeRemaining,
+    challengeBuffer,
+    challengePeriodEndTimestamp,
+    currentTime,
+    blockTag: latestBlock,
+  });
 
-  return Math.max(challengePeriodEndTimestamp - currentTime, 0);
+  return challengeRemaining;
 }
 
 async function canProposeRootBundle(chainId: number): Promise<boolean> {
@@ -104,7 +126,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
 
   const config = new DataworkerConfig(process.env);
   const personality = resolvePersonality(config);
-  const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+  const challengeRemaining = await getChallengeRemaining(config.hubPoolChainId, 0, logger);
 
   // @dev The check for `runIdentifier` doubles as a check whether this instance is being run in GCP (or mocked as a production instance) and as a unique identifier
   // which can be cached in redis (that is, for any executor/proposer instance, the run identifier lets any other instance know of its existence via a redis mapping
@@ -266,7 +288,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
       if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
-        let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+        const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
+        let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
         // an executor instance executed the pending root bundle out of the hub _and_ a proposer instance proposed a new root bundle.
         if (updatedChallengeRemaining > challengeRemaining) {
@@ -312,7 +335,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             });
           }
 
-          updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId);
+          updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         }
         if (config.proposerEnabled) {
           // Clear the counter

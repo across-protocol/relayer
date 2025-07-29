@@ -1513,6 +1513,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
+      hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
       pendingRootBundle: {
         ...pendingRootBundle,
         proposer: pendingRootBundle.proposer.toNative(),
@@ -2832,7 +2833,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Need to close existing instruction params account",
-        instructionParamsAccount,
+        instructionParamsAccount: instructionParamsAccount.address,
       });
       closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
@@ -2931,7 +2932,7 @@ export class Dataworker {
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Created relayer refund address lookup table",
       txSignature,
-      lookupTable,
+      lookupTable: lookupTablePda,
     });
 
     // Add logic to deactivate the LUT. The LUT should be deactivated whether or not the relayer refund execution fails.
