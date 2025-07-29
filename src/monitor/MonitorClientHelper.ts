@@ -73,7 +73,7 @@ export async function constructMonitorClients(
         return [chainId, spokePoolClient.spokePool.provider];
       })
   );
-  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayersEvm);
+  const tokenTransferClient = new TokenTransferClient(logger, providerPerChain, config.monitoredRelayers);
 
   // The CrossChainTransferClient is dependent on having adapters for all passed in chains
   // so we need to filter out any chains that don't have adapters. This means limiting the chains we keep in
