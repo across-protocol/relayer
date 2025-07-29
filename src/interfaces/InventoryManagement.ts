@@ -68,7 +68,6 @@ export interface InventoryConfig {
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
-  console.log(`xxx config: ${JSON.stringify(config)}`);
   // Keys are token symbols.
   if (Object.keys(config).every((k) => isDefined(TOKEN_SYMBOLS_MAP[k]))) {
     return true;
