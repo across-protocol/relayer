@@ -67,7 +67,12 @@ import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
-import { address, fetchEncodedAccount, getBase64EncodedWireTransaction, signTransactionMessageWithSigners } from "@solana/kit";
+import {
+  address,
+  fetchEncodedAccount,
+  getBase64EncodedWireTransaction,
+  signTransactionMessageWithSigners,
+} from "@solana/kit";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -1252,7 +1257,9 @@ export class Monitor {
       const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
       // Check if PDA is already closed
       const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
-      if (!fillStatusPdaAccount.exists) continue;
+      if (!fillStatusPdaAccount.exists) {
+        continue;
+      }
 
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
