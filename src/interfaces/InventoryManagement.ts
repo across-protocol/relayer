@@ -1,5 +1,5 @@
 import { utils as ethersUtils } from "ethers";
-import { BigNumber, TOKEN_SYMBOLS_MAP } from "../utils";
+import { BigNumber, EvmAddress, SvmAddress, TOKEN_SYMBOLS_MAP } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
@@ -68,7 +68,12 @@ export interface InventoryConfig {
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
-  return (
-    Object.keys(config).every((k) => ethersUtils.isAddress(k)) || Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k])
-  );
+  return Object.keys(config).every((k) => {
+    if (typeof k === "string") {
+      const address = ethersUtils.arrayify(k);
+      return EvmAddress.validate(address) || SvmAddress.validate(address);
+    }
+
+    return Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k]);
+  });
 }
