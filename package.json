@@ -44,7 +44,6 @@
     "minimist": "^1.2.8",
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
-    "tar": "^7.4.3",
     "ts-node": "^10.9.1",
     "viem": "^2.33.1",
     "winston": "^3.10.0",
@@ -116,7 +115,8 @@
     "solhint": "^3.4.1",
     "solidity-coverage": "^0.8.3",
     "typechain": "^8.2.0",
-    "typescript": "^5.1.6"
+    "typescript": "^5.1.6",
+    "tar": "^7.4.3"
   },
   "husky": {
     "hooks": {
