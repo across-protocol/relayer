@@ -173,7 +173,7 @@ async function run(argv: string[]): Promise<void> {
 
   const provider = getSvmProvider();
   const blockFinder = undefined;
-  const { slot: latestSlot } = await arch.svm.getNearestSlotTime(provider);
+  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider);
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
@@ -184,7 +184,6 @@ async function run(argv: string[]): Promise<void> {
     // Resolve `lookback` seconds from head to a specific block.
     assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
 
-    const now = await provider.getBlockTime(latestSlot).send();
     assert(typeof now === "bigint"); // Should be unnecessary; tsc still complains.
     startSlot = BigInt(
       Math.max(
