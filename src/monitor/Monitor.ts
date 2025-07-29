@@ -67,7 +67,7 @@ import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
-import { address, getBase64EncodedWireTransaction, signTransactionMessageWithSigners } from "@solana/kit";
+import { address, fetchEncodedAccount, getBase64EncodedWireTransaction, signTransactionMessageWithSigners } from "@solana/kit";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -404,7 +404,7 @@ export class Monitor {
   }
 
   async reportRelayerBalances(): Promise<void> {
-    const relayers = this.monitorConfig.monitoredRelayers;
+    const relayers = this.monitorConfig.monitoredRelayersEvm;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
 
     // @dev TODO: Handle special case for tokens that do not have an L1 token mapped to them via PoolRebalanceRoutes
@@ -487,7 +487,7 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
-    for (const relayer of this.monitorConfig.monitoredRelayers) {
+    for (const relayer of this.monitorConfig.monitoredRelayersEvm) {
       for (const chainId of this.monitorChains) {
         const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
         const l2TokenAddresses = Object.keys(l2ToL1Tokens);
@@ -1197,8 +1197,8 @@ export class Monitor {
       return;
     }
     const fills: FillWithBlock[] = [];
-    for (const relayers of this.monitorConfig.monitoredRelayers) {
-      const relayerFills = await svmSpokePoolClient.getFillsForRelayer(relayers);
+    for (const relayers of this.monitorConfig.monitoredRelayersSvm) {
+      const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
       fills.push(...relayerFills);
     }
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
@@ -1243,16 +1243,17 @@ export class Monitor {
         };
       }
 
-      const [fillStatus, fillTime] = await Promise.all([
-        svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId),
-        svmSpokePoolClient.getTimeAt(fill.blockNumber),
-      ]);
-
+      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
-      if (!this._shouldCloseFillPDA(fillStatus, fillTime, svmSpokePoolClient.getCurrentTime())) {
+      if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
         continue;
       }
+
       const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
+      // Check if PDA is already closed
+      const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
+      if (!fillStatusPdaAccount.exists) continue;
+
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
@@ -1273,16 +1274,16 @@ export class Monitor {
 
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
-      for (const relayer of this.monitorConfig.monitoredRelayers) {
+      for (const relayer of this.monitorConfig.monitoredRelayersEvm) {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
       }
     }
     for (const refunds of nextBundleRefunds) {
-      for (const relayer of this.monitorConfig.monitoredRelayers) {
+      for (const relayer of this.monitorConfig.monitoredRelayersEvm) {
         this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
       }
     }
-    for (const relayer of this.monitorConfig.monitoredRelayers) {
+    for (const relayer of this.monitorConfig.monitoredRelayersEvm) {
       this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
     }
   }
@@ -1581,7 +1582,7 @@ export class Monitor {
     return false;
   }
 
-  private _shouldCloseFillPDA(fillStatus: FillStatus, fillTime: number, currentTime: number): boolean {
-    return fillStatus === FillStatus.Filled && fillTime >= currentTime - PDAS_CLOSE_GRACE_PERIOD;
+  private _shouldCloseFillPDA(fillStatus: FillStatus, fillDeadline: number, currentTime: number): boolean {
+    return fillStatus === FillStatus.Filled && currentTime > fillDeadline;
   }
 }

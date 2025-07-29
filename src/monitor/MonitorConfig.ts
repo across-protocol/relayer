@@ -24,6 +24,11 @@ export interface BotModes {
   closePDAsEnabled: boolean;
 }
 
+export interface MonitoredRelayers {
+  evmAddresses: Address[];
+  svmAddresses: Address[];
+}
+
 export class MonitorConfig extends CommonConfig {
   public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
@@ -31,11 +36,13 @@ export class MonitorConfig extends CommonConfig {
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
   readonly stuckRebalancesEnabled: boolean;
-  readonly monitoredRelayers: Address[];
+  readonly monitoredRelayersEvm: Address[];
+  readonly monitoredRelayersSvm: Address[];
   readonly monitoredSpokePoolChains: number[];
   readonly monitoredTokenSymbols: string[];
   readonly whitelistedDataworkers: Address[];
-  readonly whitelistedRelayers: Address[];
+  readonly whitelistedRelayersEvm: Address[];
+  readonly whitelistedRelayersSvm: Address[];
   readonly knownV1Addresses: Address[];
   readonly bundlesCount: number;
   readonly botModes: BotModes;
@@ -100,12 +107,20 @@ export class MonitorConfig extends CommonConfig {
     };
 
     // Used to monitor activities not from whitelisted data workers or relayers.
-    this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
-    this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
+    this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS).evmAddresses;
+
+    const { evmAddresses: whitelistedRelayersEvm, svmAddresses: whitelistedRelayersSvm } =
+      parseAddressesOptional(WHITELISTED_RELAYERS);
+
+    this.whitelistedRelayersEvm = whitelistedRelayersEvm;
+    this.whitelistedRelayersSvm = whitelistedRelayersSvm;
 
     // Used to monitor balances, activities, etc. from the specified relayers.
-    this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
-    this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
+    const { evmAddresses: monitoredRelayersEvm, svmAddresses: monitoredRelayersSvm } =
+      parseAddressesOptional(MONITORED_RELAYERS);
+    this.monitoredRelayersEvm = monitoredRelayersEvm;
+    this.monitoredRelayersSvm = monitoredRelayersSvm;
+    this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES).evmAddresses;
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
     this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
@@ -212,7 +227,14 @@ export class MonitorConfig extends CommonConfig {
   }
 }
 
-const parseAddressesOptional = (addressJson?: string): Address[] => {
+const parseAddressesOptional = (addressJson?: string): MonitoredRelayers => {
   const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address), CHAIN_IDs.MAINNET));
+  const evmAddresses = [];
+  const svmAddresses = [];
+  for (const address of rawAddresses) {
+    const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
+    const addressObject = toAddressType(address, chainId);
+    chainId === CHAIN_IDs.MAINNET ? evmAddresses.push(addressObject) : svmAddresses.push(addressObject);
+  }
+  return { evmAddresses, svmAddresses };
 };
