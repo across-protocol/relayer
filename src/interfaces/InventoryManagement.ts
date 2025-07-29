@@ -1,4 +1,3 @@
-import { utils as ethersUtils } from "ethers";
 import { BigNumber, EvmAddress, SvmAddress, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
 
 export type TokenBalanceConfig = {
