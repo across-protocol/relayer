@@ -80,11 +80,23 @@ function resolvePersonality(config: DataworkerConfig): string {
   return "Dataworker"; // unknown
 }
 
-async function getChallengeRemaining(chainId: number, challengeBuffer: number, logger: winston.Logger): Promise<number> {
+async function getChallengeRemaining(
+  chainId: number,
+  challengeBuffer: number,
+  logger: winston.Logger
+): Promise<number> {
   const provider = await getProvider(chainId);
+  const latestBlock = await provider.getBlockNumber();
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
-  const [proposal, currentTime] = await Promise.all([hubPool.rootBundleProposal(), hubPool.getCurrentTime()]);
+  const [proposal, currentTime] = await Promise.all([
+    hubPool.rootBundleProposal({
+      blockTag: latestBlock,
+    }),
+    hubPool.getCurrentTime({
+      blockTag: latestBlock,
+    }),
+  ]);
   const { challengePeriodEndTimestamp } = proposal;
   const challengeRemaining = Math.max(challengePeriodEndTimestamp + challengeBuffer - currentTime, 0);
   logger.debug({
@@ -94,6 +106,7 @@ async function getChallengeRemaining(chainId: number, challengeBuffer: number, l
     challengeBuffer,
     challengePeriodEndTimestamp,
     currentTime,
+    blockTag: latestBlock,
   });
 
   return challengeRemaining;
