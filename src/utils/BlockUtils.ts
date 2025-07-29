@@ -1,5 +1,5 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
-import { isDefined } from "./";
+import { isDefined, type LatestBlockhash } from "./";
 import {
   BlockFinderHints,
   EVMBlockFinder,
@@ -7,6 +7,7 @@ import {
   isSVMSpokePoolClient,
   SVMBlockFinder,
   chainIsEvm,
+  SVMProvider,
 } from "./SDKUtils";
 import { getProvider, getSvmProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
@@ -83,4 +84,27 @@ export async function getTimestampsForBundleStartBlocks(
       })
     ).filter(isDefined)
   );
+}
+
+export async function waitForNewSolanaBlock(provider: SVMProvider, _offset = 1): Promise<void> {
+  const offset = BigInt(_offset);
+  // Get the initial block height of the blockchain
+  const { value: initialBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+
+  return new Promise((resolve) => {
+    const SECOND = 1000;
+    const checkInterval = 1 * SECOND; // Interval to check for new blocks (1000ms)
+
+    // Set an interval to check for new block heights
+    const intervalId = setInterval(async () => {
+      // Get the current block height
+      const { value: currentBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+
+      // If the current block height exceeds the target, resolve and clear interval
+      if (currentBlock.lastValidBlockHeight >= initialBlock.lastValidBlockHeight + offset) {
+        clearInterval(intervalId);
+        resolve();
+      }
+    }, checkInterval);
+  });
 }

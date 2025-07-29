@@ -60,7 +60,7 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -1383,15 +1383,16 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].startingBlock = startingBlock;
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
-        const latestSlot = Number(await spokePoolClient.svmEventsClient.getRpc().getSlot().send());
+        const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
+        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider);
         const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
         this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
         if (this.monitorConfig.pollingDelay === 0) {
-          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock ??= latestSlot;
+          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock ??= Number(latestSlot);
         } else {
           this.monitorConfig.spokePoolsBlocks[chainId].startingBlock = endingBlock;
         }
-        this.monitorConfig.spokePoolsBlocks[chainId].endingBlock = latestSlot;
+        this.monitorConfig.spokePoolsBlocks[chainId].endingBlock = Number(latestSlot);
       }
     }
   }
