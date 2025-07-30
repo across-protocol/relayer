@@ -68,7 +68,10 @@ export class Relayer {
     readonly clients: RelayerClients,
     readonly config: RelayerConfig
   ) {
-    Object.values(clients.spokePoolClients).forEach(({ chainId }) => {
+    const originChainIds = config.relayerOriginChains?.length > 0
+      ? config.relayerOriginChains
+      : Object.values(clients.spokePoolClients).map(Number);
+    originChainIds.forEach((chainId) => {
       if (!isDefined(config.minDepositConfirmations[chainId])) {
         const chain = getNetworkName(chainId);
         logger.warn({
