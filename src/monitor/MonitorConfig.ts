@@ -24,11 +24,6 @@ export interface BotModes {
   closePDAsEnabled: boolean;
 }
 
-export interface MonitoredRelayers {
-  evmAddresses: Address[];
-  svmAddresses: Address[];
-}
-
 export class MonitorConfig extends CommonConfig {
   public spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
 
