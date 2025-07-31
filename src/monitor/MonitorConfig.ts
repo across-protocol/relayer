@@ -21,6 +21,7 @@ export interface BotModes {
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
+  closePDAsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -82,6 +83,7 @@ export class MonitorConfig extends CommonConfig {
       BUNDLES_COUNT,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
+      CLOSE_PDAS_ENABLED,
     } = env;
 
     this.botModes = {
@@ -92,6 +94,7 @@ export class MonitorConfig extends CommonConfig {
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
@@ -99,8 +102,6 @@ export class MonitorConfig extends CommonConfig {
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
-
-    // Used to monitor balances, activities, etc. from the specified relayers.
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
@@ -211,5 +212,8 @@ export class MonitorConfig extends CommonConfig {
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
   const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address), CHAIN_IDs.MAINNET));
+  return rawAddresses.map((address) => {
+    const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
+    return toAddressType(address, chainId);
+  });
 };
