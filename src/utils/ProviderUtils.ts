@@ -64,14 +64,14 @@ export function getChainQuorum(chainId: number): number {
  * RPC_PROVIDER_<provider>_<chainId>_HEADER_AUTH=xxx-auth-header
  */
 export function getProviderHeaders(provider: string, chainId: number): { [header: string]: string } | undefined {
-  let headers: { [k: string]: string };
+  const headers: { [k: string]: string } = {};
   const _headers = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADERS`];
+
   _headers?.split(",").forEach((header) => {
-    headers ??= {};
     headers[header] = process.env[`RPC_PROVIDER_${provider}_${chainId}_HEADER_${header.toUpperCase()}`];
   });
 
-  return headers;
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 function getMaxConcurrency(chainId: number): number {
