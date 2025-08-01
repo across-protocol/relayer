@@ -904,7 +904,7 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = f
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
-  // Values specific to `DepositForBurn`. These are values contained withing `messageBody` bytes (the last of the message.data fields)
+  // Values specific to `DepositForBurn`. These are values contained within `messageBody` bytes (the last of the message.data fields)
   const burnToken = ethers.utils.hexlify(messageBytesArray.slice(120, 152)); // burnToken 4 bytes32 32 Address of burned token on source domain
   const mintRecipient = ethers.utils.hexlify(messageBytesArray.slice(152, 184)); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)
