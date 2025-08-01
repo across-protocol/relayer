@@ -164,10 +164,11 @@ export async function constructRelayerClients(
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+  const relayerSvmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
   const tokenClient = new TokenClient(
     logger,
     signerAddr,
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    relayerSvmAddress,
     spokePoolClients,
     hubPoolClient,
     relayerTokens
@@ -185,6 +186,7 @@ export async function constructRelayerClients(
     spokePoolClients,
     enabledChainIds,
     signerAddr,
+    relayerSvmAddress,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,

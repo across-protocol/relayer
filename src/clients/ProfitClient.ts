@@ -118,7 +118,8 @@ export class ProfitClient {
     readonly hubPoolClient: HubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     readonly enabledChainIds: number[],
-    readonly relayerAddress: Address,
+    readonly relayerAddress: EvmAddress,
+    readonly relayerAddressSvm: SvmAddress,
     readonly defaultMinRelayerFeePct = toBNWei(constants.RELAYER_MIN_FEE_PCT),
     readonly debugProfitability = false,
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
@@ -273,7 +274,8 @@ export class ProfitClient {
       return this.totalGasCosts[chainId];
     }
 
-    return this._getTotalGasCost(deposit, this.relayerAddress);
+    const relayer = chainIsEvm(deposit.destinationChainId) ? this.relayerAddress : this.relayerAddressSvm;
+    return this._getTotalGasCost(deposit, relayer);
   }
 
   getGasCostsForChain(chainId: number): TransactionCostEstimate {
