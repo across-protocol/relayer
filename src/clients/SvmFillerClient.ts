@@ -4,6 +4,14 @@ import {
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
+  setTransactionMessageLifetimeUsingBlockhash,
+  setTransactionMessageFeePayer,
+  createTransactionMessage,
+  appendTransactionMessageInstructions,
+  pipe,
+  Address,
+  fetchEncodedAccount,
+  type IInstruction,
 } from "@solana/kit";
 import {
   assert,
@@ -14,8 +22,11 @@ import {
   blockExplorerLink,
   winston,
   chainIsSvm,
+  getInstructionParamsPda,
+  getLatestBlockhash,
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
+import { SvmSpokeClient } from "@across-protocol/contracts";
 import { RelayData } from "../interfaces";
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
@@ -25,6 +36,7 @@ type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
 };
 
 type ReadyTransactionPromise = Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime>;
+type PrefillInstructionsPromise = Promise<IInstruction[]>;
 
 type QueuedSvmFill = {
   txPromise: ReadyTransactionPromise;
@@ -32,8 +44,16 @@ type QueuedSvmFill = {
   mrkdwn: string;
 };
 
+type MultipartSvmFill = {
+  fillRelayPromise: ReadyTransactionPromise;
+  prefillInstructions: PrefillInstructionsPromise;
+  message: string;
+  mrkdwn: string;
+};
+
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
+  private queuedMultipartFills: MultipartSvmFill[] = [];
   readonly relayerAddress: SvmAddress;
 
   private constructor(
@@ -41,6 +61,7 @@ export class SvmFillerClient {
     private readonly provider: arch.svm.SVMProvider,
     // @dev Solana mainnet or devnet
     readonly chainId: number,
+    readonly instructionParams: Address<string>,
     private readonly logger: winston.Logger
   ) {
     this.relayerAddress = SvmAddress.from(this.signer.address);
@@ -50,11 +71,13 @@ export class SvmFillerClient {
     evmSigner: Signer,
     provider: arch.svm.SVMProvider,
     chainId: number,
+    spokePool: SDKAddress,
     logger: winston.Logger
   ): Promise<SvmFillerClient> {
     assert(chainIsSvm(chainId));
     const svmSigner = await getKitKeypairFromEvmSigner(evmSigner);
-    return new SvmFillerClient(svmSigner, provider, chainId, logger);
+    const instructionParamsPda = await getInstructionParamsPda(arch.svm.toAddress(spokePool), svmSigner.address);
+    return new SvmFillerClient(svmSigner, provider, chainId, instructionParamsPda, logger);
   }
 
   enqueueFill(
@@ -69,6 +92,25 @@ export class SvmFillerClient {
       repaymentAddress.isValidOn(repaymentChainId),
       `SvmFillerClient:enqueueFill ${repaymentAddress} not valid on chain ${repaymentChainId}`
     );
+    // If the message is not empty, then fill via instruction params.
+    // @todo We can very small non empty messages, so determine how many bytes the message can be before we do this multipart fill method.
+    if (relayData.message !== "0x") {
+      const prefillInstructions = arch.svm.getFillRelayViaInstructionParamsInstructions(
+        arch.svm.toAddress(spokePool),
+        relayData,
+        this.signer
+      );
+      const fillRelayPromise = arch.svm.getIPFillRelayTx(
+        spokePool,
+        this.provider,
+        relayData,
+        this.signer,
+        repaymentChainId,
+        repaymentAddress
+      );
+      this.queuedMultipartFills.push({ fillRelayPromise, prefillInstructions, message, mrkdwn });
+      return;
+    }
     const fillTxPromise = arch.svm.getFillRelayTx(
       spokePool,
       this.provider,
@@ -120,6 +162,84 @@ export class SvmFillerClient {
         });
       }
     }
+    const multipart = this.queuedMultipartFills;
+    this.queuedMultipartFills = [];
+    if (multipart.length !== 0) {
+      const [encodedAccount, recentBlockhash] = await Promise.all([
+        fetchEncodedAccount(this.provider, this.instructionParams),
+        getLatestBlockhash(this.provider),
+      ]);
+      const closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
+        signer: this.signer,
+        instructionParams: this.instructionParams,
+      });
+      const closeInstructionParamsTx = pipe(
+        createTransactionMessage({ version: 0 }),
+        (tx) => setTransactionMessageFeePayer(this.signer.address, tx),
+        (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash, tx),
+        (tx) => appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
+      );
+      // If the instruction params account exists, then close it.
+      if (encodedAccount.exists) {
+        const closeSignature = await signAndSendTransaction(this.provider, closeInstructionParamsTx);
+        this.logger.debug({
+          at: "SvmFillerClient#executeTxnQueue",
+          message: "Closed outstanding instruction params account before executing Solana message relays.",
+          closeSignature,
+        });
+      }
+      for (const { fillRelayPromise, prefillInstructions, message, mrkdwn } of multipart) {
+        try {
+          const [fillTransaction, instructionParamsInstructions] = await Promise.all([
+            fillRelayPromise,
+            prefillInstructions,
+          ]);
+          for (const ix of instructionParamsInstructions) {
+            // Reuse the same lifetime constraint as given in the fill transaction. Since this is pre-fill transaction, if the fill transaction lifetime is valid, then the pre-fill transactions will also be valid.
+            const instructionParamsTx = pipe(
+              createTransactionMessage({ version: 0 }),
+              (tx) => setTransactionMessageFeePayer(this.signer.address, tx),
+              (tx) => setTransactionMessageLifetimeUsingBlockhash(fillTransaction.lifetimeConstraint, tx),
+              (tx) => appendTransactionMessageInstructions([ix], tx)
+            );
+            const prefillSignature = await signAndSendTransaction(this.provider, instructionParamsTx);
+            this.logger.debug({
+              at: "SvmFillerClient#executeTxnQueue",
+              message: "Wrote data to instruction params.",
+              prefillSignature,
+            });
+          }
+          const signature = await signAndSendTransaction(this.provider, fillTransaction);
+          const signatureString = signature.toString();
+          signatures.push(signatureString);
+          this.logger.info({
+            at: "SvmFillerClient#executeTxnQueue",
+            message,
+            mrkdwn,
+            signature: signatureString,
+            explorer: blockExplorerLink(signatureString, this.chainId),
+          });
+
+          // Close the instruction params PDA so it can be re-initialized on the next loop.
+          const closeInstructionParamsTxWithBlockhash = pipe(closeInstructionParamsTx, (tx) =>
+            setTransactionMessageLifetimeUsingBlockhash(fillTransaction.lifetimeConstraint, tx)
+          );
+          const closeSignature = await signAndSendTransaction(this.provider, closeInstructionParamsTxWithBlockhash);
+          this.logger.debug({
+            at: "SvmFillerClient#executeTxnQueue",
+            message: "Closed instruction params after executing a Solana message relay.",
+            closeSignature,
+          });
+        } catch (e) {
+          this.logger.error({
+            at: "SvmFillerClient#executeTxnQueue",
+            message: `Failed to send fill transaction: ${message}`,
+            mrkdwn,
+            error: e,
+          });
+        }
+      }
+    }
     return signatures.map((hash) => ({ hash }));
   }
 
@@ -127,6 +247,7 @@ export class SvmFillerClient {
   clearTransactionQueue(chainId: number | null = null): void {
     // @dev chainId is ignored because this client only handles one chain. We take `chainId` as arg here to match MulticallerClient interface
     this.queuedFills = [];
+    this.queuedMultipartFills = [];
   }
 
   // @dev simulates all transactions from the queue in parallel, logging their results
@@ -175,7 +296,7 @@ export class SvmFillerClient {
   }
 
   getTxnQueueLen(): number {
-    return this.queuedFills.length;
+    return this.queuedFills.length + this.queuedMultipartFills.length;
   }
 }
 

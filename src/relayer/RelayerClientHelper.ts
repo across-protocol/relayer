@@ -235,7 +235,13 @@ export async function constructRelayerClients(
   }
   const svmFillerClient =
     svmChainIds.length === 1
-      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      ? await SvmFillerClient.from(
+          baseSigner,
+          getSvmProvider(),
+          svmChainIds[0],
+          spokePoolClients[svmChainIds[0]].spokePoolAddress,
+          logger
+        )
       : undefined;
 
   return {

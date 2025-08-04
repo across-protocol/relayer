@@ -85,6 +85,11 @@ export async function getMultisender(chainId: number, baseSigner: Signer): Promi
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
+export async function getLatestBlockhash(provider: SVMProvider): Promise<LatestBlockhash> {
+  const opaqueBlockhash = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+  return opaqueBlockhash.value;
+}
+
 // Note that this function will throw if the call to the contract on method for given args reverts. Implementers
 // of this method should be considerate of this and catch the response to deal with the error accordingly.
 // @dev: If the method value is an empty string (e.g. ""), then this function
