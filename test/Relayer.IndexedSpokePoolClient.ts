@@ -198,7 +198,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     await spokePoolClient.update();
 
     // All events should have been dropped before SpokePoolClient update.
-    let deposits = spokePoolClient.getDeposits();
+    const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(0);
   });
 
