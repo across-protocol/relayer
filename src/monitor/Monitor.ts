@@ -22,7 +22,6 @@ import {
   blockExplorerLinks,
   formatUnits,
   getNativeTokenAddressForChain,
-  getGasPrice,
   getNativeTokenSymbol,
   getNetworkName,
   getUnfilledDeposits,
@@ -61,7 +60,7 @@ import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -179,10 +178,6 @@ export class Monitor {
       this.hubPoolStartingBlock,
       this.hubPoolEndingBlock
     );
-    const cancelledBundles = this.clients.hubPoolClient.getCancelledRootBundlesInBlockRange(
-      this.hubPoolStartingBlock,
-      this.hubPoolEndingBlock
-    );
     const disputedBundles = this.clients.hubPoolClient.getDisputedRootBundlesInBlockRange(
       this.hubPoolStartingBlock,
       this.hubPoolEndingBlock
@@ -190,9 +185,6 @@ export class Monitor {
 
     for (const event of proposedBundles) {
       this.notifyIfUnknownCaller(event.proposer.toEvmAddress(), BundleAction.PROPOSED, event.txnRef);
-    }
-    for (const event of cancelledBundles) {
-      this.notifyIfUnknownCaller(event.disputer, BundleAction.CANCELED, event.txnRef);
     }
     for (const event of disputedBundles) {
       this.notifyIfUnknownCaller(event.disputer, BundleAction.DISPUTED, event.txnRef);
@@ -276,6 +268,92 @@ export class Monitor {
     if (mrkdwn) {
       this.logger.info({ at: "Monitor#reportUnfilledDeposits", message: "Unfilled deposits ⏱", mrkdwn });
     }
+  }
+
+  // @dev This is a temporary function to report invalid fills related to SVM deposits. It will be removed once
+  // we gain enough confidence that the SVM fills are working correctly.
+  async reportInvalidFillsRelatedToSvm(): Promise<void> {
+    const { spokePoolClients } = this.clients;
+    const svmClient = spokePoolClients[CHAIN_IDs.SOLANA];
+    const svmDeposits = svmClient.getDeposits();
+
+    this.logger.debug({
+      at: "Monitor#reportInvalidFillsRelatedToSvm",
+      message: "Checking for invalid fills related to SVM deposits",
+      svmDeposits: svmDeposits.length,
+    });
+
+    // Check for invalid fills related to svm deposits.
+    await mapAsync(
+      svmDeposits.filter(({ destinationChainId }) => destinationChainId !== CHAIN_IDs.SOLANA),
+      async (deposit) => {
+        const { destinationChainId, depositId, originChainId } = deposit;
+        const destinationClient = spokePoolClients[destinationChainId];
+        if (!destinationClient) {
+          return;
+        }
+        const { invalidFills: invalid } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
+        if (depositId < bnUint32Max && invalid.length > 0) {
+          const invalidFills = Object.fromEntries(
+            invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+              return [relayer, { destinationChainId, depositId, txnRef }];
+            })
+          );
+          this.logger.warn({
+            at: "Monitor##reportInvalidFillsRelatedToSvm",
+            destinationChainId,
+            message: `Invalid ${invalid.length} fills found matching SVM ${getNetworkName(originChainId)} deposit.`,
+            deposit,
+            invalidFills,
+            notificationPath: "across-invalid-fills",
+          });
+        }
+      }
+    );
+
+    this.logger.debug({
+      at: "Monitor#reportInvalidFillsRelatedToSvm",
+      message: "Checking for invalid SVM fills related to EVM deposits",
+      svmFills: svmClient.getFills().length,
+    });
+
+    // Check for invalid SVM fills related to EVM deposits.
+    svmClient.getFills().map((fill) => {
+      const { originChainId, destinationChainId } = fill;
+      const originClient = spokePoolClients[originChainId];
+      if (!originClient) {
+        return;
+      }
+      const deposit = originClient.getDepositForFill(fill);
+      if (!deposit) {
+        this.logger.warn({
+          at: "Monitor##reportInvalidFillsRelatedToSvm",
+          originChainId,
+          message: `Invalid SVM fill found with no matching deposit for origin chain ${getNetworkName(originChainId)}.`,
+          fill,
+          notificationPath: "across-invalid-fills",
+        });
+        return;
+      }
+      const { invalidFills: invalid } = svmClient.getValidUnfilledAmountForDeposit(deposit);
+      if (deposit.depositId < bnUint32Max && invalid.length > 0) {
+        const invalidFills = Object.fromEntries(
+          invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
+            return [relayer, { destinationChainId, depositId, txnRef }];
+          })
+        );
+        this.logger.warn({
+          at: "Reporter#reportInvalidFillsRelatedToSvm",
+          destinationChainId,
+          message: `Found ${invalidFills.length} invalid SVM fills found matching ${getNetworkName(
+            originChainId
+          )} deposit.`,
+          deposit,
+          invalidFills,
+          notificationPath: "across-invalid-fills",
+        });
+      }
+    });
   }
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
@@ -576,8 +654,8 @@ export class Monitor {
       currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
         return {
           chainId,
-          token,
-          account,
+          token: token.toEvmAddress(),
+          account: account.toEvmAddress(),
           currentBalance: currentBalances[i].toString(),
           target: parseUnits(target.toString(), decimalValues[i]),
         };
@@ -647,11 +725,11 @@ export class Monitor {
               at: "Monitor#refillBalances",
               message: "Balance below trigger and can refill to target",
               from: signerAddress,
-              to: account,
+              to: account.toEvmAddress(),
               balanceTrigger,
               balanceTarget,
               deficit,
-              token,
+              token: token.toEvmAddress(),
               chainId,
               isHubPool,
             });
@@ -670,20 +748,22 @@ export class Monitor {
                 value: deficit,
               });
             } else {
-              // Note: We don't multicall sending ETH as its not a contract call.
-              const gas = await getGasPrice(spokePoolClient.spokePool.provider);
               const nativeSymbolForChain = getNativeTokenSymbol(chainId);
-              const tx = await (
-                await spokePoolClient.spokePool.signer
-              ).sendTransaction({ to: account.toEvmAddress(), value: deficit, ...gas });
-              const receipt = await tx.wait();
+              // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
+              // set the method param to be an empty string.
+              const sendRawTransactionContract = new Contract(
+                account.toEvmAddress(),
+                [],
+                spokePoolClient.spokePool.signer
+              );
+              const txn = await (await runTransaction(this.logger, sendRawTransactionContract, "", [], deficit)).wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
                 message: `Reloaded ${formatUnits(
                   deficit,
                   decimals
                 )} ${nativeSymbolForChain} for ${account} from ${signerAddress} 🫡!`,
-                transactionHash: blockExplorerLink(receipt.transactionHash, chainId),
+                transactionHash: blockExplorerLink(txn.transactionHash, chainId),
               });
             }
           } else {
@@ -1303,15 +1383,16 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].startingBlock = startingBlock;
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
-        const latestSlot = Number(await spokePoolClient.svmEventsClient.getRpc().getSlot().send());
+        const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
+        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider);
         const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
         this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
         if (this.monitorConfig.pollingDelay === 0) {
-          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock ??= latestSlot;
+          this.monitorConfig.spokePoolsBlocks[chainId].startingBlock ??= Number(latestSlot);
         } else {
           this.monitorConfig.spokePoolsBlocks[chainId].startingBlock = endingBlock;
         }
-        this.monitorConfig.spokePoolsBlocks[chainId].endingBlock = latestSlot;
+        this.monitorConfig.spokePoolsBlocks[chainId].endingBlock = Number(latestSlot);
       }
     }
   }

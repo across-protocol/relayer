@@ -43,6 +43,7 @@ import {
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
+  UsdcCCTPBridge as L2UsdcCCTPBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -144,7 +145,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.LENS]: 10000,
   [CHAIN_IDs.LINEA]: 5000,
   [CHAIN_IDs.LISK]: 10000,
-  [CHAIN_IDs.MAINNET]: 5000,
+  [CHAIN_IDs.MAINNET]: 10000,
   [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
   [CHAIN_IDs.POLYGON]: 10000,
@@ -597,30 +598,39 @@ export const CUSTOM_L2_BRIDGE: {
   },
   [CHAIN_IDs.OPTIMISM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.BLAST]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+  },
+  [CHAIN_IDs.POLYGON]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.BSC]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
 };
 

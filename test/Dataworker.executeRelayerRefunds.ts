@@ -1,5 +1,13 @@
 import { BundleDataClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import { buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBN, toBNWei, toAddressType } from "../src/utils";
+import {
+  EvmAddress,
+  buildRelayerRefundTree,
+  MAX_UINT_VAL,
+  RelayerRefundLeaf,
+  toBN,
+  toBNWei,
+  toAddressType,
+} from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
@@ -111,7 +119,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
         chainId: hubPoolClient.chainId,
         refundAmounts: [],
         leafId: 0,
-        l2TokenAddress: toAddressType(l1Token_1.address, hubPoolClient.chainId),
+        l2TokenAddress: EvmAddress.from(l1Token_1.address),
         refundAddresses: [],
       },
     ];
@@ -128,14 +136,13 @@ describe("Dataworker: Execute relayer refunds", async function () {
       balanceAllocator,
       spokePoolClients[hubPoolClient.chainId],
       relayerRefundTree,
-      true,
       0
     );
     expect(
       balanceAllocator.getUsed(
         hubPoolClient.chainId,
-        toAddressType(l1Token_1.address, hubPoolClient.chainId),
-        toAddressType(hubPool.address, hubPoolClient.chainId)
+        EvmAddress.from(l1Token_1.address),
+        EvmAddress.from(hubPool.address)
       )
     ).to.equal(toBNWei("-1"));
   });
@@ -176,7 +183,7 @@ describe("Dataworker: Execute relayer refunds", async function () {
       expect(
         bundleDataClient.getTotalRefund(
           refunds,
-          toAddressType(relayer.address, hubPoolClient.chainId),
+          EvmAddress.from(relayer.address),
           destinationChainId,
           toAddressType(erc20_2.address, destinationChainId)
         )

@@ -135,7 +135,12 @@ export class InventoryClient {
    * @param l2Token Optional l2 token address to narrow the balance reporting.
    * @returns Balance of l1Token on chainId.
    */
-  protected getBalanceOnChain(chainId: number, l1Token: EvmAddress, l2Token?: Address): BigNumber {
+  protected getBalanceOnChain(
+    chainId: number,
+    l1Token: EvmAddress,
+    l2Token?: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
     let balance: BigNumber;
 
@@ -146,7 +151,9 @@ export class InventoryClient {
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
       balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
       return balance.add(
-        crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
+        ignoreL1ToL2PendingAmount
+          ? bnZero
+          : crossChainTransferClient.getOutstandingCrossChainTransferAmount(relayer, chainId, l1Token, l2Token)
       );
     }
 
@@ -158,7 +165,11 @@ export class InventoryClient {
       })
       .reduce((acc, curr) => acc.add(curr), bnZero);
 
-    return balance.add(crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token));
+    return balance.add(
+      ignoreL1ToL2PendingAmount
+        ? bnZero
+        : crossChainTransferClient.getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token)
+    );
   }
 
   /**
@@ -204,7 +215,12 @@ export class InventoryClient {
   }
 
   // Get the balance of a given token on a given chain, including shortfalls and any pending cross chain transfers.
-  getCurrentAllocationPct(l1Token: EvmAddress, chainId: number, l2Token: Address): BigNumber {
+  getCurrentAllocationPct(
+    l1Token: EvmAddress,
+    chainId: number,
+    l2Token: Address,
+    ignoreL1ToL2PendingAmount = false
+  ): BigNumber {
     // If there is nothing over all chains, return early.
     const cumulativeBalance = this.getCumulativeBalance(l1Token);
     if (cumulativeBalance.eq(bnZero)) {
@@ -217,7 +233,7 @@ export class InventoryClient {
       l2TokenDecimals,
       l1TokenDecimals
     )(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token));
-    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token).sub(shortfall);
+    const currentBalance = this.getBalanceOnChain(chainId, l1Token, l2Token, ignoreL1ToL2PendingAmount).sub(shortfall);
 
     // Multiply by scalar to avoid rounding errors.
     return currentBalance.mul(this.scalar).div(cumulativeBalance);
@@ -1243,6 +1259,7 @@ export class InventoryClient {
     const chainIds = this.getEnabledL2Chains();
     type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
+    const chainMrkdwns: { [chainId: number]: string } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
       const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
@@ -1260,6 +1277,7 @@ export class InventoryClient {
         if (chainId === this.hubPoolClient.chainId || !this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
+        let mrkdwn = `*Withdrawals from ${getNetworkName(chainId)}:*\n`;
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
@@ -1287,7 +1305,9 @@ export class InventoryClient {
             return;
           }
 
-          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token);
+          // Ignore L1->L2 pending amounts for the current allocation % calculation because we never want to cancel
+          // out a deposit from L1 to L2 by immediately withdrawing it.
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token, true);
 
           // We apply a discount on the effective target % because the repayment chain choice
           // algorithm should never allow the inventory to get above the target pct * target overage buffer.
@@ -1311,8 +1331,8 @@ export class InventoryClient {
               shouldWithdrawExcess ? "HAS EXCESS ✅" : "NO EXCESS ❌"
             }`,
             {
-              l1Token,
-              l2Token,
+              l1Token: l1Token.toEvmAddress(),
+              l2Token: l2Token.toEvmAddress(),
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1370,7 +1390,25 @@ export class InventoryClient {
             l2Token,
             amountToWithdraw: desiredWithdrawalAmount,
           });
+
+          mrkdwn +=
+            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+              l1TokenInfo.symbol
+            } withdrawn. This meets target allocation of ` +
+            `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
+            `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
+            `${formatter(cumulativeBalance.toString())} ${
+              l1TokenInfo.symbol
+            } over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
+            `${l2TokenFormatter(this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString())} ${
+              l1TokenInfo.symbol
+            }.` +
+            ` This chain's current allocation is ${this.formatWei(currentAllocPct.mul(100).toString())}%\n`;
         });
+
+        if (withdrawalsRequired[chainId] && withdrawalsRequired[chainId].length > 0) {
+          chainMrkdwns[chainId] = mrkdwn;
+        }
       });
     });
 
@@ -1378,7 +1416,19 @@ export class InventoryClient {
       this.log("No excess balances to withdraw");
       return;
     } else {
-      this.log("Excess balances to withdraw", { withdrawalsRequired });
+      this.log("Excess balances to withdraw", {
+        withdrawalsRequired: Object.entries(withdrawalsRequired).map(([chainIds, withdrawals]) => {
+          return [
+            chainIds,
+            withdrawals.map((withdrawal) => {
+              return {
+                ...withdrawal,
+                l2Token: withdrawal.l2Token.toEvmAddress(),
+              };
+            }),
+          ];
+        }),
+      });
     }
 
     // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
@@ -1414,6 +1464,7 @@ export class InventoryClient {
         }),
         txnReceipt: txnReceipts[chainId],
       });
+      this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
     });
   }
 
@@ -1503,7 +1554,7 @@ export class InventoryClient {
       return;
     }
     const l1Tokens = this.getL1Tokens();
-    this.log("Checking token approvals", { l1Tokens });
+    this.log("Checking token approvals", { l1Tokens: l1Tokens.map((token) => token.toEvmAddress()) });
 
     await this.adapterManager.setL1TokenApprovals(l1Tokens);
   }
