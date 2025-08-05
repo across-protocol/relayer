@@ -35,7 +35,6 @@ type SpokePoolEventsAdded = {
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
 
-
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
  * The SDK exports both the EVMSpokePoolClient and SVMSpokePoolClient types. They have different properties
