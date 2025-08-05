@@ -35,13 +35,6 @@ type SpokePoolEventsAdded = {
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
 
-export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
-  return EventsAddedMessage.is(message);
-}
-
-export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolEventRemoved {
-  return EventRemovedMessage.is(message);
-}
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -165,13 +158,16 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type (${typeof rawMessage})`);
 
       const message = JSON.parse(rawMessage);
-      if (isSpokePoolEventRemoved(message)) {
+      if (EventRemovedMessage.is(message)) {
         const event = JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers);
         this.#pendingEventsRemoved.push(event);
         return;
       }
 
-      assert(isSpokePoolEventsAdded(message), `Expected ${this.#chain} SpokePoolEventsAdded message`);
+      if (!EventsAddedMessage.is(message)) {
+        this.logger.warn({ at, message: "Received unexpected message from SpokePoolListener.", rawMessage: message });
+        return;
+      }
 
       const { blockNumber, currentTime, nEvents, data } = message;
       if (nEvents > 0) {
