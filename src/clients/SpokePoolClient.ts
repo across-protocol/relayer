@@ -120,24 +120,21 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     stopWorker(): void {
+      const at = "SpokePoolClient#stopWorker";
+
       if (this.#worker.connected) {
         this.#worker.disconnect();
       } else {
-        this.logger.warn({
-          at: "SpokePoolClient#stopWorker",
-          message: `Skipped disconnecting on ${this.#chain} SpokePool listener (already disconnected).`,
-        });
+        const message = `Skipped disconnecting on ${this.#chain} SpokePool listener (already disconnected).`;
+        this.logger.warn({ at, message });
       }
 
       const { exitCode } = this.#worker;
       if (exitCode === null) {
         this.#worker.kill("SIGKILL");
       } else {
-        this.logger.warn({
-          at: "SpokePoolClient#stopWorker",
-          message: `Skipped SIGKILL on ${this.#chain} SpokePool listener (already exited).`,
-          exitCode,
-        });
+        const message = `Skipped SIGKILL on ${this.#chain} SpokePool listener (already exited).`;
+        this.logger.warn({ at, message, exitCode });
       }
     }
 
@@ -149,16 +146,13 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #childExit(code?: number, signal?: string): void {
+      const at = "SpokePoolClient#childExit";
       if (code === 0) {
         return;
       }
 
-      this.logger[signal === "SIGKILL" ? "debug" : "warn"]({
-        at: "SpokePoolClient#childExit",
-        message: `${this.#chain} SpokePool listener exited.`,
-        code,
-        signal,
-      });
+      const log = signal === "SIGKILL" ? this.logger.debug : this.logger.warn;
+      log({ at, message: `${this.#chain} SpokePool listener exited.`, code, signal });
     }
 
     /**
@@ -167,7 +161,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     _indexerUpdate(rawMessage: unknown): void {
-      assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type`);
+      const at = "SpokePoolClient#indexerUpdate";
+      assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type (${typeof rawMessage})`);
 
       const message = JSON.parse(rawMessage);
       if (isSpokePoolEventRemoved(message)) {
@@ -181,17 +176,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       const { blockNumber, currentTime, nEvents, data } = message;
       if (nEvents > 0) {
         const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
-        assert(
-          Array.isArray(pendingEvents) && pendingEvents.length === nEvents,
-          Array.isArray(pendingEvents)
-            ? `Expected ${nEvents} ${this.#chain} pendingEvents, got ${pendingEvents.length}`
-            : `Expected array of ${this.#chain} pendingEvents`
-        );
 
-        this.logger.debug({
-          at: "SpokePoolClient#indexerUpdate",
-          message: `Received ${nEvents} ${this.#chain} events from indexer.`,
-        });
+        assert(Array.isArray(pendingEvents), `Expected array of ${this.#chain} pendingEvents`);
+        const nPending = pendingEvents.length;
+        assert(nPending === nEvents, `Expected ${nEvents} ${this.#chain} pendingEvents, got ${nPending}`);
+
+        this.logger.debug({ at, message: `Received ${nEvents} ${this.#chain} events from indexer.` });
 
         pendingEvents.forEach((event) => {
           const eventIdx = this._queryableEventNames().indexOf(event.event);
@@ -214,10 +204,9 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #removeEvent(event: Log): boolean {
-      let removed = false;
+      const at = "SpokePoolClient#removeEvent";
       const eventIdx = this._queryableEventNames().indexOf(event.event);
       const pendingEvents = this.#pendingEvents[eventIdx];
-
       const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
 
       // First check for removal from any pending events.
@@ -229,6 +218,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           pending.blockHash === blockHash
       );
 
+      let removed = false;
       if (pendingEventIdx !== -1) {
         removed = true;
 
@@ -265,16 +255,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           depositor: toAddressType(spreadEvent.depositor, this.chainId),
           recipient: toAddressType(spreadEvent.recipient, destinationChainId),
           exclusiveRelayer: toAddressType(spreadEvent.exclusiveRelayer, destinationChainId),
-          messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
-        } as DepositWithBlock;
+          messageHash: getMessageHash(event.args.message),
+        };
         const depositHash = getRelayEventKey(depositEvent);
         if (isDefined(this.depositHashes[depositHash])) {
           delete this.depositHashes[depositHash];
-          this.logger.warn({
-            at: "SpokePoolClient#removeEvent",
-            message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event.`,
-            event,
-          });
+          this.logger.warn({ at, message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event.`, event });
         }
       } else if (eventName === "EnabledDepositRoute") {
         // These are hard to back out because they're not stored with transaction information. They should be extremely
@@ -284,12 +270,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       } else {
         // Retaining any remaining event types should be non-critical for relayer operation. They may
         // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
-        this.logger.debug({
-          at: "SpokePoolClient#removeEvent",
-          message: `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`,
-          transactionHash,
-          blockHash,
-        });
+        const message = `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`;
+        this.logger.debug({ at, message, transactionHash, blockHash });
       }
 
       return removed;
