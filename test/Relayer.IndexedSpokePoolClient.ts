@@ -180,6 +180,28 @@ describe("IndexedSpokePoolClient: Update", async function () {
     expect(droppedDeposit).to.not.exist;
   });
 
+  it("Correctly removes all pending events for a given blockHash", async function () {
+    const rawEvents: Log[] = [];
+    for (let i = 0; i < 25; ++i) {
+      rawEvents.push(getDepositEvent(blockNumber++));
+    }
+
+    // Modify all events to share the same blockHash.
+    const events = rawEvents.slice(1).map((event) => ({ ...event, blockHash: rawEvents[0].blockHash }));
+    sortEventsAscendingInPlace(events);
+
+    postEvents(blockNumber, currentTime, events);
+
+    const [droppedEvent] = events;
+    removeEvent(droppedEvent);
+
+    await spokePoolClient.update();
+
+    // All events should have been dropped before SpokePoolClient update.
+    let deposits = spokePoolClient.getDeposits();
+    expect(deposits.length).to.equal(0);
+  });
+
   it("Correctly removes pending events that are dropped after update", async function () {
     const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
