@@ -14,10 +14,10 @@ export type RelayerUnfilledDeposit = {
 // @param hubPoolClient HubPoolClient instance.
 // @returns Array of unfilled deposits.
 export function getUnfilledDeposits(
+  destinationSpokePoolClient: SpokePoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
-  fillStatus: { [deposit: string]: number } = {},
-  destinationSpokePoolClient: SpokePoolClient
+  fillStatus: { [deposit: string]: number } = {}
 ): RelayerUnfilledDeposit[] {
   const destinationChainId = destinationSpokePoolClient.chainId;
   // Iterate over each chainId and check for unfilled deposits.
@@ -69,7 +69,7 @@ export function getAllUnfilledDeposits(
   return Object.fromEntries(
     Object.values(spokePoolClients).map(({ chainId: destinationChainId }) => [
       destinationChainId,
-      getUnfilledDeposits(spokePoolClients, hubPoolClient, {}, spokePoolClients[destinationChainId]),
+      getUnfilledDeposits(spokePoolClients[destinationChainId], spokePoolClients, hubPoolClient),
     ])
   );
 }

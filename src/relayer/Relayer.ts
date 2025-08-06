@@ -435,13 +435,13 @@ export class Relayer {
     const { relayerDestinationChains, relayerOriginChains } = this.config;
 
     // Extract origin and destination spoke pool chains
-    const originSpokePoolChains: SpokePoolClientsByChain = Object.fromEntries(
+    const originSpokePoolClients: SpokePoolClientsByChain = Object.fromEntries(
       Object.values(spokePoolClients)
         .filter(({ chainId }) => relayerOriginChains?.includes(chainId) ?? true)
         .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
 
-    const destinationSpokePoolChains: SpokePoolClientsByChain = Object.fromEntries(
+    const destinationSpokePoolClients: SpokePoolClientsByChain = Object.fromEntries(
       Object.values(spokePoolClients)
         .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
         .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
@@ -449,9 +449,9 @@ export class Relayer {
 
     // Filter the resulting deposits according to relayer configuration.
     return Object.fromEntries(
-      Object.values(destinationSpokePoolChains).map((destinationSpokePoolClient) => [
+      Object.values(destinationSpokePoolClients).map((destinationSpokePoolClient) => [
         destinationSpokePoolClient.chainId,
-        getUnfilledDeposits(originSpokePoolChains, hubPoolClient, this.fillStatus, destinationSpokePoolClient).filter(
+        getUnfilledDeposits(destinationSpokePoolClient, originSpokePoolClients, hubPoolClient, this.fillStatus).filter(
           (deposit) => this.filterDeposit(deposit)
         ),
       ])

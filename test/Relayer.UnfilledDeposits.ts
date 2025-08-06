@@ -278,10 +278,10 @@ describe("Relayer: Unfilled Deposits", async function () {
     fillStatus[depositHash] = FillStatus.Filled;
 
     unfilledDeposits = getUnfilledDeposits(
+      spokePoolClients[destinationChainId],
       spokePoolClients,
       hubPoolClient,
-      fillStatus,
-      spokePoolClients[destinationChainId]
+      fillStatus
     );
     expect(
       unfilledDeposits.map((unfilledDeposit) => {
