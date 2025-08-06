@@ -1,15 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { isDefined, sortEventsAscending } from "../../utils";
-// import { Log, IPCEventRemoved, SpokePoolClientMessage } from "./../types";
 import { Log, SpokePoolClientMessage } from "./../types";
-
-export type EventsAdded = {
-  placeholder: number; // @todo
-};
-
-export type SpokePoolEventRemoved = {
-  event: string;
-};
 
 export function postBlock(blockNumber: number, currentTime: number): boolean {
   if (!isDefined(process.send)) {
@@ -62,7 +53,7 @@ export function postEvents(events: Log[]): boolean {
  * @returns void
  */
 export function removeEvent(event: Log): boolean {
-  const message: SpokePoolEventRemoved = {
+  const message: SpokePoolClientMessage = {
     event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
   return post(message);

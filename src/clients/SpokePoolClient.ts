@@ -22,10 +22,6 @@ export type IndexerOpts = {
   path?: string;
 };
 
-type SpokePoolEventRemoved = {
-  event: string;
-};
-
 type BlockUpdate = {
   blockNumber: number;
   currentTime: number;
@@ -34,6 +30,10 @@ type BlockUpdate = {
 type SpokePoolEventsAdded = {
   nEvents: number; // Number of events.
   data: string;
+};
+
+type SpokePoolEventRemoved = {
+  event: string;
 };
 
 export type SpokePoolClientMessage = BlockUpdate | SpokePoolEventsAdded | SpokePoolEventRemoved;
