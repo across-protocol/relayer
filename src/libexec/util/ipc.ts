@@ -20,14 +20,7 @@ export function postBlock(blockNumber: number, currentTime: number): boolean {
     currentTime,
   };
 
-  const msg = JSON.stringify(message);
-  try {
-    process.send(msg);
-  } catch {
-    return false;
-  }
-
-  return true;
+  return post(message);
 }
 
 /**
@@ -48,14 +41,7 @@ export function postEvents(events: Log[]): boolean {
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
 
-  const msg = JSON.stringify(message);
-  try {
-    process.send(msg);
-  } catch {
-    return false;
-  }
-
-  return true;
+  return post(message);
 }
 
 /**
@@ -67,6 +53,7 @@ export function removeEvent(event: Log): boolean {
   const message: SpokePoolClientMessage = {
     event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
+
   return post(message);
 }
 
@@ -77,8 +64,9 @@ function post(message: SpokePoolClientMessage): boolean {
 
   try {
     process.send(message);
-    return true;
   } catch {
     return false;
   }
+
+  return true;
 }
