@@ -235,7 +235,10 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         const { depositId, destinationChainId } = event.args;
         assert(isDefined(depositId));
 
-        const spreadEvent = spreadEventWithBlockNumber(event) as DepositWithBlock & {
+        const spreadEvent = spreadEventWithBlockNumber(event) as Omit<
+          DepositWithBlock,
+          "inputToken" | "outputToken" | "depositor" | "recipient" | "exclusiveRelayer"
+        > & {
           inputToken: string;
           outputToken: string;
           depositor: string;
