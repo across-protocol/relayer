@@ -1266,7 +1266,7 @@ export class Monitor {
       if (!fillStatusPdaAccount.exists) {
         continue;
       }
-      
+
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
@@ -1275,16 +1275,13 @@ export class Monitor {
 
       if (simulate) {
         const result = await svmRpc
-          .simulateTransaction(
-            encodedTransaction,
-            {
-              encoding: "base64",
-            }
-          )
+          .simulateTransaction(encodedTransaction, {
+            encoding: "base64",
+          })
           .send();
         if (result.value.err) {
           this.logger.error({
-          at: "Monitor#closePDAs",
+            at: "Monitor#closePDAs",
             message: `Failed to close PDA for fill ${fill.txnRef}`,
             error: result.value.err,
           });
@@ -1293,7 +1290,9 @@ export class Monitor {
       }
 
       try {
-        await svmRpc.sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" }).send();
+        await svmRpc
+          .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
+          .send();
       } catch (err) {
         this.logger.error({
           at: "Monitor#closePDAs",
