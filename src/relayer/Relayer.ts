@@ -780,11 +780,23 @@ export class Relayer {
           const limits = this.fillLimits[originChainId].slice(limitIdx);
           this.logger.debug({
             at: "Relayer::evaluateFill",
-            message: `Skipping ${originChain} deposit ${depositId.toString()} due to anticipated origin chain overcommitment.`,
+            message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
             blockNumber,
             fillAmountUsd,
             limits,
             txnRef,
+          });
+          return;
+        }
+
+        // Check the destination SpokePoolClient for any hint that this deposit might have re-orged and filled
+        // under a different RelayData hash. This does not work if the origin chain has deposit renumbering.
+        const otherFills = spokePoolClients[destinationChainId].getFillsForDeposit(deposit);
+        if (otherFills.length > 0) {
+          this.logger.warn({
+            at: "Relayer::evaluateFill",
+            message: `Skipping ${originChain} deposit ${depositId} due to possible unhandled re-org.`,
+            deposit,
           });
           return;
         }
