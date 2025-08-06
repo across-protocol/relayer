@@ -49,39 +49,41 @@ export class TokenTransferClient {
     for (const chainId of chainIds) {
       const tokenContracts = tokenContractsByChainId[chainId];
       for (const monitoredAddress of this.monitoredAddresses) {
-        const transferEventsList = await Promise.all(
-          tokenContracts.map((tokenContract) =>
-            this.querySendAndReceiveEvents(tokenContract, monitoredAddress, searchConfigByChainIds[chainId])
-          )
-        );
-        const transferEventsPerToken: { [tokenAddress: string]: Log[][] } = Object.fromEntries(
-          transferEventsList.map((transferEvents, i) => [tokenContracts[i].address, transferEvents])
-        );
+        if (monitoredAddress.isEVM()) {
+          const transferEventsList = await Promise.all(
+            tokenContracts.map((tokenContract) =>
+              this.querySendAndReceiveEvents(tokenContract, monitoredAddress, searchConfigByChainIds[chainId])
+            )
+          );
+          const transferEventsPerToken: { [tokenAddress: string]: Log[][] } = Object.fromEntries(
+            transferEventsList.map((transferEvents, i) => [tokenContracts[i].address, transferEvents])
+          );
 
-        // Create an entry in the cache if not initialized.
-        const tokenTransfers = this.tokenTransfersByAddress[monitoredAddress.toBytes32()];
-        if (tokenTransfers === undefined || tokenTransfers[chainId] === undefined) {
-          assign(this.tokenTransfersByAddress, [monitoredAddress.toBytes32(), chainId], {});
-        }
-
-        // Update outgoing and incoming transfers for current relayer in the cache.
-        const transferCache = this.tokenTransfersByAddress[monitoredAddress.toBytes32()][chainId];
-        for (const [tokenAddress, events] of Object.entries(transferEventsPerToken)) {
-          if (transferCache[tokenAddress] === undefined) {
-            transferCache[tokenAddress] = {
-              incoming: [],
-              outgoing: [],
-            };
+          // Create an entry in the cache if not initialized.
+          const tokenTransfers = this.tokenTransfersByAddress[monitoredAddress.toBytes32()];
+          if (tokenTransfers === undefined || tokenTransfers[chainId] === undefined) {
+            assign(this.tokenTransfersByAddress, [monitoredAddress.toBytes32(), chainId], {});
           }
 
-          for (const event of events[0]) {
-            const outgoingTransfer = spreadEventWithBlockNumber(event) as TokenTransfer;
-            transferCache[tokenAddress].outgoing.push(outgoingTransfer);
-          }
+          // Update outgoing and incoming transfers for current relayer in the cache.
+          const transferCache = this.tokenTransfersByAddress[monitoredAddress.toBytes32()][chainId];
+          for (const [tokenAddress, events] of Object.entries(transferEventsPerToken)) {
+            if (transferCache[tokenAddress] === undefined) {
+              transferCache[tokenAddress] = {
+                incoming: [],
+                outgoing: [],
+              };
+            }
 
-          for (const event of events[1]) {
-            const incomingTransfer = spreadEventWithBlockNumber(event) as TokenTransfer;
-            transferCache[tokenAddress].incoming.push(incomingTransfer);
+            for (const event of events[0]) {
+              const outgoingTransfer = spreadEventWithBlockNumber(event) as TokenTransfer;
+              transferCache[tokenAddress].outgoing.push(outgoingTransfer);
+            }
+
+            for (const event of events[1]) {
+              const incomingTransfer = spreadEventWithBlockNumber(event) as TokenTransfer;
+              transferCache[tokenAddress].incoming.push(incomingTransfer);
+            }
           }
         }
       }

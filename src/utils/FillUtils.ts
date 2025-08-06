@@ -1,12 +1,32 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
-import { bnZero, CHAIN_IDs } from "../utils";
+import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
+import { bnZero, CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
   version: number;
   invalidFills: FillWithBlock[];
 };
+
+// @description Returns RelayData object with empty message.
+// @param fill  FillWithBlock object.
+// @returns RelayData object.
+export function getRelayDataFromFill(fill: FillWithBlock): RelayData {
+  return {
+    originChainId: fill.originChainId,
+    depositor: fill.depositor,
+    recipient: fill.recipient,
+    depositId: fill.depositId,
+    inputToken: fill.inputToken,
+    inputAmount: fill.inputAmount,
+    outputToken: fill.outputToken,
+    outputAmount: fill.outputAmount,
+    message: EMPTY_MESSAGE,
+    fillDeadline: fill.fillDeadline,
+    exclusiveRelayer: fill.exclusiveRelayer,
+    exclusivityDeadline: fill.exclusivityDeadline,
+  };
+}
 
 // @description Returns all unfilled deposits, indexed by destination chain.
 // @param destinationChainId  Chain ID to query outstanding deposits on.

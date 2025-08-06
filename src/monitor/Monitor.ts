@@ -5,7 +5,9 @@ import {
   BundleAction,
   DepositWithBlock,
   FillStatus,
+  FillWithBlock,
   L1Token,
+  RelayData,
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
@@ -55,12 +57,22 @@ import {
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
   chainIsEvm,
+  getFillStatusPda,
+  getKitKeypairFromEvmSigner,
+  ZERO_BYTES,
+  getRelayDataFromFill,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
 import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
+import {
+  address,
+  fetchEncodedAccount,
+  getBase64EncodedWireTransaction,
+  signTransactionMessageWithSigners,
+} from "@solana/kit";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -408,41 +420,43 @@ export class Monitor {
     await this.updateLatestAndFutureRelayerRefunds(reports);
 
     for (const relayer of relayers) {
-      const report = reports[relayer.toBytes32()];
-      let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
-      for (const token of allL1Tokens) {
-        let tokenMrkdwn = "";
-        for (const chainName of allChainNames) {
-          const balancesBN = Object.values(report[token.symbol][chainName]);
-          if (balancesBN.find((b) => b.gt(bnZero))) {
-            // Human-readable balances
-            const balances = balancesBN.map((balance) =>
-              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-            );
-            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+      if (relayer.isEVM()) {
+        const report = reports[relayer.toBytes32()];
+        let summaryMrkdwn = "*[Summary]*\n";
+        let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
+        for (const token of allL1Tokens) {
+          let tokenMrkdwn = "";
+          for (const chainName of allChainNames) {
+            const balancesBN = Object.values(report[token.symbol][chainName]);
+            if (balancesBN.find((b) => b.gt(bnZero))) {
+              // Human-readable balances
+              const balances = balancesBN.map((balance) =>
+                balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+              );
+              tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+            } else {
+              // Shorten balances in the report if everything is 0.
+              tokenMrkdwn += `${chainName}: 0\n`;
+            }
+          }
+
+          const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
+          // Update corresponding summary section for current token.
+          if (totalBalance.gt(bnZero)) {
+            mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
+            summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
           } else {
-            // Shorten balances in the report if everything is 0.
-            tokenMrkdwn += `${chainName}: 0\n`;
+            summaryMrkdwn += `${token.symbol}: 0\n`;
           }
         }
 
-        const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
-        // Update corresponding summary section for current token.
-        if (totalBalance.gt(bnZero)) {
-          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
-        } else {
-          summaryMrkdwn += `${token.symbol}: 0\n`;
-        }
+        mrkdwn += summaryMrkdwn;
+        this.logger.info({
+          at: "Monitor#reportRelayerBalances",
+          message: `Balance report for ${relayer} 📖`,
+          mrkdwn,
+        });
       }
-
-      mrkdwn += summaryMrkdwn;
-      this.logger.info({
-        at: "Monitor#reportRelayerBalances",
-        message: `Balance report for ${relayer} 📖`,
-        mrkdwn,
-      });
     }
     Object.entries(reports).forEach(([relayer, balanceTable]) => {
       Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
@@ -480,30 +494,32 @@ export class Monitor {
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      for (const chainId of this.monitorChains) {
-        const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
-        const l2TokenAddresses = Object.keys(l2ToL1Tokens);
-        const tokenBalances = await this._getBalances(
-          l2TokenAddresses.map((address) => ({
-            token: toAddressType(address, chainId),
-            chainId: chainId,
-            account: relayer,
-          }))
-        );
+      if (relayer.isEVM()) {
+        for (const chainId of this.monitorChains) {
+          const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
+          const l2TokenAddresses = Object.keys(l2ToL1Tokens);
+          const tokenBalances = await this._getBalances(
+            l2TokenAddresses.map((address) => ({
+              token: toAddressType(address, chainId),
+              chainId: chainId,
+              account: relayer,
+            }))
+          );
 
-        for (let i = 0; i < l2TokenAddresses.length; i++) {
-          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(
-            toAddressType(l2TokenAddresses[i], chainId),
-            chainId
-          );
-          const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
-          this.updateRelayerBalanceTable(
-            relayerBalanceReport[relayer.toBytes32()],
-            symbol,
-            getNetworkName(chainId),
-            BalanceType.CURRENT,
-            decimalConverter(tokenBalances[i])
-          );
+          for (let i = 0; i < l2TokenAddresses.length; i++) {
+            const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(
+              toAddressType(l2TokenAddresses[i], chainId),
+              chainId
+            );
+            const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
+            this.updateRelayerBalanceTable(
+              relayerBalanceReport[relayer.toBytes32()],
+              symbol,
+              getNetworkName(chainId),
+              BalanceType.CURRENT,
+              decimalConverter(tokenBalances[i])
+            );
+          }
         }
       }
     }
@@ -1183,6 +1199,116 @@ export class Monitor {
     }
   }
 
+  async closePDAs(): Promise<void> {
+    const svmSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.SOLANA];
+    if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
+      return;
+    }
+    const fills: FillWithBlock[] = [];
+    for (const relayers of this.monitorConfig.monitoredRelayers) {
+      if (relayers.isSVM()) {
+        const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
+        fills.push(...relayerFills);
+      }
+    }
+    const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
+    const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
+    const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
+    // invalidFillsWithoutDeposit is an array of fills that have messageHash !== ZERO_BYTES
+    // and no deposit was found for that fill, so we can't close the PDAs for them
+    // because we don't have right relay data to close the PDAs. We should push these
+    // fills into the invalidFillsWithoutDeposit array so we can log them and possibly close them manually.
+    const invalidFillsWithoutDeposit = [];
+    for (const fill of fills) {
+      let relayData: RelayData;
+
+      if (fill.messageHash === ZERO_BYTES) {
+        relayData = getRelayDataFromFill(fill);
+      } else {
+        const spokePoolClient = this.clients.spokePoolClients[fill.originChainId];
+        if (!spokePoolClient) {
+          // @TODO: Should we push this fill into the invalidFillsWithoutDeposit array?
+          invalidFillsWithoutDeposit.push(fill);
+          continue;
+        }
+        const deposit = spokePoolClient.getDepositForFill(fill);
+        if (!deposit) {
+          invalidFillsWithoutDeposit.push(fill);
+          continue;
+        }
+
+        relayData = {
+          originChainId: deposit.originChainId,
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          depositId: deposit.depositId,
+          inputToken: deposit.inputToken,
+          inputAmount: deposit.inputAmount,
+          outputToken: deposit.outputToken,
+          outputAmount: deposit.outputAmount,
+          message: deposit.message,
+          fillDeadline: deposit.fillDeadline,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          exclusivityDeadline: deposit.exclusivityDeadline,
+        };
+      }
+
+      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId);
+      // If fill PDA should not be closed, skip.
+      if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
+        continue;
+      }
+
+      const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
+
+      // Check if PDA is already closed
+      const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
+      if (!fillStatusPdaAccount.exists) {
+        continue;
+      }
+
+      const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
+      const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
+      const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
+
+      const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
+
+      if (simulate) {
+        const result = await svmRpc
+          .simulateTransaction(encodedTransaction, {
+            encoding: "base64",
+          })
+          .send();
+        if (result.value.err) {
+          this.logger.error({
+            at: "Monitor#closePDAs",
+            message: `Failed to close PDA for fill ${fill.txnRef}`,
+            error: result.value.err,
+          });
+        }
+        continue;
+      }
+
+      try {
+        await svmRpc
+          .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
+          .send();
+      } catch (err) {
+        this.logger.error({
+          at: "Monitor#closePDAs",
+          message: `Failed to close PDA for fill ${fill.txnRef}`,
+          error: err,
+        });
+      }
+    }
+
+    this.logger.info({
+      at: "Monitor#closePDAs",
+      message: "InvalidFills that have open PDAs",
+      invalidFillsWithoutDeposit,
+    });
+  }
+
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const validatedBundleRefunds: CombinedRefunds[] =
       await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
@@ -1191,16 +1317,22 @@ export class Monitor {
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
+        if (relayer.isEVM()) {
+          this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
+        }
       }
     }
     for (const refunds of nextBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
+        if (relayer.isEVM()) {
+          this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
+        }
       }
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
+      if (relayer.isEVM()) {
+        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
+      }
     }
   }
 
@@ -1239,13 +1371,15 @@ export class Monitor {
   initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
-      reports[relayer.toBytes32()] = {};
-      for (const token of allL1Tokens) {
-        reports[relayer.toBytes32()][token.symbol] = {};
-        for (const chainName of allChainNames) {
-          reports[relayer.toBytes32()][token.symbol][chainName] = {};
-          for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
+      if (relayer.isEVM()) {
+        reports[relayer.toBytes32()] = {};
+        for (const token of allL1Tokens) {
+          reports[relayer.toBytes32()][token.symbol] = {};
+          for (const chainName of allChainNames) {
+            reports[relayer.toBytes32()][token.symbol][chainName] = {};
+            for (const balanceType of ALL_BALANCE_TYPES) {
+              reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
+            }
           }
         }
       }
@@ -1496,5 +1630,9 @@ export class Monitor {
       }
     }
     return false;
+  }
+
+  private _shouldCloseFillPDA(fillStatus: FillStatus, fillDeadline: number, currentTime: number): boolean {
+    return fillStatus === FillStatus.Filled && currentTime > fillDeadline;
   }
 }
