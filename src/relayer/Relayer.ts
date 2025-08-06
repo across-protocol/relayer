@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
-import { FillStatus, Deposit, DepositWithBlock } from "../interfaces";
+import { FillStatus, Deposit, DepositWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
   BigNumber,
@@ -432,18 +432,29 @@ export class Relayer {
    */
   private _getUnfilledDeposits(): Record<number, RelayerUnfilledDeposit[]> {
     const { hubPoolClient, spokePoolClients } = this.clients;
-    const { relayerDestinationChains } = this.config;
+    const { relayerDestinationChains, relayerOriginChains } = this.config;
+
+    // Extract origin and destination spoke pool chains
+    const originSpokePoolClients: SpokePoolClientsByChain = Object.fromEntries(
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerOriginChains?.includes(chainId) ?? true)
+        .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+    );
+
+    const destinationSpokePoolClients: SpokePoolClientsByChain = Object.fromEntries(
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
+        .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
+    );
 
     // Filter the resulting deposits according to relayer configuration.
     return Object.fromEntries(
-      Object.values(spokePoolClients)
-        .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
-        .map(({ chainId: destinationChainId }) => [
-          destinationChainId,
-          getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, this.fillStatus).filter((deposit) =>
-            this.filterDeposit(deposit)
-          ),
-        ])
+      Object.values(destinationSpokePoolClients).map((destinationSpokePoolClient) => [
+        destinationSpokePoolClient.chainId,
+        getUnfilledDeposits(destinationSpokePoolClient, originSpokePoolClients, hubPoolClient, this.fillStatus).filter(
+          (deposit) => this.filterDeposit(deposit)
+        ),
+      ])
     );
   }
 
