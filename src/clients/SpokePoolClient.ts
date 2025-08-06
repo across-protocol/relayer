@@ -207,7 +207,6 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       const at = "SpokePoolClient#removeEvent";
       const eventIdx = this._queryableEventNames().indexOf(event.event);
       const pendingEvents = this.#pendingEvents[eventIdx];
-
       const { event: eventName, blockNumber, blockHash, transactionHash } = event;
 
       // First check for removal from any pending events.
