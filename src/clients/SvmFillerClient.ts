@@ -24,6 +24,7 @@ import {
   chainIsSvm,
   getInstructionParamsPda,
   getLatestBlockhash,
+  sendAndConfirmSolanaTransaction,
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
@@ -98,6 +99,8 @@ export class SvmFillerClient {
       const prefillInstructions = arch.svm.getFillRelayViaInstructionParamsInstructions(
         arch.svm.toAddress(spokePool),
         relayData,
+        repaymentChainId,
+        repaymentAddress,
         this.signer
       );
       const fillRelayPromise = arch.svm.getIPFillRelayTx(
@@ -181,7 +184,7 @@ export class SvmFillerClient {
       );
       // If the instruction params account exists, then close it.
       if (encodedAccount.exists) {
-        const closeSignature = await signAndSendTransaction(this.provider, closeInstructionParamsTx);
+        const closeSignature = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, this.signer, this.provider);
         this.logger.debug({
           at: "SvmFillerClient#executeTxnQueue",
           message: "Closed outstanding instruction params account before executing Solana message relays.",
@@ -202,10 +205,10 @@ export class SvmFillerClient {
               (tx) => setTransactionMessageLifetimeUsingBlockhash(fillTransaction.lifetimeConstraint, tx),
               (tx) => appendTransactionMessageInstructions([ix], tx)
             );
-            const prefillSignature = await signAndSendTransaction(this.provider, instructionParamsTx);
+            const prefillSignature = await sendAndConfirmSolanaTransaction(instructionParamsTx, this.signer, this.provider);
             this.logger.debug({
               at: "SvmFillerClient#executeTxnQueue",
-              message: "Wrote data to instruction params.",
+              message: "Executed pre-fill instruction params transaction.",
               prefillSignature,
             });
           }
