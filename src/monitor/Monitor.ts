@@ -207,7 +207,7 @@ export class Monitor {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(
       await mapAsync(Object.values(spokePoolClients), async ({ chainId: destinationChainId }) => {
-        const deposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient).map(
+        const deposits = getUnfilledDeposits(spokePoolClients[destinationChainId], spokePoolClients, hubPoolClient).map(
           ({ deposit, invalidFills: invalid }) => {
             // Ignore depositId >= bnUInt32Max; these tend to be pre-fills that are eventually valid and
             // tend to confuse this reporting because there are multiple deposits with the same depositId.
