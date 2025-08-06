@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
-import { FillStatus, Deposit, DepositWithBlock } from "../interfaces";
+import { FillStatus, Deposit, DepositWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import { updateSpokePoolClients } from "../common";
 import {
   BigNumber,
@@ -434,21 +434,26 @@ export class Relayer {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const { relayerDestinationChains, relayerOriginChains } = this.config;
 
-    const originSpokePoolClients = Object.values(spokePoolClients).filter(
-      ({ chainId }) => relayerOriginChains?.includes(chainId) ?? true
+    // Extract origin and destination spoke pool chains
+    const originSpokePoolChains: SpokePoolClientsByChain = Object.fromEntries(
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerOriginChains?.includes(chainId) ?? true)
+        .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
 
-    const destinationSpokePoolClients = Object.values(spokePoolClients).filter(
-      ({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true
+    const destinationSpokePoolChains: SpokePoolClientsByChain = Object.fromEntries(
+      Object.values(spokePoolClients)
+        .filter(({ chainId }) => relayerDestinationChains?.includes(chainId) ?? true)
+        .map((spokePoolClient) => [spokePoolClient.chainId, spokePoolClient])
     );
 
     // Filter the resulting deposits according to relayer configuration.
     return Object.fromEntries(
-      Object.values(destinationSpokePoolClients).map((destinationSpokePoolClient) => [
+      Object.values(destinationSpokePoolChains).map((destinationSpokePoolClient) => [
         destinationSpokePoolClient.chainId,
         getUnfilledDeposits(
           destinationSpokePoolClient.chainId,
-          originSpokePoolClients,
+          originSpokePoolChains,
           hubPoolClient,
           this.fillStatus,
           destinationSpokePoolClient
