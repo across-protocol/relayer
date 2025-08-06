@@ -122,7 +122,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
               return;
             }
 
-            if (eventMgr.add(event, provider.name)) {
+            const hasQuorum = eventMgr.add(event, provider.name);
+            if (hasQuorum) {
               stop ||= !postEvents([event]);
             }
           });
