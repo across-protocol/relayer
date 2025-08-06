@@ -2,6 +2,12 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { isDefined, sortEventsAscending } from "../../utils";
 import { Log, SpokePoolClientMessage } from "./../types";
 
+/**
+ * Post a block update to the parent process (if defined).
+ * @param blockNumber Block number up to which the update applies.
+ * @param currentTime The SpokePool timestamp at blockNumber.
+ * @returns True if message transmission succeeds, else false.
+ */
 export function postBlock(blockNumber: number, currentTime: number): boolean {
   if (!isDefined(process.send)) {
     // Process was probably started standalone.
@@ -24,6 +30,11 @@ export function postBlock(blockNumber: number, currentTime: number): boolean {
   return true;
 }
 
+/**
+ * Post an array of events to the parent process (if defined).
+ * @param events An array of Log objects to be submitted.
+ * @returns True if message transmission succeeds, else false.
+ */
 export function postEvents(events: Log[]): boolean {
   if (!isDefined(process.send)) {
     // Process was probably started standalone.
