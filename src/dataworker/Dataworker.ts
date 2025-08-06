@@ -2934,6 +2934,7 @@ export class Dataworker {
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
     txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, kitKeypair, provider);
+    await waitForNewSolanaBlock(provider, 1);
 
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
