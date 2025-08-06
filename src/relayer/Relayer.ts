@@ -451,13 +451,9 @@ export class Relayer {
     return Object.fromEntries(
       Object.values(destinationSpokePoolChains).map((destinationSpokePoolClient) => [
         destinationSpokePoolClient.chainId,
-        getUnfilledDeposits(
-          destinationSpokePoolClient.chainId,
-          originSpokePoolChains,
-          hubPoolClient,
-          this.fillStatus,
-          destinationSpokePoolClient
-        ).filter((deposit) => this.filterDeposit(deposit)),
+        getUnfilledDeposits(originSpokePoolChains, hubPoolClient, this.fillStatus, destinationSpokePoolClient).filter(
+          (deposit) => this.filterDeposit(deposit)
+        ),
       ])
     );
   }

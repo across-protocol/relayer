@@ -277,7 +277,12 @@ describe("Relayer: Unfilled Deposits", async function () {
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 
-    unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
+    unfilledDeposits = getUnfilledDeposits(
+      spokePoolClients,
+      hubPoolClient,
+      fillStatus,
+      spokePoolClients[destinationChainId]
+    );
     expect(
       unfilledDeposits.map((unfilledDeposit) => {
         return {
