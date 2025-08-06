@@ -77,7 +77,6 @@ import {
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
 export const REBALANCE_FINALIZE_GRACE_PERIOD = Number(process.env.REBALANCE_FINALIZE_GRACE_PERIOD ?? 60 * 60);
-export const PDAS_CLOSE_GRACE_PERIOD = Number(process.env.PDAS_CLOSE_GRACE_PERIOD ?? 60 * 60 * 6);
 
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
@@ -1261,16 +1260,47 @@ export class Monitor {
       }
 
       const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
+
       // Check if PDA is already closed
       const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
       if (!fillStatusPdaAccount.exists) {
         continue;
       }
-
+      
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-      await svmRpc.sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" }).send();
+
+      const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
+
+      if (simulate) {
+        const result = await svmRpc
+          .simulateTransaction(
+            encodedTransaction,
+            {
+              encoding: "base64",
+            }
+          )
+          .send();
+        if (result.value.err) {
+          this.logger.error({
+          at: "Monitor#closePDAs",
+            message: `Failed to close PDA for fill ${fill.txnRef}`,
+            error: result.value.err,
+          });
+        }
+        continue;
+      }
+
+      try {
+        await svmRpc.sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" }).send();
+      } catch (err) {
+        this.logger.error({
+          at: "Monitor#closePDAs",
+          message: `Failed to close PDA for fill ${fill.txnRef}`,
+          error: err,
+        });
+      }
     }
 
     this.logger.info({
