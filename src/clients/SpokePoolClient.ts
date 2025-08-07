@@ -205,10 +205,9 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
       let handled = false;
       if (pendingEventIdx !== -1) {
-        handled = true;
-
         // Drop the relevant event.
         pendingEvents.splice(pendingEventIdx, 1);
+        handled = true;
 
         this.logger.debug({
           at: "SpokePoolClient#removeEvent",
