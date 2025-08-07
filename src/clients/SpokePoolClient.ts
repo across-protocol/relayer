@@ -233,7 +233,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         } else {
           this.logger.warn({
             at,
-            message: `Searched for ${this.#chain} depositd ${depositId} but didn't find it.`,
+            message: `Searched for ${this.#chain} deposit ${depositId} but didn't find it.`,
             transactionHash,
           });
         }
