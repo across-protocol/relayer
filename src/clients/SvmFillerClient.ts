@@ -184,7 +184,11 @@ export class SvmFillerClient {
       );
       // If the instruction params account exists, then close it.
       if (encodedAccount.exists) {
-        const closeSignature = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, this.signer, this.provider);
+        const closeSignature = await sendAndConfirmSolanaTransaction(
+          closeInstructionParamsTx,
+          this.signer,
+          this.provider
+        );
         this.logger.debug({
           at: "SvmFillerClient#executeTxnQueue",
           message: "Closed outstanding instruction params account before executing Solana message relays.",
@@ -205,7 +209,11 @@ export class SvmFillerClient {
               (tx) => setTransactionMessageLifetimeUsingBlockhash(fillTransaction.lifetimeConstraint, tx),
               (tx) => appendTransactionMessageInstructions([ix], tx)
             );
-            const prefillSignature = await sendAndConfirmSolanaTransaction(instructionParamsTx, this.signer, this.provider);
+            const prefillSignature = await sendAndConfirmSolanaTransaction(
+              instructionParamsTx,
+              this.signer,
+              this.provider
+            );
             this.logger.debug({
               at: "SvmFillerClient#executeTxnQueue",
               message: "Executed pre-fill instruction params transaction.",
