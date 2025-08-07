@@ -84,6 +84,8 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
       }
+      // Execute bundleRefundsPromise only after all spokePoolClients are updated.
+      await relayer.clients.inventoryClient.executeBundleRefundsPromise();
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.

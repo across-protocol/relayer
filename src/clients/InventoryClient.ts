@@ -332,8 +332,7 @@ export class InventoryClient {
     return refunds;
   }
 
-  async init(): Promise<void> {
-    await this.setTokenApprovals();
+  async executeBundleRefundsPromise(): Promise<void> {
     this.prepareBundleRefundsPromise();
     await this.bundleRefundsPromise;
   }
@@ -1577,7 +1576,7 @@ export class InventoryClient {
     await this.adapterManager.wrapNativeTokenIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  async update(chainIds?: number[]): Promise<void> {
+  update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
