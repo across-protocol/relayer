@@ -6,19 +6,23 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
+      - run:
+          name: Enable Corepack
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Install Dependencies
           command: yarn install --immutable
       - save_cache:
           name: Save Yarn Package Cache
-          key: cache-node-v1-{{ checksum "yarn.lock" }}
+          key: cache-node-v2-{{ checksum "yarn.lock" }}
           paths:
             - node_modules
+            - .yarn
   test:
     docker:
       - image: cimg/node:20.19.2
@@ -26,11 +30,14 @@ jobs:
     resource_class: medium+
     parallelism: 20
     steps:
+      - run:
+          name: Enable Corepack
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
 
       # Extract Solana version from across-protocol/contracts
       - run:
@@ -109,11 +116,14 @@ jobs:
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
+      - run:
+          name: Enable Corepack
+          command: sudo corepack enable
       - checkout
       - restore_cache:
           name: Restore Yarn Package Cache
           keys:
-            - cache-node-v1-{{ checksum "yarn.lock" }}
+            - cache-node-v2-{{ checksum "yarn.lock" }}
       - run:
           name: Run lint
           command: yarn lint
