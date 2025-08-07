@@ -1,11 +1,11 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { BigNumber, assert, getArweaveJWKSigner, toBNWei } from "../utils";
+import { assert, getArweaveJWKSigner } from "../utils";
 
 export class DataworkerConfig extends CommonConfig {
   readonly minChallengeLeadTime: number;
+  readonly awaitChallengePeriod: boolean;
   readonly maxPoolRebalanceLeafSizeOverride: number;
   readonly maxRelayerRepaymentLeafSizeOverride: number;
-  readonly rootBundleExecutionThreshold: BigNumber;
   readonly spokeRootsLookbackCount: number; // Consider making this configurable per chain ID.
 
   // These variables can be toggled to choose whether the bot will go through the dataworker logic.
@@ -13,7 +13,6 @@ export class DataworkerConfig extends CommonConfig {
   readonly proposerEnabled: boolean;
   readonly l2ExecutorEnabled: boolean;
   readonly l1ExecutorEnabled: boolean;
-  readonly finalizerEnabled: boolean;
 
   // This variable can be toggled to bypass the proposer logic and always attempt to propose
   // a bundle. This is useful for testing the disputer logic.
@@ -40,7 +39,6 @@ export class DataworkerConfig extends CommonConfig {
 
   constructor(env: ProcessEnv) {
     const {
-      ROOT_BUNDLE_EXECUTION_THRESHOLD,
       MAX_POOL_REBALANCE_LEAF_SIZE_OVERRIDE,
       MAX_RELAYER_REPAYMENT_LEAF_SIZE_OVERRIDE,
       DISPUTER_ENABLED,
@@ -48,7 +46,6 @@ export class DataworkerConfig extends CommonConfig {
       L2_EXECUTOR_ENABLED,
       L1_EXECUTOR_ENABLED,
       SPOKE_ROOTS_LOOKBACK_COUNT,
-      FINALIZER_ENABLED,
       BUFFER_TO_PROPOSE,
       DATAWORKER_FAST_LOOKBACK_COUNT,
       DATAWORKER_FAST_START_BUNDLE,
@@ -57,10 +54,12 @@ export class DataworkerConfig extends CommonConfig {
       PERSIST_BUNDLES_TO_ARWEAVE,
       EXECUTOR_IGNORE_CHAINS,
       MIN_CHALLENGE_LEAD_TIME = "600",
+      AWAIT_CHALLENGE_PERIOD = "false",
     } = env;
     super(env);
 
     this.minChallengeLeadTime = Number(MIN_CHALLENGE_LEAD_TIME);
+    this.awaitChallengePeriod = AWAIT_CHALLENGE_PERIOD === "true";
 
     this.bufferToPropose = BUFFER_TO_PROPOSE ? Number(BUFFER_TO_PROPOSE) : (20 * 60) / 15; // 20 mins of blocks;
     // Should we assert that the leaf count caps are > 0?
@@ -77,9 +76,6 @@ export class DataworkerConfig extends CommonConfig {
     if (this.maxRelayerRepaymentLeafSizeOverride !== undefined) {
       assert(this.maxRelayerRepaymentLeafSizeOverride > 0, "Max leaf count set to 0");
     }
-    this.rootBundleExecutionThreshold = ROOT_BUNDLE_EXECUTION_THRESHOLD
-      ? toBNWei(ROOT_BUNDLE_EXECUTION_THRESHOLD)
-      : toBNWei("500000");
     this.disputerEnabled = DISPUTER_ENABLED === "true";
     this.proposerEnabled = PROPOSER_ENABLED === "true";
     this.l2ExecutorEnabled = L2_EXECUTOR_ENABLED === "true";
@@ -91,7 +87,6 @@ export class DataworkerConfig extends CommonConfig {
       // should set spokeRootsLookbackCount == 0 if executor disabled and proposer/disputer enabled
       this.spokeRootsLookbackCount = 0;
     }
-    this.finalizerEnabled = FINALIZER_ENABLED === "true";
 
     this.forcePropose = FORCE_PROPOSAL === "true";
 

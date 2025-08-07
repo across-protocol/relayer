@@ -1,6 +1,6 @@
-import { HubPoolClient } from "../clients";
-import { FillStatus, SpokePoolClientsByChain, DepositWithBlock, FillWithBlock } from "../interfaces";
-import { CHAIN_IDs } from "../utils";
+import { HubPoolClient, SpokePoolClient } from "../clients";
+import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
+import { bnZero, CHAIN_IDs } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -14,13 +14,12 @@ export type RelayerUnfilledDeposit = {
 // @param hubPoolClient HubPoolClient instance.
 // @returns Array of unfilled deposits.
 export function getUnfilledDeposits(
-  destinationChainId: number,
+  destinationSpokePoolClient: SpokePoolClient,
   spokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
   fillStatus: { [deposit: string]: number } = {}
 ): RelayerUnfilledDeposit[] {
-  const destinationClient = spokePoolClients[destinationChainId];
-
+  const destinationChainId = destinationSpokePoolClient.chainId;
   // Iterate over each chainId and check for unfilled deposits.
   const deposits = Object.values(spokePoolClients)
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
@@ -69,7 +68,7 @@ export function getAllUnfilledDeposits(
   return Object.fromEntries(
     Object.values(spokePoolClients).map(({ chainId: destinationChainId }) => [
       destinationChainId,
-      getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient),
+      getUnfilledDeposits(spokePoolClients[destinationChainId], spokePoolClients, hubPoolClient),
     ])
   );
 }

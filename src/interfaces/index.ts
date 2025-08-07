@@ -56,6 +56,7 @@ export type RelayData = interfaces.RelayData;
 export type Deposit = interfaces.Deposit;
 export type DepositWithBlock = interfaces.DepositWithBlock;
 export type Fill = interfaces.Fill;
+export type RelayExecutionEventInfo = interfaces.RelayExecutionEventInfo;
 export type FillWithBlock = interfaces.FillWithBlock;
 export type SpeedUp = interfaces.SpeedUp;
 export type SlowFillRequest = interfaces.SlowFillRequest;

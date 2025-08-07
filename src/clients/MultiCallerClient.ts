@@ -45,9 +45,11 @@ export const knownRevertReasons = new Set([
 export const unknownRevertReasons = [
   "missing revert data in call exception; Transaction reverted without a reason string",
   "execution reverted",
+  "Error",
 ];
 export const unknownRevertReasonMethodsToIgnore = new Set([
   "multicall",
+  "aggregate",
   "fillRelay",
   "fillRelayWithUpdatedFee",
   "fillRelayWithUpdatedDeposit",
@@ -203,9 +205,9 @@ export class MultiCallerClient {
     // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
-    // @dev Order the nonMulticallTxns after the multicall transactions in case they depend on a change of state caused by the multicall transactions.
-    const _batchTxns = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
-    const batchTxns: AugmentedTransaction[] = _batchTxns.concat(nonMulticallTxns);
+    const batchTxns: AugmentedTransaction[] = nonMulticallTxns.concat(
+      await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
+    );
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
       // If txn succeeded or the revert reason is known to be benign, then log at debug level.
@@ -231,10 +233,8 @@ export class MultiCallerClient {
       const [_txns, _valueTxns] = individualTxnSimResults.map((result): AugmentedTransaction[] => {
         return isPromiseFulfilled(result) ? result.value : [];
       });
-      const multicallBundle = await this.buildMultiCallBundles(_txns, this.chunkSize[chainId]);
       // Fill in the set of txns to submit to the network. Anything that failed simulation is dropped.
-      // @dev The ordering of transactions here is important, since it is possible for _valueTxns to depend on a change of state initiated by transactions in the multicall bundle.
-      txnRequestsToSubmit.push(...multicallBundle.concat(_valueTxns));
+      txnRequestsToSubmit.push(..._valueTxns.concat(await this.buildMultiCallBundles(_txns, this.chunkSize[chainId])));
     }
 
     if (simulate) {
