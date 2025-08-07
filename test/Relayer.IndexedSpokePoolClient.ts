@@ -64,7 +64,6 @@ describe("IndexedSpokePoolClient: Update", async function () {
       recipient: randomAddress(),
       depositId: depositId++,
       inputToken: randomAddress(),
-      originChainId: 1,
       destinationChainId: Math.ceil(Math.random() * 1e3),
       inputAmount: sdkUtils.bnOne,
       outputToken: randomAddress(),
