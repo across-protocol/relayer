@@ -333,14 +333,16 @@ export class InventoryClient {
   }
 
   async executeBundleRefundsPromise(): Promise<CombinedRefunds[]> {
-    this.prepareBundleRefundsPromise();
-    return this.bundleRefundsPromise;
-  }
-
-  public prepareBundleRefundsPromise(): void {
+    let mark: ReturnType<typeof this.profiler.start>;
     if (!isDefined(this.bundleRefundsPromise)) {
       this.bundleRefundsPromise = this.getAllBundleRefunds();
+      mark = this.profiler.start("bundleRefunds");
     }
+    const result = this.bundleRefundsPromise;
+    mark?.stop({
+      message: "Time to calculate total refunds per chain",
+    });
+    return result;
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
@@ -349,7 +351,6 @@ export class InventoryClient {
     let refundsToConsider: CombinedRefunds[] = [];
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
-    let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
@@ -371,11 +372,6 @@ export class InventoryClient {
       },
       {}
     );
-
-    mark?.stop({
-      message: "Time to calculate total refunds per chain",
-      l1Token,
-    });
 
     return totalRefundsPerChain;
   }
