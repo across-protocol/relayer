@@ -231,7 +231,11 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           delete this.depositHashes[depositKey];
           this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
         } else {
-          this.logger.warn({ at, message: `Searched for ${this.#chain} depositd ${depositId} but didn't find it.`, transactionHash });
+          this.logger.warn({
+            at,
+            message: `Searched for ${this.#chain} depositd ${depositId} but didn't find it.`,
+            transactionHash,
+          });
         }
       } else if (eventName === "EnabledDepositRoute") {
         // These are hard to back out because they're not stored with transaction information. They should be extremely
