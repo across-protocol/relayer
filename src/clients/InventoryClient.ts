@@ -300,6 +300,7 @@ export class InventoryClient {
   }
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
+    const mark = this.profiler.start("bundleRefunds");
     const refunds: CombinedRefunds[] = [];
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
       this.bundleDataClient.getPendingRefundsFromValidBundles(),
@@ -329,7 +330,18 @@ export class InventoryClient {
         refunds: nextBundleRefunds[0],
       });
     }
+
+    mark.stop({
+      message: "Time to calculate total refunds per chain",
+    });
     return refunds;
+  }
+
+  async executeBundleRefundsPromise(): Promise<CombinedRefunds[]> {
+    if (!isDefined(this.bundleRefundsPromise)) {
+      this.bundleRefundsPromise = this.getAllBundleRefunds();
+    }
+    return this.bundleRefundsPromise;
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
@@ -338,16 +350,10 @@ export class InventoryClient {
     let refundsToConsider: CombinedRefunds[] = [];
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
-    let mark: ReturnType<typeof this.profiler.start>;
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    if (!isDefined(this.bundleRefundsPromise)) {
-      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      mark = this.profiler.start(`bundleRefunds for ${l1Token}`);
-      this.bundleRefundsPromise = this.getAllBundleRefunds();
-    }
-    refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
+    refundsToConsider = lodash.cloneDeep(await this.executeBundleRefundsPromise());
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
         const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
@@ -365,11 +371,6 @@ export class InventoryClient {
       },
       {}
     );
-
-    mark?.stop({
-      message: "Time to calculate total refunds per chain",
-      l1Token,
-    });
 
     return totalRefundsPerChain;
   }
