@@ -799,6 +799,8 @@ export class Relayer {
         this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
       }
     } else {
+      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
+      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
       tokenClient.captureTokenShortfallForFill(deposit);
 
       // Exit early if we want to request a slow fill for a lite chain.
@@ -811,8 +813,6 @@ export class Relayer {
         });
         return;
       }
-      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
-      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
       if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
         this.requestSlowFill(deposit);
       }
