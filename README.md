@@ -81,10 +81,10 @@ To test local changes to the SDK alongside this repository you can use `yalc`:
 npm install -g yalc
 ```
 
-2. Inside the `@across-protocol/sdk` directory, publish the local SDK to your local yalc server:
+2. Inside the `@across-protocol/sdk` directory, watch for changes and publish the local SDK to your local yalc server:
 
 ```sh
-yalc publish
+yalc yalc:watch
 ```
 
 3. Add/Link the local SDK in this repository:
@@ -94,15 +94,7 @@ yalc add @across-protocol/sdk
 ```
 use `yalc link @across-protocol/sdk` if you dont want yalc to modify package.json file
 
-4. Making changes to the SDK
-
-After making changes to the SDK, you can run in the `@across-protocol/sdk` directory:
-
-```sh
-yalc push
-```
-
-this will publish the SDK changes and update all the yalc SDK usages.
+Any changes to the SDK will be automatically published to your local yalc server.
 
 Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
 
