@@ -763,11 +763,13 @@ export class Relayer {
       lpFeePct: realizedLpFeePct,
       gasPrice,
     } = repaymentChainProfitability;
-    if (!isDefined(repaymentChainId)) {
-      profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-      const relayKey = sdkUtils.getRelayEventKey(deposit);
-      this.ignoredDeposits[relayKey] = true;
-    } else if (tokenClient.hasBalanceForFill(deposit)) {
+    if (tokenClient.hasBalanceForFill(deposit)) {
+      if (!isDefined(repaymentChainId)) {
+        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
+        return;
+      }
       const { blockNumber, outputToken, outputAmount } = deposit;
       const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
       if (!isDefined(fillAmountUsd)) {
