@@ -300,6 +300,7 @@ export class InventoryClient {
   }
 
   async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
+    const mark = this.profiler.start("bundleRefunds");
     const refunds: CombinedRefunds[] = [];
     const [pendingRefunds, nextBundleRefunds] = await Promise.all([
       this.bundleDataClient.getPendingRefundsFromValidBundles(),
@@ -329,20 +330,18 @@ export class InventoryClient {
         refunds: nextBundleRefunds[0],
       });
     }
+
+    mark.stop({
+      message: "Time to calculate total refunds per chain",
+    });
     return refunds;
   }
 
   async executeBundleRefundsPromise(): Promise<CombinedRefunds[]> {
-    let mark: ReturnType<typeof this.profiler.start>;
     if (!isDefined(this.bundleRefundsPromise)) {
       this.bundleRefundsPromise = this.getAllBundleRefunds();
-      mark = this.profiler.start("bundleRefunds");
     }
-    const result = this.bundleRefundsPromise;
-    mark?.stop({
-      message: "Time to calculate total refunds per chain",
-    });
-    return result;
+    return this.bundleRefundsPromise;
   }
 
   // Return the upcoming refunds (in pending and next bundles) on each chain.
