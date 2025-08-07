@@ -148,7 +148,7 @@ export async function binanceFinalizer(
           at: "BinanceFinalizer",
           message: `No finalizable deposits found for ${address}`,
         });
-        return;
+        continue;
       }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
