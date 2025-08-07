@@ -164,10 +164,11 @@ export async function constructRelayerClients(
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
+  const relayerSvmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
   const tokenClient = new TokenClient(
     logger,
     signerAddr,
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
+    relayerSvmAddress,
     spokePoolClients,
     hubPoolClient,
     relayerTokens
@@ -185,6 +186,7 @@ export async function constructRelayerClients(
     spokePoolClients,
     enabledChainIds,
     signerAddr,
+    relayerSvmAddress,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
@@ -233,7 +235,13 @@ export async function constructRelayerClients(
   }
   const svmFillerClient =
     svmChainIds.length === 1
-      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      ? await SvmFillerClient.from(
+          baseSigner,
+          getSvmProvider(),
+          svmChainIds[0],
+          spokePoolClients[svmChainIds[0]].spokePoolAddress,
+          logger
+        )
       : undefined;
 
   return {

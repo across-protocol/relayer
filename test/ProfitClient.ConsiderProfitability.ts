@@ -173,7 +173,8 @@ describe("ProfitClient: Consider relay profit", () => {
       hubPoolClient,
       spokePoolClients,
       [],
-      randomAddress(),
+      toAddressType(randomAddress(), CHAIN_IDs.MAINNET),
+      toAddressType(randomAddress(), CHAIN_IDs.SOLANA),
       minRelayerFeePct,
       debugProfitability
     );
