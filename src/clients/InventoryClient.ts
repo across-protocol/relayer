@@ -332,6 +332,12 @@ export class InventoryClient {
     return refunds;
   }
 
+  async init(): Promise<void> {
+    await this.setTokenApprovals();
+    this.prepareBundleRefundsPromise();
+    await this.bundleRefundsPromise;
+  }
+
   public prepareBundleRefundsPromise(): void {
     if (!isDefined(this.bundleRefundsPromise)) {
       this.bundleRefundsPromise = this.getAllBundleRefunds();
@@ -1576,9 +1582,7 @@ export class InventoryClient {
       return;
     }
 
-    await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
-    this.prepareBundleRefundsPromise();
-    await this.bundleRefundsPromise;
+    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
   }
 
   isInventoryManagementEnabled(): boolean {
