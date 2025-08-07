@@ -106,6 +106,7 @@ export class Relayer {
 
     if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
       await inventoryClient.setTokenApprovals();
+      await inventoryClient.update();
     }
 
     this.logger.debug({

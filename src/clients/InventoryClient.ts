@@ -332,6 +332,12 @@ export class InventoryClient {
     return refunds;
   }
 
+  public prepareBundleRefundsPromise(): void {
+    if (!isDefined(this.bundleRefundsPromise)) {
+      this.bundleRefundsPromise = this.getAllBundleRefunds();
+    }
+  }
+
   // Return the upcoming refunds (in pending and next bundles) on each chain.
   // @notice Returns refunds using decimals of the l1Token.
   private async getBundleRefunds(l1Token: EvmAddress): Promise<{ [chainId: string]: BigNumber }> {
@@ -342,11 +348,7 @@ export class InventoryClient {
     // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
     // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
     // been executed.
-    if (!isDefined(this.bundleRefundsPromise)) {
-      // @dev Save this as a promise so that other parallel calls to this function don't make the same call.
-      mark = this.profiler.start(`bundleRefunds for ${l1Token}`);
-      this.bundleRefundsPromise = this.getAllBundleRefunds();
-    }
+    this.prepareBundleRefundsPromise();
     refundsToConsider = lodash.cloneDeep(await this.bundleRefundsPromise);
     const totalRefundsPerChain = this.getEnabledChains().reduce(
       (refunds: { [chainId: string]: BigNumber }, chainId) => {
@@ -1569,12 +1571,14 @@ export class InventoryClient {
     await this.adapterManager.wrapNativeTokenIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  update(chainIds?: number[]): Promise<void> {
+  async update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
 
-    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    this.prepareBundleRefundsPromise();
+    await this.bundleRefundsPromise;
   }
 
   isInventoryManagementEnabled(): boolean {
