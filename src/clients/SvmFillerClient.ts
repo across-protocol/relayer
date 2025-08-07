@@ -4,6 +4,7 @@ import {
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
+  isSolanaError,
 } from "@solana/kit";
 import {
   assert,
@@ -111,7 +112,8 @@ export class SvmFillerClient {
           signature: signatureString,
           explorer: blockExplorerLink(signatureString, this.chainId),
         });
-      } catch (e) {
+      } catch (_e) {
+        const e = isSolanaError(_e) ? _e.context : _e;
         this.logger.error({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction: ${message}`,
