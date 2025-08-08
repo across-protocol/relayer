@@ -1,5 +1,4 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
-import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
@@ -40,6 +39,9 @@ import {
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 import { INFINITE_FILL_DEADLINE } from "../../src/common";
+
+// Replicated from @uma/common
+const TokenRolesEnum = { OWNER: "0", MINTER: "1", BURNER: "3" };
 
 export {
   SpyTransport,

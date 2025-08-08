@@ -13,7 +13,6 @@ import {
   isDefined,
   readFileSync,
   toBN,
-  replaceAddressCase,
   ethers,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -136,8 +135,6 @@ export class RelayerConfig extends CommonConfig {
     }
 
     if (Object.keys(this.inventoryConfig).length > 0) {
-      this.inventoryConfig = replaceAddressCase(this.inventoryConfig); // Cast any non-address case addresses.
-
       const { inventoryConfig } = this;
 
       // Default to 1 Eth on the target chains and wrapping the rest to WETH.
