@@ -1,6 +1,7 @@
 import {
   CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
+  isSolanaError,
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
@@ -112,6 +113,13 @@ export class SvmFillerClient {
           explorer: blockExplorerLink(signatureString, this.chainId),
         });
       } catch (e) {
+        let message = "";
+        if (!isSolanaError(e)) {
+          message = "Unknown error";
+        } else {
+          message = `Solana error code: ${e.context.__code}`;
+        }
+
         this.logger.error({
           at: "SvmFillerClient#executeTxnQueue",
           message: `Failed to send fill transaction: ${message}`,
