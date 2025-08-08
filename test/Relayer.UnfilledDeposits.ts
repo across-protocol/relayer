@@ -245,7 +245,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
             deposit: depositIntoPrimitiveTypes(deposit),
-            unfilledAmount: deposit.outputAmount,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -297,7 +296,6 @@ describe("Relayer: Unfilled Deposits", async function () {
           .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
           .map((deposit) => ({
             deposit: depositIntoPrimitiveTypes(deposit),
-            unfilledAmount: deposit.outputAmount,
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -359,7 +357,6 @@ describe("Relayer: Unfilled Deposits", async function () {
             ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
-          unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
@@ -633,7 +630,6 @@ describe("Relayer: Unfilled Deposits", async function () {
             ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
-          unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
