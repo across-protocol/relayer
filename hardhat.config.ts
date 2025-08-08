@@ -1,8 +1,7 @@
 import * as dotenv from "dotenv";
-
 import { HardhatUserConfig } from "hardhat/config";
-import { Mnemonic } from "@uma/common";
-import { CHAIN_IDs, getNodeUrlList } from "src/utils";
+import { getMnemonic } from "@uma/common";
+import { CHAIN_IDs, getNodeUrlList } from "./src/utils";
 
 // Custom tasks to add to HRE.
 // FIXME: Temporarily commenting out tasks to minimize amount of files imported and executed at compile time
