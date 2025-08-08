@@ -31,7 +31,6 @@ import {
   SvmAddress,
   SVMProvider,
   EvmAddress,
-  convertRelayDataParamsToBytes32,
   getSolanaTokenBalance,
 } from "../utils";
 
@@ -104,7 +103,7 @@ export class TokenClient {
     this.logger.debug({
       at: "TokenBalanceClient",
       message: "Handling token shortfall",
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit,
       unfilledAmount,
     });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.outputToken, deposit.depositId, unfilledAmount);
