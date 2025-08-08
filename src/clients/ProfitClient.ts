@@ -668,6 +668,7 @@ export class ProfitClient {
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
       [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
       [CHAIN_IDs.TATARA]: "WETH",
+      [CHAIN_IDs.BOB_SEPOLIA]: "WETH",
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, _relayer] =

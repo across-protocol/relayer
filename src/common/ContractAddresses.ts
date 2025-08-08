@@ -711,4 +711,10 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
   },
+  [CHAIN_IDs.BOB_SEPOLIA]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+  },
 };
