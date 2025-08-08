@@ -75,7 +75,7 @@ export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): c
   // Keys are token addresses.
   return Object.keys(config).every((k) => {
     try {
-      // Try to coerce k into an Adddress. If it fails, it wasn't an address (or was non-natively encoded).
+      // Try to coerce k into an Address. If it fails, it wasn't an address (or was non-natively encoded).
       const address = k.startsWith("0x") ? EvmAddress.from(k) : SvmAddress.from(k);
       return address.isEVM() || address.isSVM();
     } catch {
