@@ -1,6 +1,5 @@
 import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
-import { getMnemonic } from "@uma/common";
 import { CHAIN_IDs, getNodeUrlList } from "./src/utils";
 
 // Custom tasks to add to HRE.
@@ -21,7 +20,6 @@ import "@openzeppelin/hardhat-upgrades";
 dotenv.config();
 
 const solcVersion = "0.8.23";
-const mnemonic = getMnemonic();
 
 const LARGE_CONTRACT_COMPILER_SETTINGS = {
   version: solcVersion,
@@ -32,6 +30,15 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
 };
 
 const getNodeUrl = (chainId: number) => getNodeUrlList(chainId)[0];
+const getMnemonic = () => {
+  const { MNEMONIC } = process.env;
+  if (!MNEMONIC) {
+    throw new Error("MNEMONIC not defined in environment");
+  }
+
+  return MNEMONIC;
+};
+const mnemonic = getMnemonic();
 
 const config: HardhatUserConfig = {
   solidity: {
