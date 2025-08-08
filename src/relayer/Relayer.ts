@@ -1138,15 +1138,16 @@ export class Relayer {
 
     const spokePoolClient = spokePoolClients[deposit.destinationChainId];
     if (isEVMSpokePoolClient(spokePoolClient)) {
+      const repaymentAddress = this.getRelayerAddrOn(repaymentChainId).toBytes32();
       const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-        ? ["fillRelay", "", [deposit, repaymentChainId, this.getRelayerAddrOn(repaymentChainId).toNative()]]
+        ? ["fillRelay", "", [deposit, repaymentChainId, repaymentAddress]]
         : [
             "fillRelayWithUpdatedDeposit",
             " with updated parameters ",
             [
               deposit,
               repaymentChainId,
-              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
+              repaymentAddress,
               deposit.updatedOutputAmount,
               deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
