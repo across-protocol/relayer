@@ -525,7 +525,7 @@ export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
   };
 }
 
-// decomposes Fill into primitive types suitable for === comparions
+// decomposes Fill into primitive types suitable for === comparisons
 export function fillIntoPrimitiveTypes(fill: Fill) {
   return {
     ...fill,
@@ -592,7 +592,7 @@ export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
   return deposit;
 }
 
-// decomposes Deposit into primitive types suitable for === comparions
+// decomposes Deposit into primitive types suitable for === comparisons
 export function depositIntoPrimitiveTypes(deposit: Deposit) {
   return {
     ...deposit,
