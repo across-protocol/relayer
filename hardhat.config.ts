@@ -31,11 +31,9 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
 
 const getNodeUrl = (chainId: number) => getNodeUrlList(chainId)[0];
 const getMnemonic = () => {
-  const { MNEMONIC } = process.env;
-  if (!MNEMONIC) {
-    throw new Error("MNEMONIC not defined in environment");
-  }
-
+  // Publicly-disclosed mnemonic. This is required for hre deployments in test.
+  const PUBLIC_MNEMONIC = "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat";
+  const { MNEMONIC = PUBLIC_MNEMONIC } = process.env;
   return MNEMONIC;
 };
 const mnemonic = getMnemonic();
