@@ -125,33 +125,34 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
-  await mapAsync(senderAddresses, async (address) => {
-    // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
-    // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
-    const depositsInScope = binanceDeposits.filter((deposit) =>
-      compareAddressesSimple(deposit.externalAddress, address)
-    );
-    if (depositsInScope.length === 0) {
-      logger.debug({
-        at: "BinanceFinalizer",
-        message: `No finalizable deposits found for ${address}`,
-      });
-      return;
-    }
+  // We can run this in parallel since deposits for each tokens are independent of each other.
+  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
+    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
+    symbol = symbol === "WBNB" ? "BNB" : symbol;
 
-    // The inner loop finalizes all deposits for all supported tokens for the address.
-    await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-      let symbol = _symbol === "WETH" ? "ETH" : _symbol;
-      symbol = symbol === "WBNB" ? "BNB" : symbol;
+    const coin = accountCoins.find((coin) => coin.symbol === symbol);
+    let coinBalance = coin.balance;
+    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+    const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
-      const coin = accountCoins.find((coin) => coin.symbol === symbol);
-      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+    for (const address of senderAddresses) {
+      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
+      const depositsInScope = binanceDeposits.filter((deposit) =>
+        compareAddressesSimple(deposit.externalAddress, address)
+      );
+      if (depositsInScope.length === 0) {
+        logger.debug({
+          at: "BinanceFinalizer",
+          message: `No finalizable deposits found for ${address}`,
+        });
+        continue;
+      }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
-      await mapAsync([DepositNetwork.Ethereum, DepositNetwork.BSC], async (depositNetwork) => {
+      for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
         const withdrawNetwork =
           depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
@@ -192,18 +193,20 @@ export async function binanceFinalizer(
         }
         // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
         // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
-        if (amountToFinalize > Number(coin.balance)) {
+        if (amountToFinalize > Number(coinBalance)) {
           logger.debug({
             at: "BinanceFinalizer",
             message: `(${depositNetwork} -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
-            balance: coin.balance,
+            balance: coinBalance,
           });
-          amountToFinalize = Number(coin.balance);
+          amountToFinalize = Number(coinBalance);
         }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
-          // Lastly, we need to truncate the amount to withdraw to six decimal places.
+          // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
+          // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
+          coinBalance = (Number(coinBalance) - amountToFinalize).toFixed(8);
           const withdrawalId = await binanceApi.withdraw({
             coin: symbol,
             address,
@@ -223,8 +226,8 @@ export async function binanceFinalizer(
             message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
           });
         }
-      });
-    });
+      }
+    }
   });
   return {
     callData: [],

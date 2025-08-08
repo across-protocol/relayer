@@ -1135,6 +1135,10 @@ export class Dataworker {
     await Promise.all(
       Object.entries(spokePoolClients).map(async ([_chainId, client]) => {
         const chainId = Number(_chainId);
+        if (this.config.executorIgnoreChains.includes(chainId)) {
+          return;
+        }
+
         let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
           (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
         );
@@ -1416,7 +1420,7 @@ export class Dataworker {
         `Deposit Id: ${relayData.depositId.toString()}\n` +
         `amount: ${outputAmount.toString()}`;
 
-      if (submitExecution && !this.config.executorIgnoreChains.includes(chainId)) {
+      if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
           const { method, args } = this.encodeSlowFillLeaf(slowRelayTree, rootBundleId, leaf);
 
@@ -1513,6 +1517,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
+      hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
       pendingRootBundle: {
         ...pendingRootBundle,
         proposer: pendingRootBundle.proposer.toNative(),
@@ -2218,6 +2223,9 @@ export class Dataworker {
     // each chain in parallel, then we'd have to reconstruct identical pool rebalance root more times than necessary.
     for (const client of Object.values(spokePoolClients)) {
       const { chainId } = client;
+      if (this.config.executorIgnoreChains.includes(chainId)) {
+        continue;
+      }
       let rootBundleRelays = sortEventsDescending(client.getRootBundleRelays()).filter(
         (rootBundle) => rootBundle.blockNumber >= client.eventSearchConfig.from
       );
@@ -2471,7 +2479,7 @@ export class Dataworker {
       const mrkdwn = `rootBundleId: ${rootBundleId}\nrelayerRefundRoot: ${relayerRefundTree.getHexRoot()}\nLeaf: ${
         leaf.leafId
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
-      if (submitExecution && !this.config.executorIgnoreChains.includes(chainId)) {
+      if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
           const valueToPassViaPayable = getMsgValue(leaf);
           const ethersLeaf = {
@@ -2832,7 +2840,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Need to close existing instruction params account",
-        instructionParamsAccount,
+        instructionParamsAccount: instructionParamsAccount.address,
       });
       closeInstructionParamsIx = SvmSpokeClient.getCloseInstructionParamsInstruction({
         signer: kitKeypair,
@@ -2875,7 +2883,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Initialized instruction params account",
-      instructionParamsAccount,
+      instructionParamsAccount: instructionParamsAccount.address,
       allocatedMemory: relayerRefundLeafBytes.length,
       txSignature,
     });
@@ -2911,13 +2919,13 @@ export class Dataworker {
     const recentSlot = (await provider.getSlot({ commitment: "finalized" }).send()) as bigint;
     const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
-      recentSlot,
+      recentSlot: Number(recentSlot),
     });
     const lookupTablePda = lookupTable[0];
     const lookupTableIx = getCreateLookupTableInstruction({
       address: lookupTable,
       authority: kitKeypair,
-      recentSlot,
+      recentSlot: Number(recentSlot),
     });
     const createLookupTableTx = pipe(
       createTransactionMessage({ version: 0 }),
@@ -2926,12 +2934,13 @@ export class Dataworker {
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
     txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, kitKeypair, provider);
+    await waitForNewSolanaBlock(provider, 1);
 
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Created relayer refund address lookup table",
       txSignature,
-      lookupTable,
+      lookupTable: lookupTablePda,
     });
 
     // Add logic to deactivate the LUT. The LUT should be deactivated whether or not the relayer refund execution fails.
@@ -3025,7 +3034,7 @@ export class Dataworker {
         this.logger.warn({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "Cannot refund all refund address since some ATAs do not exist.",
-          recipientAccountsWithNoATAs,
+          recipientAccountsWithNoATAs: recipientAccountsWithNoATAs.map((account) => account.toNative()),
         });
         const executeRelayerRefundLeafDeferredIx = SvmSpokeClient.getExecuteRelayerRefundLeafDeferredInstruction({
           signer: kitKeypair,

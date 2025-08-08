@@ -1,7 +1,7 @@
 import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageWithSigners } from "@solana/kit";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
-import { mapAsync, winston } from "../../../../utils";
+import { mapAsync, winston, SvmAddress } from "../../../../utils";
 import { arch } from "@across-protocol/sdk";
 
 /**
@@ -29,7 +29,8 @@ export async function finalizeCCTPV1MessagesSVM(
       svmProvider,
       signer,
       attestedCCTPMessage,
-      hubChainId
+      hubChainId,
+      SvmAddress.from(message.recipient)
     );
 
     if (simulate) {
