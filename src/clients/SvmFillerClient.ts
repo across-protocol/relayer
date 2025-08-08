@@ -112,17 +112,17 @@ export class SvmFillerClient {
           signature: signatureString,
           explorer: blockExplorerLink(signatureString, this.chainId),
         });
-      } catch (e) {
+      } catch (e: any) {
         let message = "";
         if (!isSolanaError(e)) {
-          message = "Unknown error";
+          message = e?.message ?? "Unknown error";
         } else {
           message = `Solana error code: ${e.context.__code}`;
         }
 
         this.logger.error({
           at: "SvmFillerClient#executeTxnQueue",
-          message: `Failed to send fill transaction: ${message}`,
+          message: `Failed to send fill transaction (${message})`,
           mrkdwn,
           error: e,
         });
