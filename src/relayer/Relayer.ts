@@ -26,6 +26,7 @@ import {
   toAddressType,
   EvmAddress,
   CHAIN_IDs,
+  convertRelayDataParamsToBytes32,
   chainIsSvm,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
@@ -1139,13 +1140,14 @@ export class Relayer {
     const spokePoolClient = spokePoolClients[deposit.destinationChainId];
     if (isEVMSpokePoolClient(spokePoolClient)) {
       const repaymentAddress = this.getRelayerAddrOn(repaymentChainId).toBytes32();
+      const _deposit = convertRelayDataParamsToBytes32(deposit);
       const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-        ? ["fillRelay", "", [deposit, repaymentChainId, repaymentAddress]]
+        ? ["fillRelay", "", [_deposit, repaymentChainId, repaymentAddress]]
         : [
             "fillRelayWithUpdatedDeposit",
             " with updated parameters ",
             [
-              deposit,
+              _deposit,
               repaymentChainId,
               repaymentAddress,
               deposit.updatedOutputAmount,
