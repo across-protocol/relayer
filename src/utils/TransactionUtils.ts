@@ -132,13 +132,9 @@ export async function runTransaction(
     if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
       gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
     } else {
-      // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
-      const maxPriorityFeePerGas = sdkUtils.bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
-      const baseFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
-      gas = {
-        maxFeePerGas: gas.maxFeePerGas.add(baseFeeDelta),
-        maxPriorityFeePerGas,
-      };
+      gas.maxPriorityFeePerGas = gas.maxPriorityFeePerGas.lt(flooredPriorityFeePerGas)
+        ? flooredPriorityFeePerGas
+        : gas.maxPriorityFeePerGas;
     }
 
     logger.debug({
