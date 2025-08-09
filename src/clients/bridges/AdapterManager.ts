@@ -262,7 +262,7 @@ export class AdapterManager {
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
-        message: "Implementor attempted to get a l2 token address for an L1 token that does not exist in the routings!",
+        message: "Implementer attempted to get a l2 token address for an L1 token that does not exist in the routings!",
         l1Token,
         chainId,
         error,
