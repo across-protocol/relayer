@@ -12,7 +12,6 @@ import {
   toWei,
   BigNumber,
   winston,
-  SVMProvider,
 } from "../utils";
 import {
   BaseBridgeAdapter,
