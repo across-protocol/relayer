@@ -19,6 +19,7 @@ import {
   toBN,
   assign,
   CHAIN_IDs,
+  chainIsSvm,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
   ZERO_ADDRESS,
@@ -269,7 +270,11 @@ export class ProfitClient {
 
     // If there's no attached message, gas consumption from previous fills can be used in most cases.
     // @todo: Simulate this per-token in future, because some ERC20s consume more gas.
-    if (isMessageEmpty(resolveDepositMessage(deposit)) && isDefined(this.totalGasCosts[chainId])) {
+    if (
+      isMessageEmpty(resolveDepositMessage(deposit)) &&
+      isDefined(this.totalGasCosts[chainId]) &&
+      !chainIsSvm(chainId)
+    ) {
       return this.totalGasCosts[chainId];
     }
 
