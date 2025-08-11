@@ -14,6 +14,7 @@ import {
   bnZero,
   ZERO_BYTES,
   EvmGasPriceEstimate,
+  winston,
 } from "../../utils";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
@@ -48,7 +49,9 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _l1Token: EvmAddress
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);

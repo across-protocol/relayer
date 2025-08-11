@@ -56,7 +56,13 @@ export async function zkSyncFinalizer(
   // Zksync takes ~6 hours to finalize so ignore any events
   // earlier than that.
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(l2ChainId, getCurrentTime() - 60 * 60 * 6, undefined, redis);
+  const latestBlockToFinalize = await getBlockForTimestamp(
+    logger,
+    l2ChainId,
+    getCurrentTime() - 60 * 60 * 6,
+    undefined,
+    redis
+  );
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
