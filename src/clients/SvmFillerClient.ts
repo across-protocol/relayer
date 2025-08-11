@@ -2,6 +2,7 @@ import {
   CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
   isSolanaError,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
@@ -15,6 +16,7 @@ import {
   blockExplorerLink,
   winston,
   chainIsSvm,
+  delay,
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
@@ -32,6 +34,11 @@ type QueuedSvmFill = {
   message: string;
   mrkdwn: string;
 };
+
+const retryableErrorCodes = [
+  arch.svm.SVM_BLOCK_NOT_AVAILABLE,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, // @TODO: Export this error code in SDK
+];
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -86,8 +93,36 @@ export class SvmFillerClient {
     this.queuedFills.push({ txPromise: slowFillTxPromise, message, mrkdwn });
   }
 
+  async _executeTxnQueueWithRetry(
+    txPromise: ReadyTransactionPromise,
+    retryAttempt: number,
+    maxRetries: number
+  ): Promise<string> {
+    try {
+      const transaction = await txPromise;
+      const signature = await signAndSendTransaction(this.provider, transaction);
+      const signatureString = signature.toString();
+      return signatureString;
+    } catch (e: any) {
+      let code: number | undefined;
+      if (isSolanaError(e)) {
+        code = e.context.__code;
+      } else {
+        code = undefined;
+      }
+
+      if (retryableErrorCodes.includes(code) && retryAttempt < maxRetries) {
+        const delaySeconds = 2 ** retryAttempt + Math.random();
+        await delay(delaySeconds);
+        return this._executeTxnQueueWithRetry(txPromise, retryAttempt + 1, maxRetries);
+      }
+
+      throw e;
+    }
+  }
+
   // @dev returns promises with txn signatures (~hashes)
-  async executeTxnQueue(chainId: number, simulate = false): Promise<{ hash: string }[]> {
+  async executeTxnQueue(chainId: number, simulate = false, maxRetries = 2): Promise<{ hash: string }[]> {
     assert(this.chainId === chainId, "SvmFillerClient: Mismatched chainId");
     const queue = this.queuedFills;
     this.queuedFills = [];
@@ -101,9 +136,7 @@ export class SvmFillerClient {
     const signatures: string[] = [];
     for (const { txPromise, message, mrkdwn } of queue) {
       try {
-        const transaction = await txPromise;
-        const signature = await signAndSendTransaction(this.provider, transaction);
-        const signatureString = signature.toString();
+        const signatureString = await this._executeTxnQueueWithRetry(txPromise, 0, maxRetries);
         signatures.push(signatureString);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
