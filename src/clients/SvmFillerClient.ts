@@ -101,6 +101,7 @@ export class SvmFillerClient {
       return signatureString;
     } catch (e: any) {
       let code: number | undefined;
+
       if (isSolanaError(e)) {
         code = e.context.__code;
       } else {
