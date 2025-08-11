@@ -35,6 +35,7 @@ type QueuedSvmFill = {
 };
 
 const retryableErrorCodes = [arch.svm.SVM_BLOCK_NOT_AVAILABLE, arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+const retryDelaySeconds = 1;
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -89,11 +90,7 @@ export class SvmFillerClient {
     this.queuedFills.push({ txPromise: slowFillTxPromise, message, mrkdwn });
   }
 
-  async _executeTxnQueueWithRetry(
-    txPromise: ReadyTransactionPromise,
-    retryAttempt: number,
-    maxRetries: number
-  ): Promise<string> {
+  async _executeTxnQueueWithRetry(txPromise: ReadyTransactionPromise, retryAttempt: number): Promise<string> {
     try {
       const transaction = await txPromise;
       const signature = await signAndSendTransaction(this.provider, transaction);
@@ -108,10 +105,9 @@ export class SvmFillerClient {
         code = undefined;
       }
 
-      if (retryableErrorCodes.includes(code) && retryAttempt < maxRetries) {
-        const delaySeconds = 2 ** retryAttempt + Math.random();
-        await delay(delaySeconds);
-        return this._executeTxnQueueWithRetry(txPromise, retryAttempt + 1, maxRetries);
+      if (retryableErrorCodes.includes(code) && retryAttempt > 0) {
+        await delay(retryDelaySeconds);
+        return this._executeTxnQueueWithRetry(txPromise, --retryAttempt);
       }
 
       throw e;
@@ -133,7 +129,7 @@ export class SvmFillerClient {
     const signatures: string[] = [];
     for (const { txPromise, message, mrkdwn } of queue) {
       try {
-        const signatureString = await this._executeTxnQueueWithRetry(txPromise, 0, maxRetries);
+        const signatureString = await this._executeTxnQueueWithRetry(txPromise, maxRetries);
         signatures.push(signatureString);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
