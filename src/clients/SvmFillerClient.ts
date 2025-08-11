@@ -17,7 +17,7 @@ import {
   chainIsSvm,
   delay,
 } from "../utils";
-import { arch } from "@across-protocol/sdk";
+import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
@@ -96,7 +96,7 @@ export class SvmFillerClient {
       const signature = await signAndSendTransaction(this.provider, transaction);
       const signatureString = signature.toString();
       return signatureString;
-    } catch (e: any) {
+    } catch (e: unknown) {
       let code: number | undefined;
 
       if (isSolanaError(e)) {
@@ -138,7 +138,11 @@ export class SvmFillerClient {
           signature: signatureString,
           explorer: blockExplorerLink(signatureString, this.chainId),
         });
-      } catch (e: any) {
+      } catch (e: unknown) {
+        if (!typeguards.isError(e)) {
+          throw e;
+        }
+
         let message = "";
         if (!isSolanaError(e)) {
           message = e?.message ?? "Unknown error";
