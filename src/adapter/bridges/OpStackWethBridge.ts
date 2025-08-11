@@ -9,6 +9,7 @@ import {
   bnZero,
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { Log } from "../../interfaces";
@@ -25,7 +26,16 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
+  ) {
     super(
       l2chainId,
       hubChainId,

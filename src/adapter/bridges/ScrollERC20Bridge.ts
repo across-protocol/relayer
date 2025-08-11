@@ -12,6 +12,7 @@ import {
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -35,7 +36,9 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].scrollGatewayRouter.abi;

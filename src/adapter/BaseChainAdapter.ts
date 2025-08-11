@@ -316,8 +316,8 @@ export class BaseChainAdapter {
       return bnZero;
     }
     const [l1SearchFromBlock, l2SearchFromBlock] = await Promise.all([
-      getBlockForTimestamp(this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
-      getBlockForTimestamp(this.chainId, getCurrentTime() - lookbackPeriodSeconds),
+      getBlockForTimestamp(this.logger, this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
+      getBlockForTimestamp(this.logger, this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
     const l1EventSearchConfig: EventSearchConfig = {
       from: l1SearchFromBlock,
