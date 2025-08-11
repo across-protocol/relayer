@@ -106,7 +106,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
           this.l2GasLimit,
           this.gasPerPubdataLimit,
           [],
-          toAddress, // Using toAddress as the refund address is safe since this is an EOA transaction.
+          toAddress.toNative(), // Using toAddress as the refund address is safe since this is an EOA transaction.
         ],
       ];
       value = bnZero;
