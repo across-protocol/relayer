@@ -2,7 +2,6 @@ import {
   CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
   isSolanaError,
-  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
@@ -35,10 +34,7 @@ type QueuedSvmFill = {
   mrkdwn: string;
 };
 
-const retryableErrorCodes = [
-  arch.svm.SVM_BLOCK_NOT_AVAILABLE,
-  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, // @TODO: Export this error code in SDK
-];
+const retryableErrorCodes = [arch.svm.SVM_BLOCK_NOT_AVAILABLE, arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
