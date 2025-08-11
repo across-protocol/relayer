@@ -34,7 +34,7 @@ type QueuedSvmFill = {
   mrkdwn: string;
 };
 
-const retryableErrorCodes = [arch.svm.SVM_BLOCK_NOT_AVAILABLE, arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+const retryableErrorCodes = [arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
 const retryDelaySeconds = 1;
 
 export class SvmFillerClient {
