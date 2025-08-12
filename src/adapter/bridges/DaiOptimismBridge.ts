@@ -1,11 +1,18 @@
-import { Contract, Signer, Provider, EvmAddress } from "../../utils";
+import { Contract, Signer, Provider, EvmAddress, winston } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { OpStackDefaultERC20Bridge } from "./OpStackDefaultErc20Bridge";
 
 export class DaiOptimismBridge extends OpStackDefaultERC20Bridge {
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    l1Token: EvmAddress,
+    logger: winston.Logger
+  ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].daiOptimismBridge;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 

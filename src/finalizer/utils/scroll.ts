@@ -6,9 +6,6 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import {
   Contract,
   Signer,
-  getBlockForTimestamp,
-  getCurrentTime,
-  getRedisCache,
   Multicall2Call,
   winston,
   convertFromWei,

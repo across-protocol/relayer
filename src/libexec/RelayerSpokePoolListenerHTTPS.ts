@@ -181,7 +181,7 @@ async function run(argv: string[]): Promise<void> {
     assert(Number.isInteger(Number(lookback)), `Invalid lookback (${lookback})`);
     startBlock = Math.max(
       deploymentBlock,
-      await getBlockForTimestamp(chainId, latestBlock.timestamp - lookback, blockFinder, cache)
+      await getBlockForTimestamp(logger, chainId, latestBlock.timestamp - lookback, blockFinder, cache)
     );
   } else {
     logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });

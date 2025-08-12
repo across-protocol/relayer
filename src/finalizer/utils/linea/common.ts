@@ -15,6 +15,7 @@ import {
   paginatedEventQuery,
   CHAIN_IDs,
   getTokenInfo,
+  winston,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -170,6 +171,7 @@ export async function getL2MessagingBlockAnchoredFromMessageSentEvent(
 }
 
 export async function getBlockRangeByHoursOffsets(
+  logger: winston.Logger,
   chainId: number,
   fromBlockHoursOffsetToNow: number,
   toBlockHoursOffsetToNow: number
@@ -186,8 +188,8 @@ export async function getBlockRangeByHoursOffsets(
   const toBlockTimestamp = currentTime - toBlockHoursOffsetToNow * oneHourSeconds;
 
   const [fromBlock, toBlock] = await Promise.all([
-    getBlockForTimestamp(chainId, fromBlockTimestamp, undefined, redisCache),
-    getBlockForTimestamp(chainId, toBlockTimestamp, undefined, redisCache),
+    getBlockForTimestamp(logger, chainId, fromBlockTimestamp, undefined, redisCache),
+    getBlockForTimestamp(logger, chainId, toBlockTimestamp, undefined, redisCache),
   ]);
 
   return { fromBlock, toBlock };

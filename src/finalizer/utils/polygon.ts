@@ -58,7 +58,7 @@ export async function polygonFinalizer(
   const posClient = await getPosClient(signer);
   const lookback = getCurrentTime() - 60 * 60 * 24 * 7;
   const redis = await getRedisCache(logger);
-  const fromBlock = await getBlockForTimestamp(chainId, lookback, undefined, redis);
+  const fromBlock = await getBlockForTimestamp(logger, chainId, lookback, undefined, redis);
 
   logger.debug({
     at: "Finalizer#PolygonFinalizer",
