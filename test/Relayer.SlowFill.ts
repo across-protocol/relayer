@@ -236,7 +236,13 @@ describe("Relayer: Initiates slow fill requests", async function () {
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method } = spokePool_1.interface.parseTransaction(txn);
     expect(method).to.equal("requestSlowFill");
-    expect(spyLogIncludes(spy, -5, "Insufficient balance to fill all deposits")).to.be.true;
+    expect(
+      spyLogIncludes(
+        spy,
+        -8,
+        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1337 would also not be profitable."
+      )
+    ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
@@ -248,6 +254,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    // We do not want to rebalance to a chain when the fill for which we are rebalancing is unprofitable.
+    // This means we should _not_ log the token shortfall.
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.false;
   });
 });

@@ -17,7 +17,6 @@ import {
   getL2TokenAddresses,
   TransactionResponse,
   assert,
-  Profiler,
   EvmAddress,
   toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
@@ -32,7 +31,6 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
-  private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -86,7 +84,8 @@ export class AdapterManager {
             hubChainId,
             l1Signer,
             l2SignerOrProvider,
-            EvmAddress.from(l1Token)
+            EvmAddress.from(l1Token),
+            logger
           );
           return [l1Token, bridge];
         }) ?? []
@@ -128,10 +127,6 @@ export class AdapterManager {
         constructL2Bridges(chainId),
         DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
       );
-    });
-    this.profiler = new Profiler({
-      logger: this.logger,
-      at: "AdapterManager",
     });
     logger.debug({
       at: "AdapterManager#constructor",
@@ -262,7 +257,7 @@ export class AdapterManager {
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
-        message: "Implementor attempted to get a l2 token address for an L1 token that does not exist in the routings!",
+        message: "Implementer attempted to get a l2 token address for an L1 token that does not exist in the routings!",
         l1Token,
         chainId,
         error,

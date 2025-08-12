@@ -3,17 +3,7 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import {
-  Address,
-  chainIsSvm,
-  getNetworkName,
-  isDefined,
-  winston,
-  getRelayEventKey,
-  getMessageHash,
-  spreadEventWithBlockNumber,
-  toAddressType,
-} from "../utils";
+import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -34,14 +24,6 @@ type SpokePoolEventsAdded = {
 };
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
-
-export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
-  return EventsAddedMessage.is(message);
-}
-
-export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolEventRemoved {
-  return EventRemovedMessage.is(message);
-}
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -165,13 +147,16 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type (${typeof rawMessage})`);
 
       const message = JSON.parse(rawMessage);
-      if (isSpokePoolEventRemoved(message)) {
+      if (EventRemovedMessage.is(message)) {
         const event = JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers);
         this.#pendingEventsRemoved.push(event);
         return;
       }
 
-      assert(isSpokePoolEventsAdded(message), `Expected ${this.#chain} SpokePoolEventsAdded message`);
+      if (!EventsAddedMessage.is(message)) {
+        this.logger.warn({ at, message: "Received unexpected message from SpokePoolListener.", rawMessage: message });
+        return;
+      }
 
       const { blockNumber, currentTime, nEvents, data } = message;
       if (nEvents > 0) {
@@ -218,12 +203,11 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           pending.blockHash === blockHash
       );
 
-      let removed = false;
+      let handled = false;
       if (pendingEventIdx !== -1) {
-        removed = true;
-
         // Drop the relevant event.
         pendingEvents.splice(pendingEventIdx, 1);
+        handled = true;
 
         this.logger.debug({
           at: "SpokePoolClient#removeEvent",
@@ -237,30 +221,21 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
       // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
       if (eventName === "FundsDeposited") {
-        const { depositId, destinationChainId } = event.args;
+        const { depositId } = event.args;
         assert(isDefined(depositId));
 
-        const spreadEvent = spreadEventWithBlockNumber(event) as DepositWithBlock & {
-          inputToken: string;
-          outputToken: string;
-          depositor: string;
-          recipient: string;
-          exclusiveRelayer: string;
-        };
-
-        const depositEvent = {
-          ...spreadEvent,
-          inputToken: toAddressType(spreadEvent.inputToken, this.chainId),
-          outputToken: toAddressType(spreadEvent.outputToken, destinationChainId),
-          depositor: toAddressType(spreadEvent.depositor, this.chainId),
-          recipient: toAddressType(spreadEvent.recipient, destinationChainId),
-          exclusiveRelayer: toAddressType(spreadEvent.exclusiveRelayer, destinationChainId),
-          messageHash: getMessageHash(event.args.message),
-        };
-        const depositHash = getRelayEventKey(depositEvent);
-        if (isDefined(this.depositHashes[depositHash])) {
-          delete this.depositHashes[depositHash];
-          this.logger.warn({ at, message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event.`, event });
+        const result = Object.entries(this.depositHashes).find(([, deposit]) => deposit.txnRef === transactionHash);
+        if (isDefined(result)) {
+          const [depositKey, deposit] = result;
+          delete this.depositHashes[depositKey];
+          handled = true;
+          this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+        } else {
+          this.logger.warn({
+            at,
+            message: `Searched for ${this.#chain} deposit ${depositId} but didn't find it.`,
+            transactionHash,
+          });
         }
       } else if (eventName === "EnabledDepositRoute") {
         // These are hard to back out because they're not stored with transaction information. They should be extremely
@@ -270,11 +245,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       } else {
         // Retaining any remaining event types should be non-critical for relayer operation. They may
         // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
+        handled = true;
         const message = `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`;
         this.logger.debug({ at, message, transactionHash, blockHash });
       }
 
-      return removed;
+      return handled;
     }
 
     async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {

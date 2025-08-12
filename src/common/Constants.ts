@@ -11,6 +11,7 @@ import {
   EvmAddress,
   toWei,
   BigNumber,
+  winston,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -404,7 +405,14 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (...args: any[]) => T;
+type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+  l2chainId: number,
+  hubChainId: number,
+  l1Signer: Signer,
+  l2SignerOrProvider: any,
+  l1Token: EvmAddress,
+  logger: winston.Logger
+) => T;
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
@@ -892,7 +900,7 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
     // Amount of tokens required to send a single message to the L2
     amountWei: number;
     // Multiple of the required amount above to send to the feePayer in case
-    // we are short funds. For example, if set to 10, then everytime we need to load more funds
+    // we are short funds. For example, if set to 10, then every time we need to load more funds
     // we'll send 10x the required amount.
     amountMultipleToFund: number;
     // Account that pays the fees on-chain that we will load more fee tokens into.

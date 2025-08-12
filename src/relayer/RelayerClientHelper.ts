@@ -65,7 +65,7 @@ async function indexedSpokePoolClient(
   const redis = await getRedisCache(hubPoolClient.logger);
   const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
-    getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
+    getBlockForTimestamp(logger, chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
   ]);
   const searchConfig = { from, maxLookBack: opts.blockRange };
 
@@ -164,14 +164,8 @@ export async function constructRelayerClients(
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
-  const tokenClient = new TokenClient(
-    logger,
-    signerAddr,
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
-    spokePoolClients,
-    hubPoolClient,
-    relayerTokens
-  );
+  const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+  const tokenClient = new TokenClient(logger, signerAddr, svmAddress, spokePoolClients, hubPoolClient, relayerTokens);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
@@ -185,6 +179,7 @@ export async function constructRelayerClients(
     spokePoolClients,
     enabledChainIds,
     signerAddr,
+    svmAddress,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,

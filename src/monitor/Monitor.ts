@@ -1518,7 +1518,7 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
-        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider);
+        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider, spokePoolClient.logger);
         const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
         this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
         if (this.monitorConfig.pollingDelay === 0) {

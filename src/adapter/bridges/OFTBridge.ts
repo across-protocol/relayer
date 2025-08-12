@@ -14,6 +14,7 @@ import {
   toBytes32,
   toWei,
   isContractDeployedToAddress,
+  winston,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -71,7 +72,9 @@ export class OFTBridge extends BaseBridgeAdapter {
     hubChainId: number,
     hubSigner: Signer,
     dstSignerOrProvider: Signer | Provider,
-    public readonly hubTokenAddress: EvmAddress
+    public readonly hubTokenAddress: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     // OFT bridge currently only supports Ethereum MAINNET as hub chain
     assert(
