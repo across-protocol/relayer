@@ -1,6 +1,7 @@
+import assert from "assert";
 import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
-import { CHAIN_IDs, getNodeUrlList } from "./src/utils";
+import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS } from "./src/utils";
 
 // Custom tasks to add to HRE.
 // FIXME: Temporarily commenting out tasks to minimize amount of files imported and executed at compile time
@@ -29,7 +30,20 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
   },
 };
 
-const getNodeUrl = (chainId: number) => getNodeUrlList(chainId)[0];
+const getNodeUrl = (chainId: number): string => {
+  const chain = getNetworkName(chainId);
+  let url: string;
+  try {
+    url = Object.values(getNodeUrlList(chainId)).at(0);
+  } catch (err) {
+    console.log(`(${err}): No configured RPC provider for ${chain}, reverting to public RPC.`);
+    url = PUBLIC_NETWORKS[chainId].publicRPC;
+  }
+
+  assert(isDefined(url), `No known RPC provider for ${chain}`);
+  return url;
+}
+
 const getMnemonic = () => {
   // Publicly-disclosed mnemonic. This is required for hre deployments in test.
   const PUBLIC_MNEMONIC = "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat";

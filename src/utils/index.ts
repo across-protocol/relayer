@@ -29,6 +29,7 @@ export { Logger, waitForLogger } from "@uma/logger";
 
 export {
   CHAIN_IDs,
+  PUBLIC_NETWORKS,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
