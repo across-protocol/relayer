@@ -35,9 +35,9 @@ const getNodeUrl = (chainId: number): string => {
   let url: string;
   try {
     url = Object.values(getNodeUrlList(chainId)).at(0);
-  } catch (err) {
+  } catch {
     // eslint-disable-next-line no-console
-    console.log(`(${err}): No configured RPC provider for ${chain}, reverting to public RPC.`);
+    console.log(`No configured RPC provider for ${chain}, reverting to public RPC.`);
     url = PUBLIC_NETWORKS[chainId].publicRPC;
   }
 
