@@ -83,7 +83,7 @@ async function scrapeEvents(
 ): Promise<void> {
   const provider = eventsClient.getRpc();
   const [{ timestamp: currentTime }, ...events] = await Promise.all([
-    arch.svm.getNearestSlotTime(provider, logger),
+    arch.svm.getNearestSlotTime(provider, { commitment: "confirmed" }, logger),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
@@ -171,9 +171,13 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = getSvmProvider(await getRedisCache());
+  const provider = await getSvmProvider();
   const blockFinder = undefined;
-  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider, logger);
+  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
+    provider,
+    { commitment: "confirmed" },
+    logger
+  );
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
@@ -213,7 +217,7 @@ async function run(argv: string[]): Promise<void> {
     abortController.abort();
   });
 
-  const eventsClient = await arch.svm.SvmCpiEventsClient.create(getSvmProvider());
+  const eventsClient = await arch.svm.SvmCpiEventsClient.create(await getSvmProvider());
   if (latestSlot > startSlot) {
     const events = ["FundsDeposited", "FilledRelay", "RelayedRootBundle", "ExecutedRelayerRefundRoot"];
     await scrapeEvents(eventsClient, events, { ...opts, to: latestSlot });

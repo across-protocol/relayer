@@ -792,7 +792,7 @@ async function _getCCTPDepositEventsSvm(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<AttestedCCTPDeposit[]> {
   // Get the `DepositForBurn` events on Solana.
-  const provider = getSvmProvider(await getRedisCache());
+  const provider = await getSvmProvider();
   const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
