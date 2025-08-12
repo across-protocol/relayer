@@ -110,12 +110,17 @@ export class OFTBridge extends BaseBridgeAdapter {
       `This bridge instance only supports token ${this.hubTokenAddress.toNative()}, not ${l1Token.toNative()}`
     );
 
+    assert(
+      toAddress.isEVM(),
+      `OFTBridge only supports sending to EVM addresses. Dst address supplied ${toAddress.toNative()} is not EVM.`
+    );
+
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToOftPrecision(amount);
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress.toNative()),
+      to: oftAddressToBytes32(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
@@ -250,7 +255,7 @@ export function getOFTEidForChainId(chainId: number): number {
   return eid;
 }
 
-// Converts an Ethereum address to bytes32 format for OFT bridge. Zero-pads from the left.
-export function oftAddressToBytes32(address: string): string {
-  return toBytes32(address);
+// Converts an EVM address to bytes32 format for OFT bridge. Zero-pads from the left.
+export function oftAddressToBytes32(address: EvmAddress): string {
+  return toBytes32(address.toNative());
 }
