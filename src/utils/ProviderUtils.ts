@@ -277,6 +277,13 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 
 /**
  * @notice Returns a cached SVMProvider.
+ * @dev We are blocked from making this function async (i.e. which would be helpful so we could call getRedisCache
+ * from within the function) because the `createRpcClient` method makes a call to @solana/kit/createSolanaRpcFromTransport
+ * which has a bug as of @solana/kit@2.1.0 (patched in >= 2.2.0) that prevents any functions calling createRpcClient
+ * to be async. See https://github.com/anza-xyz/kit/commit/304a44fc68401001af45b1088eea825d8f437677 for more details.
+ * The reason we can't easily bump @solana/kit is because certain types in @solana/kit>=2.2.0 are
+ * incompatible with the types in lower versions, which we import through other packages like @coral/anchor.
+ * Read about package incompatibility issues here: https://github.com/anza-xyz/kit/releases/tag/v2.1.1
  */
 export function getSvmProvider(
   redisClient: CachingMechanismInterface | undefined = undefined,
@@ -292,8 +299,7 @@ export function getSvmProvider(
   const constructorArgumentLists = Object.values(getNodeUrlList(chainId, nodeQuorumThreshold)).map((url) => {
     return [
       namespace,
-      redisClient, // redisClient
-      // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
+      redisClient,
       retries,
       retryDelay,
       maxConcurrency,
