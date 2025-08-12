@@ -326,7 +326,7 @@ export async function getSpokePoolClientsForContract(
         chainId,
         BigInt(registrationBlock),
         spokePoolClientSearchSettings,
-        getSvmProvider()
+        getSvmProvider(await getRedisCache())
       );
     }
   });

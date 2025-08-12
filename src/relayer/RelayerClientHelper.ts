@@ -83,7 +83,7 @@ async function indexedSpokePoolClient(
     spokePoolClient.init(opts);
     return spokePoolClient;
   } else {
-    const provider = getSvmProvider();
+    const provider = getSvmProvider(await getRedisCache());
     const svmEventsClient = await arch.svm.SvmCpiEventsClient.create(provider);
     const programId = svmEventsClient.getProgramAddress();
     const statePda = await arch.svm.getStatePda(programId);
@@ -228,7 +228,7 @@ export async function constructRelayerClients(
   }
   const svmFillerClient =
     svmChainIds.length === 1
-      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      ? await SvmFillerClient.from(baseSigner, getSvmProvider(await getRedisCache()), svmChainIds[0], logger)
       : undefined;
 
   return {

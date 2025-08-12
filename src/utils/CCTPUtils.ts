@@ -20,7 +20,7 @@ import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, Provider } from ".";
+import { assert, getRedisCache, Provider } from ".";
 import { KeyPairSigner } from "@solana/kit";
 
 type CommonMessageData = {
@@ -549,7 +549,7 @@ async function getCCTPMessagesWithStatus(
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
-          getSvmProvider(),
+          getSvmProvider(await getRedisCache()),
           signer,
           messageEvent.nonce,
           messageEvent.sourceDomain
@@ -792,7 +792,7 @@ async function _getCCTPDepositEventsSvm(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<AttestedCCTPDeposit[]> {
   // Get the `DepositForBurn` events on Solana.
-  const provider = getSvmProvider();
+  const provider = getSvmProvider(await getRedisCache());
   const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
