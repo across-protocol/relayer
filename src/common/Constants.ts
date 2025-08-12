@@ -11,6 +11,7 @@ import {
   EvmAddress,
   toWei,
   BigNumber,
+  winston,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -404,7 +405,14 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
 };
 
 // Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (...args: any[]) => T;
+type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
+  l2chainId: number,
+  hubChainId: number,
+  l1Signer: Signer,
+  l2SignerOrProvider: any,
+  l1Token: EvmAddress,
+  logger: winston.Logger
+) => T;
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.

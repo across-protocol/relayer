@@ -59,7 +59,11 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
   });
 
   // Figure out which block corresponds with the disputed price request time.
-  const priceRequestBlock = await getBlockForTimestamp(clients.hubPoolClient.chainId, priceRequestTime);
+  const priceRequestBlock = await getBlockForTimestamp(
+    clients.hubPoolClient.logger,
+    clients.hubPoolClient.chainId,
+    priceRequestTime
+  );
   logger.debug({
     at: "Dataworker#validate",
     message: `Price request block found for request time ${priceRequestTime}`,

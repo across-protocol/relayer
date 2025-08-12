@@ -10,6 +10,7 @@ import {
   paginatedEventQuery,
   Address,
   EventSearchConfig,
+  winston,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -28,7 +29,9 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const l1RouterAddressStr = HYPERLANE_ROUTERS[hubChainId]?.[l1Token.toNative()];
     assert(
