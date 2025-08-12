@@ -1,7 +1,7 @@
+import assert from "assert";
 import * as dotenv from "dotenv";
-
 import { HardhatUserConfig } from "hardhat/config";
-import { getNodeUrl, getMnemonic } from "@uma/common";
+import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS } from "./src/utils";
 
 // Custom tasks to add to HRE.
 // FIXME: Temporarily commenting out tasks to minimize amount of files imported and executed at compile time
@@ -21,7 +21,6 @@ import "@openzeppelin/hardhat-upgrades";
 dotenv.config();
 
 const solcVersion = "0.8.23";
-const mnemonic = getMnemonic();
 
 const LARGE_CONTRACT_COMPILER_SETTINGS = {
   version: solcVersion,
@@ -30,6 +29,29 @@ const LARGE_CONTRACT_COMPILER_SETTINGS = {
     viaIR: true,
   },
 };
+
+const getNodeUrl = (chainId: number): string => {
+  const chain = getNetworkName(chainId);
+  let url: string;
+  try {
+    url = Object.values(getNodeUrlList(chainId)).at(0);
+  } catch {
+    // eslint-disable-next-line no-console
+    console.log(`No configured RPC provider for ${chain}, reverting to public RPC.`);
+    url = PUBLIC_NETWORKS[chainId].publicRPC;
+  }
+
+  assert(isDefined(url), `No known RPC provider for ${chain}`);
+  return url;
+};
+
+const getMnemonic = () => {
+  // Publicly-disclosed mnemonic. This is required for hre deployments in test.
+  const PUBLIC_MNEMONIC = "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat";
+  const { MNEMONIC = PUBLIC_MNEMONIC } = process.env;
+  return MNEMONIC;
+};
+const mnemonic = getMnemonic();
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -41,68 +63,42 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },
     mainnet: {
-      url: getNodeUrl("mainnet", true, 1),
+      chainId: CHAIN_IDs.MAINNET,
+      url: getNodeUrl(CHAIN_IDs.MAINNET),
       accounts: { mnemonic },
       saveDeployments: true,
-      chainId: 1,
     },
     sepolia: {
-      url: "https://ethereum-sepolia-rpc.publicnode.com",
+      chainId: CHAIN_IDs.SEPOLIA,
+      url: getNodeUrl(CHAIN_IDs.SEPOLIA),
       accounts: { mnemonic },
       saveDeployments: true,
-      chainId: 11155111,
-    },
-    kovan: {
-      url: getNodeUrl("kovan", true, 42),
-      accounts: { mnemonic },
-      saveDeployments: true,
-      chainId: 42,
-    },
-    "optimism-kovan": {
-      url: getNodeUrl("optimism-kovan", true, 69),
-      accounts: { mnemonic },
-      saveDeployments: true,
-      chainId: 69,
-      companionNetworks: { l1: "kovan" },
     },
     optimism: {
-      url: getNodeUrl("optimism", true, 10),
+      chainId: CHAIN_IDs.OPTIMISM,
+      url: getNodeUrl(CHAIN_IDs.OPTIMISM),
       accounts: { mnemonic },
       saveDeployments: true,
-      chainId: 10,
       companionNetworks: { l1: "mainnet" },
     },
     arbitrum: {
-      chainId: 42161,
-      url: getNodeUrl("arbitrum", true, 42161),
+      chainId: CHAIN_IDs.ARBITRUM,
+      url: getNodeUrl(CHAIN_IDs.ARBITRUM),
       saveDeployments: true,
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },
     },
     zksync: {
-      chainId: 324,
-      url: "https://mainnet.era.zksync.io",
+      chainId: CHAIN_IDs.ZK_SYNC,
+      url: getNodeUrl(CHAIN_IDs.ZK_SYNC),
       saveDeployments: true,
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },
       zksync: true,
     },
-    "arbitrum-rinkeby": {
-      chainId: 421611,
-      url: getNodeUrl("arbitrum-rinkeby", true, 421611),
-      saveDeployments: true,
-      accounts: { mnemonic },
-      companionNetworks: { l1: "rinkeby" },
-    },
-    rinkeby: {
-      chainId: 4,
-      url: getNodeUrl("rinkeby", true, 4),
-      saveDeployments: true,
-      accounts: { mnemonic },
-    },
     base: {
-      chainId: 8453,
-      url: "https://mainnet.base.org",
+      chainId: CHAIN_IDs.BASE,
+      url: getNodeUrl(CHAIN_IDs.BASE),
       saveDeployments: true,
       accounts: { mnemonic },
       companionNetworks: { l1: "mainnet" },

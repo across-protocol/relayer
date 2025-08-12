@@ -2075,7 +2075,7 @@
   resolved "https://registry.yarnpkg.com/@nomiclabs/hardhat-ethers/-/hardhat-ethers-2.2.3.tgz#b41053e360c31a32c2640c9a45ee981a7e603fe0"
   integrity sha512-YhzPdzb612X591FOe68q+qXVXGG2ANZRvDo0RRUtimev85rCrAlv/TLMEZw5c+kq9AbzocLTVX/h2jVIFPL9Xg==
 
-"@nomiclabs/hardhat-etherscan@^3.1.5", "@nomiclabs/hardhat-etherscan@^3.1.7":
+"@nomiclabs/hardhat-etherscan@^3.1.7":
   version "3.1.7"
   resolved "https://registry.yarnpkg.com/@nomiclabs/hardhat-etherscan/-/hardhat-etherscan-3.1.7.tgz#72e3d5bd5d0ceb695e097a7f6f5ff6fcbf062b9a"
   integrity sha512-tZ3TvSgpvsQ6B6OGmo1/Au6u8BrAkvs1mIC/eURA3xgIfznUZBhmpne8hv7BXUzw9xNL3fXdpOYgOQlVMTcoHQ==
@@ -4060,41 +4060,6 @@
   dependencies:
     "@typescript-eslint/types" "4.33.0"
     eslint-visitor-keys "^2.0.0"
-
-"@uma/common@2.33.0":
-  version "2.33.0"
-  resolved "https://registry.yarnpkg.com/@uma/common/-/common-2.33.0.tgz#25157e804228f91a52f501ca174d9432601836ad"
-  integrity sha512-w6wKpfXHJzFYHN3QqYGJrCRtussgQBu2L/glmuolxIz1kFS5aGjUnqhll+XJBK9G9RDx2b3J1vBEMAlF25sTVw==
-  dependencies:
-    "@across-protocol/contracts" "^0.1.4"
-    "@ethersproject/bignumber" "^5.0.5"
-    "@google-cloud/kms" "^3.0.1"
-    "@google-cloud/storage" "^6.4.2"
-    "@nomiclabs/hardhat-ethers" "^2.2.1"
-    "@nomiclabs/hardhat-etherscan" "^3.1.5"
-    "@nomiclabs/hardhat-web3" "^2.0.0"
-    "@truffle/contract" "4.6.17"
-    "@truffle/hdwallet-provider" eip1559-beta
-    "@types/ethereum-protocol" "^1.0.0"
-    "@uniswap/v3-core" "^1.0.0-rc.2"
-    abi-decoder "github:UMAprotocol/abi-decoder"
-    bignumber.js "^8.0.1"
-    chalk-pipe "^3.0.0"
-    decimal.js "^10.2.1"
-    dotenv "^9.0.0"
-    eth-crypto "^2.4.0"
-    hardhat-deploy "0.9.1"
-    hardhat-gas-reporter "^1.0.4"
-    hardhat-typechain "^0.3.5"
-    lodash.uniqby "^4.7.0"
-    minimist "^1.2.0"
-    moment "^2.24.0"
-    node-metamask "github:UMAprotocol/node-metamask"
-    require-context "^1.1.0"
-    solidity-coverage "^0.7.13"
-    truffle-deploy-registry "^0.5.1"
-    web3 "^1.6.0"
-    winston "^3.2.1"
 
 "@uma/common@^2.17.0", "@uma/common@^2.28.0", "@uma/common@^2.34.0":
   version "2.34.0"
