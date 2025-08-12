@@ -36,13 +36,14 @@ const getNodeUrl = (chainId: number): string => {
   try {
     url = Object.values(getNodeUrlList(chainId)).at(0);
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.log(`(${err}): No configured RPC provider for ${chain}, reverting to public RPC.`);
     url = PUBLIC_NETWORKS[chainId].publicRPC;
   }
 
   assert(isDefined(url), `No known RPC provider for ${chain}`);
   return url;
-}
+};
 
 const getMnemonic = () => {
   // Publicly-disclosed mnemonic. This is required for hre deployments in test.
