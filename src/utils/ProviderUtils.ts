@@ -287,7 +287,7 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
  */
 export function getSvmProvider(
   redisClient: CachingMechanismInterface | undefined = undefined,
-  logger: winston.Logger = Logger, 
+  logger: winston.Logger = Logger,
   chainId = MAINNET_CHAIN_IDs.SOLANA
 ): SVMProvider {
   const namespace = getCacheNamespace(chainId);
