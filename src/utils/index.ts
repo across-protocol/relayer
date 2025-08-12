@@ -25,11 +25,11 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 
 export { config } from "dotenv";
 
-export { replaceAddressCase } from "@uma/common";
 export { Logger, waitForLogger } from "@uma/logger";
 
 export {
   CHAIN_IDs,
+  PUBLIC_NETWORKS,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
