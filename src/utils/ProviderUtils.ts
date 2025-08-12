@@ -8,6 +8,7 @@ import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 import * as viem from "viem";
 import { ClusterUrl } from "@solana/kit";
+import { CachingMechanismInterface } from "../interfaces";
 
 export const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
@@ -277,7 +278,11 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 /**
  * @notice Returns a cached SVMProvider.
  */
-export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
+export function getSvmProvider(
+  redisClient: CachingMechanismInterface | undefined = undefined,
+  logger: winston.Logger = Logger, 
+  chainId = MAINNET_CHAIN_IDs.SOLANA
+): SVMProvider {
   const namespace = getCacheNamespace(chainId);
   const maxConcurrency = getMaxConcurrency(chainId);
   const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
@@ -287,7 +292,7 @@ export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNE
   const constructorArgumentLists = Object.values(getNodeUrlList(chainId, nodeQuorumThreshold)).map((url) => {
     return [
       namespace,
-      undefined, // redisClient
+      redisClient, // redisClient
       // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
       retries,
       retryDelay,
