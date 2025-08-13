@@ -171,7 +171,7 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = getSvmProvider();
+  const provider = getSvmProvider(await getRedisCache());
   const blockFinder = undefined;
   const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider, logger);
 
