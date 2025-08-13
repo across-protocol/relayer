@@ -1278,7 +1278,7 @@ export class Monitor {
         });
       }
     }
-    
+
     if (invalidFillsWithoutDeposit.length > 0) {
       this.logger.info({
         at: "Monitor#closePDAs",
