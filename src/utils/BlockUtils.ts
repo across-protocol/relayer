@@ -27,7 +27,7 @@ export async function getBlockFinder(logger: winston.Logger, chainId: number): P
     evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
     return evmBlockFinders[chainId];
   }
-  const provider = getSvmProvider();
+  const provider = getSvmProvider(await getRedisCache());
   svmBlockFinder ??= new SVMBlockFinder(logger, provider);
   return svmBlockFinder;
 }
