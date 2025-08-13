@@ -1198,6 +1198,7 @@ export class Monitor {
   }
 
   async closePDAs(): Promise<void> {
+    const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
     const svmSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.SOLANA];
     if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
       return;
@@ -1249,8 +1250,6 @@ export class Monitor {
       const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
 
-      const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
-
       if (simulate) {
         const result = await svmRpc
           .simulateTransaction(encodedTransaction, {
@@ -1279,12 +1278,14 @@ export class Monitor {
         });
       }
     }
-
-    this.logger.info({
-      at: "Monitor#closePDAs",
-      message: "InvalidFills that have open PDAs",
-      invalidFillsWithoutDeposit,
-    });
+    
+    if (invalidFillsWithoutDeposit.length > 0) {
+      this.logger.info({
+        at: "Monitor#closePDAs",
+        message: "InvalidFills that have open PDAs",
+        invalidFillsWithoutDeposit,
+      });
+    }
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
