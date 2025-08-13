@@ -8,7 +8,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
-  EvmAddress,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.

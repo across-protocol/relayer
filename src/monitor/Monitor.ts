@@ -1456,8 +1456,6 @@ export class Monitor {
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;
           return balance;
         }
-        console.log(token);
-        console.log(account);
         // Assert balance request has solana types.
         assert(isSVMSpokePoolClient(spokePoolClient));
         assert(token.isSVM());
