@@ -1220,47 +1220,23 @@ export class Monitor {
     // fills into the invalidFillsWithoutDeposit array so we can log them and possibly close them manually.
     const invalidFillsWithoutDeposit = [];
     for (const fill of fills) {
-      let relayData: RelayData;
-
-      if (fill.messageHash === ZERO_BYTES) {
-        relayData = getRelayDataFromFill(fill);
-      } else {
-        const spokePoolClient = this.clients.spokePoolClients[fill.originChainId];
-        if (!spokePoolClient) {
-          // @TODO: Should we push this fill into the invalidFillsWithoutDeposit array?
-          invalidFillsWithoutDeposit.push(fill);
-          continue;
-        }
-        const deposit = spokePoolClient.getDepositForFill(fill);
-        if (!deposit) {
-          invalidFillsWithoutDeposit.push(fill);
-          continue;
-        }
-
-        relayData = {
-          originChainId: deposit.originChainId,
-          depositor: deposit.depositor,
-          recipient: deposit.recipient,
-          depositId: deposit.depositId,
-          inputToken: deposit.inputToken,
-          inputAmount: deposit.inputAmount,
-          outputToken: deposit.outputToken,
-          outputAmount: deposit.outputAmount,
-          message: deposit.message,
-          fillDeadline: deposit.fillDeadline,
-          exclusiveRelayer: deposit.exclusiveRelayer,
-          exclusivityDeadline: deposit.exclusivityDeadline,
-        };
+      const relayData = getRelayDataFromFill(fill);
+      const relayDataWithMessageHash = {
+        ...relayData,
+        messageHash: fill.messageHash,
       }
-
-      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayData, fill.destinationChainId);
+      const fillStatus = await svmSpokePoolClient.relayFillStatus(relayDataWithMessageHash, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
       if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
+        this.logger.info({
+          at: "Monitor#closePDAs",
+          message: `Not ready to close PDA for fill ${fill.txnRef}`,
+          fill,
+        });
         continue;
       }
 
-      const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayData, fill.destinationChainId);
-
+      const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayDataWithMessageHash, fill.destinationChainId);
       // Check if PDA is already closed
       const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
       if (!fillStatusPdaAccount.exists) {
@@ -1518,7 +1494,7 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
-        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider, spokePoolClient.logger);
+        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider, { commitment: "confirmed" }, spokePoolClient.logger);
         const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
         this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
         if (this.monitorConfig.pollingDelay === 0) {
