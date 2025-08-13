@@ -55,6 +55,7 @@ import {
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
   chainIsEvm,
+  getSolanaTokenBalance,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -1455,8 +1456,19 @@ export class Monitor {
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;
           return balance;
         }
-        // @todo _getBalances is unimplemented for SVM.
-        return bnZero;
+        console.log(token);
+        console.log(account);
+        // Assert balance request has solana types.
+        assert(isSVMSpokePoolClient(spokePoolClient));
+        assert(token.isSVM());
+        assert(account.isSVM());
+        const provider = spokePoolClient.svmEventsClient.getRpc();
+        if (token.toNative() !== TOKEN_SYMBOLS_MAP.SOL[chainId]) {
+          return getSolanaTokenBalance(provider, token, account);
+        } else {
+          const balanceInLamports = await provider.getBalance(arch.svm.toAddress(account)).send();
+          return toBN(Number(balanceInLamports));
+        }
       })
     );
   }
