@@ -14,6 +14,7 @@ import {
   toBytes32,
   toWei,
   isContractDeployedToAddress,
+  winston,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -71,7 +72,9 @@ export class OFTBridge extends BaseBridgeAdapter {
     hubChainId: number,
     hubSigner: Signer,
     dstSignerOrProvider: Signer | Provider,
-    public readonly hubTokenAddress: EvmAddress
+    public readonly hubTokenAddress: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     // OFT bridge currently only supports Ethereum MAINNET as hub chain
     assert(
@@ -107,12 +110,17 @@ export class OFTBridge extends BaseBridgeAdapter {
       `This bridge instance only supports token ${this.hubTokenAddress.toNative()}, not ${l1Token.toNative()}`
     );
 
+    assert(
+      toAddress.isEVM(),
+      `OFTBridge only supports sending to EVM addresses. Dst address supplied ${toAddress.toNative()} is not EVM.`
+    );
+
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToOftPrecision(amount);
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress.toNative()),
+      to: oftAddressToBytes32(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
@@ -247,7 +255,7 @@ export function getOFTEidForChainId(chainId: number): number {
   return eid;
 }
 
-// Converts an Ethereum address to bytes32 format for OFT bridge. Zero-pads from the left.
-export function oftAddressToBytes32(address: string): string {
-  return toBytes32(address);
+// Converts an EVM address to bytes32 format for OFT bridge. Zero-pads from the left.
+export function oftAddressToBytes32(address: EvmAddress): string {
+  return toBytes32(address.toNative());
 }

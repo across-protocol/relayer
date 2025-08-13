@@ -112,6 +112,7 @@ export async function arbStackFinalizer(
   // Arbitrum orbit takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
+    logger,
     chainId,
     getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
     undefined,

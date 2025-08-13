@@ -10,6 +10,7 @@ import {
   paginatedEventQuery,
   isDefined,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { ZKStackBridge } from "./";
 import { processEvent, matchL2EthDepositAndWrapEvents } from "../utils";
@@ -28,9 +29,10 @@ export class ZKStackWethBridge extends ZKStackBridge {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    readonly logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 

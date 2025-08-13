@@ -1,4 +1,13 @@
-import { Contract, BigNumber, paginatedEventQuery, Signer, EventSearchConfig, Provider, EvmAddress } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  Signer,
+  EventSearchConfig,
+  Provider,
+  EvmAddress,
+  winston,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -6,7 +15,16 @@ import { processEvent } from "../utils";
 export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
+  ) {
     super(l2chainId, hubChainId, l1Signer, [
       EvmAddress.from(CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address),
     ]);

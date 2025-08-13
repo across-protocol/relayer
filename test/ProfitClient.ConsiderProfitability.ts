@@ -17,6 +17,9 @@ import {
   toGWei,
   TOKEN_SYMBOLS_MAP,
   toAddressType,
+  EvmAddress,
+  SvmAddress,
+  ZERO_BYTES,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
@@ -173,7 +176,8 @@ describe("ProfitClient: Consider relay profit", () => {
       hubPoolClient,
       spokePoolClients,
       [],
-      randomAddress(),
+      EvmAddress.from(randomAddress()),
+      SvmAddress.from(ZERO_BYTES),
       minRelayerFeePct,
       debugProfitability
     );
