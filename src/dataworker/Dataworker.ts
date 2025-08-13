@@ -3186,7 +3186,7 @@ export class Dataworker {
 
     // Get the slow fill information.
     const messageHash = getMessageHash(leaf.relayData.message);
-    const relayDataHash = getRelayDataHash({...leaf.relayData, messageHash}, leaf.chainId);
+    const relayDataHash = getRelayDataHash({ ...leaf.relayData, messageHash }, leaf.chainId);
 
     // Construct the slow fill instruction.
     const executeSlowFillIx = SvmSpokeClient.getExecuteSlowRelayLeafInstruction({

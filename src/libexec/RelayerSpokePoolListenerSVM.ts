@@ -173,7 +173,11 @@ async function run(argv: string[]): Promise<void> {
 
   const provider = getSvmProvider(await getRedisCache());
   const blockFinder = undefined;
-  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider, { commitment: "confirmed" }, logger);
+  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
+    provider,
+    { commitment: "confirmed" },
+    logger
+  );
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;

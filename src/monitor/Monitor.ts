@@ -7,7 +7,6 @@ import {
   FillStatus,
   FillWithBlock,
   L1Token,
-  RelayData,
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
@@ -59,7 +58,6 @@ import {
   chainIsEvm,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
-  ZERO_BYTES,
   getRelayDataFromFill,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
@@ -1224,7 +1222,7 @@ export class Monitor {
       const relayDataWithMessageHash = {
         ...relayData,
         messageHash: fill.messageHash,
-      }
+      };
       const fillStatus = await svmSpokePoolClient.relayFillStatus(relayDataWithMessageHash, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
       if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
@@ -1236,7 +1234,11 @@ export class Monitor {
         continue;
       }
 
-      const fillStatusPda = await getFillStatusPda(spokePoolProgramId, relayDataWithMessageHash, fill.destinationChainId);
+      const fillStatusPda = await getFillStatusPda(
+        spokePoolProgramId,
+        relayDataWithMessageHash,
+        fill.destinationChainId
+      );
       // Check if PDA is already closed
       const fillStatusPdaAccount = await fetchEncodedAccount(svmRpc, fillStatusPda);
       if (!fillStatusPdaAccount.exists) {
@@ -1494,7 +1496,11 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
         const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
-        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(svmProvider, { commitment: "confirmed" }, spokePoolClient.logger);
+        const { slot: latestSlot } = await arch.svm.getNearestSlotTime(
+          svmProvider,
+          { commitment: "confirmed" },
+          spokePoolClient.logger
+        );
         const endingBlock = this.monitorConfig.spokePoolsBlocks[chainId]?.endingBlock;
         this.monitorConfig.spokePoolsBlocks[chainId] ??= { startingBlock: undefined, endingBlock: undefined };
         if (this.monitorConfig.pollingDelay === 0) {

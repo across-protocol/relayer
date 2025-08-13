@@ -79,9 +79,13 @@ export async function getTimestampsForBundleStartBlocks(
           return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           const provider = spokePoolClient.svmEventsClient.getRpc();
-          const { timestamp } = await arch.svm.getNearestSlotTime(provider, {
-            slot: BigInt(startAt),
-          }, spokePoolClient.logger);
+          const { timestamp } = await arch.svm.getNearestSlotTime(
+            provider,
+            {
+              slot: BigInt(startAt),
+            },
+            spokePoolClient.logger
+          );
           return [chainId, timestamp];
         }
       })
