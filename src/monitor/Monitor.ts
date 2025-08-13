@@ -1461,11 +1461,11 @@ export class Monitor {
         assert(token.isSVM());
         assert(account.isSVM());
         const provider = spokePoolClient.svmEventsClient.getRpc();
-        if (token.toNative() !== TOKEN_SYMBOLS_MAP.SOL[chainId]) {
+        if (!token.eq(getNativeTokenAddressForChain(chainId))) {
           return getSolanaTokenBalance(provider, token, account);
         } else {
           const balanceInLamports = await provider.getBalance(arch.svm.toAddress(account)).send();
-          return toBN(Number(balanceInLamports));
+          return toBN(Number(balanceInLamports.value));
         }
       })
     );
@@ -1476,7 +1476,7 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return 18;
+          return chainIsEvm(chainId) ? 18 : 9;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];

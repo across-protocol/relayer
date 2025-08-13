@@ -79,7 +79,7 @@ export const {
   blockExplorerLink,
   isContractDeployedToAddress,
   blockExplorerLinks,
-  createShortenedString: shortenHexString,
+  createShortHexString: shortenHexString,
   compareAddresses,
   compareAddressesSimple,
   getL1TokenAddress,
