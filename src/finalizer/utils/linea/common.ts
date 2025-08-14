@@ -285,7 +285,7 @@ export async function findMessageFromTokenBridge(
     bridgeContract.filters.BridgingInitiatedV2(senderAddresses),
     searchConfig
   );
-  const iface = new ethers.utils.Interface(messageServiceContract.contract.interface.fragments);
+  const iface = new ethers.utils.Interface(messageServiceContract.getContractAbi());
   const messageSentTopic = iface.getEventTopic("MessageSent");
   const associatedMessages = await Promise.all(
     bridgeEvents.map(async ({ args, transactionHash }) => {
