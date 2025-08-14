@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.68",
     "@across-protocol/contracts": "^4.1.0",
-    "@across-protocol/sdk": "4.3.44",
+    "@across-protocol/sdk": "4.3.45",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@coral-xyz/anchor": "^0.31.1",
@@ -76,7 +76,8 @@
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
-    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts"
+    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
+    "validate-root-bundle": "yarn ts-node src/scripts/validateRootBundle.ts"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.2.3",
