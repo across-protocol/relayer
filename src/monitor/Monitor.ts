@@ -418,43 +418,41 @@ export class Monitor {
     await this.updateLatestAndFutureRelayerRefunds(reports);
 
     for (const relayer of relayers) {
-      if (relayer.isEVM()) {
-        const report = reports[relayer.toBytes32()];
-        let summaryMrkdwn = "*[Summary]*\n";
-        let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
-        for (const token of allL1Tokens) {
-          let tokenMrkdwn = "";
-          for (const chainName of allChainNames) {
-            const balancesBN = Object.values(report[token.symbol][chainName]);
-            if (balancesBN.find((b) => b.gt(bnZero))) {
-              // Human-readable balances
-              const balances = balancesBN.map((balance) =>
-                balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
-              );
-              tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
-            } else {
-              // Shorten balances in the report if everything is 0.
-              tokenMrkdwn += `${chainName}: 0\n`;
-            }
-          }
-
-          const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
-          // Update corresponding summary section for current token.
-          if (totalBalance.gt(bnZero)) {
-            mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
-            summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
+      const report = reports[relayer.toBytes32()];
+      let summaryMrkdwn = "*[Summary]*\n";
+      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
+      for (const token of allL1Tokens) {
+        let tokenMrkdwn = "";
+        for (const chainName of allChainNames) {
+          const balancesBN = Object.values(report[token.symbol][chainName]);
+          if (balancesBN.find((b) => b.gt(bnZero))) {
+            // Human-readable balances
+            const balances = balancesBN.map((balance) =>
+              balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+            );
+            tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
           } else {
-            summaryMrkdwn += `${token.symbol}: 0\n`;
+            // Shorten balances in the report if everything is 0.
+            tokenMrkdwn += `${chainName}: 0\n`;
           }
         }
 
-        mrkdwn += summaryMrkdwn;
-        this.logger.info({
-          at: "Monitor#reportRelayerBalances",
-          message: `Balance report for ${relayer} 📖`,
-          mrkdwn,
-        });
+        const totalBalance = report[token.symbol][ALL_CHAINS_NAME][BalanceType.TOTAL];
+        // Update corresponding summary section for current token.
+        if (totalBalance.gt(bnZero)) {
+          mrkdwn += `*[${token.symbol}]*\n` + tokenMrkdwn;
+          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
+        } else {
+          summaryMrkdwn += `${token.symbol}: 0\n`;
+        }
       }
+
+      mrkdwn += summaryMrkdwn;
+      this.logger.info({
+        at: "Monitor#reportRelayerBalances",
+        message: `Balance report for ${relayer} 📖`,
+        mrkdwn,
+      });
     }
     Object.entries(reports).forEach(([relayer, balanceTable]) => {
       Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
@@ -492,32 +490,35 @@ export class Monitor {
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      if (relayer.isEVM()) {
-        for (const chainId of this.monitorChains) {
-          const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
-          const l2TokenAddresses = Object.keys(l2ToL1Tokens);
-          const tokenBalances = await this._getBalances(
-            l2TokenAddresses.map((address) => ({
-              token: toAddressType(address, chainId),
-              chainId: chainId,
-              account: relayer,
-            }))
-          );
+      for (const chainId of this.monitorChains) {
+        // If the monitored relayer address is invalid on the monitored chain (e.g. the monitored relayer is a base58 address while the chain ID is mainnet),
+        // then there is no balance to update in this loop.
+        if (!relayer.isValidOn(chainId)) {
+          continue;
+        }
+        const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
+        const l2TokenAddresses = Object.keys(l2ToL1Tokens);
+        const tokenBalances = await this._getBalances(
+          l2TokenAddresses.map((address) => ({
+            token: toAddressType(address, chainId),
+            chainId: chainId,
+            account: relayer,
+          }))
+        );
 
-          for (let i = 0; i < l2TokenAddresses.length; i++) {
-            const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(
-              toAddressType(l2TokenAddresses[i], chainId),
-              chainId
-            );
-            const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
-            this.updateRelayerBalanceTable(
-              relayerBalanceReport[relayer.toBytes32()],
-              symbol,
-              getNetworkName(chainId),
-              BalanceType.CURRENT,
-              decimalConverter(tokenBalances[i])
-            );
-          }
+        for (let i = 0; i < l2TokenAddresses.length; i++) {
+          const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(
+            toAddressType(l2TokenAddresses[i], chainId),
+            chainId
+          );
+          const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
+          this.updateRelayerBalanceTable(
+            relayerBalanceReport[relayer.toBytes32()],
+            symbol,
+            getNetworkName(chainId),
+            BalanceType.CURRENT,
+            decimalConverter(tokenBalances[i])
+          );
         }
       }
     }
@@ -1289,22 +1290,16 @@ export class Monitor {
     // Calculate which fills have not yet been refunded for each monitored relayer.
     for (const refunds of validatedBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        if (relayer.isEVM()) {
-          this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
-        }
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
       }
     }
     for (const refunds of nextBundleRefunds) {
       for (const relayer of this.monitorConfig.monitoredRelayers) {
-        if (relayer.isEVM()) {
-          this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
-        }
+        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
       }
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      if (relayer.isEVM()) {
-        this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
-      }
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
     }
   }
 
@@ -1343,15 +1338,13 @@ export class Monitor {
   initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
-      if (relayer.isEVM()) {
-        reports[relayer.toBytes32()] = {};
-        for (const token of allL1Tokens) {
-          reports[relayer.toBytes32()][token.symbol] = {};
-          for (const chainName of allChainNames) {
-            reports[relayer.toBytes32()][token.symbol][chainName] = {};
-            for (const balanceType of ALL_BALANCE_TYPES) {
-              reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
-            }
+      reports[relayer.toBytes32()] = {};
+      for (const token of allL1Tokens) {
+        reports[relayer.toBytes32()][token.symbol] = {};
+        for (const chainName of allChainNames) {
+          reports[relayer.toBytes32()][token.symbol][chainName] = {};
+          for (const balanceType of ALL_BALANCE_TYPES) {
+            reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
           }
         }
       }
