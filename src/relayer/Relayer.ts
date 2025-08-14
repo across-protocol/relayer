@@ -237,7 +237,7 @@ export class Relayer {
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
     }
@@ -255,7 +255,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit from or to disabled chains.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
       });
@@ -272,7 +272,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to invalid address.`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
     }
@@ -295,7 +295,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit for unwhitelisted token",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         l1Token: l1Token.toNative(),
       });
       return ignoreDeposit();
@@ -334,7 +334,7 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
     }
@@ -348,7 +348,7 @@ export class Relayer {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         invalidFills,
         destinationChainId,
       });
@@ -1029,7 +1029,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request from chain that forces origin chain repayment or to lite chain.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return;
     }
@@ -1040,7 +1040,7 @@ export class Relayer {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
         message: "Suppressing slow fill request for deposit with message.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return;
     }
@@ -1073,7 +1073,7 @@ export class Relayer {
         chainId: destinationChainId,
         contract: spokePoolClient.spokePool,
         method: "requestSlowFill",
-        args: [convertRelayDataParamsToBytes32(deposit)],
+        args: [deposit],
         message: "Requested slow fill for deposit.",
         mrkdwn: formatSlowFillRequestMarkdown(),
       });
@@ -1123,7 +1123,7 @@ export class Relayer {
       this.logger.warn({
         at: "Relayer::fillRelay",
         message: "Suppressed fill for deposit that forces origin chain repayment but repaymentChainId != originChainId",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         repaymentChainId,
       });
       return;
@@ -1132,30 +1132,24 @@ export class Relayer {
     this.logger.debug({
       at: "Relayer::fillRelay",
       message: `Filling v3 deposit ${deposit.depositId.toString()} with repayment on ${repaymentChainId}.`,
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit,
       repaymentChainId,
       realizedLpFeePct,
     });
 
     const spokePoolClient = spokePoolClients[deposit.destinationChainId];
     if (isEVMSpokePoolClient(spokePoolClient)) {
+      const repaymentAddress = this.getRelayerAddrOn(repaymentChainId).toBytes32();
+      const _deposit = convertRelayDataParamsToBytes32(deposit);
       const [method, messageModifier, args] = !isDepositSpedUp(deposit)
-        ? [
-            "fillRelay",
-            "",
-            [
-              convertRelayDataParamsToBytes32(deposit),
-              repaymentChainId,
-              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
-            ],
-          ]
+        ? ["fillRelay", "", [_deposit, repaymentChainId, repaymentAddress]]
         : [
             "fillRelayWithUpdatedDeposit",
             " with updated parameters ",
             [
-              convertRelayDataParamsToBytes32(deposit),
+              _deposit,
               repaymentChainId,
-              this.getRelayerAddrOn(repaymentChainId).toBytes32(),
+              repaymentAddress,
               deposit.updatedOutputAmount,
               deposit.updatedRecipient.toBytes32(),
               deposit.updatedMessage,
