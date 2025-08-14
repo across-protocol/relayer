@@ -358,12 +358,6 @@ export class Relayer {
       return ignoreDeposit();
     }
 
-    // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-    const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
-    if (deposit.fillDeadline <= currentTime) {
-      return ignoreDeposit();
-    }
-
     const { minConfirmations } = minDepositConfirmations[originChainId].find(({ usdThreshold }) =>
       usdThreshold.gte(fillAmountUsd)
     ) ?? { minConfirmations: 100_000 };
