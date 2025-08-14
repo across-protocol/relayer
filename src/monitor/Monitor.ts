@@ -1213,10 +1213,7 @@ export class Monitor {
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
-    // invalidFillsWithoutDeposit is an array of fills that have messageHash !== ZERO_BYTES
-    // and no deposit was found for that fill, so we can't close the PDAs for them
-    // because we don't have right relay data to close the PDAs. We should push these
-    // fills into the invalidFillsWithoutDeposit array so we can log them and possibly close them manually.
+    
     for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
