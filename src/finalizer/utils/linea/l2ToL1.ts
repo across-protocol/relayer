@@ -258,7 +258,7 @@ export async function lineaL2ToL1Finalizer(
         l2SearchConfig,
         l1SearchConfig
       );
-      return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessageWithProof({
+      return l1ClaimingService.l1Contract.contract.claimMessageWithProof({
         from: message.messageSender,
         to: message.destination,
         fee: message.fee,
