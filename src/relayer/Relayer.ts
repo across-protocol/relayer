@@ -763,13 +763,22 @@ export class Relayer {
       lpFeePct: realizedLpFeePct,
       gasPrice,
     } = repaymentChainProfitability;
-    if (tokenClient.hasBalanceForFill(deposit)) {
-      if (!isDefined(repaymentChainId)) {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-        const relayKey = sdkUtils.getRelayEventKey(deposit);
-        this.ignoredDeposits[relayKey] = true;
-        return;
+
+    // If this deposit is not profitable, mark it to be ignored for future loops and request a slow fill.
+    if (!isDefined(repaymentChainId)) {
+      profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+
+      if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
+        this.requestSlowFill(deposit);
       }
+
+      const relayKey = sdkUtils.getRelayEventKey(deposit);
+      this.ignoredDeposits[relayKey] = true;
+
+      return;
+    }
+
+    if (tokenClient.hasBalanceForFill(deposit)) {
       const { blockNumber, outputToken, outputAmount } = deposit;
       const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
       if (!isDefined(fillAmountUsd)) {
@@ -782,7 +791,7 @@ export class Relayer {
         const limits = this.fillLimits[originChainId].slice(limitIdx);
         this.logger.debug({
           at: "Relayer::evaluateFill",
-          message: `Skipping ${originChain} deposit ${depositId.toString()} due to anticipated origin chain overcommitment.`,
+          message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
           blockNumber,
           fillAmountUsd,
           limits,
@@ -802,20 +811,7 @@ export class Relayer {
     } else {
       // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
       // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-      if (isDefined(repaymentChainId)) {
-        tokenClient.captureTokenShortfallForFill(deposit);
-      }
-
-      // Exit early if we want to request a slow fill for a lite chain.
-      if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)) {
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: "Skipping requesting slow fill for deposit that forces origin chain repayment",
-          originChainId,
-          depositId: depositId.toString(),
-        });
-        return;
-      }
+      tokenClient.captureTokenShortfallForFill(deposit);
       if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
         this.requestSlowFill(deposit);
       }
@@ -1029,7 +1025,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request from chain that forces origin chain repayment or to lite chain.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return;
     }
