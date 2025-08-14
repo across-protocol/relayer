@@ -389,7 +389,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["WETH", "USDC"],
-  [CHAIN_IDs.BOB_SEPOLIA]: ["WETH"],
+  [CHAIN_IDs.BOB_SEPOLIA]: ["WETH", "WBTC"],
 };
 
 /**
