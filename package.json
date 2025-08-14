@@ -10,9 +10,9 @@
     "node": ">=20.19.2"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.71",
-    "@across-protocol/contracts": "^4.1.1",
-    "@across-protocol/sdk": "4.3.40",
+    "@across-protocol/constants": "^3.1.68",
+    "@across-protocol/contracts": "^4.1.0",
+    "@across-protocol/sdk": "4.3.44",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.2.1",
     "@coral-xyz/anchor": "^0.31.1",
@@ -70,6 +70,7 @@
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
+    "run-monitor": "node ./dist/index.js --monitor",
     "run-finalizer": "node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",

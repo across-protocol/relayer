@@ -377,7 +377,7 @@ export class Dataworker {
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
-        at: "Dataworke#propose",
+        at: "Dataworker#propose",
         message: "Cannot propose bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         invalidBlockRanges,
         bundleBlockRanges: this._prettifyBundleBlockRanges(chainIds, blockRangesForProposal),
@@ -448,7 +448,7 @@ export class Dataworker {
 
     // TODO: Validate running balances in potential new bundle and make sure that important invariants
     // are not violated, such as a token balance being lower than the amount necessary to pay out all refunds,
-    // slow fills, and return funds to the HubPool. Can use logic similar to /src/scripts/validateRunningbalances.ts
+    // slow fills, and return funds to the HubPool. Can use logic similar to src/scripts/validateRunningBalances.ts
 
     const shouldWaitToPropose = this.shouldWaitToPropose(mainnetBundleEndBlock);
     if (shouldWaitToPropose.shouldWait) {
@@ -609,7 +609,7 @@ export class Dataworker {
     // Exit early if challenge period timestamp has passed:
     if (this.clients.hubPoolClient.currentTime > pendingRootBundle.challengePeriodEndTimestamp) {
       this.logger.debug({
-        at: "Dataworke#validater",
+        at: "Dataworker#validate",
         message: "Challenge period passed, cannot dispute",
         expirationTime: pendingRootBundle.challengePeriodEndTimestamp,
       });
@@ -948,7 +948,7 @@ export class Dataworker {
     );
     if (invalidBlockRanges.length > 0) {
       this.logger.warn({
-        at: "Dataworke#validate",
+        at: "Dataworker#validate",
         message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
         invalidBlockRanges,
         bundleBlockRanges: this._prettifyBundleBlockRanges(chainIds, blockRangesImpliedByBundleEndBlocks),
@@ -1178,7 +1178,7 @@ export class Dataworker {
 
           if (!matchingRootBundle) {
             this.logger.warn({
-              at: "Dataworke#executeSlowRelayLeaves",
+              at: "Dataworker#executeSlowRelayLeaves",
               message: "Couldn't find a matching mainnet root bundle for a slowRelayRoot on L2!",
               chainId,
               slowRelayRoot: rootBundleRelay.slowRelayRoot,
@@ -1202,7 +1202,7 @@ export class Dataworker {
           );
           if (invalidBlockRanges.length > 0) {
             this.logger.warn({
-              at: "Dataworke#executeSlowRelayLeaves",
+              at: "Dataworker#executeSlowRelayLeaves",
               message:
                 "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
               invalidBlockRanges,
@@ -1221,7 +1221,7 @@ export class Dataworker {
           const { slowFillLeaves: leaves, slowFillTree: tree } = rootBundleData;
           if (tree.getHexRoot() !== rootBundleRelay.slowRelayRoot) {
             this.logger.warn({
-              at: "Dataworke#executeSlowRelayLeaves",
+              at: "Dataworker#executeSlowRelayLeaves",
               message: "Constructed a different root for the block range!",
               chainId,
               rootBundleRelay,
@@ -2264,7 +2264,7 @@ export class Dataworker {
 
         if (!matchingRootBundle) {
           this.logger.warn({
-            at: "Dataworke#executeRelayerRefundLeaves",
+            at: "Dataworker#executeRelayerRefundLeaves",
             message: "Couldn't find a matching mainnet root bundle for a relayerRefundRoot on L2!",
             chainId,
             relayerRefundRoot: rootBundleRelay.relayerRefundRoot,
@@ -2284,7 +2284,7 @@ export class Dataworker {
         );
         if (invalidBlockRanges.length > 0) {
           this.logger.warn({
-            at: "Dataworke#executeRelayerRefundLeaves",
+            at: "Dataworker#executeRelayerRefundLeaves",
             message: "Cannot validate bundle with insufficient event data. Set a larger DATAWORKER_FAST_LOOKBACK_COUNT",
             invalidBlockRanges,
             bundleTxn: matchingRootBundle.txnRef,
@@ -2301,7 +2301,7 @@ export class Dataworker {
 
         if (tree.getHexRoot() !== rootBundleRelay.relayerRefundRoot) {
           this.logger.warn({
-            at: "Dataworke#executeRelayerRefundLeaves",
+            at: "Dataworker#executeRelayerRefundLeaves",
             message: "Constructed a different root for the block range!",
             chainId,
             rootBundleRelay,
@@ -2916,7 +2916,7 @@ export class Dataworker {
     }
 
     // Get the lookup table Pda.
-    const recentSlot = (await provider.getSlot({ commitment: "finalized" }).send()) as bigint;
+    const recentSlot = await arch.svm.getSlot(provider, "finalized", this.logger);
     const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
       recentSlot: Number(recentSlot),
@@ -3185,7 +3185,8 @@ export class Dataworker {
     });
 
     // Get the slow fill information.
-    const relayDataHash = getRelayDataHash(leaf.relayData, leaf.chainId);
+    const messageHash = getMessageHash(leaf.relayData.message);
+    const relayDataHash = getRelayDataHash({ ...leaf.relayData, messageHash }, leaf.chainId);
 
     // Construct the slow fill instruction.
     const executeSlowFillIx = SvmSpokeClient.getExecuteSlowRelayLeafInstruction({
