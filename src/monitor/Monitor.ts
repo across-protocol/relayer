@@ -1217,7 +1217,6 @@ export class Monitor {
     // and no deposit was found for that fill, so we can't close the PDAs for them
     // because we don't have right relay data to close the PDAs. We should push these
     // fills into the invalidFillsWithoutDeposit array so we can log them and possibly close them manually.
-    const invalidFillsWithoutDeposit = [];
     for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
@@ -1270,6 +1269,11 @@ export class Monitor {
         await svmRpc
           .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
           .send();
+
+        this.logger.info({
+          at: "Monitor#closePDAs",
+          message: `Closed PDA ${fillStatusPda} for fill ${fill.txnRef}`,
+        });
       } catch (err) {
         this.logger.error({
           at: "Monitor#closePDAs",
@@ -1277,14 +1281,6 @@ export class Monitor {
           error: err,
         });
       }
-    }
-
-    if (invalidFillsWithoutDeposit.length > 0) {
-      this.logger.info({
-        at: "Monitor#closePDAs",
-        message: "InvalidFills that have open PDAs",
-        invalidFillsWithoutDeposit,
-      });
     }
   }
 
