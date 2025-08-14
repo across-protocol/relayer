@@ -237,9 +237,15 @@ export class Relayer {
         message: "Skipping deposit that is not supported by this relayer version.",
         latestVersionSupported: configStoreClient.configStoreVersion,
         latestInConfigStore: configStoreClient.getConfigStoreVersionForTimestamp(),
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
+    }
+
+    // No need to consider fills with exclusivity until after their exclusivity period has elapsed.
+    const relayer = this.getRelayerAddrOn(destinationChainId);
+    if (this.fillIsExclusive(deposit) && !deposit.exclusiveRelayer.eq(relayer)) {
+      return false;
     }
 
     if (sdkUtils.invalidOutputToken(deposit)) {
@@ -255,7 +261,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: "Skipping deposit from or to disabled chains.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         enabledOriginChains: this.config.relayerOriginChains,
         enabledDestinationChains: this.config.relayerDestinationChains,
       });
@@ -265,14 +271,14 @@ export class Relayer {
     const badOriginChainAddrs = [deposit.depositor, deposit.inputToken].some((address) => {
       return !address.isValidOn(deposit.originChainId);
     });
-    const badDestChainAddrs = [deposit.recipient, deposit.exclusiveRelayer, deposit.outputToken].some((address) => {
+    const badDestChainAddrs = [deposit.recipient, deposit.outputToken].some((address) => {
       return !address.isValidOn(deposit.destinationChainId);
     });
     if (badOriginChainAddrs || badDestChainAddrs) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to invalid address.`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
     }
@@ -281,8 +287,8 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Ignoring ${srcChain} deposit destined for ${dstChain}.`,
-        depositor: depositor.toNative(),
-        recipient: recipient.toNative(),
+        depositor,
+        recipient,
         txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
@@ -294,9 +300,9 @@ export class Relayer {
     if (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unwhitelisted token",
-        deposit: convertRelayDataParamsToBytes32(deposit),
-        l1Token: l1Token.toNative(),
+        message: "Skipping deposit for unsupported token.",
+        deposit,
+        l1Token,
       });
       return ignoreDeposit();
     }
@@ -308,7 +314,7 @@ export class Relayer {
         message: "Skipping deposit including in-protocol token swap.",
         originChainId,
         destinationChainId,
-        outputToken: deposit.outputToken.toNative(),
+        outputToken: deposit.outputToken,
         txnRef: deposit.txnRef,
         notificationPath: "across-unprofitable-fills",
       });
@@ -322,7 +328,7 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to uncertain fill amount.`,
         destinationChainId,
-        outputToken: deposit.outputToken.toNative(),
+        outputToken: deposit.outputToken,
         txnRef: deposit.txnRef,
       });
       return ignoreDeposit();
@@ -334,21 +340,18 @@ export class Relayer {
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
         depositUpdated: isDepositSpedUp(deposit),
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return ignoreDeposit();
     }
 
     // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
     // making the same relayer fill a deposit multiple times.
-    if (
-      !acceptInvalidFills &&
-      invalidFills.some((fill) => fill.relayer.eq(this.getRelayerAddrOn(fill.destinationChainId)))
-    ) {
+    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(relayer))) {
       this.logger.error({
         at: "Relayer::filterDeposit",
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
         invalidFills,
         destinationChainId,
       });
@@ -369,7 +372,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::filterDeposit",
         message: `Skipping ${srcChain} deposit due to insufficient deposit confirmations.`,
-        depositId: depositId.toString(),
+        depositId,
         blockNumber,
         confirmations: latestHeightSearched - blockNumber,
         minConfirmations,
@@ -388,13 +391,6 @@ export class Relayer {
         buffer: this.hubPoolBlockBuffer,
         txnRef: deposit.txnRef,
       });
-      return false;
-    }
-
-    if (
-      this.fillIsExclusive(deposit) &&
-      !deposit.exclusiveRelayer.eq(this.getRelayerAddrOn(deposit.destinationChainId))
-    ) {
       return false;
     }
 
