@@ -141,18 +141,16 @@ export function getL2MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l2Provider: ethers.providers.Provider
 ): Contract {
-  const original = l1ClaimingService.l2Contract.contract;
   const address = l1ClaimingService.l2Contract.contractAddress;
-  const iface = new ethers.utils.Interface(original.interface.fragments);
+  const iface = new ethers.utils.Interface(l1ClaimingService.l2Contract.getContractAbi());
   return new Contract(address, iface, l2Provider);
 }
 export function getL1MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l1Provider: ethers.providers.Provider
 ): Contract {
-  const original = l1ClaimingService.l1Contract.contract;
-  const address = l1ClaimingService.l2Contract.contractAddress;
-  const iface = new ethers.utils.Interface(original.interface.fragments);
+  const address = l1ClaimingService.l1Contract.contractAddress;
+  const iface = new ethers.utils.Interface(l1ClaimingService.l1Contract.getContractAbi());
   return new Contract(address, iface, l1Provider);
 }
 export async function getMessageSentEventForMessageHash(
@@ -293,10 +291,10 @@ export async function findMessageFromTokenBridge(
     bridgeEvents.map(async ({ args, transactionHash }) => {
       const { logs } = await bridgeContract.provider.getTransactionReceipt(transactionHash);
       return logs
-      .filter((log) => log.topics[0] === messageSentTopic)
-      .map((log) => {
-        const parsed = messageServiceContract.contract.interface.parseLog(log) as unknown as MessageSentEvent.Log;
-        const decodedArgs = parsed.args;
+        .filter((log) => log.topics[0] === messageSentTopic)
+        .map((log) => {
+          const parsed = messageServiceContract.contract.interface.parseLog(log) as unknown as MessageSentEvent.Log;
+          const decodedArgs = parsed.args;
           // Start with the TokenBridge calldata format.
           try {
             const decoded = bridgeContract.interface.decodeFunctionData("completeBridging", decodedArgs._calldata);
