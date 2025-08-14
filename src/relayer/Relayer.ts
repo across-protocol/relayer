@@ -764,7 +764,8 @@ export class Relayer {
       gasPrice,
     } = repaymentChainProfitability;
 
-    // If this deposit is not profitable, mark it to be ignored for future loops and request a slow fill.
+    // If this deposit is not profitable, flag it for a slow fill reuqest and ignore it for future loops.
+    // This limits the ability of unprofitable deposits to congest the deposit/fill evaluation pipeline.
     if (!isDefined(repaymentChainId)) {
       profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
 
