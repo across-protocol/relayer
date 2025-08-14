@@ -1213,7 +1213,7 @@ export class Monitor {
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
-    
+
     for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
