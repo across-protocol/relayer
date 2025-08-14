@@ -2916,7 +2916,7 @@ export class Dataworker {
     }
 
     // Get the lookup table Pda.
-    const recentSlot = (await provider.getSlot({ commitment: "finalized" }).send()) as bigint;
+    const recentSlot = await arch.svm.getSlot(provider, "finalized", this.logger);
     const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
       recentSlot: Number(recentSlot),
