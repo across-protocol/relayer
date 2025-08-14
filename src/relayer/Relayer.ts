@@ -269,10 +269,10 @@ export class Relayer {
     }
 
     const badOriginChainAddrs = [deposit.depositor, deposit.inputToken].some((address) => {
-      return !address.isValidOn(deposit.originChainId);
+      return !address.isValidOn(originChainId);
     });
     const badDestChainAddrs = [deposit.recipient, deposit.outputToken].some((address) => {
-      return !address.isValidOn(deposit.destinationChainId);
+      return !address.isValidOn(destinationChainId);
     });
     if (badOriginChainAddrs || badDestChainAddrs) {
       this.logger.debug({
