@@ -45,6 +45,11 @@ export function getUnfilledDeposits(
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
     .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .filter((deposit) => {
+      const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
+      if (deposit.fillDeadline <= currentTime) {
+        return false;
+      }
+
       const depositHash = spokePoolClients[deposit.originChainId].getDepositHash(deposit);
       return (fillStatus[depositHash] ?? FillStatus.Unfilled) !== FillStatus.Filled;
     });
