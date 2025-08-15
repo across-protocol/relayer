@@ -35,13 +35,13 @@ export function getRelayDataFromFill(fill: FillWithBlock): RelayData {
 // @returns Array of unfilled deposits.
 export function getUnfilledDeposits(
   destinationSpokePoolClient: SpokePoolClient,
-  spokePoolClients: SpokePoolClientsByChain,
+  originSpokePoolClients: SpokePoolClientsByChain,
   hubPoolClient: HubPoolClient,
   fillStatus: { [deposit: string]: number } = {}
 ): RelayerUnfilledDeposit[] {
   const destinationChainId = destinationSpokePoolClient.chainId;
   // Iterate over each chainId and check for unfilled deposits.
-  const deposits = Object.values(spokePoolClients)
+  const deposits = Object.values(originSpokePoolClients)
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
     .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .filter((deposit) => {
@@ -51,7 +51,7 @@ export function getUnfilledDeposits(
         return false;
       }
 
-      const depositHash = spokePoolClients[deposit.originChainId].getDepositHash(deposit);
+      const depositHash = originSpokePoolClients[deposit.originChainId].getDepositHash(deposit);
       return (fillStatus[depositHash] ?? FillStatus.Unfilled) !== FillStatus.Filled;
     });
 
