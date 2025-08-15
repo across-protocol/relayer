@@ -1,12 +1,32 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
-import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock } from "../interfaces";
-import { bnZero, CHAIN_IDs } from "../utils";
+import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
+import { bnZero, CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
   version: number;
   invalidFills: FillWithBlock[];
 };
+
+// @description Returns RelayData object with empty message.
+// @param fill  FillWithBlock object.
+// @returns RelayData object.
+export function getRelayDataFromFill(fill: FillWithBlock): RelayData {
+  return {
+    originChainId: fill.originChainId,
+    depositor: fill.depositor,
+    recipient: fill.recipient,
+    depositId: fill.depositId,
+    inputToken: fill.inputToken,
+    inputAmount: fill.inputAmount,
+    outputToken: fill.outputToken,
+    outputAmount: fill.outputAmount,
+    message: EMPTY_MESSAGE,
+    fillDeadline: fill.fillDeadline,
+    exclusiveRelayer: fill.exclusiveRelayer,
+    exclusivityDeadline: fill.exclusivityDeadline,
+  };
+}
 
 // @description Returns all unfilled deposits, indexed by destination chain.
 // @param destinationChainId  Chain ID to query outstanding deposits on.
@@ -25,6 +45,12 @@ export function getUnfilledDeposits(
     .filter(({ chainId, isUpdated }) => isUpdated && chainId !== destinationChainId)
     .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .filter((deposit) => {
+      // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
+      const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
+      if (deposit.fillDeadline <= currentTime) {
+        return false;
+      }
+
       const depositHash = spokePoolClients[deposit.originChainId].getDepositHash(deposit);
       return (fillStatus[depositHash] ?? FillStatus.Unfilled) !== FillStatus.Filled;
     });
