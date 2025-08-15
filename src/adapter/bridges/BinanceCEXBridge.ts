@@ -15,6 +15,7 @@ import {
   CHAIN_IDs,
   compareAddressesSimple,
   isContractDeployedToAddress,
+  winston,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -31,7 +32,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
       throw new Error("Cannot define a binance CEX bridge on a non-production network");

@@ -56,7 +56,13 @@ export async function zkSyncFinalizer(
   // Zksync takes ~6 hours to finalize so ignore any events
   // earlier than that.
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(l2ChainId, getCurrentTime() - 60 * 60 * 6, undefined, redis);
+  const latestBlockToFinalize = await getBlockForTimestamp(
+    logger,
+    l2ChainId,
+    getCurrentTime() - 60 * 60 * 6,
+    undefined,
+    redis
+  );
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
@@ -142,10 +148,16 @@ async function filterMessageLogs(
     return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
   });
 
-  const ready = await sdkUtils.filterAsync(
-    withdrawals,
-    async ({ txnRef, withdrawalIdx }) => !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx))
-  );
+  const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx }) => {
+    try {
+      return !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx));
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes("Log proof not found")) {
+        return false;
+      }
+      throw error;
+    }
+  });
 
   return ready;
 }

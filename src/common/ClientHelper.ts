@@ -85,7 +85,14 @@ export async function resolveSpokePoolActivationBlock(
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
   const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
   const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
-  const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
+  const activationBlock = await getBlockForTimestamp(
+    hubPoolClient.logger,
+    chainId,
+    timestamp,
+    blockFinder,
+    redis,
+    hints
+  );
 
   const cacheAfter = 5 * 24 * 3600; // 5 days
   if (isDefined(redis) && getCurrentTime() - timestamp > cacheAfter) {
@@ -130,7 +137,7 @@ export async function constructSpokePoolClientsWithLookback(
   // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
-  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
+  const fromBlock_1 = await getBlockForTimestamp(logger, hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
   assert(enabledChains.length > 0, "No SpokePool chains configured");
 
@@ -142,8 +149,8 @@ export async function constructSpokePoolClientsWithLookback(
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
         } else {
-          const blockFinder = await getBlockFinder(chainId);
-          return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
+          const blockFinder = await getBlockFinder(logger, chainId);
+          return [chainId, await getBlockForTimestamp(logger, chainId, lookback, blockFinder, redis)];
         }
       })
     )
@@ -251,7 +258,7 @@ export async function constructSpokePoolClientsWithStartBlocks(
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
         } else {
-          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          const toBlock = await getBlockForTimestamp(logger, chainId, hubPoolBlock.timestamp, blockFinder, redis);
           return [chainId, toBlock];
         }
       })
@@ -319,7 +326,7 @@ export async function getSpokePoolClientsForContract(
         chainId,
         BigInt(registrationBlock),
         spokePoolClientSearchSettings,
-        getSvmProvider()
+        getSvmProvider(await getRedisCache())
       );
     }
   });

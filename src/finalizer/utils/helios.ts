@@ -250,8 +250,8 @@ async function shouldGenerateKeepAliveAction(
     }
   }
 
-  const l2BlockFinder = await getBlockFinder(l2ChainId);
-  const l2Block24hAgo = await getBlockForTimestamp(l2ChainId, timestamp24hAgo, l2BlockFinder);
+  const l2BlockFinder = await getBlockFinder(logger, l2ChainId);
+  const l2Block24hAgo = await getBlockForTimestamp(logger, l2ChainId, timestamp24hAgo, l2BlockFinder);
 
   if (latestHeadUpdateBlockNumber < l2Block24hAgo) {
     logger.info({
