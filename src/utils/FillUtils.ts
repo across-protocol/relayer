@@ -1,6 +1,6 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { bnZero, CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
+import { CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
