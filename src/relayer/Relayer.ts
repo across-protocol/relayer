@@ -753,63 +753,60 @@ export class Relayer {
       lpFeePct: realizedLpFeePct,
       gasPrice,
     } = repaymentChainProfitability;
-    if (tokenClient.hasBalanceForFill(deposit)) {
-      if (!isDefined(repaymentChainId)) {
-        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
-        const relayKey = sdkUtils.getRelayEventKey(deposit);
-        this.ignoredDeposits[relayKey] = true;
-        return;
-      }
-      const { blockNumber, outputToken, outputAmount } = deposit;
-      const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
-      if (!isDefined(fillAmountUsd)) {
-        return;
-      }
-      const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
 
-      // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
-      if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
-        const limits = this.fillLimits[originChainId].slice(limitIdx);
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: `Skipping ${originChain} deposit ${depositId.toString()} due to anticipated origin chain overcommitment.`,
-          blockNumber,
-          fillAmountUsd,
-          limits,
-          txnRef,
-        });
-        return;
-      }
+    const hasBalance = tokenClient.hasBalanceForFill(deposit);
+    const isProfitable = isDefined(repaymentChainId);
 
-      // Update the origin chain limits in anticipation of committing tokens to a fill.
-      this.reduceOriginChainLimit(originChainId, fillAmountUsd, limitIdx);
-
-      // Update local balance to account for the enqueued fill.
-      tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
-
-      const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-      this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
-    } else {
-      // TokenClient.getBalance returns that we don't have enough balance to submit the fast fill.
-      // At this point, capture the shortfall so that the inventory manager can rebalance the token inventory.
-      if (isDefined(repaymentChainId)) {
+    if (!hasBalance || !isProfitable) {
+      if (isProfitable && !hasBalance) {
+        // For profitable deposits where the relayer has insufficient balance, log it for potential rebalancing.
         tokenClient.captureTokenShortfallForFill(deposit);
       }
 
-      // Exit early if we want to request a slow fill for a lite chain.
-      if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)) {
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: "Skipping requesting slow fill for deposit that forces origin chain repayment",
-          originChainId,
-          depositId: depositId.toString(),
-        });
-        return;
-      }
       if (sendSlowRelays && fillStatus === FillStatus.Unfilled) {
         this.requestSlowFill(deposit);
       }
+
+      // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
+      if (!isProfitable) {
+        profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
+
+        const relayKey = sdkUtils.getRelayEventKey(deposit);
+        this.ignoredDeposits[relayKey] = true;
+      }
+      return;
     }
+
+    // Deposit is known to be profitable.
+    const { blockNumber, outputToken, outputAmount } = deposit;
+    const fillAmountUsd = profitClient.getFillAmountInUsd(deposit);
+    if (!isDefined(fillAmountUsd)) {
+      return;
+    }
+    const limitIdx = this.findOriginChainLimitIdx(originChainId, blockNumber);
+
+    // Ensure that a limit was identified, and that no upper thresholds would be breached by filling this deposit.
+    if (this.originChainOvercommitted(originChainId, fillAmountUsd, limitIdx)) {
+      const limits = this.fillLimits[originChainId].slice(limitIdx);
+      this.logger.debug({
+        at: "Relayer::evaluateFill",
+        message: `Skipping ${originChain} deposit ${depositId} due to anticipated origin chain overcommitment.`,
+        blockNumber,
+        fillAmountUsd,
+        limits,
+        txnRef,
+      });
+      return;
+    }
+
+    // Update the origin chain limits in anticipation of committing tokens to a fill.
+    this.reduceOriginChainLimit(originChainId, fillAmountUsd, limitIdx);
+
+    // Update local balance to account for the enqueued fill.
+    tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
+
+    const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
+    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
   }
 
   /**
@@ -1019,7 +1016,7 @@ export class Relayer {
       this.logger.debug({
         at: "Relayer::requestSlowFill",
         message: "Prevent requesting slow fill request from chain that forces origin chain repayment or to lite chain.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit,
       });
       return;
     }
