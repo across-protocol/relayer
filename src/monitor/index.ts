@@ -68,6 +68,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "Binance withdrawal limits check disabled" });
       }
 
+      if (config.botModes.closePDAsEnabled) {
+        await acrossMonitor.closePDAs();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
+      }
+
       await clients.multiCallerClient.executeTxnQueues();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });

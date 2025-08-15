@@ -2916,7 +2916,7 @@ export class Dataworker {
     }
 
     // Get the lookup table Pda.
-    const recentSlot = (await provider.getSlot({ commitment: "finalized" }).send()) as bigint;
+    const recentSlot = await arch.svm.getSlot(provider, "finalized", this.logger);
     const lookupTable = await findAddressLookupTablePda({
       authority: kitKeypair.address,
       recentSlot: Number(recentSlot),
@@ -3185,7 +3185,8 @@ export class Dataworker {
     });
 
     // Get the slow fill information.
-    const relayDataHash = getRelayDataHash(leaf.relayData, leaf.chainId);
+    const messageHash = getMessageHash(leaf.relayData.message);
+    const relayDataHash = getRelayDataHash({ ...leaf.relayData, messageHash }, leaf.chainId);
 
     // Construct the slow fill instruction.
     const executeSlowFillIx = SvmSpokeClient.getExecuteSlowRelayLeafInstruction({
