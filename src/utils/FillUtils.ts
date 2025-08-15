@@ -1,6 +1,6 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { bnZero, CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
+import { CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -56,14 +56,13 @@ export function getUnfilledDeposits(
     });
 
   return deposits
-    .map((deposit) => {
-      const { unfilledAmount, invalidFills } = destinationSpokePoolClient.getValidUnfilledAmountForDeposit(deposit);
-      return { deposit, unfilledAmount, invalidFills };
+    .filter((deposit) => {
+      return !destinationSpokePoolClient.isDepositFilled(deposit);
     })
-    .filter(({ unfilledAmount }) => unfilledAmount.gt(bnZero))
-    .map(({ deposit, ...rest }) => {
+    .map((deposit) => {
+      const invalidFills = destinationSpokePoolClient.getFillsForDeposit(deposit);
       const version = hubPoolClient.configStoreClient.getConfigStoreVersionForTimestamp(deposit.quoteTimestamp);
-      return { deposit, ...rest, version };
+      return { deposit, version, invalidFills };
     });
 }
 
