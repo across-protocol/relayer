@@ -46,7 +46,7 @@ export function getUnfilledDeposits(
     .flatMap((spokePoolClient) => spokePoolClient.getDepositsForDestinationChain(destinationChainId))
     .filter((deposit) => {
       // It would be preferable to use host time since it's more reliably up-to-date, but this creates issues in test.
-      const currentTime = spokePoolClients[destinationChainId].getCurrentTime();
+      const currentTime = destinationSpokePoolClient.getCurrentTime();
       if (deposit.fillDeadline <= currentTime) {
         return false;
       }
