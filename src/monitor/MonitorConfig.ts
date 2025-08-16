@@ -81,6 +81,7 @@ export class MonitorConfig extends CommonConfig {
       MONITORED_TOKEN_SYMBOLS,
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
+      MONITOR_USE_FOLLOW_DISTANCE,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
       CLOSE_PDAS_ENABLED,
@@ -98,6 +99,10 @@ export class MonitorConfig extends CommonConfig {
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
+
+    if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
+      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
+    }
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
