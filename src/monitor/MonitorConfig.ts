@@ -2,13 +2,11 @@ import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
 import {
   CHAIN_IDs,
-  ethers,
   getNativeTokenAddressForChain,
   isDefined,
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
-  EvmAddress,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -186,10 +184,10 @@ export class MonitorConfig extends CommonConfig {
 
           const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
           return {
-            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : EvmAddress.from(token),
+            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
-            account: EvmAddress.from(ethers.utils.getAddress(account)),
+            account: toAddressType(account, chainId),
             chainId: parseInt(chainId),
           };
         }

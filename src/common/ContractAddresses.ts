@@ -324,6 +324,9 @@ export const CONTRACT_ADDRESSES: {
     cctpMessageTransmitter: {
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     },
+    nativeToken: {
+      address: "So11111111111111111111111111111111111111112",
+    },
   },
   [CHAIN_IDs.SONEIUM]: {
     opUSDCBridge: {
