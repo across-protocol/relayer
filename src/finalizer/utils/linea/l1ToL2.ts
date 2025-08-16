@@ -11,7 +11,6 @@ import {
   winston,
   CHAIN_IDs,
   ethers,
-  BigNumber,
   getTokenInfo,
   assert,
   isEVMSpokePoolClient,
@@ -41,8 +40,10 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   messageHash: string,
   l2Provider: ethers.providers.Provider
 ): Promise<OnChainMessageStatus> {
-  const l2Contract = messageService.contract.connect(l2Provider);
-  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  const iface = new ethers.utils.Interface(messageService.contract.interface.fragments);
+  const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
+
+  const status: bigint = await l2Contract.inboxL1L2MessageStatus(messageHash);
   return L1L2MessageStatuses[status.toString()];
 }
 
@@ -86,11 +87,8 @@ export async function lineaL1ToL2Finalizer(
 
   const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents];
   const enrichedMessageSentEvents = await sdkUtils.mapAsync(messageSentEvents, async (event) => {
-    const {
-      transactionHash: txHash,
-      logIndex,
-      args: { _from, _to, _fee, _value, _nonce, _calldata, _messageHash },
-    } = event;
+    const { parsed, logIndex, transactionHash: txHash } = event;
+    const { _from, _to, _fee, _value, _nonce, _calldata, _messageHash } = parsed.args;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
 
@@ -110,7 +108,7 @@ export async function lineaL1ToL2Finalizer(
       txHash,
       logIndex,
       status: messageStatus,
-      messageType: determineMessageType(event, hubPoolClient),
+      messageType: determineMessageType(event.parsed, hubPoolClient),
     };
   });
   // Group messages by status
@@ -132,7 +130,7 @@ export async function lineaL1ToL2Finalizer(
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
     claimable.map(async (message) => {
-      return l2MessageServiceContract.contract.populateTransaction.claimMessage(
+      return l2MessageServiceContract.contract.claimMessage(
         message.messageSender,
         message.destination,
         message.fee,
