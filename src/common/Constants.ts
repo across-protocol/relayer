@@ -654,7 +654,13 @@ export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
 // This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
 // This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
 // relayer to unintentionally overdraw the HubPool's available reserves.
-export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
+export const SLOW_WITHDRAWAL_CHAINS = [
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.BLAST,
+  CHAIN_IDs.UNICHAIN,
+];
 
 // Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
 // gateway, while function calls are directed at the gateway router.
