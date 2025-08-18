@@ -1624,10 +1624,11 @@ export class InventoryClient {
     return SLOW_WITHDRAWAL_CHAINS.filter((repaymentChainId) => {
       let fastWithdrawal = isUSDC && sdkUtils.chainIsCCTPEnabled(repaymentChainId);
       fastWithdrawal ||= isUSDT && repaymentChainId === CHAIN_IDs.ARBITRUM;
-      return;
-      !fastWithdrawal &&
+      return (
+        !fastWithdrawal &&
         this._l1TokenEnabledForChain(l1Token, repaymentChainId) &&
-        this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId);
+        this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, repaymentChainId)
+      );
     });
   }
 
