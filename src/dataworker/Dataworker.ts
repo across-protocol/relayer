@@ -3055,27 +3055,27 @@ export class Dataworker {
             l2TokenAddress,
             toKitAddress(refundAddress)
           );
-          const claimAccountData = await SvmSpokeClient.fetchMaybeClaimAccount(provider, claimAccountPda);
-          return { accountMeta: getAccountMeta(claimAccountPda, true), refundAddress, claimAccountData };
+          const claimAccount = await SvmSpokeClient.fetchMaybeClaimAccount(provider, claimAccountPda);
+          return { refundAddress, claimAccount };
         });
         executeRelayerRefundLeafDeferredIx.accounts.push(
-          ...claimAccounts.map((claimAccount) => claimAccount.accountMeta)
+          ...claimAccounts.map(({ claimAccount }) => getAccountMeta(claimAccount.address, true))
         );
-        const claimAccountsToInitialize = claimAccounts.filter((claimAccount) => !claimAccount.claimAccountData.exists);
+        const claimAccountsToInitialize = claimAccounts.filter(({ claimAccount }) => !claimAccount.exists);
 
         // We then need to create all claim accounts which do not already exist. Do this in series to avoid transaction collision issues.
         if (claimAccountsToInitialize.length !== 0) {
           this.logger.debug({
             at: "Dataworker#executeRelayerRefundLeafSvm",
             message: "Need to initialize new claim accounts.",
-            claimAccounts: claimAccountsToInitialize.map((account) => account.accountMeta.address),
+            claimAccounts: claimAccountsToInitialize.map(({ claimAccount }) => claimAccount.address),
           });
           for (const claimAccount of claimAccountsToInitialize) {
             const initializeClaimAccountIx = SvmSpokeClient.getInitializeClaimAccountInstruction({
               signer: kitKeypair,
               mint: l2TokenAddress,
               refundAddress: toKitAddress(claimAccount.refundAddress),
-              claimAccount: claimAccount.accountMeta.address,
+              claimAccount: claimAccount.claimAccount.address,
             });
             const initializeClaimAccountTx = pipe(
               createTransactionMessage({ version: 0 }),
@@ -3087,7 +3087,7 @@ export class Dataworker {
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeafSvm",
               message: "Initialized claim account",
-              claimAccount: claimAccount.accountMeta.address,
+              claimAccount: claimAccount.claimAccount.address,
               refundAddress: claimAccount.refundAddress,
             });
           }
@@ -3151,7 +3151,7 @@ export class Dataworker {
           );
           return sendAndConfirmSolanaTransaction(claimRelayerRefundTx, kitKeypair, provider);
         };
-        // Zip the claimAccounts with the recipient ATA.
+        // Zip the claimAccounts with the recipient ATA and then claim all refunds corresponding to refund accounts with ATAs.
         const claimedRefunds = await mapAsync(
           claimAccounts.map((claimAccount, idx) => {
             return { claimAccount, recipientATA: recipientATAs[idx] };
@@ -3161,12 +3161,14 @@ export class Dataworker {
             if (!accountData.recipientATA.exists) {
               return undefined;
             }
-            const initializer = accountData.claimAccount.claimAccountData.exists
-              ? accountData.claimAccount.claimAccountData.data!.initializer
+            // If the claim account exists, then initializer will be defined https://github.com/anza-xyz/kit/blob/491c96ed8ccda40d13b30deaf03ad762de58e0d5/packages/accounts/src/maybe-account.ts#L90.
+            // Otherwise, this means that we created the claim account earlier in this function, so the kit keypair is the initializer.
+            const initializer = accountData.claimAccount.claimAccount.exists
+              ? accountData.claimAccount.claimAccount.data!.initializer
               : kitKeypair.address;
             const claimRefundSignature = await claimRelayerRefund(
               toKitAddress(accountData.claimAccount.refundAddress),
-              accountData.claimAccount.accountMeta.address,
+              accountData.claimAccount.claimAccount.address,
               initializer,
               accountData.recipientATA.tokenAccount
             );
