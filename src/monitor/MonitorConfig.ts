@@ -182,7 +182,7 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
+          const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
           return {
             token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
             errorThreshold: parsedErrorThreshold,
