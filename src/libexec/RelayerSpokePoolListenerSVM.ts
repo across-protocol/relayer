@@ -83,7 +83,7 @@ async function scrapeEvents(
 ): Promise<void> {
   const provider = eventsClient.getRpc();
   const [{ timestamp: currentTime }, ...events] = await Promise.all([
-    arch.svm.getNearestSlotTime(provider, logger),
+    arch.svm.getNearestSlotTime(provider, { commitment: "confirmed" }, logger),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
@@ -173,7 +173,11 @@ async function run(argv: string[]): Promise<void> {
 
   const provider = getSvmProvider(await getRedisCache());
   const blockFinder = undefined;
-  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider, logger);
+  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
+    provider,
+    { commitment: "confirmed" },
+    logger
+  );
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
