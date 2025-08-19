@@ -1226,7 +1226,7 @@ export class Monitor {
       const fillStatus = await svmSpokePoolClient.relayFillStatus(relayDataWithMessageHash, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
       if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
-        this.logger.info({
+        this.logger.debug({
           at: "Monitor#closePDAs",
           message: `Not ready to close PDA for fill ${fill.txnRef}`,
           fill,
@@ -1256,7 +1256,7 @@ export class Monitor {
           })
           .send();
         if (result.value.err) {
-          this.logger.error({
+          this.logger.warn({
             at: "Monitor#closePDAs",
             message: `Failed to close PDA for fill ${fill.txnRef}`,
             error: result.value.err,
@@ -1275,7 +1275,7 @@ export class Monitor {
           message: `Closed PDA ${fillStatusPda} for fill ${fill.txnRef}`,
         });
       } catch (err) {
-        this.logger.error({
+        this.logger.warn({
           at: "Monitor#closePDAs",
           message: `Failed to close PDA for fill ${fill.txnRef}`,
           error: err,
