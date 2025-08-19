@@ -516,7 +516,12 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
+    // If the relayer wants to prioritize LP utilization, then we should always take repayment on the origin chain
+    // if it is a quick rebalance source.
+    if (
+      (this.prioritizeLpUtilization || forceOriginRepayment) &&
+      repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)
+    ) {
       return [deposit.originChainId];
     }
 
@@ -703,7 +708,7 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
+    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;

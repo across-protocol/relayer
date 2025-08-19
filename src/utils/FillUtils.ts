@@ -1,6 +1,7 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
+import { CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -81,10 +82,13 @@ export function depositForcesOriginChainRepayment(
  * be filled or ignored given current inventory allocation levels.
  */
 export function repaymentChainCanBeQuicklyRebalanced(
-  deposit: Pick<DepositWithBlock, "originChainId">,
+  deposit: Pick<DepositWithBlock, "originChainId" | "inputToken">,
   hubPoolClient: HubPoolClient
 ): boolean {
-  return [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId);
+  const originChainIsCctpEnabled =
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[deposit.originChainId], deposit.inputToken.toNative()) &&
+    sdkUtils.chainIsCCTPEnabled(deposit.originChainId);
+  return originChainIsCctpEnabled || [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId);
 }
 
 export function getAllUnfilledDeposits(
