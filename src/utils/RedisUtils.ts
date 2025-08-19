@@ -2,10 +2,11 @@ import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
+import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk";
+import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -138,6 +139,16 @@ export async function getRedisCache(
   }
 }
 
+export async function getRedisPubSub(
+  logger?: winston.Logger,
+  url?: string
+): Promise<PubSubMechanismInterface | undefined> {
+  const client = await getRedis(logger, url);
+  if (client) {
+    return new RedisPubSub(client);
+  }
+}
+
 export async function setRedisKey(
   key: string,
   val: string,
@@ -170,7 +181,7 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
 }
 
 export async function waitForPubSub(
-  redisClient: CachingMechanismInterface,
+  redisClient: PubSubMechanismInterface,
   channel: string,
   message: string,
   maxWaitMs = 60000

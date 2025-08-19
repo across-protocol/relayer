@@ -11,9 +11,9 @@ import {
   disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
-  getRedisCache,
   waitForPubSub,
   averageBlockTime,
+  getRedisPubSub,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -151,7 +151,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
-  const redis = await getRedisCache(logger);
+  const pubSub = await getRedisPubSub(logger);
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
@@ -287,7 +287,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
       //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
-      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && runIdentifier && hasTransactionQueued) {
         const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
@@ -304,7 +304,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         let counter = 0;
 
         // publish so that other instances can see that we're running
-        await redis.pub(botIdentifier, runIdentifier);
+        await pubSub.pub(botIdentifier, runIdentifier);
         logger.debug({
           at: "Dataworker#index",
           message: `Published signal to ${botIdentifier} instances.`,
@@ -316,7 +316,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
           });
           const handover = await waitForPubSub(
-            redis,
+            pubSub,
             botIdentifier,
             runIdentifier,
             (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
@@ -346,7 +346,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
               at: "Dataworker#index",
               message: "Waiting for the l1 executor to execute pool rebalance roots.",
             });
-            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, l1BlockTime * 1000);
+            const handover = await waitForPubSub(pubSub, botIdentifier, runIdentifier, l1BlockTime * 1000);
             if (handover) {
               logger.debug({
                 at: "Dataworker#index",
