@@ -1205,18 +1205,17 @@ export class Monitor {
     if (!isSVMSpokePoolClient(svmSpokePoolClient)) {
       return;
     }
-    const relayerRawAddresses = this.monitorConfig.monitoredRelayers.map((relayer) => relayer.toBytes32());
-
-    const fills = svmSpokePoolClient.getFills();
-    const filteredFills = fills.filter((fill) => {
-      return relayerRawAddresses.includes(fill.relayer.toBytes32());
-    })
+    const fills: FillWithBlock[] = [];
+    for (const relayers of this.monitorConfig.monitoredRelayers) {
+      const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
+      fills.push(...relayerFills);
+    }
 
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
 
-    for (const fill of filteredFills) {
+    for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
         ...relayData,
