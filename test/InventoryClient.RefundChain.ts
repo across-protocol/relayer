@@ -45,7 +45,6 @@ describe("InventoryClient: Refund chain selection", async function () {
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
-  let bundleDataClient: MockBundleDataClient;
   let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
   let inventoryClient: InventoryClient; // tested
   let sampleDepositData: Deposit;
@@ -151,7 +150,6 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
-    bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
     inventoryClient = new MockInventoryClient(
@@ -161,7 +159,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       tokenClient,
       enabledChainIds,
       hubPoolClient,
-      bundleDataClient,
       adapterManager,
       crossChainTransferClient,
       false, // simMode
@@ -183,6 +180,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         [BSC]: l2TokensForUsdc[BSC],
       },
     });
+    (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
 
     seedMocks(initialAllocation);
   });
@@ -432,12 +430,9 @@ describe("InventoryClient: Refund chain selection", async function () {
 
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
-      bundleDataClient.setReturnedPendingBundleRefunds({
-        [MAINNET]: createRefunds(owner.address, toWei(5), mainnetWeth),
-        [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
-      });
-      bundleDataClient.setReturnedNextBundleRefunds({
-        [OPTIMISM]: createRefunds(owner.address, toWei(5), l2TokensForWeth[OPTIMISM]),
+      (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {
+        [MAINNET]: toWei(5),
+        [OPTIMISM]: toWei(10),
       });
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
@@ -450,12 +445,9 @@ describe("InventoryClient: Refund chain selection", async function () {
 
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = sdkUtils.ConvertDecimals(18, 6)(await computeOutputAmount(sampleDepositData));
-      bundleDataClient.setReturnedPendingBundleRefunds({
-        [MAINNET]: createRefunds(owner.address, toWei(5), mainnetWeth),
-        [OPTIMISM]: createRefunds(owner.address, toMegaWei(5), l2TokensForWeth[OPTIMISM]),
-      });
-      bundleDataClient.setReturnedNextBundleRefunds({
-        [OPTIMISM]: createRefunds(owner.address, toMegaWei(5), l2TokensForWeth[OPTIMISM]),
+      (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {
+        [MAINNET]: toWei(5),
+        [OPTIMISM]: toMegaWei(10),
       });
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(lastSpyLogIncludes(spy, 'expectedPostRelayAllocation":"166666666666666666"')).to.be.true;
@@ -495,7 +487,6 @@ describe("InventoryClient: Refund chain selection", async function () {
         tokenClient,
         enabledChainIds,
         hubPoolClient,
-        bundleDataClient,
         adapterManager,
         crossChainTransferClient,
         false, // simMode
@@ -646,8 +637,8 @@ describe("InventoryClient: Refund chain selection", async function () {
       sampleDepositData.inputAmount = toWei(5);
       sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
 
-      bundleDataClient.setReturnedPendingBundleRefunds({
-        [POLYGON]: createRefunds(owner.address, toWei(5), l2TokensForWeth[POLYGON]),
+      (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {
+        [POLYGON]: toWei(5),
       });
 
       // Post relay allocations:
@@ -908,12 +899,12 @@ describe("InventoryClient: Refund chain selection", async function () {
         tokenClient,
         enabledChainIds,
         hubPoolClient,
-        bundleDataClient,
         adapterManager,
         crossChainTransferClient,
         false,
         true // Need to set prioritizeUtilization to true to force client to consider slow withdrawal chains.
       );
+      (inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
       (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetWeth, excessRunningBalances);
       const inputAmount = toBNWei(1);
       sampleDepositData = {
