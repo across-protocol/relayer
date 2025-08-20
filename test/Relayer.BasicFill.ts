@@ -896,7 +896,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       inputAmount = inputAmount.div(2); // Permit 2 deposits.
 
       for (const sendingMessageRelaysEnabled of [false, true]) {
-        relayerInstance.config.sendingMessageRelaysEnabled = sendingMessageRelaysEnabled;
+        relayerInstance.config.sendingMessageRelaysEnabled[destinationChainId] = sendingMessageRelaysEnabled;
         profitClient.clearUnprofitableFills();
 
         await depositV3(
