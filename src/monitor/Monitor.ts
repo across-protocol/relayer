@@ -1208,15 +1208,14 @@ export class Monitor {
     }
     const fills: FillWithBlock[] = [];
     for (const relayers of this.monitorConfig.monitoredRelayers) {
-      if (relayers.isSVM()) {
-        const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
-        fills.push(...relayerFills);
-      }
+      const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
+      fills.push(...relayerFills);
     }
+
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
-
+    const noClosePdaTxs = [];
     for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
@@ -1226,11 +1225,7 @@ export class Monitor {
       const fillStatus = await svmSpokePoolClient.relayFillStatus(relayDataWithMessageHash, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
       if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
-        this.logger.debug({
-          at: "Monitor#closePDAs",
-          message: `Not ready to close PDA for fill ${fill.txnRef}`,
-          fill,
-        });
+        noClosePdaTxs.push(fill);
         continue;
       }
 
@@ -1281,6 +1276,13 @@ export class Monitor {
           error: err,
         });
       }
+    }
+
+    if (noClosePdaTxs.length > 0) {
+      this.logger.debug({
+        at: "Monitor#closePDAs",
+        message: `Number of PDAs that are not ready to be closed: ${noClosePdaTxs.length}`,
+      });
     }
   }
 
