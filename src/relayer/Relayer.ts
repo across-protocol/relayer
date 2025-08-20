@@ -774,8 +774,10 @@ export class Relayer {
       if (!isProfitable) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
 
-        const relayKey = sdkUtils.getRelayEventKey(deposit);
-        this.ignoredDeposits[relayKey] = true;
+        if (destinationChainId !== CHAIN_IDs.SOLANA) {
+          const relayKey = sdkUtils.getRelayEventKey(deposit);
+          this.ignoredDeposits[relayKey] = true;
+        }
       }
       return;
     }
