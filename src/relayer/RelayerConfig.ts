@@ -36,7 +36,8 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingRebalancesEnabled: boolean;
-  readonly sendingMessageRelaysEnabled: boolean;
+  readonly sendingMessageRelaysEnabled: { [chainId: number]: boolean };
+  readonly fallbackSendingMessageRelaysEnabled: boolean;
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
   readonly relayerOriginChains: number[] = [];
@@ -276,7 +277,8 @@ export class RelayerConfig extends CommonConfig {
     );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
-    this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
+    this.fallbackSendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
+    this.sendingMessageRelaysEnabled = {};
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
 

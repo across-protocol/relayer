@@ -335,7 +335,8 @@ export class Relayer {
     }
 
     // Skip deposit with message if sending fills with messages is not supported.
-    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
+    const canSendMessageRelays = this.config.sendingMessageRelaysEnabled[destinationChainId];
+    if (!canSendMessageRelays && !isMessageEmpty(resolveDepositMessage(deposit))) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
