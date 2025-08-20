@@ -56,6 +56,7 @@ import {
   getBinanceApiClient,
   getBinanceWithdrawalLimits,
   chainIsEvm,
+  getSolanaTokenBalance,
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
@@ -1207,15 +1208,14 @@ export class Monitor {
     }
     const fills: FillWithBlock[] = [];
     for (const relayers of this.monitorConfig.monitoredRelayers) {
-      if (relayers.isSVM()) {
-        const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
-        fills.push(...relayerFills);
-      }
+      const relayerFills = svmSpokePoolClient.getFillsForRelayer(relayers);
+      fills.push(...relayerFills);
     }
+
     const spokePoolProgramId = address(svmSpokePoolClient.spokePoolAddress.toBase58());
     const signer = await getKitKeypairFromEvmSigner(this.clients.hubPoolClient.hubPool.signer);
     const svmRpc = svmSpokePoolClient.svmEventsClient.getRpc();
-
+    const noClosePdaTxs = [];
     for (const fill of fills) {
       const relayData = getRelayDataFromFill(fill);
       const relayDataWithMessageHash = {
@@ -1225,11 +1225,7 @@ export class Monitor {
       const fillStatus = await svmSpokePoolClient.relayFillStatus(relayDataWithMessageHash, fill.destinationChainId);
       // If fill PDA should not be closed, skip.
       if (!this._shouldCloseFillPDA(fillStatus, fill.fillDeadline, svmSpokePoolClient.getCurrentTime())) {
-        this.logger.info({
-          at: "Monitor#closePDAs",
-          message: `Not ready to close PDA for fill ${fill.txnRef}`,
-          fill,
-        });
+        noClosePdaTxs.push(fill);
         continue;
       }
 
@@ -1280,6 +1276,13 @@ export class Monitor {
           error: err,
         });
       }
+    }
+
+    if (noClosePdaTxs.length > 0) {
+      this.logger.info({
+        at: "Monitor#closePDAs",
+        message: `Number of PDAs that are not ready to be closed: ${noClosePdaTxs.length}`,
+      });
     }
   }
 
@@ -1559,8 +1562,17 @@ export class Monitor {
           this.balanceCache[chainId][token.toBytes32()][account.toBytes32()] = balance;
           return balance;
         }
-        // @todo _getBalances is unimplemented for SVM.
-        return bnZero;
+        // Assert balance request has solana types.
+        assert(isSVMSpokePoolClient(spokePoolClient));
+        assert(token.isSVM());
+        assert(account.isSVM());
+        const provider = spokePoolClient.svmEventsClient.getRpc();
+        if (!token.eq(getNativeTokenAddressForChain(chainId))) {
+          return getSolanaTokenBalance(provider, token, account);
+        } else {
+          const balanceInLamports = await provider.getBalance(arch.svm.toAddress(account)).send();
+          return toBN(Number(balanceInLamports.value));
+        }
       })
     );
   }
@@ -1570,7 +1582,7 @@ export class Monitor {
       decimalrequests.map(async ({ chainId, token }) => {
         const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
         if (token.eq(gasTokenAddressForChain)) {
-          return 18;
+          return chainIsEvm(chainId) ? 18 : 9;
         } // Assume all EVM chains have 18 decimal native tokens.
         if (this.decimals[chainId]?.[token.toBytes32()]) {
           return this.decimals[chainId][token.toBytes32()];
