@@ -35,7 +35,6 @@ import {
   EvmAddress,
   getSvmSignerFromEvmSigner,
   chainIsSvm,
-  isDefined,
 } from "../utils";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
@@ -174,13 +173,6 @@ export async function constructRelayerClients(
       ? config.relayerDestinationChains
       : configStoreClient.getChainIdIndicesForBlock()
   ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
-  enabledChainIds.forEach((chainId) => {
-    const sendMessageRelaysChain = process.env[`SEND_MESSAGE_RELAYS_${chainId}`];
-    const sendMessageRelays = isDefined(sendMessageRelaysChain)
-      ? sendMessageRelaysChain === "true"
-      : config.fallbackSendingMessageRelaysEnabled;
-    config.sendingMessageRelaysEnabled[chainId] = sendMessageRelays;
-  });
   const profitClient = new ProfitClient(
     logger,
     hubPoolClient,
