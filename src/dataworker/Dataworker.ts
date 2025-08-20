@@ -3089,6 +3089,7 @@ export class Dataworker {
               message: "Initialized claim account",
               claimAccount: claimAccount.claimAccount.address,
               refundAddress: claimAccount.refundAddress,
+              txSignature,
             });
           }
         }
@@ -3146,39 +3147,45 @@ export class Dataworker {
             eventAuthority,
             program: spokePoolProgramId,
           });
+          this.logger.debug({
+            at: "Dataworker#executeRelayerRefundLeafSvm",
+            message: "Claim relayer refund accounts",
+            tokenAccount,
+            claimAccount,
+            refundAddress,
+          });
           const claimRelayerRefundTx = pipe(await createDefaultTransaction(provider, kitKeypair), (tx) =>
             appendTransactionMessageInstructions([claimRelayerRefundIx], tx)
           );
-          return sendAndConfirmSolanaTransaction(claimRelayerRefundTx, kitKeypair, provider);
+          return await sendAndConfirmSolanaTransaction(claimRelayerRefundTx, kitKeypair, provider);
         };
         // Zip the claimAccounts with the recipient ATA and then claim all refunds corresponding to refund accounts with ATAs.
-        const claimedRefunds = await mapAsync(
-          claimAccounts.map((claimAccount, idx) => {
-            return { claimAccount, recipientATA: recipientATAs[idx] };
-          }),
-          async (accountData) => {
-            // If the recipient ATA does not exist, then we should not attempt to close the claim account.
-            if (!accountData.recipientATA.exists) {
-              return undefined;
-            }
-            // If the claim account exists, then initializer will be defined https://github.com/anza-xyz/kit/blob/491c96ed8ccda40d13b30deaf03ad762de58e0d5/packages/accounts/src/maybe-account.ts#L90.
-            // Otherwise, this means that we created the claim account earlier in this function, so the kit keypair is the initializer.
-            const initializer = accountData.claimAccount.claimAccount.exists
-              ? accountData.claimAccount.claimAccount.data!.initializer
-              : kitKeypair.address;
-            const claimRefundSignature = await claimRelayerRefund(
-              toKitAddress(accountData.claimAccount.refundAddress),
-              accountData.claimAccount.claimAccount.address,
-              initializer,
-              accountData.recipientATA.tokenAccount
-            );
-            return [accountData.claimAccount.refundAddress.toNative(), claimRefundSignature];
+        const recipientTokenAccounts = claimAccounts.map((claimAccount, idx) => {
+          return { claimAccount, recipientATA: recipientATAs[idx] };
+        });
+        const claimedRefunds = [];
+        for (const accountData of recipientTokenAccounts) {
+          // If the recipient ATA does not exist, then we should not attempt to close the claim account.
+          if (!accountData.recipientATA.exists) {
+            continue;
           }
-        );
+          // If the claim account exists, then initializer will be defined https://github.com/anza-xyz/kit/blob/491c96ed8ccda40d13b30deaf03ad762de58e0d5/packages/accounts/src/maybe-account.ts#L90.
+          // Otherwise, this means that we created the claim account earlier in this function, so the kit keypair is the initializer.
+          const initializer = accountData.claimAccount.claimAccount.exists
+            ? accountData.claimAccount.claimAccount.data!.initializer
+            : kitKeypair.address;
+          const claimRefundSignature = await claimRelayerRefund(
+            toKitAddress(accountData.claimAccount.refundAddress),
+            accountData.claimAccount.claimAccount.address,
+            initializer,
+            accountData.recipientATA.tokenAccount
+          );
+          claimedRefunds.push([accountData.claimAccount.refundAddress.toNative(), claimRefundSignature]);
+        }
         this.logger.debug({
           at: "Dataworker#executeRelayerRefundLeafSvm",
           message: "Claimed relayer refunds for all addresses with ATAs",
-          claimSignatures: Object.fromEntries(claimedRefunds.filter(isDefined)),
+          claimSignatures: Object.fromEntries(claimedRefunds),
         });
       }
     } catch (e) {
