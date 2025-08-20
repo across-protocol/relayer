@@ -301,6 +301,7 @@ export class InventoryClient {
   // Return sum of refunds for all fills sent after the fromBlocks.
   // Makes a simple assumption that all fills sent by this relayer that were sent after the last executed bundle
   // are valid and will be refunded on the repayment chain selected.
+  // TODO: Unit test this.
   private _getApproximateRefundsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
@@ -337,6 +338,7 @@ export class InventoryClient {
 
   // Return the next starting block for each chain following the bundle end block of the last exececuted bundle that
   // was relayed to that chain.
+  // Unit test this.
   _getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
     const configStoreClient = this.hubPoolClient.configStoreClient;
     return Object.fromEntries(

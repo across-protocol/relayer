@@ -2,7 +2,6 @@ import {
   assertPromiseError,
   BigNumber,
   SignerWithAddress,
-  createRefunds,
   createSpyLogger,
   deployConfigStore,
   ethers,
@@ -29,13 +28,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   toAddressType,
 } from "../src/utils";
-import {
-  MockAdapterManager,
-  MockBundleDataClient,
-  MockHubPoolClient,
-  MockInventoryClient,
-  MockTokenClient,
-} from "./mocks";
+import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenClient } from "./mocks";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
 describe("InventoryClient: Refund chain selection", async function () {
