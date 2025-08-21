@@ -68,8 +68,10 @@ export class RedisClient {
     return 1;
   }
 
-  duplicate(): RedisClient {
-    return new RedisClient(this.client.duplicate(), this.namespace, this.logger);
+  async duplicate(): Promise<RedisClient> {
+    const newClient = this.client.duplicate();
+    await newClient.connect();
+    return new RedisClient(newClient, this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
@@ -151,7 +153,7 @@ export async function getRedisPubSub(
   if (client) {
     // since getRedis returns the same client instance for the same url,
     // we need to duplicate it before creating a new RedisPubSub instance
-    return new RedisPubSub(client.duplicate());
+    return new RedisPubSub(await client.duplicate());
   }
 }
 
