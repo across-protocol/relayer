@@ -204,6 +204,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         minDepositConfirmations: defaultMinDepositConfirmations,
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
+        sendingMessageRelaysEnabled: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
@@ -416,6 +417,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           relayerOriginChains: [destinationChainId],
           relayerDestinationChains: [originChainId],
           minDepositConfirmations: defaultMinDepositConfirmations,
+          sendingMessageRelaysEnabled: {},
           tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
@@ -531,6 +533,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 3 }],
           },
           sendingRelaysEnabled: true,
+          sendingMessageRelaysEnabled: {},
           tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
@@ -568,6 +571,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           relayerTokens: [],
           minDepositConfirmations: defaultMinDepositConfirmations,
           sendingRelaysEnabled: true,
+          sendingMessageRelaysEnabled: {},
           tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
@@ -641,6 +645,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
           },
           sendingRelaysEnabled: true,
+          sendingMessageRelaysEnabled: {},
           tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
@@ -766,6 +771,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
           },
           sendingRelaysEnabled: true,
+          sendingMessageRelaysEnabled: {},
           tryMulticallChains: [],
         } as unknown as RelayerConfig
       );
@@ -890,7 +896,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       inputAmount = inputAmount.div(2); // Permit 2 deposits.
 
       for (const sendingMessageRelaysEnabled of [false, true]) {
-        relayerInstance.config.sendingMessageRelaysEnabled = sendingMessageRelaysEnabled;
+        relayerInstance.config.sendingMessageRelaysEnabled[destinationChainId] = sendingMessageRelaysEnabled;
         profitClient.clearUnprofitableFills();
 
         await depositV3(

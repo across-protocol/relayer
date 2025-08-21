@@ -183,6 +183,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        sendingMessageRelaysEnabled: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
