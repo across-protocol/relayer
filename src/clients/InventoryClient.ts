@@ -347,7 +347,7 @@ export class InventoryClient {
         // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
         // from the last executed bundle for this chain and these refunds were executed.
         const lastRelayedRootToChain =
-          spokePoolClient.getRootBundleRelays()[spokePoolClient.getRootBundleRelays().length - 1];
+          spokePoolClient.getRootBundleRelays().at(-1);
         if (!isDefined(lastRelayedRootToChain)) {
           return [chainId, 0];
         }
