@@ -69,7 +69,7 @@ export class RedisClient {
   }
 
   duplicate(): RedisClient {
-    return new RedisClient(this.client, this.namespace, this.logger);
+    return new RedisClient(this.client.duplicate(), this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
