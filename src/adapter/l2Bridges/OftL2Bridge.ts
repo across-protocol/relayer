@@ -1,4 +1,3 @@
-import { EventSearchConfig } from "@across-protocol/sdk/dist/types/utils";
 import { BigNumber, Contract, Signer } from "ethers";
 import { AugmentedTransaction } from "../../clients";
 import {
@@ -14,6 +13,7 @@ import {
   paginatedEventQuery,
   isContractDeployedToAddress,
   bnZero,
+  EventSearchConfig,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import {
@@ -23,7 +23,7 @@ import {
   OFT_DEFAULT_FEE_CAP,
   OFT_FEE_CAP_OVERRIDES,
 } from "../../common";
-import { OFT } from "../../utils/OFTUtils";
+import * as OFT from "../../utils/OFTUtils";
 
 interface TokenInfo {
   symbol: string;

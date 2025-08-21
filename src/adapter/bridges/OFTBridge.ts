@@ -22,7 +22,7 @@ import {
   OFT_DEFAULT_FEE_CAP,
   OFT_FEE_CAP_OVERRIDES,
 } from "../../common";
-import { OFT } from "../../utils/OFTUtils";
+import * as OFT from "../../utils/OFTUtils";
 
 export class OFTBridge extends BaseBridgeAdapter {
   private readonly l1HubPoolAddress: string;
