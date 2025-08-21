@@ -35,7 +35,6 @@ import {
   Address,
   toAddressType,
   repaymentChainCanBeQuicklyRebalanced,
-  compareAddressesSimple,
 } from "../utils";
 import { HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -318,12 +317,13 @@ export class InventoryClient {
         .filter(
           (fill) =>
             fill.relayer.eq(this.relayer) &&
-            // We can assume that this.getL1TokenAddress will succeed here because this function's input variable l1Token
-            // is also retrieved via the same function.
-            compareAddressesSimple(
-              l1Token.toNative(),
-              this.getL1TokenAddress(fill.inputToken, fill.originChainId).toNative()
+            !depositForcesOriginChainRepayment(
+              { inputToken: fill.inputToken, originChainId: fill.originChainId, fromLiteChain: false },
+              this.hubPoolClient
             ) &&
+            // @dev This getL1TokenAddress() is safe to call because we call `depositForcesOriginChainRepayment()`
+            // first, which would return true if there the input token wasn't mapped to an L1 token.
+            l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&
             fill.blockNumber >= fromBlocks[chainId]
         )
         .forEach((fill) => {
@@ -405,6 +405,8 @@ export class InventoryClient {
     }
 
     if (this.isInventoryManagementEnabled()) {
+      // @dev This getL1TokenAddress() is safe to call because we call `depositForcesOriginChainRepayment()`
+      // first, which would return true if there the input token wasn't mapped to an L1 token.
       const l1Token = this.getL1TokenAddress(inputToken, originChainId);
       this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
         if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
@@ -416,6 +418,13 @@ export class InventoryClient {
     return [...chainIds];
   }
 
+  /**
+   * Returns the L1 token address for a given L2 token address on a given chain. Throws
+   *  if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   * @param l2Token L2 token address
+   * @param chainId Chain ID
+   * @returns L1 token address from TokenSymbolsMap
+   */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
     return getL1TokenAddress(l2Token, chainId);
   }
@@ -503,7 +512,6 @@ export class InventoryClient {
       return [];
     }
 
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
@@ -524,10 +532,13 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
+    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
       return [deposit.originChainId];
     }
 
+    // @dev This getL1TokenAddress() is safe to call because we call `validateOutputToken()` first, which would return
+    // false if the input token and origin chain weren't mapped to an L1 token.
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
