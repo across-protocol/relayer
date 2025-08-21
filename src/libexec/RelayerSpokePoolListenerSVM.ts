@@ -119,7 +119,7 @@ async function listen(
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
 
-  // Default keepalive interval is 5ms but this can cause premature hangup.
+  // Default keepalive interval is 5s but this can cause premature hangup.
   // See https://github.com/anza-xyz/agave/issues/7022
   const intervalMs = 30_000;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
