@@ -11,14 +11,14 @@ import {
   assert,
   EvmAddress,
   Address,
-  toBytes32,
   toWei,
   isContractDeployedToAddress,
   winston,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { CHAIN_IDs } from "@across-protocol/constants";
 import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
+import { OFT } from "../../utils/OFTUtils";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -93,7 +93,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
-    this.dstChainEid = getOFTEidForChainId(dstChainId);
+    this.dstChainEid = OFT.getEndpointId(dstChainId);
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toNative(), IOFT_ABI_FULL, hubSigner);
     this.l2Bridge = new Contract(route.dstIOFTAddress.toNative(), IOFT_ABI_FULL, dstSignerOrProvider);
   }
@@ -117,10 +117,10 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
-    const roundedAmount = await this.roundAmountToOftPrecision(amount);
+    const roundedAmount = await this.roundAmountToSend(amount);
     const sendParamStruct: SendParamStruct = {
       dstEid: this.dstChainEid,
-      to: oftAddressToBytes32(toAddress),
+      to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
@@ -147,26 +147,17 @@ export class OFTBridge extends BaseBridgeAdapter {
   }
 
   /**
-   * Rounds the token amount down to the correct precision for OFT transfer.
-   * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent contract-side rounding.
-   * @param amount - Amount to round
-   * @returns The amount rounded down to the correct precision
+   * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
+   * @param amount amount to round
+   * @returns amount rounded down
    */
-  private async roundAmountToOftPrecision(amount: BigNumber): Promise<BigNumber> {
+  private async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
     // Same for `tokenDecimals`
     this.tokenDecimals ??= (await fetchTokenInfo(this.hubTokenAddress.toNative(), this.l1Bridge.signer)).decimals;
 
-    const decimalDifference = this.tokenDecimals - this.sharedDecimals;
-
-    if (decimalDifference > 0) {
-      const divisor = BigNumber.from(10).pow(decimalDifference);
-      const remainder = amount.mod(divisor);
-      return amount.sub(remainder);
-    }
-
-    return amount;
+    return OFT.roundAmountToSend(amount, this.tokenDecimals, this.sharedDecimals);
   }
 
   async queryL1BridgeInitiationEvents(
@@ -235,7 +226,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Filter events by source eid
-    const sourceEid = getOFTEidForChainId(this.hubChainId);
+    const sourceEid = OFT.getEndpointId(this.hubChainId);
     const events = allEvents.filter((event) => event.args.srcEid === sourceEid);
 
     return {
@@ -244,18 +235,4 @@ export class OFTBridge extends BaseBridgeAdapter {
       }),
     };
   }
-}
-
-// Retrieves the OFT EID for a given chainId.
-export function getOFTEidForChainId(chainId: number): number {
-  const eid = PUBLIC_NETWORKS[chainId].oftEid;
-  if (!isDefined(eid)) {
-    throw new Error(`No OFT domain found for chainId: ${chainId}`);
-  }
-  return eid;
-}
-
-// Converts an EVM address to bytes32 format for OFT bridge. Zero-pads from the left.
-export function oftAddressToBytes32(address: EvmAddress): string {
-  return toBytes32(address.toNative());
 }
