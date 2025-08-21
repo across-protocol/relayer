@@ -149,6 +149,11 @@ export async function getRedisPubSub(
   logger?: winston.Logger,
   url?: string
 ): Promise<PubSubMechanismInterface | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
+  }
+
   const client = await getRedis(logger, url);
   if (client) {
     // since getRedis returns the same client instance for the same url,
