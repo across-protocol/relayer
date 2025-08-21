@@ -1,6 +1,6 @@
 import { expect } from "../utils";
 import { EvmAddress } from "../../src/utils";
-import { OFT } from "../../src/utils/OFTUtils";
+import * as OFT from "../../src/utils/OFTUtils";
 
 describe("Cross Chain Adapter: OFTBridge", function () {
   // protects us from any changes to dependencies of `oftAddressToBytes32` that would silently break (potentially blackhole funds) on OFT sends
