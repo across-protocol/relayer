@@ -317,7 +317,7 @@ export class InventoryClient {
         .getFills()
         .filter(
           (fill) =>
-            compareAddressesSimple(fill.relayer.toNative(), this.relayer.toNative()) &&
+            fill.relayer.eq(this.relayer) &&
             // We can assume that this.getL1TokenAddress will succeed here because this function's input variable l1Token
             // is also retrieved via the same function.
             compareAddressesSimple(
