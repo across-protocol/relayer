@@ -1,71 +1,36 @@
-import { BigNumberish, BytesLike, Contract, Signer } from "ethers";
+import { Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
   EventSearchConfig,
   Provider,
-  TOKEN_SYMBOLS_MAP,
   fetchTokenInfo,
   isDefined,
   paginatedEventQuery,
   assert,
   EvmAddress,
   Address,
-  toWei,
   isContractDeployedToAddress,
   winston,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs } from "@across-protocol/constants";
-import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
+import {
+  CONTRACT_ADDRESSES,
+  IOFT_ABI_FULL,
+  EVM_OFT_MESSENGERS,
+  OFT_DEFAULT_FEE_CAP,
+  OFT_FEE_CAP_OVERRIDES,
+} from "../../common";
 import { OFT } from "../../utils/OFTUtils";
 
-export type SendParamStruct = {
-  dstEid: BigNumberish;
-  to: BytesLike;
-  amountLD: BigNumberish;
-  minAmountLD: BigNumberish;
-  extraOptions: BytesLike;
-  composeMsg: BytesLike;
-  oftCmd: BytesLike;
-};
-
-export type MessagingFeeStruct = {
-  nativeFee: BigNumberish;
-  lzTokenFee: BigNumberish;
-};
-
-type OFTRouteInfo = {
-  hubChainIOFTAddress: EvmAddress;
-  dstIOFTAddress: EvmAddress;
-};
-
-type OFTRoutes = {
-  [tokenAddress: string]: {
-    [dstChainId: number]: OFTRouteInfo;
-  };
-};
-
 export class OFTBridge extends BaseBridgeAdapter {
-  // Routes from Ethereum MAINNET per token and per destination chain
-  private static readonly SUPPORTED_ROUTES: OFTRoutes = {
-    // USDT must be transferred via OFT from Ethereum to Arbitrum
-    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: {
-      [CHAIN_IDs.ARBITRUM]: {
-        hubChainIOFTAddress: EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee"),
-        dstIOFTAddress: EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92"),
-      },
-    },
-  };
-
-  // Cap the messaging fee to prevent excessive costs
-  private static readonly FEE_CAP = toWei("0.1"); // 0.1 ether
-
   private readonly hubPoolAddress: string;
   public readonly dstTokenAddress: string;
   private readonly dstChainEid: number;
   private tokenDecimals?: number;
   private sharedDecimals?: number;
+  private readonly nativeFeeCap: BigNumber;
 
   constructor(
     dstChainId: number,
@@ -82,20 +47,28 @@ export class OFTBridge extends BaseBridgeAdapter {
       `OFT bridge only supports Ethereum as hub chain, got chain ID: ${hubChainId}`
     );
 
-    const route = OFTBridge.SUPPORTED_ROUTES[hubTokenAddress.toNative()]?.[dstChainId];
+    // Route discovery via configured IOFT messengers: if both hub and dst messengers exist, the route exists
+    const l1OftMessenger = EVM_OFT_MESSENGERS.get(hubTokenAddress.toNative())?.get(hubChainId);
     assert(
-      isDefined(route),
-      `No route found for token ${hubTokenAddress.toNative()} from chain ${hubChainId} to ${dstChainId}`
+      isDefined(l1OftMessenger),
+      `No OFT messenger configured for ${hubTokenAddress.toNative()} on chain ${hubChainId}`
     );
 
-    super(dstChainId, hubChainId, hubSigner, [route.hubChainIOFTAddress]);
+    const l2OftMessenger = EVM_OFT_MESSENGERS.get(hubTokenAddress.toNative())?.get(dstChainId);
+    assert(
+      isDefined(l2OftMessenger),
+      `No OFT messenger configured for ${hubTokenAddress.toNative()} on chain ${dstChainId}`
+    );
+
+    super(dstChainId, hubChainId, hubSigner, [l1OftMessenger]);
 
     this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
     assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = OFT.getEndpointId(dstChainId);
-    this.l1Bridge = new Contract(route.hubChainIOFTAddress.toNative(), IOFT_ABI_FULL, hubSigner);
-    this.l2Bridge = new Contract(route.dstIOFTAddress.toNative(), IOFT_ABI_FULL, dstSignerOrProvider);
+    this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, hubSigner);
+    this.l2Bridge = new Contract(l2OftMessenger.toNative(), IOFT_ABI_FULL, dstSignerOrProvider);
+    this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.hubChainId] ?? OFT_DEFAULT_FEE_CAP;
   }
 
   async constructL1ToL2Txn(
@@ -118,7 +91,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount);
-    const sendParamStruct: SendParamStruct = {
+    const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.dstChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
@@ -130,9 +103,9 @@ export class OFTBridge extends BaseBridgeAdapter {
     };
 
     // Get the messaging fee for this transfer
-    const feeStruct: MessagingFeeStruct = await this.getL1Bridge().quoteSend(sendParamStruct, false);
-    if (BigNumber.from(feeStruct.nativeFee).gt(OFTBridge.FEE_CAP)) {
-      throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${OFTBridge.FEE_CAP})`);
+    const feeStruct: OFT.MessagingFeeStruct = await this.getL1Bridge().quoteSend(sendParamStruct, false);
+    if (BigNumber.from(feeStruct.nativeFee).gt(this.nativeFeeCap)) {
+      throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${this.nativeFeeCap})`);
     }
 
     // Set refund address to signer's address. This should technically never be required as all of our calcs
