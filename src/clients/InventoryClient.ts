@@ -300,14 +300,14 @@ export class InventoryClient {
   // Return sum of refunds for all fills sent after the fromBlocks.
   // Makes a simple assumption that all fills sent by this relayer that were sent after the last executed bundle
   // are valid and will be refunded on the repayment chain selected.
-  // TODO: Unit test this.
-  private _getApproximateRefundsForToken(
+  protected _getApproximateRefundsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
   ): { [repaymentChainId: number]: BigNumber } {
     const refundsForChain: { [repaymentChainId: number]: BigNumber } = {};
     for (const _chainId of Object.keys(fromBlocks)) {
       const chainId = Number(_chainId);
+      refundsForChain[chainId] ??= bnZero;
       const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
       if (!isDefined(spokePoolClient)) {
         continue;
@@ -317,6 +317,7 @@ export class InventoryClient {
         .filter(
           (fill) =>
             fill.relayer.eq(this.relayer) &&
+            fill.repaymentChainId === chainId &&
             !depositForcesOriginChainRepayment(
               { inputToken: fill.inputToken, originChainId: fill.originChainId, fromLiteChain: false },
               this.hubPoolClient
@@ -328,9 +329,7 @@ export class InventoryClient {
         )
         .forEach((fill) => {
           const { inputAmount: refundAmount, repaymentChainId } = fill;
-
-          const existingRefundAmount = refundsForChain[repaymentChainId] ?? bnZero;
-          refundsForChain[repaymentChainId] = existingRefundAmount.add(refundAmount);
+          refundsForChain[repaymentChainId] = refundsForChain[repaymentChainId].add(refundAmount);
         });
     }
     return refundsForChain;
@@ -338,8 +337,7 @@ export class InventoryClient {
 
   // Return the next starting block for each chain following the bundle end block of the last exececuted bundle that
   // was relayed to that chain.
-  // Unit test this.
-  _getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
+  protected _getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
     const configStoreClient = this.hubPoolClient.configStoreClient;
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {

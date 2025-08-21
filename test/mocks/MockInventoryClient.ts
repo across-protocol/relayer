@@ -52,6 +52,17 @@ export class MockInventoryClient extends InventoryClient {
     return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()]);
   }
 
+  getApproximateRefundsForToken(
+    l1Token: EvmAddress,
+    fromBlocks: { [chainId: number]: number }
+  ): { [chainId: number]: BigNumber } {
+    return this._getApproximateRefundsForToken(l1Token, fromBlocks);
+  }
+
+  getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
+    return this._getUpcomingRefundsQueryFromBlocks();
+  }
+
   setUpcomingRefunds(l1Token: string, refunds: { [chainId: number]: BigNumber }): void {
     this.upcomingRefunds[l1Token] = refunds;
   }
