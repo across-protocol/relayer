@@ -84,7 +84,7 @@ export function generateMarkdownForRootBundle(
           message: `Error getting token info for address ${token} on chain ${chainId}`,
           error,
         });
-        return weiVals[index];
+        return weiVals[index].toString();
       }
     });
   };
