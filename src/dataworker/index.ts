@@ -217,8 +217,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         logger[startupLogLevel(config)]({
           at: "Dataworker#index",
           message: "Dataworker addresses",
-          evmAddress: tokenClient.relayerEvmAddress.toNative(),
-          svmAddress: tokenClient.relayerSvmAddress.toNative(),
+          evmAddress: tokenClient.relayerEvmAddress,
+          svmAddress: tokenClient.relayerSvmAddress,
         });
         await tokenClient.update();
         // Run approval on hub pool.

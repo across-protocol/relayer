@@ -602,10 +602,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#validate",
       message: "Found pending proposal",
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     // Exit early if challenge period timestamp has passed:
@@ -832,10 +829,7 @@ export class Dataworker {
       this.logger.debug({
         at: "Dataworker#validate",
         message: "Empty pool rebalance root, submitting dispute",
-        rootBundle: {
-          ...rootBundle,
-          proposer: rootBundle.proposer.toNative(),
-        },
+        rootBundle,
       });
       return {
         valid: false,
@@ -1036,31 +1030,11 @@ export class Dataworker {
         at: "Dataworker#validate",
         message: "Unexpected pool rebalance root, submitting dispute",
         expectedBlockRanges: blockRangesImpliedByBundleEndBlocks,
-        expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves.map((leaf) => {
-          return {
-            ...leaf,
-            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
-          };
-        }),
+        expectedPoolRebalanceLeaves: expectedPoolRebalanceRoot.leaves,
         expectedPoolRebalanceRoot: expectedPoolRebalanceRoot.tree.getHexRoot(),
-        expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves.map((leaf) => {
-          return {
-            ...leaf,
-            l2TokenAddress: leaf.l2TokenAddress.toNative(),
-            refundAddresses: leaf.refundAddresses.map((refundAddress) => refundAddress.toNative()),
-          };
-        }),
+        expectedRelayerRefundLeaves: expectedRelayerRefundRoot.leaves,
         expectedRelayerRefundRoot: expectedRelayerRefundRoot.tree.getHexRoot(),
-        expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves.map((leaf) => {
-          return {
-            ...leaf,
-            depositor: leaf.relayData.depositor.toNative(),
-            recipient: leaf.relayData.recipient.toNative(),
-            inputToken: leaf.relayData.inputToken.toNative(),
-            outputToken: leaf.relayData.outputToken.toNative(),
-            exclusiveRelayer: leaf.relayData.exclusiveRelayer.toNative(),
-          };
-        }),
+        expectedSlowRelayLeaves: expectedSlowRelayRoot.leaves,
         expectedSlowRelayRoot: expectedSlowRelayRoot.tree.getHexRoot(),
         pendingRoot: rootBundle.poolRebalanceRoot,
         pendingPoolRebalanceLeafCount: rootBundle.unclaimedPoolRebalanceLeafCount,
@@ -1309,7 +1283,7 @@ export class Dataworker {
         this.logger.warn({
           at: "Dataworker#_executeSlowFillLeaf",
           message: "Ignoring slow fill.",
-          leafExecutionArgs: [depositor.toNative(), recipient.toNative()],
+          leafExecutionArgs: [depositor, recipient],
         });
         return false;
       }
@@ -1390,7 +1364,7 @@ export class Dataworker {
               depositId: slowFill.relayData.depositId,
               fromChain: slowFill.relayData.originChainId,
               chainId: destinationChainId,
-              token: outputToken.toNative(),
+              token: outputToken,
               amount: outputAmount,
               spokeBalance: await this._getSpokeBalanceForL2Tokens(
                 balanceAllocator,
@@ -1520,10 +1494,7 @@ export class Dataworker {
       at: "Dataworker#executePoolRebalanceLeaves",
       message: "Found pending proposal",
       hubPoolCurrentTime: this.clients.hubPoolClient.currentTime,
-      pendingRootBundle: {
-        ...pendingRootBundle,
-        proposer: pendingRootBundle.proposer.toNative(),
-      },
+      pendingRootBundle,
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
@@ -1768,7 +1739,7 @@ export class Dataworker {
         this.logger.error({
           at: "Dataworker#_getExecutablePoolRebalanceLeaves",
           message: `Not enough funds to execute pool rebalance leaf for chain ${leaf.chainId}`,
-          l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
+          l1Tokens: leaf.l1Tokens,
           netSendAmounts: leaf.netSendAmounts,
         });
       }
@@ -1817,11 +1788,8 @@ export class Dataworker {
           message: `Loading more orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )} 📨!`,
-          leaf: {
-            ...leaf,
-            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
-          },
-          feeToken: feeToken.toNative(),
+          leaf,
+          feeToken,
           requiredAmount,
         });
         if (submitExecution) {
@@ -1869,7 +1837,7 @@ export class Dataworker {
           message: `feePayer ${holder} has sufficient orbit gas token to pay for L1->L2 message submission fees to ${getNetworkName(
             leaf.chainId
           )}`,
-          feeToken: feeToken.toNative(),
+          feeToken,
           requiredAmount,
           feePayerBalance: await balanceAllocator.getBalanceSubUsed(hubPoolChainId, feeToken, holder),
         });
@@ -1950,7 +1918,7 @@ export class Dataworker {
           message: `Skipping exchange rate update for ${tokenSymbol} because current liquid reserves > netSendAmount for hubChain`,
           currentLiquidReserves,
           netSendAmount: netSendAmounts[idx],
-          l1Token: l1Token.toNative(),
+          l1Token,
         });
         updatedLiquidReserves[l1Token.toEvmAddress()] = currentLiquidReserves.sub(netSendAmounts[idx]);
         return;
@@ -2192,7 +2160,7 @@ export class Dataworker {
         lastUpdateTime: latestFeesCompoundedTime,
         currentLiquidReserves,
         updatedLiquidReserves,
-        l1Token: l1Token.toNative(),
+        l1Token,
       });
       if (submitExecution) {
         this.clients.multiCallerClient.enqueueTransaction({
@@ -2633,12 +2601,7 @@ export class Dataworker {
       key,
       root: {
         ...this.rootCache[key],
-        leaves: this.rootCache[key].leaves.map((leaf) => {
-          return {
-            ...leaf,
-            l1Tokens: leaf.l1Tokens.map((l1Token) => l1Token.toNative()),
-          };
-        }),
+        leaves: this.rootCache[key].leaves,
         tree: this.rootCache[key].tree.getHexRoot(),
       },
     });
@@ -2820,11 +2783,7 @@ export class Dataworker {
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Relayer refund leaf accounts",
-      leaf: {
-        ...leaf,
-        l2TokenAddress: leaf.l2TokenAddress.toNative(),
-        refundAddresses: leaf.refundAddresses.map((address) => address.toNative()),
-      },
+      leaf,
       rootBundleId,
       eventAuthority,
       statePda,

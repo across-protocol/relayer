@@ -186,12 +186,12 @@ export class BaseChainAdapter {
 
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract for L2 -> L1 bridging", {
-        unavailableTokens: unavailableTokens.map((token) => token.toNative()),
+        unavailableTokens,
       });
     }
 
     if (tokensToApprove.length === 0) {
-      this.log("No L2 token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
+      this.log("No L2 token bridge approvals needed", { l1Tokens });
       return;
     }
 
@@ -254,11 +254,11 @@ export class BaseChainAdapter {
       .filter(({ bridges }) => bridges.length > 0);
     if (unavailableTokens.length > 0) {
       this.log("Some tokens do not have a bridge contract", {
-        unavailableTokens: unavailableTokens.map((token) => token.toNative()),
+        unavailableTokens,
       });
     }
     if (tokensToApprove.length === 0) {
-      this.log("No token bridge approvals needed", { l1Tokens: l1Tokens.map((token) => token.toNative()) });
+      this.log("No token bridge approvals needed", { l1Tokens });
       return;
     }
     const mrkdwn = await approveTokens(tokensToApprove, this.chainId, this.hubChainId, this.logger);
@@ -288,8 +288,8 @@ export class BaseChainAdapter {
         "Failed to constructWithdrawToL1Txns",
         {
           toAddress: address,
-          l2Token: l2Token.toNative(),
-          l1Token: l1Token.toNative(),
+          l2Token: l2Token,
+          l1Token: l1Token,
           amount: amount.toString(),
           srcChainId: this.chainId,
           dstChainId: this.hubChainId,
@@ -351,9 +351,9 @@ export class BaseChainAdapter {
       this.log(
         "Failed to construct L1 to L2 transaction",
         {
-          address: address.toNative(),
-          l1Token: l1Token.toNative(),
-          l2Token: l2Token.toNative(),
+          address: address,
+          l1Token: l1Token,
+          l2Token: l2Token,
           amount: amount.toString(),
           srcChainId: this.hubChainId,
           dstChainId: this.chainId,
@@ -388,8 +388,8 @@ export class BaseChainAdapter {
     this.log(
       message,
       {
-        l1Token: l1Token.toNative(),
-        l2Token: l2Token.toNative(),
+        l1Token: l1Token,
+        l2Token: l2Token,
         amount,
         contract: contract.address,
         txnRequestData,
