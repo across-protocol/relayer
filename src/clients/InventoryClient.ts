@@ -309,7 +309,6 @@ export class InventoryClient {
     const refundsForChain: { [repaymentChainId: number]: BigNumber } = {};
     for (const _chainId of Object.keys(fromBlocks)) {
       const chainId = Number(_chainId);
-      refundsForChain[chainId] ??= bnZero;
       const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
       if (!isDefined(spokePoolClient)) {
         continue;
@@ -326,6 +325,7 @@ export class InventoryClient {
         )
         .forEach((fill) => {
           const { inputAmount: refundAmount, repaymentChainId } = fill;
+          refundsForChain[repaymentChainId] ??= bnZero;
           refundsForChain[repaymentChainId] = refundsForChain[repaymentChainId].add(refundAmount);
         });
     }
