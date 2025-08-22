@@ -319,8 +319,8 @@ export class InventoryClient {
         .filter(
           (fill) =>
             fill.relayer.eq(this.relayer) &&
-            // @dev This getL1TokenAddress() is safe to call because we call `depositForcesOriginChainRepayment()`
-            // first, which would return true if there the input token wasn't mapped to an L1 token.
+            // @dev This getL1TokenAddress() is safe to call because we this.relayer should only be filling
+            // deposits where the input token is mapped to an L1 token.
             l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&
             fill.blockNumber >= fromBlocks[chainId]
         )
