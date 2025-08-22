@@ -133,9 +133,9 @@ export async function lineaL1ToL2Finalizer(
       return l2MessageServiceContract.claim({
         messageSender: message.messageSender,
         destination: message.destination,
-        fee: message.fee,
-        value: message.value,
-        messageNonce: message.messageNonce,
+        fee: BigInt(message.fee.toString()),
+        value: BigInt(message.value.toString()),
+        messageNonce: BigInt(message.messageNonce.toString()),
         calldata: message.calldata,
         messageHash: message.messageHash,
       });
