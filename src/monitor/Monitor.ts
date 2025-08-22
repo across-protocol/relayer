@@ -1373,6 +1373,10 @@ export class Monitor {
 
       for (const _tokenAddress of Object.keys(fillsToRefund)) {
         const tokenAddress = toAddressType(_tokenAddress, chainId);
+        // If there are no refunds for the monitored relayer for this token, then ignore this token.
+        if (!isDefined(fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()])) {
+          continue;
+        }
         const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(tokenAddress, chainId);
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
@@ -1385,7 +1389,7 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()];
         const { symbol } = l2ToL1Tokens[tokenAddress.toNative()];
-        const amount = decimalConverter(totalRefundAmount ?? bnZero);
+        const amount = decimalConverter(totalRefundAmount);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
     }
