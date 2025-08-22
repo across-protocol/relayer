@@ -166,7 +166,7 @@ export async function lineaL2ToL1Finalizer(
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);

@@ -62,7 +62,7 @@ export async function lineaL1ToL2Finalizer(
     throw new Error("Finalizations for Linea testnet is not supported.");
   }
   const l2ChainId = CHAIN_IDs.LINEA;
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();
   const l1TokenBridge = new Contract(
@@ -130,17 +130,18 @@ export async function lineaL1ToL2Finalizer(
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
     claimable.map(async (message) => {
-      return l2MessageServiceContract.contract.claimMessage(
-        message.messageSender,
-        message.destination,
-        message.fee,
-        message.value,
-        await signer.getAddress(),
-        message.calldata,
-        message.messageNonce
-      );
+      return l2MessageServiceContract.claim({
+        messageSender: message.messageSender,
+        destination: message.destination,
+        fee: message.fee,
+        value: message.value,
+        messageNonce: message.messageNonce,
+        calldata: message.calldata,
+        messageHash: message.messageHash,
+      });
     })
   );
+
   const multicall3Call = populatedTxns.map((txn) => ({
     target: l2MessageServiceContract.contractAddress,
     callData: txn.data,

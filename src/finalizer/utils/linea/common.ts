@@ -16,6 +16,9 @@ import {
   CHAIN_IDs,
   getTokenInfo,
   winston,
+  Signer,
+  isSignerWallet,
+  assert,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -37,12 +40,15 @@ export interface ParsedMessageSentLog {
 
 export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
-export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
+export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer?: Signer): LineaSDK {
+  assert(isSignerWallet(signer), "Signer is not a Wallet");
   return new LineaSDK({
     l1RpcUrl: Object.values(getNodeUrlList(l1ChainId))[0],
     l2RpcUrl: Object.values(getNodeUrlList(l2ChainId))[0],
     network: l1ChainId === CHAIN_IDs.MAINNET ? "linea-mainnet" : "linea-goerli",
-    mode: "read-only",
+    mode: "read-write",
+    l1SignerPrivateKey: signer._signingKey().privateKey,
+    l2SignerPrivateKey: signer._signingKey().privateKey,
   });
 }
 
