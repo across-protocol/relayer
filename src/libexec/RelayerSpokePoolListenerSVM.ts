@@ -118,7 +118,11 @@ async function listen(
   const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
-  const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
+
+  // Default keepalive interval is 5s but this can cause premature hangup.
+  // See https://github.com/anza-xyz/agave/issues/7022
+  const intervalMs = 30_000;
+  const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
 
   const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });

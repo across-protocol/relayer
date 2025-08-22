@@ -2,10 +2,11 @@ import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
+import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk";
+import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -65,6 +66,12 @@ export class RedisClient {
   async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
     await this.client.subscribe(channel, listener);
     return 1;
+  }
+
+  async duplicate(): Promise<RedisClient> {
+    const newClient = this.client.duplicate();
+    await newClient.connect();
+    return new RedisClient(newClient, this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
@@ -138,6 +145,23 @@ export async function getRedisCache(
   }
 }
 
+export async function getRedisPubSub(
+  logger?: winston.Logger,
+  url?: string
+): Promise<PubSubMechanismInterface | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
+  }
+
+  const client = await getRedis(logger, url);
+  if (client) {
+    // since getRedis returns the same client instance for the same url,
+    // we need to duplicate it before creating a new RedisPubSub instance
+    return new RedisPubSub(await client.duplicate());
+  }
+}
+
 export async function setRedisKey(
   key: string,
   val: string,
@@ -170,7 +194,7 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
 }
 
 export async function waitForPubSub(
-  redisClient: CachingMechanismInterface,
+  redisClient: PubSubMechanismInterface,
   channel: string,
   message: string,
   maxWaitMs = 60000
