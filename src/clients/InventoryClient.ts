@@ -299,7 +299,9 @@ export class InventoryClient {
 
   // Return sum of refunds for all fills sent after the fromBlocks.
   // Makes a simple assumption that all fills sent by this relayer that were sent after the last executed bundle
-  // are valid and will be refunded on the repayment chain selected.
+  // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
+  // set is a valid one for the deposit (i.e. this function doesn't call depositForcesOriginChainRepayment(), which
+  // is a safe assumption given that we are filtering on this.relayer).
   protected _getApproximateRefundsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
@@ -317,11 +319,6 @@ export class InventoryClient {
         .filter(
           (fill) =>
             fill.relayer.eq(this.relayer) &&
-            fill.repaymentChainId === chainId &&
-            !depositForcesOriginChainRepayment(
-              { inputToken: fill.inputToken, originChainId: fill.originChainId, fromLiteChain: false },
-              this.hubPoolClient
-            ) &&
             // @dev This getL1TokenAddress() is safe to call because we call `depositForcesOriginChainRepayment()`
             // first, which would return true if there the input token wasn't mapped to an L1 token.
             l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&

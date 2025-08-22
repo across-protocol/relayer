@@ -37,7 +37,7 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
   let owner: SignerWithAddress, spyLogger: winston.Logger;
   let inventoryClient: InventoryClient; // tested
   let crossChainTransferClient: CrossChainTransferClient;
-  let spokePoolClient: SpokePoolClient;
+  let spokePoolClients: { [chainId: number]: SpokePoolClient } = {};
   let configStoreClient: MockConfigStoreClient;
 
   // construct two mappings of chainId to token address. Set the l1 token address to the "real" token address.
@@ -67,16 +67,32 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     hubPoolClient.setDefaultRealizedLpFeePct(bnZero);
-    hubPoolClient.setEnableAllL2Tokens(true);
     await hubPoolClient.update();
 
-    spokePoolClient = new MockSpokePoolClient(spyLogger, spokePool.connect(owner), originChainId, deploymentBlock);
+    const spokePoolClient_MAINNET = new MockSpokePoolClient(
+      spyLogger,
+      spokePool.connect(owner),
+      originChainId,
+      deploymentBlock
+    );
+    const spokePoolClient_OPTIMISM = new MockSpokePoolClient(
+      spyLogger,
+      spokePool.connect(owner),
+      originChainId,
+      deploymentBlock
+    );
+    const spokePoolClient_BSC = new MockSpokePoolClient(
+      spyLogger,
+      spokePool.connect(owner),
+      originChainId,
+      deploymentBlock
+    );
 
     adapterManager = new MockAdapterManager(null, null, null, null);
-    const spokePoolClients = {
-      [MAINNET]: spokePoolClient,
-      [OPTIMISM]: spokePoolClient,
-      [BSC]: spokePoolClient,
+    spokePoolClients = {
+      [MAINNET]: spokePoolClient_MAINNET,
+      [OPTIMISM]: spokePoolClient_OPTIMISM,
+      [BSC]: spokePoolClient_BSC,
     };
     tokenClient = new MockTokenClient(null, null, null, spokePoolClients);
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
@@ -104,15 +120,16 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
     });
   });
 
-  function generateFill(
+  async function generateFill(
     inputTokenSymbol: "USDC" | "WETH",
     originChainId: number,
     repaymentChainId: number,
     relayer = owner.address,
     inputAmount = toWei(1)
-  ): interfaces.Log {
+  ): Promise<interfaces.Log> {
     const destinationChainId = repaymentChainId;
-    return (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
+    const spokePoolClient = spokePoolClients[repaymentChainId];
+    const newEvent = (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
       message: "0x",
       messageHash: ZERO_BYTES,
       inputToken: toAddressType(
@@ -144,6 +161,8 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
         fillType: interfaces.FillType.FastFill,
       },
     } as interfaces.FillWithBlock);
+    await spokePoolClient.update(["FilledRelay"]);
+    return newEvent;
   }
 
   describe("getApproximateRefundsForToken", function () {
@@ -151,7 +170,6 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
       // Ignores fills that:
       // - are not sent by the relayer
       // - are not sent after the fromBlocks
-      // - do not have a pool rebalance route connecting the origin chain to the repayment chain
       // - are not mapped to the passed in L1 token
 
       // Returns object of refunds grouped by repayment chain:
@@ -161,12 +179,11 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
         [BSC]: 1,
       };
       // Send two fills that should be counted:
-      const fill1 = generateFill("WETH", MAINNET, MAINNET, owner.address);
-      const fill2 = generateFill("WETH", MAINNET, OPTIMISM, owner.address);
-      const fill3 = generateFill("USDC", MAINNET, MAINNET, owner.address, toBNWei(1, 6));
+      const fill1 = await generateFill("WETH", MAINNET, MAINNET, owner.address);
+      const fill2 = await generateFill("WETH", MAINNET, OPTIMISM, owner.address);
+      const fill3 = await generateFill("USDC", MAINNET, MAINNET, owner.address, toBNWei(1, 6));
       // Send a fill for a different relayer:
-      generateFill("WETH", MAINNET, MAINNET, randomAddress());
-      await spokePoolClient.update(["FilledRelay"]);
+      await generateFill("WETH", MAINNET, MAINNET, randomAddress());
       const wethRefunds = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
         toAddressType(mainnetWeth, MAINNET),
         fromBlocks
@@ -183,16 +200,6 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
       expect(usdcRefunds[MAINNET]).to.equal(fill3.args.inputAmount);
       expect(usdcRefunds[OPTIMISM]).to.equal(bnZero);
       expect(usdcRefunds[BSC]).to.equal(bnZero);
-
-      // Ignores fills if pool rebalance route is not enabled:
-      hubPoolClient.setEnableAllL2Tokens(false);
-      const wethRefunds2 = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
-        toAddressType(mainnetWeth, MAINNET),
-        fromBlocks
-      );
-      expect(wethRefunds2[MAINNET]).to.equal(bnZero);
-      expect(wethRefunds2[OPTIMISM]).to.equal(bnZero);
-      expect(wethRefunds2[BSC]).to.equal(bnZero);
 
       // Ignores fills if block number is less than fromBlocks:
       const highFromBlocks = {
@@ -226,15 +233,17 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
           bundleEvaluationBlockNumbers: [toBN(3), toBN(4), toBN(5)],
         },
       ];
-      (spokePoolClient as unknown as MockSpokePoolClient).setRootBundleRelays(
+      (spokePoolClients[MAINNET] as unknown as MockSpokePoolClient).setRootBundleRelays(
         rootBundleRelays as unknown as RootBundleRelayWithBlock[]
       );
       hubPoolClient.setValidatedRootBundles(rootBundleRelays as unknown as ProposedRootBundle[]);
 
       const fromBlocks1 = (inventoryClient as unknown as MockInventoryClient).getUpcomingRefundsQueryFromBlocks();
+
+      // Only the spoke pool clients that saw the RootBundleRelay events should have non-zero fromBlocks.
       expect(fromBlocks1[MAINNET]).to.equal(4);
-      expect(fromBlocks1[OPTIMISM]).to.equal(5);
-      expect(fromBlocks1[BSC]).to.equal(6);
+      expect(fromBlocks1[OPTIMISM]).to.equal(0);
+      expect(fromBlocks1[BSC]).to.equal(0);
     });
   });
 });
