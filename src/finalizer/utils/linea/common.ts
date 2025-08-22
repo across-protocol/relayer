@@ -288,6 +288,14 @@ export async function findMessageSentEvents(
   });
 }
 
+export async function findTokenBridgeEvents(
+  bridgeContract: Contract,
+  senderAddresses: string[],
+  searchConfig: EventSearchConfig
+): Promise<Log[]> {
+  return paginatedEventQuery(bridgeContract, bridgeContract.filters.BridgingInitiatedV2(senderAddresses), searchConfig);
+}
+
 export async function findMessageFromTokenBridge(
   bridgeContract: Contract,
   messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
