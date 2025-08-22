@@ -307,8 +307,9 @@ export class InventoryClient {
     fromBlocks: { [chainId: number]: number }
   ): { [repaymentChainId: number]: BigNumber } {
     const refundsForChain: { [repaymentChainId: number]: BigNumber } = {};
-    for (const _chainId of Object.keys(fromBlocks)) {
-      const chainId = Number(_chainId);
+    const chainIdsToEvaluate = Object.keys(fromBlocks).map((chainId) => Number(chainId));
+    for (const chainId of chainIdsToEvaluate) {
+      refundsForChain[chainId] ??= bnZero;
       const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
       if (!isDefined(spokePoolClient)) {
         continue;
@@ -318,6 +319,7 @@ export class InventoryClient {
         .filter(
           (fill) =>
             fill.relayer.eq(this.relayer) &&
+            chainIdsToEvaluate.includes(fill.repaymentChainId) &&
             // @dev This getL1TokenAddress() is safe to call because we this.relayer should only be filling
             // deposits where the input token is mapped to an L1 token.
             l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&
