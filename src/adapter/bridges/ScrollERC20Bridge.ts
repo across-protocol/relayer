@@ -7,7 +7,6 @@ import {
   Provider,
   toWei,
   fixedPointAdjustment,
-  isContractDeployedToAddress,
   bnZero,
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
@@ -29,8 +28,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
   protected feeMultiplier = toWei(1.5);
   protected readonly scrollGasPriceOracle: Contract;
 
-  protected readonly scrollGatewayRouter;
-  protected readonly hubPoolAddress;
+  protected readonly scrollGatewayRouter: Contract;
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -54,8 +52,6 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
     this.scrollGatewayRouter = new Contract(l1Address, l1Abi, l1Signer);
     this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer);
-
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId].hubPool.address;
   }
 
   async constructL1ToL2Txn(
@@ -86,8 +82,9 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toNative();
+    // For a SpokePool from chainId associated with this Bridge object, return all transfers (hubpool-addr -> spokepool-addr)
+    const isAssociatedSpokePool = toAddress.eq(this.spokePoolAddress);
+    const monitoredFromAddress = isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
@@ -111,8 +108,9 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toNative();
+    const isAssociatedSpokePool = toAddress.eq(this.spokePoolAddress);
+    // For SpokePool from chainId associated with our Bridge object, return all transfers (hubpool-addr -> spokepool-addr)
+    const monitoredFromAddress = isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(

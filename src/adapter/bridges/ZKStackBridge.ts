@@ -8,7 +8,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   paginatedEventQuery,
-  isContractDeployedToAddress,
   EvmAddress,
   isDefined,
   bnZero,
@@ -146,8 +145,8 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Logic changes based on whether we are sending tokens to the spoke pool or to an EOA.
-    const isL2Contract = await this._isContract(toAddress.toNative(), this.getL2Bridge().provider!);
-    const annotatedFromAddress = isL2Contract ? this.hubPool.address : fromAddress.toNative();
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
+    const annotatedFromAddress = isAssociatedSpokePool ? this.hubPool.address : fromAddress.toNative();
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
@@ -164,7 +163,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
         .filter((event) => compareAddressesSimple(event.args.receiver, toAddress.toNative()))
         .map((e) => processEvent(e, "amount"));
     } else {
-      if (isL2Contract) {
+      if (isAssociatedSpokePool) {
         const rawEvents = await paginatedEventQuery(this.hubPool, this.hubPool.filters.TokensRelayed(), eventConfig);
         processedEvents = rawEvents
           .filter(
@@ -203,7 +202,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     const l2Token = this.resolveL2TokenAddress(l1Token);
     // Similar to the query, if we are sending to the spoke pool, we must assume that the sender is the hubPool,
     // so we add a special case for this reason.
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
     const bridgingCustomGasToken = isDefined(this.gasToken) && this.gasToken.eq(l1Token);
     let processedEvents;
     if (!bridgingCustomGasToken) {
@@ -222,7 +221,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     } else {
       // We are bridging the native token so we need to query transfer events from the aliased senders.
       let events;
-      if (isSpokePool) {
+      if (isAssociatedSpokePool) {
         events = await paginatedEventQuery(
           this.nativeToken,
           this.nativeToken.filters.Transfer(zksync.utils.applyL1ToL2Alias(this.hubPool.address), toAddress.toNative()),
@@ -278,10 +277,6 @@ export class ZKStackBridge extends BaseBridgeAdapter {
       this.gasPerPubdataLimit
     );
     return l2Gas;
-  }
-
-  async _isContract(address: string, provider: Provider): Promise<boolean> {
-    return isContractDeployedToAddress(address, provider);
   }
 
   protected override resolveL2TokenAddress(l1Token: EvmAddress): string {

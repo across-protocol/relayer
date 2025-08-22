@@ -14,11 +14,14 @@ import {
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
-  isContractDeployedToAddress,
   winston,
+  chainIsProd,
+  chainIsEvm,
 } from "../../utils";
+import { utils as ethersUtils } from "ethers";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
+import { getAllDeployedAddresses } from "@across-protocol/contracts";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
@@ -26,6 +29,10 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
   protected binanceApiClient;
   protected tokenSymbol: string;
   protected l2Provider: Provider;
+
+  // Since this is a CEX rebalancing adapter, it will never be used to rebalance contract funds. This means we can _always_ return an empty set
+  // of bridge events if the monitored address is an Across smart contract and avoid querying the API needlessly.
+  private addressIgnorelist: Set<string>;
 
   constructor(
     l2chainId: number,
@@ -54,6 +61,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     // Cast the input Signer | Provider to a Provider.
     this.l2Provider = l2SignerOrProvider instanceof Signer ? l2SignerOrProvider.provider : l2SignerOrProvider;
+
+    this.initAddressIgnorelist(this.hubPoolAddress);
   }
 
   async constructL1ToL2Txn(
@@ -85,10 +94,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     _toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Since this is a CEX rebalancing adapter, it will never be used to rebalance contract funds. This means we can _always_ return an empty set
-    // of bridge events if the monitored address is a contract on L1 or L2 and avoid querying the API needlessly.
-    const isL1OrL2Contract = await this.isL1OrL2Contract(fromAddress);
-    if (isL1OrL2Contract) {
+    if (this.addressIgnorelist.has(fromAddress.toNative())) {
       return {};
     }
     assert(l1Token.toNative() === this.getL1Bridge().address);
@@ -137,10 +143,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Since this is a CEX rebalancing adapter, it will never be used to rebalance contract funds. This means we can _always_ return an empty set
-    // of bridge events if the monitored address is a contract on L1 or L2 and avoid querying the API needlessly.
-    const isL1OrL2Contract = await this.isL1OrL2Contract(toAddress);
-    if (isL1OrL2Contract) {
+    if (this.addressIgnorelist.has(toAddress.toNative())) {
       return {};
     }
     // We must typecast the l2 signer or provider into specifically an ethers Provider type so we can call `getTransactionReceipt` and `getBlockByNumber` on it.
@@ -179,15 +182,19 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     };
   }
 
-  private async isL1OrL2Contract(address: EvmAddress): Promise<boolean> {
-    const [isL1Contract, isL2Contract] = await Promise.all([
-      isContractDeployedToAddress(address.toNative(), this.l1Signer.provider),
-      isContractDeployedToAddress(address.toNative(), this.l2Provider),
-    ]);
-    return isL1Contract || isL2Contract;
-  }
-
   protected async getBinanceClient() {
     return (this.binanceApiClient ??= await this.binanceApiClientPromise);
+  }
+
+  // Init ignore list with all SpokePool addresses from Evm chains and a HubPool address.
+  initAddressIgnorelist(hubPoolAddress: EvmAddress) {
+    const acrossSpokesAndHub = new Set(
+      getAllDeployedAddresses("SpokePool")
+        .filter((contractInfo) => chainIsEvm(contractInfo.chainId) && chainIsProd(contractInfo.chainId))
+        .map((contractInfo) => ethersUtils.getAddress(contractInfo.address))
+    );
+    acrossSpokesAndHub.add(hubPoolAddress.toNative());
+
+    this.addressIgnorelist = acrossSpokesAndHub;
   }
 }

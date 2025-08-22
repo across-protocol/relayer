@@ -8,6 +8,8 @@ import {
   isDefined,
   EvmAddress,
   Address,
+  getHubPoolAddress,
+  getSpokePoolAddressEvm,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
@@ -25,6 +27,8 @@ export type BridgeEvent = SortableEvent & {
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
 export abstract class BaseBridgeAdapter {
+  protected readonly hubPoolAddress: EvmAddress;
+  protected readonly spokePoolAddress: EvmAddress;
   protected l1Bridge: Contract;
   protected l2Bridge: Contract;
   public gasToken: EvmAddress | undefined;
@@ -34,7 +38,10 @@ export abstract class BaseBridgeAdapter {
     protected hubChainId: number,
     protected l1Signer: Signer,
     public l1Gateways: EvmAddress[]
-  ) {}
+  ) {
+    this.hubPoolAddress = getHubPoolAddress(hubChainId);
+    this.spokePoolAddress = getSpokePoolAddressEvm(l2chainId);
+  }
 
   abstract constructL1ToL2Txn(
     toAddress: Address,

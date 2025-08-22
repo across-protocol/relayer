@@ -10,21 +10,25 @@ import {
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
   winston,
+  chainIsEvm,
+  chainIsProd,
 } from "../../utils";
+import { utils as ethersUtils } from "ethers";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { Log } from "../../interfaces";
 import { matchL2EthDepositAndWrapEvents, processEvent } from "../utils";
-import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
+import { getAllDeployedAddresses } from "@across-protocol/contracts";
 
 export class OpStackWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
   protected l1Weth: EvmAddress;
-  private readonly hubPoolAddress: string;
 
   private readonly l2Gas = 200000;
+
+  private allEvmSpokePools: Set<string>;
 
   constructor(
     l2chainId: number,
@@ -55,7 +59,8 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
     this.l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
-    this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
+
+    this.initAllEvmSpokePools(hubChainId);
   }
 
   async constructL1ToL2Txn(
@@ -93,25 +98,24 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     // to actually filter on. So we make some simplifying assumptions:
     // - For our tracking purposes, the ETHDepositInitiated `fromAddress` will be the
     //   AtomicDepositor if the fromAddress is an EOA.
-    const isContract = await this.isHubChainContract(fromAddress);
-    const isL2ChainContract = await this.isL2ChainContract(fromAddress);
+    const isAcrossSpokePool = this.isAcrossSpokePool(fromAddress);
+    const isHubPool = this.hubPoolAddress.eq(fromAddress);
+    const isEOA = !isAcrossSpokePool && !isHubPool;
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isL2ChainContract || (isContract && fromAddress.toNative() !== this.hubPoolAddress)) {
+    if (isAcrossSpokePool) {
       return this.convertEventListToBridgeEvents([]);
     }
 
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ETHDepositInitiated(
-        isContract ? fromAddress.toNative() : this.atomicDepositor.address
-      ),
+      this.getL1Bridge().filters.ETHDepositInitiated(isHubPool ? fromAddress.toNative() : this.atomicDepositor.address),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
     // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
-    if (!isContract) {
+    if (isEOA) {
       return this.convertEventListToBridgeEvents(events.filter((event) => event.args._to === fromAddress.toNative()));
     }
     return this.convertEventListToBridgeEvents(events);
@@ -123,16 +127,16 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Check if the sender is a contract on the L1 network.
-    const isContract = await this.isHubChainContract(fromAddress);
+    const isAcrossSpokePool = this.isAcrossSpokePool(fromAddress);
+    const isHubPool = this.hubPoolAddress.eq(fromAddress);
+    const isEOA = !isAcrossSpokePool && !isHubPool;
 
     // See above for why we don't want to monitor the spoke pool contract.
-    const isL2ChainContract = await this.isL2ChainContract(fromAddress);
-    if (isL2ChainContract) {
+    if (isAcrossSpokePool) {
       return this.convertEventListToBridgeEvents([]);
     }
 
-    if (!isContract) {
+    if (isEOA) {
       // When bridging WETH to OP stack chains from an EOA, ETH is bridged via the AtomicDepositor contract
       // and received as ETH on L2. The InventoryClient is built to abstract this subtlety and
       // assumes that WETH is being rebalanced from L1 to L2. Therefore, L1 to L2 ETH transfers sent from an EOA
@@ -160,7 +164,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
-      if (fromAddress.toNative() !== this.hubPoolAddress) {
+      if (!isHubPool) {
         return this.convertEventListToBridgeEvents([]);
       }
 
@@ -174,11 +178,21 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     }
   }
 
-  async isHubChainContract(address: EvmAddress): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address.toNative(), this.getL1Bridge().provider);
+  isAcrossSpokePool(address: EvmAddress) {
+    return this.allEvmSpokePools.has(address.toNative());
   }
-  async isL2ChainContract(address: EvmAddress): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address.toNative(), this.getL2Bridge().provider);
+
+  initAllEvmSpokePools(hubChainId: number) {
+    const hubIsProd = chainIsProd(hubChainId);
+    const evmSpokePools = getAllDeployedAddresses("SpokePool")
+      .filter(
+        (contractInfo) =>
+          chainIsEvm(contractInfo.chainId) &&
+          (hubIsProd ? chainIsProd(contractInfo.chainId) : !chainIsProd(contractInfo.chainId))
+      )
+      .map((contractInfo) => ethersUtils.getAddress(contractInfo.address));
+
+    this.allEvmSpokePools = new Set(evmSpokePools);
   }
 
   private queryL2WrapEthEvents(

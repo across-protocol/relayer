@@ -92,6 +92,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     return {
       contract: this.l1Bridge,
       method: "transferRemote",
+      // ! todo make this more robust by adding a test for this address formatting
       args: [this.dstDomainId, toAddress.toBytes32(), amount],
       value: fee,
     };

@@ -5,7 +5,6 @@ import {
   EventSearchConfig,
   Signer,
   Provider,
-  isContractDeployedToAddress,
   EvmAddress,
   winston,
 } from "../../utils";
@@ -60,8 +59,8 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     }
     // If `toAddress` is a contract on L2, then assume the contract is the spoke pool, and further assume that the sender
     // is the hub pool.
-    const isSpokePool = await this.isL2ChainContract(toAddress);
-    fromAddress = isSpokePool ? hubPoolAddress : fromAddress;
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
+    fromAddress = isAssociatedSpokePool ? hubPoolAddress : fromAddress;
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
       this.getL1Bridge().filters.DepositInitiated(fromAddress.toNative()),
@@ -94,9 +93,5 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
       throw new Error(`hubPoolContractData not found for chain ${this.hubChainId}`);
     }
     return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
-  }
-
-  private isL2ChainContract(address: EvmAddress): Promise<boolean> {
-    return isContractDeployedToAddress(address.toNative(), this.getL2Bridge().provider);
   }
 }
