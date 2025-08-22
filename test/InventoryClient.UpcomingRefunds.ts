@@ -28,7 +28,7 @@ import { originChainId } from "./constants";
 import { ProposedRootBundle, RootBundleRelayWithBlock } from "../src/interfaces";
 
 describe("InventoryClient: Accounting for upcoming relayer refunds", async function () {
-  const { MAINNET, OPTIMISM, BSC } = CHAIN_IDs;
+  const { MAINNET, OPTIMISM, BSC, POLYGON } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, BSC];
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
   const mainnetUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET];
@@ -177,6 +177,7 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
         [MAINNET]: 1,
         [OPTIMISM]: 1,
         [BSC]: 1,
+        [POLYGON]: 1, // Add a chain we don't have a spoke pool client for to make sure no errors are thrown.
       };
       // Send two fills that should be counted:
       const fill1 = await generateFill("WETH", MAINNET, MAINNET, owner.address);
@@ -191,6 +192,7 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
       expect(wethRefunds[MAINNET]).to.equal(fill1.args.inputAmount);
       expect(wethRefunds[OPTIMISM]).to.equal(fill2.args.inputAmount);
       expect(wethRefunds[BSC]).to.equal(bnZero);
+      expect(wethRefunds[POLYGON]).to.be.undefined;
 
       // Check fills for other L1 token:
       const usdcRefunds = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
