@@ -138,6 +138,7 @@ export async function lineaL1ToL2Finalizer(
         messageNonce: BigInt(message.messageNonce.toString()),
         calldata: message.calldata,
         messageHash: message.messageHash,
+        feeRecipient: await signer.getAddress(),
       });
     })
   );
