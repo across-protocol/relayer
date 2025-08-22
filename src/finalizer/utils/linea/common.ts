@@ -263,6 +263,14 @@ export function determineMessageType(
   };
 }
 
+export async function findTokenBridgeEvents(
+  bridgeContract: Contract,
+  senderAddresses: string[],
+  searchConfig: EventSearchConfig
+): Promise<Log[]> {
+  return paginatedEventQuery(bridgeContract, bridgeContract.filters.BridgingInitiatedV2(senderAddresses), searchConfig);
+}
+
 export async function findMessageSentEvents(
   contract: Contract,
   senderAddresses: string[],
