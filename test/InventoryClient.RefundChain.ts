@@ -302,7 +302,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         initialAllocation[MAINNET][mainnetWeth].sub(bridgedAmount)
       );
 
-      // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and cant
+      // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and can't
       // be filled yet. When it runs it picks up a relay that it can do, of size 1.69 WETH. Each part of the computation
       // is broken down to explain how the bot chooses where to allocate funds:
       // 1. chainVirtualBalance: Considering the funds on the target chain we have a balance of 10 WETH, with an amount of
@@ -380,7 +380,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         initialAllocation[MAINNET][mainnetWeth].sub(bridgedAmount)
       );
 
-      // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and cant
+      // Now, consider that the bot is run while these funds for the above deposit are in the canonical bridge and can't
       // be filled yet. When it runs it picks up a relay that it can do, of size 1.69 WETH. Each part of the computation
       // is broken down to explain how the bot chooses where to allocate funds:
       // 1. chainVirtualBalance: Considering the funds on the target chain we have a balance of 10 WETH, with an amount of
