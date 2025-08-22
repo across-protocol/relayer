@@ -10,22 +10,15 @@ import {
   assert,
   EvmAddress,
   Address,
-  isContractDeployedToAddress,
   winston,
+  CHAIN_IDs,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { CHAIN_IDs } from "@across-protocol/constants";
-import {
-  CONTRACT_ADDRESSES,
-  IOFT_ABI_FULL,
-  EVM_OFT_MESSENGERS,
-  OFT_DEFAULT_FEE_CAP,
-  OFT_FEE_CAP_OVERRIDES,
-} from "../../common";
 import * as OFT from "../../utils/OFTUtils";
+import { EVM_OFT_MESSENGERS, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
+import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 
 export class OFTBridge extends BaseBridgeAdapter {
-  private readonly l1HubPoolAddress: string;
   public readonly l2TokenAddress: string;
   private readonly l1ChainEid: number;
   private readonly l2ChainEid: number;
@@ -63,8 +56,6 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
 
-    this.l1HubPoolAddress = CONTRACT_ADDRESSES[l1ChainId]?.hubPool?.address;
-    assert(isDefined(this.l1HubPoolAddress), `Hub pool address not found for chain ${l1ChainId}`);
     this.l2TokenAddress = this.resolveL2TokenAddress(l1TokenAddress);
     this.l1ChainEid = OFT.getEndpointId(l1ChainId);
     this.l2ChainEid = OFT.getEndpointId(l2ChainId);
@@ -147,24 +138,24 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Return no events if the query is for hubPool
-    if (fromAddress.eq(EvmAddress.from(this.l1HubPoolAddress))) {
+    if (fromAddress.eq(this.hubPoolAddress)) {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
-    const fromL1Events = await paginatedEventQuery(
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
+    const fromHubEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
-        // If the request is for a spoke pool, return `OFTSent` events from HubPool
-        isSpokePool ? this.l1HubPoolAddress : fromAddress.toNative()
+        // If the request is for a spoke pool, return `OFTSent` events from hubPool
+        isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative()
       ),
       eventConfig
     );
 
     // Filter events by destination eid. This gives us [hubPool -> dst_chain] events, which are [hubPool -> dst_spoke] events we were looking for
-    const events = fromL1Events.filter(({ args }) => args.dstEid === this.l2ChainEid);
+    const events = fromHubEvents.filter(({ args }) => args.dstEid === this.l2ChainEid);
 
     return {
       [this.l2TokenAddress]: events.map((event) => {
@@ -185,7 +176,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Return no events if the query is for hubPool
-    if (fromAddress.eq(EvmAddress.from(this.l1HubPoolAddress))) {
+    if (fromAddress.eq(this.hubPoolAddress)) {
       return {};
     }
 
