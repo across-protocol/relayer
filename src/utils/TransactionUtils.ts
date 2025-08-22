@@ -65,16 +65,6 @@ const txnRetryable = (error?: unknown): boolean => {
   return expectedRpcErrorMessages.has((error as Error)?.message);
 };
 
-// Linea has a special method linea_estimateGas that doesn't return a revert reason.
-// So we need to check the stack to see if it's a linea estimateGas error.
-const isLineaEstimateGasError = (error: unknown): boolean => {
-  const lineaEstimateGasPath = "viem/_cjs/linea/actions/estimateGas.js";
-
-  const errorStack = (error as Error).stack;
-  const isLineaEstimateGas = errorStack?.includes(lineaEstimateGasPath);
-  return isLineaEstimateGas && isFillRelayError(error);
-};
-
 const isFillRelayError = (error: unknown): boolean => {
   const fillRelaySelector = "0xdeff4b24"; // keccak256("fillRelay()")[:4]
   const multicallSelector = "0xac9650d8"; // keccak256("multicall()")[:4]
@@ -82,9 +72,9 @@ const isFillRelayError = (error: unknown): boolean => {
   const errorStack = (error as Error).stack;
   const isFillRelayError = errorStack?.includes(fillRelaySelector);
   const isMulticallError = errorStack?.includes(multicallSelector);
-  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector);
+  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
 
-  return isFillRelayError && isFillRelayInMulticallError;
+  return isFillRelayError || isFillRelayInMulticallError;
 };
 
 export function getNetworkError(err: unknown): string {
@@ -223,9 +213,7 @@ export async function runTransaction(
           error: stringifyThrownValue(error),
         });
       }
-      if (!isLineaEstimateGasError(error)) {
-        throw error;
-      }
+      throw error;
     }
   }
 }
