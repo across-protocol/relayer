@@ -11,18 +11,11 @@ import {
   getTranslatedTokenAddress,
   isDefined,
   paginatedEventQuery,
-  isContractDeployedToAddress,
   bnZero,
   EventSearchConfig,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import {
-  CONTRACT_ADDRESSES,
-  EVM_OFT_MESSENGERS,
-  IOFT_ABI_FULL,
-  OFT_DEFAULT_FEE_CAP,
-  OFT_FEE_CAP_OVERRIDES,
-} from "../../common";
+import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 
 interface TokenInfo {
@@ -34,7 +27,6 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
-  private readonly l1HubPoolAddress: string;
   private l2TokenInfo?: TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
@@ -65,8 +57,6 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
 
     this.l2ChainEid = OFT.getEndpointId(l2chainId);
     this.l1ChainEid = OFT.getEndpointId(hubChainId);
-    this.l1HubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    assert(isDefined(this.l1HubPoolAddress), `[OftL2Bridge] HubPool address not found for hubChainId ${hubChainId}`);
   }
   async constructWithdrawToL1Txns(
     toAddress: Address,
@@ -140,8 +130,8 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
 
     // Determine the expected recipient on L1. If the initiator on L2 is a SpokePool,
     // then the recipient on L1 is the HubPool. Otherwise, it is the same EOA address.
-    const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.l2Bridge.provider);
-    const l1RecipientAddress = isSpokePool ? this.l1HubPoolAddress : fromAddress.toNative();
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(fromAddress);
+    const l1RecipientAddress = isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const [l2SentAll, l1ReceivedAll] = await Promise.all([
       paginatedEventQuery(
