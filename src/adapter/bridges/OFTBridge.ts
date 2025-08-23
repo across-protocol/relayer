@@ -188,7 +188,7 @@ export class OFTBridge extends BaseBridgeAdapter {
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
         // If the request is for a spoke pool, return `OFTSent` events from hubPool
-        isAssociatedSpokePool ? this.hubPoolAddress : fromAddress.toNative()
+        isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative()
       ),
       eventConfig
     );
