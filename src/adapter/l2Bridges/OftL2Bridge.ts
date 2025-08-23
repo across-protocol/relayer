@@ -58,6 +58,7 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
     this.l2ChainEid = OFT.getEndpointId(l2chainId);
     this.l1ChainEid = OFT.getEndpointId(hubChainId);
   }
+
   async constructWithdrawToL1Txns(
     toAddress: Address,
     l2Token: Address,
@@ -115,6 +116,7 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
 
     return [withdrawTxn];
   }
+
   async getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,
     l1EventSearchConfig: EventSearchConfig,
