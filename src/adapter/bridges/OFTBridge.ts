@@ -13,12 +13,11 @@ import {
   Address,
   toBytes32,
   toWei,
-  isContractDeployedToAddress,
   winston,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CHAIN_IDs, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { CONTRACT_ADDRESSES, IOFT_ABI_FULL } from "../../common";
+import { IOFT_ABI_FULL } from "../../common";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -61,7 +60,6 @@ export class OFTBridge extends BaseBridgeAdapter {
   // Cap the messaging fee to prevent excessive costs
   private static readonly FEE_CAP = toWei("0.1"); // 0.1 ether
 
-  private readonly hubPoolAddress: string;
   public readonly dstTokenAddress: string;
   private readonly dstChainEid: number;
   private tokenDecimals?: number;
@@ -90,8 +88,6 @@ export class OFTBridge extends BaseBridgeAdapter {
 
     super(dstChainId, hubChainId, hubSigner, [route.hubChainIOFTAddress]);
 
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    assert(isDefined(this.hubPoolAddress), `Hub pool address not found for chain ${hubChainId}`);
     this.dstTokenAddress = this.resolveL2TokenAddress(hubTokenAddress);
     this.dstChainEid = getOFTEidForChainId(dstChainId);
     this.l1Bridge = new Contract(route.hubChainIOFTAddress.toNative(), IOFT_ABI_FULL, hubSigner);
@@ -181,18 +177,18 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Return no events if the query is for hubPool
-    if (fromAddress.eq(EvmAddress.from(this.hubPoolAddress))) {
+    if (fromAddress.eq(this.hubPoolAddress)) {
       return {};
     }
 
-    const isSpokePool = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
+    const isAssociatedSpokePool = this.spokePoolAddress.eq(toAddress);
     const fromHubEvents = await paginatedEventQuery(
       this.l1Bridge,
       this.l1Bridge.filters.OFTSent(
         null, // guid - not filtering by guid (Topic[1])
         undefined, // dstEid - not an indexed parameter, must be `undefined`
         // If the request is for a spoke pool, return `OFTSent` events from hubPool
-        isSpokePool ? this.hubPoolAddress : fromAddress.toNative()
+        isAssociatedSpokePool ? this.hubPoolAddress.toNative() : fromAddress.toNative()
       ),
       eventConfig
     );
@@ -219,7 +215,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     }
 
     // Return no events if the query is for hubPool
-    if (fromAddress.eq(EvmAddress.from(this.hubPoolAddress))) {
+    if (fromAddress.eq(this.hubPoolAddress)) {
       return {};
     }
 
