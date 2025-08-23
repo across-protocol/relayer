@@ -94,7 +94,7 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { inventoryClient, tokenClient } = this.clients;
+    const { tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
       tokenClient.update(),
