@@ -138,7 +138,7 @@ export class MultiCallerClient {
     const results = await Promise.allSettled(chainIds.map((chainId) => this.executeTxnQueue(chainId, simulate)));
 
     // Collate the results for each chain.
-    const txnRefes: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
+    const txnRefs: Record<number, { result: string[]; isError: boolean }> = Object.fromEntries(
       results.map((result, idx) => {
         const chainId = chainIds[idx];
         if (isPromiseFulfilled(result)) {
@@ -152,7 +152,7 @@ export class MultiCallerClient {
     // We need to iterate over the results to determine if any of the transactions failed.
     // If any of the transactions failed, we need to log the results and throw an error. However, we want to
     // only log the results once, so we need to collate the results into a single object.
-    const failedChains = Object.entries(txnRefes)
+    const failedChains = Object.entries(txnRefs)
       .filter(([, { isError }]) => isError)
       .map(([chainId]) => chainId);
     if (failedChains.length > 0) {
@@ -160,16 +160,16 @@ export class MultiCallerClient {
       this.logger.error({
         at: "MultiCallerClient#executeTxnQueues",
         message: `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(", ")}`,
-        error: failedChains.map((chainId) => txnRefes[chainId].result),
+        error: failedChains.map((chainId) => txnRefs[chainId].result),
       });
       throw new Error(
         `Failed to execute ${failedChains.length} transaction(s) on chain(s) ${failedChains.join(
           ", "
-        )}: ${JSON.stringify(txnRefes)}`
+        )}: ${JSON.stringify(txnRefs)}`
       );
     }
     // Recombine the results into a single object that match the legacy implementation.
-    return Object.fromEntries(Object.entries(txnRefes).map(([chainId, { result }]) => [chainId, result]));
+    return Object.fromEntries(Object.entries(txnRefs).map(([chainId, { result }]) => [chainId, result]));
   }
 
   // For a single chain, take any enqueued transactions and attempt to execute them.

@@ -99,7 +99,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
   const BUNDLE_LOOKBACK = 8; // The number of prior bundles to look back for when attempting to reconstruct
   const PAGE_SIZE = Number(process.env.PAGE_SIZE ?? bundlesToValidate);
-  assert(PAGE_SIZE <= bundlesToValidate, "PAGE_SIZE must be less than BUNDLES_COUNT");
+  assert(PAGE_SIZE <= bundlesToValidate, "PAGE_SIZE must be less than or equal to BUNDLES_COUNT");
   const PAGE = Number(process.env.PAGE ?? 0);
   assert(PAGE * PAGE_SIZE < bundlesToValidate, "PAGE * PAGE_SIZE must be less than BUNDLES_COUNT");
   // bundle data for arbitrary bundle. For example, setting this to 8 ensures that we'll be validating a bundle X
