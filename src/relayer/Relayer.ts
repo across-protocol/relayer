@@ -104,10 +104,6 @@ export class Relayer {
       await tokenClient.setOriginTokenApprovals();
     }
 
-    if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
-      await inventoryClient.setTokenApprovals();
-    }
-
     this.logger.debug({
       at: "Relayer::init",
       message: "Completed one-time init.",
@@ -175,14 +171,6 @@ export class Relayer {
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.wrapL2EthIfAboveThreshold();
-
-    if (this.config.sendingRebalancesEnabled) {
-      // It's necessary to update token balances in case WETH was wrapped.
-      tokenClient.clearTokenData();
-      await tokenClient.update();
-      await inventoryClient.rebalanceInventoryIfNeeded();
-      await inventoryClient.withdrawExcessBalances();
-    }
 
     // Unwrap WETH after filling deposits, but before rebalancing.
     await inventoryClient.unwrapWeth();
