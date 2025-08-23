@@ -184,20 +184,33 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
       const fill2 = await generateFill("WETH", MAINNET, OPTIMISM, owner.address);
       const fill3 = await generateFill("USDC", MAINNET, MAINNET, owner.address, toBNWei(1, 6));
       // Send a fill for a different relayer:
-      await generateFill("WETH", MAINNET, MAINNET, randomAddress());
+      const fill4 = await generateFill("WETH", MAINNET, MAINNET, randomAddress());
       const wethRefunds = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
         toAddressType(mainnetWeth, MAINNET),
-        fromBlocks
+        fromBlocks,
+        true
       );
       expect(wethRefunds[MAINNET]).to.equal(fill1.args.inputAmount);
       expect(wethRefunds[OPTIMISM]).to.equal(fill2.args.inputAmount);
       expect(wethRefunds[BSC]).to.equal(bnZero);
       expect(wethRefunds[POLYGON]).to.be.undefined;
 
+      // Includes the fills for the other relayer if specified:
+      const wethRefunds2 = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
+        toAddressType(mainnetWeth, MAINNET),
+        fromBlocks,
+        false
+      );
+      expect(wethRefunds2[MAINNET]).to.equal(fill1.args.inputAmount.add(fill4.args.inputAmount));
+      expect(wethRefunds2[OPTIMISM]).to.equal(fill2.args.inputAmount);
+      expect(wethRefunds2[BSC]).to.equal(bnZero);
+      expect(wethRefunds2[POLYGON]).to.be.undefined;
+
       // Check fills for other L1 token:
       const usdcRefunds = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
         toAddressType(mainnetUsdc, MAINNET),
-        fromBlocks
+        fromBlocks,
+        true
       );
       expect(usdcRefunds[MAINNET]).to.equal(fill3.args.inputAmount);
       expect(usdcRefunds[OPTIMISM]).to.equal(bnZero);
@@ -211,7 +224,8 @@ describe("InventoryClient: Accounting for upcoming relayer refunds", async funct
       };
       const wethRefunds3 = (inventoryClient as unknown as MockInventoryClient).getApproximateRefundsForToken(
         toAddressType(mainnetWeth, MAINNET),
-        highFromBlocks
+        highFromBlocks,
+        true
       );
       expect(wethRefunds3[MAINNET]).to.equal(bnZero);
       expect(wethRefunds3[OPTIMISM]).to.equal(bnZero);

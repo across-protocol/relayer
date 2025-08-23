@@ -304,7 +304,8 @@ export class InventoryClient {
   // is a safe assumption given that we are filtering on this.relayer).
   protected _getApproximateRefundsForToken(
     l1Token: EvmAddress,
-    fromBlocks: { [chainId: number]: number }
+    fromBlocks: { [chainId: number]: number },
+    filterOnThisRelayer: boolean
   ): { [repaymentChainId: number]: BigNumber } {
     const refundsForChain: { [repaymentChainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
@@ -317,7 +318,7 @@ export class InventoryClient {
         .getFills()
         .filter(
           (fill) =>
-            fill.relayer.eq(this.relayer) &&
+            (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
             // @dev This getL1TokenAddress() is safe to call because we this.relayer should only be filling
             // deposits where the input token is mapped to an L1 token.
             l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&
@@ -367,7 +368,7 @@ export class InventoryClient {
   // Return approximate refunds owed to this relayer at the present time.
   _getApproximateUpcomingRefunds(l1Token: EvmAddress): { [repaymentChainId: number]: BigNumber } {
     const fromBlocks = this._getUpcomingRefundsQueryFromBlocks();
-    const refundsForChain = this._getApproximateRefundsForToken(l1Token, fromBlocks);
+    const refundsForChain = this._getApproximateRefundsForToken(l1Token, fromBlocks, true);
     this.logger.debug({
       at: "InventoryClient#getApproximateUpcomingRefunds",
       message: `Approximated upcoming refunds for l1 token ${l1Token.toNative()}`,
@@ -826,7 +827,7 @@ export class InventoryClient {
             return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
           })
         );
-        const allBundleRefunds = this._getApproximateRefundsForToken(l1Token, refundQueryFromBlocks);
+        const allBundleRefunds = this._getApproximateRefundsForToken(l1Token, refundQueryFromBlocks, false);
         const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(allBundleRefunds[chainId] ?? bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.

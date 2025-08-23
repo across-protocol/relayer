@@ -54,9 +54,10 @@ export class MockInventoryClient extends InventoryClient {
 
   getApproximateRefundsForToken(
     l1Token: EvmAddress,
-    fromBlocks: { [chainId: number]: number }
+    fromBlocks: { [chainId: number]: number },
+    filterOnThisRelayer: boolean
   ): { [chainId: number]: BigNumber } {
-    return this._getApproximateRefundsForToken(l1Token, fromBlocks);
+    return this._getApproximateRefundsForToken(l1Token, fromBlocks, filterOnThisRelayer);
   }
 
   getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
