@@ -316,14 +316,23 @@ export class InventoryClient {
       }
       spokePoolClient
         .getFills()
-        .filter(
-          (fill) =>
-            (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
-            // @dev This getL1TokenAddress() is safe to call because we this.relayer should only be filling
-            // deposits where the input token is mapped to an L1 token.
-            l1Token.eq(this.getL1TokenAddress(fill.inputToken, fill.originChainId)) &&
-            fill.blockNumber >= fromBlocks[chainId]
-        )
+        .filter((fill) => {
+          try {
+            const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+            return (
+              (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
+              l1Token.eq(expectedL1Token) &&
+              fill.blockNumber >= fromBlocks[chainId]
+            );
+          } catch (e) {
+            // If the input token is not mapped to an L1 token that we are tracking, then we shouldn't count this fill as a refund
+            // on the specified repayment chain. This function is used to (1) approximate running balances on a spoke
+            // pool for a deposit that we are considering filling and (2) to estimate this.relayer's upcoming refunds
+            // also when considering filling a deposit. Therefore, we essentially should never see
+            // this error thrown for deposits that we are considering filling.
+            return false;
+          }
+        })
         .forEach((fill) => {
           const { inputAmount: refundAmount, repaymentChainId } = fill;
           refundsForChain[repaymentChainId] ??= bnZero;
