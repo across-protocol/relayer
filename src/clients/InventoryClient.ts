@@ -429,8 +429,12 @@ export class InventoryClient {
    * @param chainId Chain ID
    * @returns L1 token address from TokenSymbolsMap
    */
-  getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    return getL1TokenAddress(l2Token, chainId);
+  getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
+    try {
+      return getL1TokenAddress(l2Token, chainId);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
