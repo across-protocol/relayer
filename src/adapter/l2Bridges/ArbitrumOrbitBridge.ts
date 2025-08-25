@@ -64,7 +64,7 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       ],
       nonMulticall: true,
       message: "🎰 Withdrew Orbit ERC20 to L1",
-      mrkdwn: `Withdrew ${formatter(amount)} ${symbol} from ${getNetworkName(this.l2chainId)} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${symbol} from ${getNetworkName(this.l2chainId)} to L1`,
     };
     return Promise.resolve([withdrawTxn]);
   }
