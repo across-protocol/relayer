@@ -19,7 +19,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
-import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
+import { MockAdapterManager, MockHubPoolClient, MockTokenClient } from "./mocks/";
 import {
   bnZero,
   CHAIN_IDs,
@@ -38,7 +38,6 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
 let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
-let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
@@ -117,7 +116,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
-    bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
 
@@ -128,7 +126,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       tokenClient,
       enabledChainIds,
       hubPoolClient,
-      bundleDataClient,
       adapterManager,
       crossChainTransferClient
     );

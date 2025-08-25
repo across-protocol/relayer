@@ -55,11 +55,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients, inventoryClient } = relayerClients;
+  const { spokePoolClients } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
-  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
-  let inventoryInit = false;
 
   try {
     for (let run = 1; !stop; ++run) {
@@ -85,11 +83,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .filter(({ isUpdated }) => !isUpdated)
           .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
-      }
-      // Execute bundleRefundsPromise only after all spokePoolClients are updated.
-      if (!inventoryInit && inventoryManagement) {
-        await inventoryClient.executeBundleRefundsPromise();
-        inventoryInit = true;
       }
 
       // Signal to any existing relayer that a handover is underway, or alternatively

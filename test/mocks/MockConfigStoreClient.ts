@@ -2,11 +2,14 @@ import { clients } from "@across-protocol/sdk";
 import { EventSearchConfig, MakeOptional, winston } from "../../src/utils";
 import { Contract } from "../utils";
 import { CHAIN_ID_TEST_LIST } from "../constants";
+import { RootBundleRelayWithBlock } from "../../src/interfaces";
 
 export const DEFAULT_CONFIG_STORE_VERSION = clients.DEFAULT_CONFIG_STORE_VERSION;
 
 // @dev This mocked class must re-implement any customisations in the local extended ConfigStoreClient.
 export class MockConfigStoreClient extends clients.mocks.MockConfigStoreClient {
+  rootBundleRelays: RootBundleRelayWithBlock[] | undefined = undefined;
+
   constructor(
     logger: winston.Logger,
     configStore: Contract,
