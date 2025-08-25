@@ -365,7 +365,7 @@ export class InventoryClient {
           `InventoryClient#getApproximateUpcomingRefunds: No corresponding proposed root bundle found for relayed root bundle to chain ${chainId}`
         );
 
-        // Step 3. Use the proposed root bundle information to set the fromBlocsk we should use to search for upcoming
+        // Step 3. Use the proposed root bundle information to set the fromBlocks we should use to search for upcoming
         // refunds for the relayer on this chain.
         const chainIdIndex = configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
         const bundleEndBlock = correspondingProposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
