@@ -72,9 +72,9 @@ const isFillRelayError = (error: unknown): boolean => {
   const errorStack = (error as Error).stack;
   const isFillRelayError = errorStack?.includes(fillRelaySelector);
   const isMulticallError = errorStack?.includes(multicallSelector);
-  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector);
+  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
 
-  return isFillRelayError && isFillRelayInMulticallError;
+  return isFillRelayError || isFillRelayInMulticallError;
 };
 
 export function getNetworkError(err: unknown): string {
