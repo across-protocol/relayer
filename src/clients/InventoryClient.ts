@@ -36,7 +36,7 @@ import {
   toAddressType,
   repaymentChainCanBeQuicklyRebalanced,
 } from "../utils";
-import { HubPoolClient, TokenClient } from ".";
+import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
@@ -66,6 +66,7 @@ export class InventoryClient {
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
+  private bundleDataApproxClient: BundleDataApproxClient;
 
   constructor(
     readonly relayer: EvmAddress,
@@ -85,6 +86,13 @@ export class InventoryClient {
       logger: this.logger,
       at: "InventoryClient",
     });
+    this.bundleDataApproxClient = new BundleDataApproxClient(
+      this.tokenClient.spokePoolClients,
+      this.hubPoolClient,
+      this.chainIdList,
+      this.getL1Tokens(),
+      this.logger
+    );
   }
 
   /**
@@ -297,88 +305,8 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
-  // Return sum of refunds for all fills sent after the fromBlocks.
-  // Makes a simple assumption that all fills sent by this relayer that were sent after the last executed bundle
-  // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
-  // set is a valid one for the deposit (i.e. this function doesn't call depositForcesOriginChainRepayment(), which
-  // is a safe assumption given that we are filtering on this.relayer).
-  protected _getApproximateRefundsForToken(
-    l1Token: EvmAddress,
-    fromBlocks: { [chainId: number]: number },
-    filterOnThisRelayer: boolean
-  ): { [repaymentChainId: number]: BigNumber } {
-    const refundsForChain: { [repaymentChainId: number]: BigNumber } = {};
-    for (const chainId of this.chainIdList) {
-      refundsForChain[chainId] ??= bnZero;
-      const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
-      if (!isDefined(spokePoolClient)) {
-        continue;
-      }
-      spokePoolClient
-        .getFills()
-        .filter((fill) => {
-          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-          if (!isDefined(expectedL1Token)) {
-            return false;
-          }
-          return (
-            (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
-            l1Token.eq(expectedL1Token) &&
-            fill.blockNumber >= fromBlocks[chainId]
-          );
-        })
-        .forEach((fill) => {
-          const { inputAmount: refundAmount, repaymentChainId } = fill;
-          refundsForChain[repaymentChainId] ??= bnZero;
-          refundsForChain[repaymentChainId] = refundsForChain[repaymentChainId].add(refundAmount);
-        });
-    }
-    return refundsForChain;
-  }
-
-  // Return the next starting block for each chain following the bundle end block of the last exececuted bundle that
-  // was relayed to that chain.
-  protected _getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
-    const configStoreClient = this.hubPoolClient.configStoreClient;
-    return Object.fromEntries(
-      this.chainIdList.map((chainId) => {
-        const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
-        // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
-        // from the last executed bundle for this chain and these refunds were executed.
-        const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().at(-1);
-        if (!isDefined(lastRelayedRootToChain)) {
-          return [chainId, 0];
-        }
-
-        // Step 2: Match the last RelayedRootBundle event to a proposed root bundle.
-        const correspondingProposedRootBundle = this.hubPoolClient
-          .getValidatedRootBundles()
-          .find((bundle) => bundle.relayerRefundRoot === lastRelayedRootToChain.relayerRefundRoot);
-        assert(
-          isDefined(correspondingProposedRootBundle),
-          `InventoryClient#getApproximateUpcomingRefunds: No corresponding proposed root bundle found for relayed root bundle to chain ${chainId}`
-        );
-
-        // Step 3. Use the proposed root bundle information to set the fromBlocks we should use to search for upcoming
-        // refunds for the relayer on this chain.
-        const chainIdIndex = configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
-        const bundleEndBlock = correspondingProposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-        return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
-      })
-    );
-  }
-
-  // Return approximate refunds owed to this relayer at the present time.
-  _getApproximateUpcomingRefunds(l1Token: EvmAddress): { [repaymentChainId: number]: BigNumber } {
-    const fromBlocks = this._getUpcomingRefundsQueryFromBlocks();
-    const refundsForChain = this._getApproximateRefundsForToken(l1Token, fromBlocks, true);
-    this.logger.debug({
-      at: "InventoryClient#getApproximateUpcomingRefunds",
-      message: `Approximated upcoming refunds for l1 token ${l1Token.toNative()}`,
-      fromBlocks,
-      refundsForChain,
-    });
-    return refundsForChain;
+  setBundleData(): void {
+    this.bundleDataApproxClient.initialize();
   }
 
   /**
@@ -554,22 +482,14 @@ export class InventoryClient {
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
     // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
-    const _totalRefundsPerChain = this._getApproximateUpcomingRefunds(l1Token);
-    const totalRefundsPerChain = Object.fromEntries(
-      Object.entries(_totalRefundsPerChain).map(([chainId, refundAmount]) => {
-        const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-        const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
-        if (!repaymentToken) {
-          return [chainId, bnZero];
-        }
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
-          repaymentToken,
-          Number(chainId)
-        );
-        const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
-        return [chainId, convertedRefundAmount];
-      })
-    );
+    const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
+    for (const chainId of this.chainIdList) {
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, Number(chainId));
+      const refundAmount = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
+      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+      totalRefundsPerChain[chainId] = convertedRefundAmount;
+    }
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
@@ -751,19 +671,6 @@ export class InventoryClient {
     return eligibleRefundChains;
   }
 
-  private _getUpcomingDepositAmount(chainId: number, l2Token: Address, fromBlock: number): BigNumber {
-    const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
-    if (!isDefined(spokePoolClient)) {
-      return toBN(0);
-    }
-    return spokePoolClient
-      .getDeposits()
-      .filter((deposit) => deposit.blockNumber > fromBlock && deposit.inputToken.eq(l2Token))
-      .reduce((acc, deposit) => {
-        return acc.add(deposit.inputAmount);
-      }, toBN(0));
-  }
-
   /**
    * Returns running balances for l1Tokens on all slow withdrawal chains that are enabled for this l1Token.
    * @param l1Token
@@ -824,24 +731,11 @@ export class InventoryClient {
           }
         }
         const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(
-          this._getUpcomingDepositAmount(chainId, l2Token, lastValidatedBundleEndBlock)
+          this.bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token)
         );
-
-        // Approximate upcoming refunds to be subtracted from this chain's running balance. Count all fills sent
-        // after the bundle end block of the bundle whose running balance we fetched above and are using as the
-        // starting point, so that no fills are double counted.
-        const refundQueryFromBlocks = Object.fromEntries(
-          this.chainIdList.map((chainId) => {
-            if (!proposedRootBundle) {
-              return [chainId, 0];
-            }
-            const chainIdIndex = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
-            const bundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-            return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
-          })
+        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(
+          this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token)
         );
-        const allBundleRefunds = this._getApproximateRefundsForToken(l1Token, refundQueryFromBlocks, false);
-        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(allBundleRefunds[chainId] ?? bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance

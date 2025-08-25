@@ -1,0 +1,184 @@
+/**
+ * This client is used to get approximate bundle data using spoke and hub pool client data, without needing to
+ * go through the relatively longer process of constructing full bundle data from scratch, like the BundleDataClient.
+ */
+
+import { SpokePoolClientsByChain } from "../interfaces";
+import { assert, BigNumber, isDefined, winston } from "../utils";
+import { Address, bnZero, EvmAddress, getL1TokenAddress } from "../utils/SDKUtils";
+import { HubPoolClient } from "./HubPoolClient";
+
+export class BundleDataApproxClient {
+  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
+  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
+
+  constructor(
+    private readonly spokePoolClients: SpokePoolClientsByChain,
+    private readonly hubPoolClient: HubPoolClient,
+    private readonly chainIdList: number[],
+    private readonly l1Tokens: EvmAddress[],
+    private readonly logger: winston.Logger
+  ) {}
+
+  // Return sum of refunds for all fills sent after the fromBlocks.
+  // Makes a simple assumption that all fills that were sent after the last executed bundle
+  // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
+  // set is a valid one for the deposit.
+  getApproximateRefundsForToken(
+    l1Token: EvmAddress,
+    fromBlocks: { [chainId: number]: number }
+  ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
+    const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
+    for (const chainId of this.chainIdList) {
+      refundsForChain[chainId] ??= {};
+      const spokePoolClient = this.spokePoolClients[chainId];
+      if (!isDefined(spokePoolClient)) {
+        continue;
+      }
+      spokePoolClient
+        .getFills()
+        .filter((fill) => {
+          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+          if (!isDefined(expectedL1Token)) {
+            return false;
+          }
+          return l1Token.eq(expectedL1Token) && fill.blockNumber >= fromBlocks[chainId];
+        })
+        .forEach((fill) => {
+          const { inputAmount: refundAmount, repaymentChainId, relayer } = fill;
+          refundsForChain[repaymentChainId] ??= {};
+          refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
+          refundsForChain[repaymentChainId][relayer.toNative()] =
+            refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+        });
+    }
+    return refundsForChain;
+  }
+
+  // Return the next starting block for each chain following the bundle end block of the last executed bundle that
+  // was relayed to that chain.
+  getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
+    const configStoreClient = this.hubPoolClient.configStoreClient;
+    return Object.fromEntries(
+      this.chainIdList.map((chainId) => {
+        const spokePoolClient = this.spokePoolClients[chainId];
+        // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
+        // from the last executed bundle for this chain and these refunds were executed.
+        const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().at(-1);
+        if (!isDefined(lastRelayedRootToChain)) {
+          return [chainId, 0];
+        }
+
+        // Step 2: Match the last RelayedRootBundle event to a proposed root bundle.
+        const correspondingProposedRootBundle = this.hubPoolClient
+          .getValidatedRootBundles()
+          .find((bundle) => bundle.relayerRefundRoot === lastRelayedRootToChain.relayerRefundRoot);
+        assert(
+          isDefined(correspondingProposedRootBundle),
+          `InventoryClient#getApproximateUpcomingRefunds: No corresponding proposed root bundle found for relayed root bundle to chain ${chainId}`
+        );
+
+        // Step 3. Use the proposed root bundle information to set the fromBlocks we should use to search for upcoming
+        // refunds for the relayer on this chain.
+        const chainIdIndex = configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
+        const bundleEndBlock = correspondingProposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
+        return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
+      })
+    );
+  }
+
+  getApproximateUpcomingRefunds(l1Token: EvmAddress): ReturnType<typeof this.getApproximateRefundsForToken> {
+    const fromBlocks = this.getUnexecutedBundleStartBlocks();
+    const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
+    this.logger.debug({
+      at: "BundleDataApproxClient#getApproximateUpcomingRefunds",
+      message: `Approximated upcoming refunds for l1 token ${l1Token.toNative()}`,
+      fromBlocks,
+      refundsForChain,
+    });
+    return refundsForChain;
+  }
+
+  getApproximateDepositsForToken(
+    l1Token: EvmAddress,
+    fromBlocks: { [chainId: number]: number }
+  ): { [chainId: number]: BigNumber } {
+    const depositsForChain: { [chainId: number]: BigNumber } = {};
+    for (const chainId of this.chainIdList) {
+      const spokePoolClient = this.spokePoolClients[chainId];
+      depositsForChain[chainId] ??= bnZero;
+      if (!isDefined(spokePoolClient)) {
+        continue;
+      }
+      spokePoolClient
+        .getDeposits()
+        .filter((deposit) => {
+          const expectedL1Token = this.getL1TokenAddress(deposit.inputToken, deposit.originChainId);
+          if (!isDefined(expectedL1Token)) {
+            return false;
+          }
+          return l1Token.eq(expectedL1Token) && deposit.blockNumber >= fromBlocks[chainId];
+        })
+        .forEach((deposit) => {
+          depositsForChain[chainId] = depositsForChain[chainId].add(deposit.inputAmount);
+        });
+    }
+    return depositsForChain;
+  }
+
+  getApproximateUpcomingDepositsForToken(l1Token: EvmAddress): ReturnType<typeof this.getApproximateDepositsForToken> {
+    const fromBlocks = this.getUnexecutedBundleStartBlocks();
+    const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
+    this.logger.debug({
+      at: "BundleDataApproxClient#getApproximateUpcomingDeposits",
+      message: `Approximated upcoming deposits for l1 token ${l1Token.toNative()}`,
+      fromBlocks,
+      depositsForChain,
+    });
+    return depositsForChain;
+  }
+
+  protected getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
+    try {
+      return getL1TokenAddress(l2Token, chainId);
+    } catch {
+      return undefined;
+    }
+  }
+
+  // PUBLIC FUNCTIONS:
+  // The following functions are used by the InventoryClient to get approximate upcoming refunds and deposits.
+
+  initialize(): void {
+    this.upcomingRefunds = {};
+    this.upcomingDeposits = {};
+    for (const l1Token of this.l1Tokens) {
+      this.upcomingRefunds[l1Token.toNative()] = this.getApproximateUpcomingRefunds(l1Token);
+      this.upcomingDeposits[l1Token.toNative()] = this.getApproximateUpcomingDepositsForToken(l1Token);
+    }
+  }
+
+  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: EvmAddress): BigNumber {
+    assert(
+      isDefined(this.upcomingRefunds),
+      "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
+    );
+    assert(this.upcomingRefunds[l1Token.toNative()], "BundleDataApproxClient#getUpcomingRefunds: L1 token not found");
+    if (isDefined(relayer)) {
+      return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
+    }
+    return Object.values(this.upcomingRefunds[l1Token.toNative()][chainId] ?? {}).reduce(
+      (acc, curr) => acc.add(curr),
+      bnZero
+    );
+  }
+
+  getUpcomingDeposits(chainId: number, l1Token: EvmAddress): BigNumber {
+    assert(
+      isDefined(this.upcomingDeposits),
+      "BundleDataApproxClient#getUpcomingDeposits: Upcoming deposits not initialized"
+    );
+    assert(this.upcomingDeposits[l1Token.toNative()], "BundleDataApproxClient#getUpcomingDeposits: L1 token not found");
+    return this.upcomingDeposits[l1Token.toNative()][chainId] ?? bnZero;
+  }
+}
