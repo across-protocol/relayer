@@ -1,5 +1,5 @@
 import { BundleDataApproxClient } from "../../src/clients";
-import { Address, EvmAddress, toAddressType } from "../../src/utils";
+import { Address, BigNumber, EvmAddress, toAddressType } from "../../src/utils";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
 export class MockBundleDataApproxClient extends BundleDataApproxClient {
@@ -19,5 +19,18 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
       }
     }
     return super.getL1TokenAddress(l2Token, chainId);
+  }
+
+  override getApproximateRefundsForToken(
+    l1Token: EvmAddress,
+    fromBlocks: { [chainId: number]: number }
+  ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
+    return this.getApproximateRefundsForToken(l1Token, fromBlocks);
+  }
+
+  // Return the next starting block for each chain following the bundle end block of the last executed bundle that
+  // was relayed to that chain.
+  protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
+    return this.getUnexecutedBundleStartBlocks();
   }
 }

@@ -24,7 +24,7 @@ export class BundleDataApproxClient {
   // Makes a simple assumption that all fills that were sent after the last executed bundle
   // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
   // set is a valid one for the deposit.
-  getApproximateRefundsForToken(
+  protected getApproximateRefundsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
   ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
@@ -57,7 +57,7 @@ export class BundleDataApproxClient {
 
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
-  getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
+  protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
     const configStoreClient = this.hubPoolClient.configStoreClient;
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
@@ -87,7 +87,7 @@ export class BundleDataApproxClient {
     );
   }
 
-  getApproximateUpcomingRefunds(l1Token: EvmAddress): ReturnType<typeof this.getApproximateRefundsForToken> {
+  private getApproximateUpcomingRefunds(l1Token: EvmAddress): ReturnType<typeof this.getApproximateRefundsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
     this.logger.debug({
@@ -99,7 +99,7 @@ export class BundleDataApproxClient {
     return refundsForChain;
   }
 
-  getApproximateDepositsForToken(
+  private getApproximateDepositsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
   ): { [chainId: number]: BigNumber } {
@@ -126,12 +126,14 @@ export class BundleDataApproxClient {
     return depositsForChain;
   }
 
-  getApproximateUpcomingDepositsForToken(l1Token: EvmAddress): ReturnType<typeof this.getApproximateDepositsForToken> {
+  private getApproximateUpcomingDepositsForToken(
+    l1Token: EvmAddress
+  ): ReturnType<typeof this.getApproximateDepositsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
     this.logger.debug({
       at: "BundleDataApproxClient#getApproximateUpcomingDeposits",
-      message: `Approximated upcoming deposits for l1 token ${l1Token.toNative()}`,
+      message: `Approximated upcoming deposits for l1 token ${l1Token}`,
       fromBlocks,
       depositsForChain,
     });

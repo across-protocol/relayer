@@ -474,7 +474,7 @@ export class InventoryClient {
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
     if (!isDefined(l1Token)) {
       throw new Error(
-        `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
+        `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
     }
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
