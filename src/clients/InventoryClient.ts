@@ -87,7 +87,7 @@ export class InventoryClient {
       at: "InventoryClient",
     });
     this.bundleDataApproxClient = new BundleDataApproxClient(
-      this.tokenClient.spokePoolClients,
+      this.tokenClient?.spokePoolClients ?? {},
       this.hubPoolClient,
       this.chainIdList,
       this.getL1Tokens(),
@@ -294,7 +294,7 @@ export class InventoryClient {
 
   getL1Tokens(): EvmAddress[] {
     return (
-      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
+      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
       this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
     );
   }
@@ -307,6 +307,14 @@ export class InventoryClient {
 
   setBundleData(): void {
     this.bundleDataApproxClient.initialize();
+  }
+
+  getUpcomingRefunds(chainId: number, l1Token: EvmAddress): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
+  }
+
+  getUpcomingDeposits(chainId: number, l1Token: EvmAddress): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token);
   }
 
   /**
@@ -489,7 +497,7 @@ export class InventoryClient {
         continue;
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, Number(chainId));
-      const refundAmount = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
+      const refundAmount = this.getUpcomingRefunds(chainId, l1Token);
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
     }
@@ -733,12 +741,8 @@ export class InventoryClient {
             lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
           }
         }
-        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(
-          this.bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token)
-        );
-        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(
-          this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token)
-        );
+        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingDeposits(chainId, l1Token));
+        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingRefunds(chainId, l1Token));
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance

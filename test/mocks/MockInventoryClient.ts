@@ -1,7 +1,7 @@
 import { Deposit, InventoryConfig } from "../../src/interfaces";
 import { HubPoolClient, InventoryClient, Rebalance, TokenClient } from "../../src/clients";
 import { AdapterManager, CrossChainTransferClient } from "../../src/clients/bridges";
-import { BigNumber, EvmAddress, toAddressType } from "../../src/utils";
+import { BigNumber, bnZero, EvmAddress, toAddressType } from "../../src/utils";
 import winston from "winston";
 
 type TokenMapping = { [l1Token: string]: { [chainId: number]: string } };
@@ -52,24 +52,12 @@ export class MockInventoryClient extends InventoryClient {
     return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()]);
   }
 
-  getApproximateRefundsForToken(
-    l1Token: EvmAddress,
-    fromBlocks: { [chainId: number]: number },
-    filterOnThisRelayer: boolean
-  ): { [chainId: number]: BigNumber } {
-    return this._getApproximateRefundsForToken(l1Token, fromBlocks, filterOnThisRelayer);
-  }
-
-  getUpcomingRefundsQueryFromBlocks(): { [chainId: number]: number } {
-    return this._getUpcomingRefundsQueryFromBlocks();
+  override getUpcomingRefunds(chainId: number, l1Token: EvmAddress): BigNumber {
+    return this.upcomingRefunds?.[l1Token.toNative()]?.[chainId] ?? bnZero;
   }
 
   setUpcomingRefunds(l1Token: string, refunds: { [chainId: number]: BigNumber }): void {
     this.upcomingRefunds[l1Token] = refunds;
-  }
-
-  _getApproximateUpcomingRefunds(l1Token: EvmAddress): { [repaymentChainId: number]: BigNumber } {
-    return this.upcomingRefunds?.[l1Token.toNative()] ?? super._getApproximateUpcomingRefunds(l1Token);
   }
 
   addPossibleRebalance(rebalance: Rebalance): void {
