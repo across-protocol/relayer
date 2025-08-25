@@ -560,14 +560,13 @@ export class InventoryClient {
         const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
         if (!repaymentToken) {
           return [chainId, bnZero];
-        } else {
-          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
-            repaymentToken,
-            Number(chainId)
-          );
-          const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
-          return [chainId, convertedRefundAmount];
         }
+        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(
+          repaymentToken,
+          Number(chainId)
+        );
+        const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+        return [chainId, convertedRefundAmount];
       })
     );
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
@@ -751,14 +750,14 @@ export class InventoryClient {
     return eligibleRefundChains;
   }
 
-  private _getUpcomingDepositAmount(chainId: number, l2Token: Address, latestBlockToSearch: number): BigNumber {
+  private _getUpcomingDepositAmount(chainId: number, l2Token: Address, fromBlock: number): BigNumber {
     const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
     if (!isDefined(spokePoolClient)) {
       return toBN(0);
     }
     return spokePoolClient
       .getDeposits()
-      .filter((deposit) => deposit.blockNumber > latestBlockToSearch && deposit.inputToken.eq(l2Token))
+      .filter((deposit) => deposit.blockNumber > fromBlock && deposit.inputToken.eq(l2Token))
       .reduce((acc, deposit) => {
         return acc.add(deposit.inputAmount);
       }, toBN(0));
