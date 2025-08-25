@@ -148,9 +148,6 @@ export class BundleDataApproxClient {
     }
   }
 
-  // PUBLIC FUNCTIONS:
-  // The following functions are used by the InventoryClient to get approximate upcoming refunds and deposits.
-
   initialize(): void {
     this.upcomingRefunds = {};
     this.upcomingDeposits = {};

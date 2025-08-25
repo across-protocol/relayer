@@ -25,12 +25,12 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: number }
   ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
-    return this.getApproximateRefundsForToken(l1Token, fromBlocks);
+    return super.getApproximateRefundsForToken(l1Token, fromBlocks);
   }
 
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
   protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
-    return this.getUnexecutedBundleStartBlocks();
+    return super.getUnexecutedBundleStartBlocks();
   }
 }
