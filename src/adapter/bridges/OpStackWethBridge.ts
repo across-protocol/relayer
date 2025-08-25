@@ -158,7 +158,6 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
-      // if (fromAddress.toNative() !== this.hubPoolAddress) {
       if (!fromAddress.eq(this.hubPoolAddress)) {
         return this.convertEventListToBridgeEvents([]);
       }
