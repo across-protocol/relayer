@@ -11,7 +11,7 @@
     "@uma/common" "^2.17.0"
     hardhat "^2.9.3"
 
-"@across-protocol/constants@^3.1.66", "@across-protocol/constants@^3.1.68":
+"@across-protocol/constants@^3.1.68":
   version "3.1.68"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.68.tgz#2a58b091b3f717394ee8025b20ee89022da849d8"
   integrity sha512-f/o4i323HxwT/4h32xZdxKLwN3xXoAaxcd/xwP0tfAc/+X4/a+1qJ5Mfx+U2IwDkSheiSyqRYF3z5oYPnax3mg==
@@ -30,12 +30,12 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^4.1.0":
-  version "4.1.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.0.tgz#548cf631d78cd34cd193f41cfed32b5fb881606e"
-  integrity sha512-ypwmjkZsqswIKX93QwhJf8G5zGyM8aMLH1iBtnXAxjLvuAEe1fAnUDt2E2444DA2bVT5lCcVbmYCZ+BS7ZjHGw==
+"@across-protocol/contracts@^4.1.1":
+  version "4.1.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.1.tgz#91c8e0fc867911a17f21b2d79d586f95417cb912"
+  integrity sha512-APyBXkNrP7VAbN2KzoO3h4VvGUGCgbz1OWACVAQ2/SWm3jMWmzHMOOtLeIqfmPTW0be7pkTbxnfR8hANMcicXw==
   dependencies:
-    "@across-protocol/constants" "^3.1.66"
+    "@across-protocol/constants" "^3.1.69"
     "@coral-xyz/anchor" "^0.31.1"
     "@defi-wonderland/smock" "^2.3.4"
     "@eth-optimism/contracts" "^0.5.40"
@@ -61,10 +61,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@^4.1.1":
-  version "4.1.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.1.tgz#91c8e0fc867911a17f21b2d79d586f95417cb912"
-  integrity sha512-APyBXkNrP7VAbN2KzoO3h4VvGUGCgbz1OWACVAQ2/SWm3jMWmzHMOOtLeIqfmPTW0be7pkTbxnfR8hANMcicXw==
+"@across-protocol/contracts@^4.1.3":
+  version "4.1.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.3.tgz#e7f4693d48eb4528c6258b4a7aee1191789eaf59"
+  integrity sha512-1HuFXgVA5MH62jGV96KDRUzaokDj0efSHMObkjaclNwompXREYKLgE/0BrMgH1gtw3Al9MJ+lLL64GHscQYP4Q==
   dependencies:
     "@across-protocol/constants" "^3.1.69"
     "@coral-xyz/anchor" "^0.31.1"
