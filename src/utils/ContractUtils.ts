@@ -7,8 +7,9 @@ import {
   getDeployedAddress,
   getDeployedBlockNumber,
   EvmAddress,
-  assert,
   chainIsEvm,
+  SvmAddress,
+  Address,
 } from ".";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
@@ -59,9 +60,9 @@ export function getSpokePool(chainId: number, address?: string): Contract {
   return new Contract(address ?? getDeployedAddress("SpokePool", chainId), artifact.abi);
 }
 
-export function getSpokePoolAddressEvm(chainId: number): EvmAddress {
-  assert(chainIsEvm(chainId));
-  return EvmAddress.from(getDeployedAddress("SpokePool", chainId, true));
+export function getSpokePoolAddress(chainId: number): Address {
+  const addr = getDeployedAddress("SpokePool", chainId, true);
+  return chainIsEvm(chainId) ? EvmAddress.from(addr) : SvmAddress.from(addr);
 }
 
 export function getHubPoolAddress(chainId: number): EvmAddress {
