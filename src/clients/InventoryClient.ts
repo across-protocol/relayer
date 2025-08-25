@@ -317,21 +317,15 @@ export class InventoryClient {
       spokePoolClient
         .getFills()
         .filter((fill) => {
-          try {
-            const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-            return (
-              (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
-              l1Token.eq(expectedL1Token) &&
-              fill.blockNumber >= fromBlocks[chainId]
-            );
-          } catch (e) {
-            // If the input token is not mapped to an L1 token that we are tracking, then we shouldn't count this fill as a refund
-            // on the specified repayment chain. This function is used to (1) approximate running balances on a spoke
-            // pool for a deposit that we are considering filling and (2) to estimate this.relayer's upcoming refunds
-            // also when considering filling a deposit. Therefore, we essentially should never see
-            // this error thrown for deposits that we are considering filling.
+          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+          if (!isDefined(expectedL1Token)) {
             return false;
           }
+          return (
+            (filterOnThisRelayer ? fill.relayer.eq(this.relayer) : true) &&
+            l1Token.eq(expectedL1Token) &&
+            fill.blockNumber >= fromBlocks[chainId]
+          );
         })
         .forEach((fill) => {
           const { inputAmount: refundAmount, repaymentChainId } = fill;
@@ -409,9 +403,13 @@ export class InventoryClient {
     }
 
     if (this.isInventoryManagementEnabled()) {
-      // @dev This getL1TokenAddress() is safe to call because we call `depositForcesOriginChainRepayment()`
-      // first, which would return true if there the input token wasn't mapped to an L1 token.
+      // @dev Because the `deposit` is a for an input token that have already filtered then we shouldn't expect
+      // to see any undefined return values from `getL1TokenAddress()`.
       const l1Token = this.getL1TokenAddress(inputToken, originChainId);
+      assert(
+        isDefined(l1Token),
+        `InventoryClient#getPossibleRepaymentChainIds: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
+      );
       this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
         if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           chainIds.add(chainId);
@@ -423,11 +421,11 @@ export class InventoryClient {
   }
 
   /**
-   * Returns the L1 token address for a given L2 token address on a given chain. Throws
+   * Returns the L1 token address for a given L2 token address on a given chain. Returns undefined
    *  if the l2 token and chain ID do not not have a corresponding L1 token mapping.
    * @param l2Token L2 token address
    * @param chainId Chain ID
-   * @returns L1 token address from TokenSymbolsMap
+   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not not have a corresponding L1 token mapping.
    */
   getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
     try {
@@ -460,14 +458,12 @@ export class InventoryClient {
     // Return true if the input and output token are defined as equivalent according to a hardcoded mapping
     // of equivalent tokens. This should allow relayer to define which tokens it should be able to fill despite them
     // not being linked via a PoolRebalanceRoute.
-    try {
-      const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
-      const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
-      return l1TokenMappedToInputToken.eq(l1TokenMappedToOutputToken);
-    } catch (e) {
-      // @dev getL1TokenAddress will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
+    const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
+    const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
+    if (!isDefined(l1TokenMappedToInputToken) || !isDefined(l1TokenMappedToOutputToken)) {
       return false;
     }
+    return l1TokenMappedToInputToken.eq(l1TokenMappedToOutputToken);
   }
 
   /**
@@ -545,9 +541,14 @@ export class InventoryClient {
       return [deposit.originChainId];
     }
 
-    // @dev This getL1TokenAddress() is safe to call because we call `validateOutputToken()` first, which would return
+    // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
     // false if the input token and origin chain weren't mapped to an L1 token.
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
+    if (!isDefined(l1Token)) {
+      throw new Error(
+        `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
+      );
+    }
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
