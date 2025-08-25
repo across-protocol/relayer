@@ -485,6 +485,9 @@ export class InventoryClient {
     const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
       const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      if (!repaymentToken) {
+        continue;
+      }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, Number(chainId));
       const refundAmount = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
