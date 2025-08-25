@@ -61,8 +61,9 @@ export function getSpokePool(chainId: number, address?: string): Contract {
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
-  const addr = getDeployedAddress("SpokePool", chainId, true);
-  return chainIsEvm(chainId) ? EvmAddress.from(addr) : SvmAddress.from(addr);
+  const evmChain = chainIsEvm(chainId);
+  const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
+  return evmChain ? EvmAddress.from(addr) : SvmAddress.from(addr);
 }
 
 export function getHubPoolAddress(chainId: number): EvmAddress {
