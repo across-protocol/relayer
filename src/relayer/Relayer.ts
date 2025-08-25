@@ -94,7 +94,7 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { inventoryClient, tokenClient } = this.clients;
+    const { tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
       tokenClient.update(),
@@ -102,10 +102,6 @@ export class Relayer {
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
       await tokenClient.setOriginTokenApprovals();
-    }
-
-    if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
-      await inventoryClient.setTokenApprovals();
     }
 
     this.logger.debug({
@@ -175,14 +171,6 @@ export class Relayer {
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.wrapL2EthIfAboveThreshold();
-
-    if (this.config.sendingRebalancesEnabled) {
-      // It's necessary to update token balances in case WETH was wrapped.
-      tokenClient.clearTokenData();
-      await tokenClient.update();
-      await inventoryClient.rebalanceInventoryIfNeeded();
-      await inventoryClient.withdrawExcessBalances();
-    }
 
     // Unwrap WETH after filling deposits, but before rebalancing.
     await inventoryClient.unwrapWeth();

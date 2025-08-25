@@ -35,7 +35,6 @@ export class RelayerConfig extends CommonConfig {
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
   readonly sendingRelaysEnabled: boolean;
-  readonly sendingRebalancesEnabled: boolean;
   readonly sendingMessageRelaysEnabled: { [chainId: number]: boolean } = {};
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
@@ -83,7 +82,6 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
       SEND_RELAYS,
-      SEND_REBALANCES,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
@@ -274,7 +272,6 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_GAS_MESSAGE_MULTIPLIER || Constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER
     );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
-    this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
 
