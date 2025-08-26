@@ -35,7 +35,9 @@ export async function finalizeCCTPV1MessagesSVM(
     );
 
     const computeUnitAmount = process.env["SVM_COMPUTE_UNIT_OVERRIDE"];
-    const receiveMessageIx = isDefined(computeUnitAmount) ? updateOrAppendSetComputeUnitLimitInstruction(Number(computeUnitAmount), _receiveMessageIx) : _receiveMessageIx;
+    const receiveMessageIx = isDefined(computeUnitAmount)
+      ? updateOrAppendSetComputeUnitLimitInstruction(Number(computeUnitAmount), _receiveMessageIx)
+      : _receiveMessageIx;
     if (simulate) {
       const result = await svmProvider
         .simulateTransaction(
