@@ -216,7 +216,7 @@ export async function runTransaction(
           error: stringifyThrownValue(error),
         });
 
-        // If the error is due to a nonce collision and the chain is Linea, then we can ignore it.
+        // If the error is due to a relay collision and the chain is Linea, then we can ignore it.
         if (isWarning && chainIsLinea(contract.chainId)) {
           return;
         }
