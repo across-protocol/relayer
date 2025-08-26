@@ -41,7 +41,6 @@ import {
   BaseL2BridgeAdapter,
   OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
-  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
