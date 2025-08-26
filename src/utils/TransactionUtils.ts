@@ -20,6 +20,7 @@ import {
   EvmGasPriceEstimate,
   SVMProvider,
   parseUnits,
+  chainIsLinea,
 } from "../utils";
 import {
   CompilableTransactionMessage,
@@ -214,6 +215,11 @@ export async function runTransaction(
           notificationPath: isWarning ? "across-warn" : "across-error",
           error: stringifyThrownValue(error),
         });
+
+        // If the error is due to a nonce collision and the chain is Linea, then we can ignore it.
+        if (isWarning && chainIsLinea(contract.chainId)) {
+          return;
+        }
       }
       throw error;
     }
