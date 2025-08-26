@@ -2,7 +2,7 @@ import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-nod
 import minimist from "minimist";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert } from "./";
 
-// Store global promises on Gckms key retrievel actions so that we don't retrieve the same key multiple times.
+// Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
 
 type WithdrawalQuota = {
