@@ -448,9 +448,9 @@ function getRelevantCCTPEventsFromReceipt(
     the logs array, not necessarily consecutively)
   */
 
-  // Indicies of individual `MessageSent` events in `receipt.logs`
+  // Indices of individual `MessageSent` events in `receipt.logs`
   const messageSentIndices = [];
-  // Pairs of indicies representing a single CCTP token transfer
+  // Pairs of indices representing a single CCTP token transfer
   const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`

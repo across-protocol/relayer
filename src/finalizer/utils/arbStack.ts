@@ -45,7 +45,7 @@ type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
   registered: boolean;
 };
 // These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
-// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
+// We should export this out of a common file but we don't use this SDK elsewhere currently.
 const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [
   {
     // Addresses are available here:
