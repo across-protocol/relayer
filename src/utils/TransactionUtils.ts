@@ -168,7 +168,7 @@ export async function runTransaction(
     }
   } catch (error) {
     if (retriesRemaining > 0 && txnRetryable(error)) {
-      // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
+      // If error is due to a nonce collision or gas underpricing then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
         at: "TxUtil#runTransaction",

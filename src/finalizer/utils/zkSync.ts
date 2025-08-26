@@ -36,7 +36,7 @@ const IGNORED_WITHDRAWALS = [
 ];
 
 /**
- * @returns Withdrawal finalizaton calldata and metadata.
+ * @returns Withdrawal finalization calldata and metadata.
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
