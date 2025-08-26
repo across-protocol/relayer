@@ -2651,17 +2651,13 @@ export class Dataworker {
     token: EvmAddress;
     holder: EvmAddress;
   }> {
-    // TODO: Make this code more dynamic in the future. For now, hard code custom gas token fees.
-    let relayMessageFee: BigNumber;
-    let token: string;
-    let holder: string;
     // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
     // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
     // parameters than for Arbitrum mainnet.
-    const { amountWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
-    relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
-    token = ZERO_ADDRESS;
-    holder = this.clients.hubPoolClient.hubPool.address;
+    const { amountWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[leaf.chainId];
+    const relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
+    const token = ZERO_ADDRESS;
+    const holder = this.clients.hubPoolClient.hubPool.address;
 
     // For orbit chains, the bot needs enough ETH to pay for each L1 -> L2 message.
     // The following executions trigger an L1 -> L2 message:
