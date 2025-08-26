@@ -4,11 +4,9 @@ import {
   bnZero,
   buildPoolRebalanceLeafTree,
   CHAIN_IDs,
-  ERC20,
   EvmAddress,
   getCurrentTime,
   toBNWei,
-  TOKEN_SYMBOLS_MAP,
   toAddressType,
 } from "../src/utils";
 import { MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF, MAX_REFUNDS_PER_RELAYER_REFUND_LEAF, ZERO_ADDRESS } from "./constants";
@@ -22,7 +20,6 @@ import {
   sinon,
   randomAddress,
   lastSpyLogIncludes,
-  assert,
   lastSpyLogLevel,
 } from "./utils";
 
