@@ -36,7 +36,7 @@ const IGNORED_WITHDRAWALS = [
 ];
 
 /**
- * @returns Withdrawal finalizaton calldata and metadata.
+ * @returns Withdrawal finalization calldata and metadata.
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
@@ -148,10 +148,16 @@ async function filterMessageLogs(
     return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
   });
 
-  const ready = await sdkUtils.filterAsync(
-    withdrawals,
-    async ({ txnRef, withdrawalIdx }) => !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx))
-  );
+  const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx }) => {
+    try {
+      return !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx));
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes("Log proof not found")) {
+        return false;
+      }
+      throw error;
+    }
+  });
 
   return ready;
 }
