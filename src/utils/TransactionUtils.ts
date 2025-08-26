@@ -208,8 +208,10 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
+        const isWarning = txnRetryable(error) || isFillRelayError(error);
+        logger[isWarning ? "warn" : "error"]({
           ...commonFields,
+          notificationPath: isWarning ? "across-warn" : "across-error",
           error: stringifyThrownValue(error),
         });
       }
