@@ -68,7 +68,13 @@ import {
 } from "../interfaces";
 import { DataworkerConfig } from "./DataworkerConfig";
 import { DataworkerClients } from "./DataworkerClientHelper";
-import { SpokePoolClient, BalanceAllocator, BundleDataClient, SVMSpokePoolClient } from "../clients";
+import {
+  SpokePoolClient,
+  BalanceAllocator,
+  BundleDataClient,
+  SVMSpokePoolClient,
+  EVMSpokePoolClient,
+} from "../clients";
 import * as PoolRebalanceUtils from "./PoolRebalanceUtils";
 import {
   blockRangesAreInvalidForSpokeClients,
@@ -2734,37 +2740,48 @@ export class Dataworker {
       return undefined;
     }
 
-    // If left undefined after block below, oft messaging is not supported by the spoke
-    let associatedOftMessenger: string | undefined = undefined;
-    try {
-      const messenger: string = await client.spokePool.oftMessengers(leaf.l2TokenAddress.toNative());
-      associatedOftMessenger = messenger;
-    } catch {
-      // todo: based on error type, decide whether oft messaging is not supported or we just got an RPC error. Throw on RPC error
-      // todo: alternatively, keep a mapping of Spoke Pools that support OFT transfers
-      // oft messaging not supported
-    }
-
-    const oftMessengerIsSet = associatedOftMessenger !== undefined && associatedOftMessenger !== ZERO_ADDRESS;
-    const chainIsLinea = sdkUtils.chainIsLinea(client.chainId);
-
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf
-    if (chainIsLinea) {
-      if (oftMessengerIsSet) {
-        // todo: should we just leave enforcement of this to the contracts?
-        // This cannot happen and ideally will be caught in the contract auditing phase. The way we handle msg.value on
-        // the contracts for OFT is not compatible with having other parts of logic work with msg.value, like in Linea case
-        throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
-      }
-      return await this._getRequiredEthForLineaRelayLeafExecution(client);
+    const lineaMsgValuePortion = sdkUtils.chainIsLinea(client.chainId)
+      ? await this._getRequiredEthForLineaRelayLeafExecution(client)
+      : BigNumber.from(0);
+
+    // If the SpokePool supports withdrawing tokens to Hub via OFT, estimate msg.value needed to cover OFT fee
+    const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
+
+    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't hanlde msg.value being used for
+    // different cases. If both msg value contributions are above 0, we have a bug. Thow
+    if (lineaMsgValuePortion.gt(0) && oftMsgValuePortion.gt(0)) {
+      throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
+    }
+    const msgValue = lineaMsgValuePortion.add(oftMsgValuePortion);
+    return msgValue.gt(0) ? msgValue : undefined;
+  }
+
+  private async _getOftMsgValueForRelayerRefundLeaf(
+    client: EVMSpokePoolClient,
+    leaf: RelayerRefundLeaf
+  ): Promise<BigNumber> {
+    // ! Todo
+    // This mapping is here to distinguish between chains that have `oftMessengers` storage variable and those that
+    // require msg.value attached on OFT withdrawals. Currently, Arbitrum_Spoke wouldn't handle the msg.value properly
+    // (no refund) so we don't attach that. After Arbitrum_Spoke (and possibly Universal_Spoke) are upgraded to handle
+    // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
+    // supports withdrawals via OFT
+    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([137]);
+
+    if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
+      return BigNumber.from(0);
     }
 
+    const associatedOftMessenger = await client.spokePool.oftMessengers(leaf.l2TokenAddress.toNative());
+    const oftMessengerIsSet = associatedOftMessenger !== undefined && associatedOftMessenger !== ZERO_ADDRESS;
     if (!oftMessengerIsSet) {
-      return undefined;
+      return BigNumber.from(0);
     }
 
-    // Chain is not Linea, and OFT messenger is set, we need to quote oft send back to mainnet. We then return the received quote X 2 to protect ourselves against random fee fluctuations. The Spoke smart contract will return excess fee atomically to the executor wallet
-
+    // Construct a message that SpokePool will be using to withdraw via OFT to mainnet. Use `.quoteSend` to estimate
+    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee chainging
+    // slightly. Excess fee will get refunded to executor
     const IOFTContract = new Contract(associatedOftMessenger, IOFT_ABI_FULL, client.spokePool.provider);
     const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);
     const hubPoolAddr = EvmAddress.from(this.clients.hubPoolClient.hubPool.address);
