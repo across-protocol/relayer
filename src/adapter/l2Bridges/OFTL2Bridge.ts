@@ -189,9 +189,12 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       return this.l2ToL1AmountConverter;
     }
 
-    // Ensure we have L2 token info for decimals
-    this.l2TokenInfo ??= await fetchTokenInfo(this.l2Token.toNative(), this.l2Bridge.signer);
-    const l1TokenInfo = await fetchTokenInfo(this.l1Token.toNative(), this.l1Bridge.signer);
+    // Ensure we have L2 token info for decimals and fetch L1 token info in parallel
+    const [l2TokenInfo, l1TokenInfo] = await Promise.all([
+      this.l2TokenInfo ?? fetchTokenInfo(this.l2Token.toNative(), this.l2Bridge.signer),
+      fetchTokenInfo(this.l1Token.toNative(), this.l1Bridge.signer),
+    ]);
+    this.l2TokenInfo ??= l2TokenInfo;
 
     this.l2ToL1AmountConverter = ConvertDecimals(this.l2TokenInfo.decimals, l1TokenInfo.decimals);
 
