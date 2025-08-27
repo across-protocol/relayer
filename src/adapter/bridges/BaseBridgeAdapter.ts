@@ -9,7 +9,7 @@ import {
   EvmAddress,
   Address,
   getHubPoolAddress,
-  getSpokePoolAddressEvm,
+  getSpokePoolAddress,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 
@@ -31,7 +31,7 @@ export abstract class BaseBridgeAdapter {
   protected l2Bridge: Contract;
   public gasToken: EvmAddress | undefined;
   protected readonly hubPoolAddress: EvmAddress;
-  protected readonly spokePoolAddress: EvmAddress;
+  protected readonly spokePoolAddress: Address;
 
   constructor(
     protected l2chainId: number,
@@ -40,7 +40,7 @@ export abstract class BaseBridgeAdapter {
     public l1Gateways: EvmAddress[]
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
-    this.spokePoolAddress = getSpokePoolAddressEvm(l2chainId);
+    this.spokePoolAddress = getSpokePoolAddress(l2chainId);
   }
 
   abstract constructL1ToL2Txn(
