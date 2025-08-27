@@ -170,6 +170,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.TATARA]: 10000,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
   [CHAIN_IDs.SEPOLIA]: 10000,
+  [CHAIN_IDs.BOB_SEPOLIA]: 10000,
 };
 
 // These should be safely above the finalization period for the chain and
@@ -212,6 +213,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
+  [CHAIN_IDs.BOB_SEPOLIA]: 0,
 };
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
@@ -268,6 +270,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
   [CHAIN_IDs.SEPOLIA]: 0,
+  [CHAIN_IDs.BOB_SEPOLIA]: 0,
 };
 
 // This is the block distance at which the bot, by default, stores in redis with no TTL.
@@ -386,6 +389,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["WETH", "USDC"],
+  [CHAIN_IDs.BOB_SEPOLIA]: ["WETH", "WBTC"],
 };
 
 /**
@@ -449,6 +453,7 @@ export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdap
   [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
   [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
+  [CHAIN_IDs.BOB_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
 
 export const CANONICAL_L2_BRIDGE: {
