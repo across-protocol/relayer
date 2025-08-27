@@ -182,7 +182,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
    * Returns a converter that maps an amount in L2 token local decimals (LD)
    * to the L1 token local decimals using ConvertDecimals. Created lazily and cached.
    */
-  private async getL2ToL1AmountConverter(): Promise<(amount: BigNumber) => BigNumber> {
+  private getL2ToL1AmountConverter(): (amount: BigNumber) => BigNumber {
     if (this.l2ToL1AmountConverter) {
       return this.l2ToL1AmountConverter;
     }
