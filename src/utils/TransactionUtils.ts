@@ -209,7 +209,8 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        const isWarning = txnRetryable(error) || isFillRelayError(error);
+        const _isFillRelayError = isFillRelayError(error);
+        const isWarning = txnRetryable(error) || _isFillRelayError;
         logger[isWarning ? "warn" : "error"]({
           ...commonFields,
           notificationPath: isWarning ? "across-warn" : "across-error",
@@ -217,7 +218,7 @@ export async function runTransaction(
         });
 
         // If the error is due to a relay collision and the chain is Linea, then we can ignore it.
-        if (isWarning && chainIsLinea(contract.chainId)) {
+        if (_isFillRelayError && chainIsLinea(contract.chainId)) {
           return;
         }
       }
