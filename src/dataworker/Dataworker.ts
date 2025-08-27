@@ -2749,7 +2749,7 @@ export class Dataworker {
     const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
 
     // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't hanlde msg.value being used for
-    // different cases. If both msg value contributions are above 0, we have a bug. Thow
+    // different cases. If both msg value contributions are above 0, we have a bug. Throw
     if (lineaMsgValuePortion.gt(0) && oftMsgValuePortion.gt(0)) {
       throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
     }
@@ -2767,7 +2767,7 @@ export class Dataworker {
     // (no refund) so we don't attach that. After Arbitrum_Spoke (and possibly Universal_Spoke) are upgraded to handle
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
-    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([137]);
+    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON]);
 
     if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
       return BigNumber.from(0);
