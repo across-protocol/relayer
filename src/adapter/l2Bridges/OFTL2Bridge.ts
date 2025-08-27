@@ -123,10 +123,11 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     assert(l2Token.isEVM(), `Non-evm l2Token not supported: ${l2Token.toNative()}`);
 
-    assert(
-      this.l2Token.eq(l2Token),
-      `l2Token should equal this.l2Token. ${this.l2Token.toNative()} != ${l2Token.toNative()}`
-    );
+    if (!this.l2Token.eq(l2Token)) {
+      // Return 0 for tokens not associated with this OFTBridge
+      // https://github.com/across-protocol/relayer/pull/2509#discussion_r2305205369
+      return bnZero;
+    }
 
     // Determine the expected recipient on L1. If the initiator on L2 is a SpokePool,
     // then the recipient on L1 is the HubPool. Otherwise, it is the same EOA address.
