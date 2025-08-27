@@ -1,5 +1,5 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined, toBytes32 } from ".";
+import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined } from ".";
 import { BytesLike } from "ethers";
 import { EVM_OFT_MESSENGERS } from "../common/Constants";
 
@@ -45,7 +45,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns A 32-byte string to be used when calling on-chain OFT contracts
  */
 export function formatToAddress(receiver: EvmAddress): string {
-  return toBytes32(receiver.toNative());
+  return receiver.toBytes32();
 }
 
 /**

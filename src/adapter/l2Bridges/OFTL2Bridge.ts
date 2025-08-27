@@ -6,6 +6,7 @@ import {
   Provider,
   assert,
   createFormatFunction,
+  ConvertDecimals,
   fetchTokenInfo,
   getNetworkName,
   getTranslatedTokenAddress,
@@ -29,6 +30,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private l2TokenInfo?: TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
+  private l2ToL1AmountConverter?: (amount: BigNumber) => BigNumber;
 
   constructor(
     l2chainId: number,
@@ -104,7 +106,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       nonMulticall: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
-      message: `🎰 Withdrew ${this.l2Token.toNative()} via OftL2Bridge to L1`,
+      message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
       )} to L1 via OftL2Bridge`,
@@ -151,12 +153,15 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
+    const l2ToL1AmountConverter = await this.getL2ToL1AmountConverter();
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
       if (!finalizedGuids.has(events.args.guid)) {
-        // todo: I believe that `amountReceivedLD` is in the local decimals of the sending chain
-        // todo: do we need to convert to the decimals of the receiving chain here?
-        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(events.args.amountReceivedLD);
+        // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
+        // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
+        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(
+          l2ToL1AmountConverter(events.args.amountReceivedLD)
+        );
       }
     }
 
@@ -173,6 +178,27 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     this.sharedDecimals ??= await this.l2Bridge.sharedDecimals();
 
     return OFT.roundAmountToSend(amount, decimals, this.sharedDecimals);
+  }
+
+  /**
+   * Returns a converter that maps an amount in L2 token local decimals (LD)
+   * to the L1 token local decimals using ConvertDecimals. Created lazily and cached.
+   */
+  private async getL2ToL1AmountConverter(): Promise<(amount: BigNumber) => BigNumber> {
+    if (this.l2ToL1AmountConverter) {
+      return this.l2ToL1AmountConverter;
+    }
+
+    // Ensure we have L2 token info for decimals and fetch L1 token info in parallel
+    const [l2TokenInfo, l1TokenInfo] = await Promise.all([
+      this.l2TokenInfo ?? fetchTokenInfo(this.l2Token.toNative(), this.l2Bridge.signer),
+      fetchTokenInfo(this.l1Token.toNative(), this.l1Bridge.signer),
+    ]);
+    this.l2TokenInfo ??= l2TokenInfo;
+
+    this.l2ToL1AmountConverter = ConvertDecimals(this.l2TokenInfo.decimals, l1TokenInfo.decimals);
+
+    return this.l2ToL1AmountConverter;
   }
 
   public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
