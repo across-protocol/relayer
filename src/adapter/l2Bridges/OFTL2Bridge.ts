@@ -26,7 +26,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private l2TokenInfo: sdkInterfaces.TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
-  private l2ToL1AmountConverter?: (amount: BigNumber) => BigNumber;
+  private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
 
   constructor(
     l2chainId: number,
@@ -53,6 +53,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     this.l1ChainEid = OFT.getEndpointId(hubChainId);
 
     this.l2TokenInfo = getTokenInfo(this.l2Token, l2chainId);
+    this.l2ToL1AmountConverter = this.createL2ToL1AmountConverter();
   }
 
   async constructWithdrawToL1Txns(
@@ -151,14 +152,13 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
-    const l2ToL1AmountConverter = this.getL2ToL1AmountConverter();
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
       if (!finalizedGuids.has(events.args.guid)) {
         // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
         // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
         outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(
-          l2ToL1AmountConverter(events.args.amountReceivedLD)
+          this.l2ToL1AmountConverter(events.args.amountReceivedLD)
         );
       }
     }
@@ -182,15 +182,9 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
    * Returns a converter that maps an amount in L2 token local decimals (LD)
    * to the L1 token local decimals using ConvertDecimals. Created lazily and cached.
    */
-  private getL2ToL1AmountConverter(): (amount: BigNumber) => BigNumber {
-    if (this.l2ToL1AmountConverter) {
-      return this.l2ToL1AmountConverter;
-    }
-
+  private createL2ToL1AmountConverter(): (amount: BigNumber) => BigNumber {
     const l1TokenInfo = getTokenInfo(this.l1Token, this.hubChainId);
-    this.l2ToL1AmountConverter = ConvertDecimals(this.l2TokenInfo.decimals, l1TokenInfo.decimals);
-
-    return this.l2ToL1AmountConverter;
+    return ConvertDecimals(this.l2TokenInfo.decimals, l1TokenInfo.decimals);
   }
 
   public override requiredTokenApprovals(): { token: EvmAddress; bridge: EvmAddress }[] {
