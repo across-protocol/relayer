@@ -104,7 +104,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       nonMulticall: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
-      message: `🎰 Withdrew ${this.l2Token.toNative()} via OftL2Bridge to L1`,
+      message: `🎰 Withdrew ${this.l2Token} via OftL2Bridge to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${this.l2TokenInfo.symbol} from ${getNetworkName(
         this.l2chainId
       )} to L1 via OftL2Bridge`,

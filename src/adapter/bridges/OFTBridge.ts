@@ -63,7 +63,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Verify the token matches the one this bridge was constructed for
     assert(
       l1Token.eq(this.l1TokenAddress),
-      `This bridge instance only supports token ${this.l1TokenAddress.toNative()}, not ${l1Token.toNative()}`
+      `This bridge instance only supports token ${this.l1TokenAddress}, not ${l1Token}`
     );
 
     assert(
