@@ -1249,7 +1249,7 @@ export class Monitor {
           })
           .send();
         if (result.value.err) {
-          this.logger.error({
+          this.logger.warn({
             at: "Monitor#closePDAs",
             message: `Failed to close PDA for fill ${fill.txnRef}`,
             error: result.value.err,
@@ -1268,7 +1268,7 @@ export class Monitor {
           message: `Closed PDA ${fillStatusPda} for fill ${fill.txnRef}`,
         });
       } catch (err) {
-        this.logger.error({
+        this.logger.warn({
           at: "Monitor#closePDAs",
           message: `Failed to close PDA for fill ${fill.txnRef}`,
           error: err,
@@ -1277,7 +1277,7 @@ export class Monitor {
     }
 
     if (noClosePdaTxs.length > 0) {
-      this.logger.info({
+      this.logger.debug({
         at: "Monitor#closePDAs",
         message: `Number of PDAs that are not ready to be closed: ${noClosePdaTxs.length}`,
       });
