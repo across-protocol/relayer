@@ -20,7 +20,6 @@ import {
   EvmGasPriceEstimate,
   SVMProvider,
   parseUnits,
-  chainIsLinea,
 } from "../utils";
 import {
   CompilableTransactionMessage,
@@ -209,18 +208,12 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        const _isFillRelayError = isFillRelayError(error);
-        const isWarning = txnRetryable(error) || _isFillRelayError;
+        const isWarning = txnRetryable(error) || isFillRelayError(error);
         logger[isWarning ? "warn" : "error"]({
           ...commonFields,
           notificationPath: isWarning ? "across-warn" : "across-error",
           error: stringifyThrownValue(error),
         });
-
-        // If the error is due to a relay collision and the chain is Linea, then we can ignore it.
-        if (_isFillRelayError && chainIsLinea(contract.chainId)) {
-          return;
-        }
       }
       throw error;
     }
