@@ -65,3 +65,22 @@ export function roundAmountToSend(amount: BigNumber, tokenDecimals: number, shar
   }
   return amount;
 }
+
+/**
+ * @notice Build a minimal OFT SendParam for EVM transfers with dust-safe amounts.
+ * @param to EVM address on the destination chain to receive the tokens
+ * @param dstEid OFT endpoint ID for the destination chain
+ * @param roundedAmount Token amount in local decimals with dust removed (amountLD == minAmountLD)
+ * @returns Struct suitable for IOFT.send/quoteSend
+ */
+export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedAmount: BigNumber): SendParamStruct {
+  return {
+    dstEid,
+    to: formatToAddress(to),
+    amountLD: roundedAmount,
+    minAmountLD: roundedAmount,
+    extraOptions: "0x",
+    composeMsg: "0x",
+    oftCmd: "0x",
+  };
+}
