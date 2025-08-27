@@ -41,7 +41,6 @@ import {
   toSvmRelayerRefundLeaf,
   toSvmSlowFillLeaf,
   forEachAsync,
-  fetchTokenInfo,
   convertRelayDataParamsToBytes32,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
