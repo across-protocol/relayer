@@ -10,8 +10,6 @@ import {
   assert,
   EvmAddress,
   Address,
-  toBytes32,
-  toWei,
   winston,
   CHAIN_IDs,
 } from "../../utils";
