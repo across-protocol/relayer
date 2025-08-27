@@ -2743,7 +2743,7 @@ export class Dataworker {
     // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf
     const lineaMsgValuePortion = sdkUtils.chainIsLinea(client.chainId)
       ? await this._getRequiredEthForLineaRelayLeafExecution(client)
-      : BigNumber.from(0);
+      : bnZero;
 
     // If the SpokePool supports withdrawing tokens to Hub via OFT, estimate msg.value needed to cover OFT fee
     const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
@@ -2770,13 +2770,13 @@ export class Dataworker {
     const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON]);
 
     if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
-      return BigNumber.from(0);
+      return bnZero;
     }
 
     const associatedOftMessenger = await client.spokePool.oftMessengers(leaf.l2TokenAddress.toNative());
     const oftMessengerIsSet = associatedOftMessenger !== undefined && associatedOftMessenger !== ZERO_ADDRESS;
     if (!oftMessengerIsSet) {
-      return BigNumber.from(0);
+      return bnZero;
     }
 
     // Construct a message that SpokePool will be using to withdraw via OFT to mainnet. Use `.quoteSend` to estimate
@@ -2786,10 +2786,8 @@ export class Dataworker {
     const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);
     const hubPoolAddr = EvmAddress.from(this.clients.hubPoolClient.hubPool.address);
 
-    const [{ decimals }, sharedDecimals] = await Promise.all([
-      fetchTokenInfo(leaf.l2TokenAddress.toNative(), client.spokePool.provider),
-      IOFTContract.sharedDecimals() as number,
-    ]);
+    const { decimals } = getTokenInfo(leaf.l2TokenAddress, client.chainId);
+    const sharedDecimals: number = await IOFTContract.sharedDecimals();
 
     const roundedAmount = OFT.roundAmountToSend(leaf.amountToReturn, decimals, sharedDecimals);
     const params = OFT.buildSimpleSendParamEvm(hubPoolAddr, dstEid, roundedAmount);
