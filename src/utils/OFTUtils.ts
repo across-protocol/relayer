@@ -1,5 +1,5 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined, toBytes32 } from ".";
+import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined } from ".";
 import { BytesLike } from "ethers";
 import { EVM_OFT_MESSENGERS } from "../common/Constants";
 
