@@ -110,9 +110,7 @@ export class Monitor {
     readonly clients: MonitorClients
   ) {
     this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
-    this.monitorChains = Object.values(clients.spokePoolClients)
-      .map(({ chainId }) => chainId)
-      .filter(chainIsEvm);
+    this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -147,7 +145,7 @@ export class Monitor {
     const { hubPoolClient } = this.clients;
     const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
-      this.monitorChains.map((chainId) => {
+      this.monitorChains.filter(chainIsEvm).map((chainId) => {
         const l2Tokens = l1Tokens.map((l1Token) => this.getRemoteTokenForL1Token(l1Token, chainId)).filter(isDefined);
         return [chainId, l2Tokens];
       })
@@ -1373,6 +1371,10 @@ export class Monitor {
 
       for (const _tokenAddress of Object.keys(fillsToRefund)) {
         const tokenAddress = toAddressType(_tokenAddress, chainId);
+        // If there are no refunds for the monitored relayer for this token, then ignore this token.
+        if (!isDefined(fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()])) {
+          continue;
+        }
         const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(tokenAddress, chainId);
         // Skip token if there are no refunds (although there are valid fills).
         // This is an edge case that shouldn't usually happen.
@@ -1385,7 +1387,7 @@ export class Monitor {
 
         const totalRefundAmount = fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()];
         const { symbol } = l2ToL1Tokens[tokenAddress.toNative()];
-        const amount = decimalConverter(totalRefundAmount ?? bnZero);
+        const amount = decimalConverter(totalRefundAmount);
         this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
       }
     }
@@ -1486,7 +1488,7 @@ export class Monitor {
         this.spokePoolsBlocks[chainId].startingBlock = startingBlock;
         this.spokePoolsBlocks[chainId].endingBlock = endingBlock;
       } else if (isSVMSpokePoolClient(spokePoolClient)) {
-        const svmProvider = await spokePoolClient.svmEventsClient.getRpc();
+        const svmProvider = spokePoolClient.svmEventsClient.getRpc();
         const { slot: latestSlot } = await arch.svm.getNearestSlotTime(
           svmProvider,
           { commitment: "confirmed" },

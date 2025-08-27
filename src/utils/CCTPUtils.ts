@@ -448,9 +448,9 @@ function getRelevantCCTPEventsFromReceipt(
     the logs array, not necessarily consecutively)
   */
 
-  // Indicies of individual `MessageSent` events in `receipt.logs`
-  const messageSentIndicies = [];
-  // Pairs of indicies representing a single CCTP token transfer
+  // Indices of individual `MessageSent` events in `receipt.logs`
+  const messageSentIndices = [];
+  // Pairs of indices representing a single CCTP token transfer
   const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
@@ -459,8 +459,8 @@ function getRelevantCCTPEventsFromReceipt(
 
     if (isMessageSentEvent) {
       if (_isMatchingCCTPVersion(messageSentVersion, isCctpV2)) {
-        // Record a `MessageSent` event into the `messageSentIndicies` array
-        messageSentIndicies.push(i);
+        // Record a `MessageSent` event into the `messageSentIndices` array
+        messageSentIndices.push(i);
       }
       return; // Continue to next log
     }
@@ -474,7 +474,7 @@ function getRelevantCCTPEventsFromReceipt(
     }
 
     if (_isMatchingCCTPVersion(depositForBurnVersion, isCctpV2)) {
-      if (messageSentIndicies.length === 0) {
+      if (messageSentIndices.length === 0) {
         throw new Error(
           "DepositForBurn event found without corresponding MessageSent event. Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
             `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
@@ -482,13 +482,13 @@ function getRelevantCCTPEventsFromReceipt(
       }
 
       // Record a `MessageSent` + `DepositForBurn` pair into the `depositIndexPairs` array
-      const correspondingMessageSentIndex = messageSentIndicies.pop();
+      const correspondingMessageSentIndex = messageSentIndices.pop();
       depositIndexPairs.push([correspondingMessageSentIndex, i]);
     }
   });
 
   // Process all the individual tokenless CCTP messages
-  for (const messageSentIndex of messageSentIndicies) {
+  for (const messageSentIndex of messageSentIndices) {
     const event = _createMessageSentEvent(receipt.logs[messageSentIndex], isCctpV2, messageTransmitterInterface);
     if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
       relevantEvents.push(event);

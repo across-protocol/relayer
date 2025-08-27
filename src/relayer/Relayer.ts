@@ -335,7 +335,10 @@ export class Relayer {
     }
 
     // Skip deposit with message if sending fills with messages is not supported.
-    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
+    if (
+      !this.config.sendingMessageRelaysEnabled[destinationChainId] &&
+      !isMessageEmpty(resolveDepositMessage(deposit))
+    ) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
@@ -771,8 +774,10 @@ export class Relayer {
       if (!isProfitable) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
 
-        const relayKey = sdkUtils.getRelayEventKey(deposit);
-        this.ignoredDeposits[relayKey] = true;
+        if (destinationChainId !== CHAIN_IDs.SOLANA) {
+          const relayKey = sdkUtils.getRelayEventKey(deposit);
+          this.ignoredDeposits[relayKey] = true;
+        }
       }
       return;
     }

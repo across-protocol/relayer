@@ -1,7 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
-import { arch } from "@across-protocol/sdk";
+import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
@@ -97,7 +97,7 @@ async function scrapeEvents(
 /**
  * Given a SpokePool eventsClient instance and an array of event names, subscribe to all future event emissions.
  * Periodically transmit received events to the parent process (if defined).
- * @param eventMgr Event manager instancea.
+ * @param eventMgr Event manager instance.
  * @param eventsClient eventsClient instance.
  * @param eventNames Event names to listen for.
  * @param quorum Minimum quorum requirement for events.
@@ -109,25 +109,43 @@ async function listen(
   eventNames: string[],
   quorum = 1
 ): Promise<void> {
+  const at = "RelayerSpokePoolListenerSVM::listen";
+
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  const nProviders = urls.length;
+  let nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
   const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
-  const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
 
-  const readSlot = async (provider: WSProvider) => {
+  // Default keepalive interval is 5s but this can cause premature hangup.
+  // See https://github.com/anza-xyz/agave/issues/7022
+  const intervalMs = 30_000;
+  const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
+
+  const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
-    for await (const update of subscription) {
-      const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
-      const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
-      const events = eventMgr.tick();
-      if (!postEvents(Number(slot), currentTime, events)) {
-        abortController.abort();
+    try {
+      for await (const update of subscription) {
+        const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
+        const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
+        const events = eventMgr.tick();
+        if (!postEvents(Number(slot), currentTime, events)) {
+          abortController.abort();
+        }
       }
+    } catch (err: unknown) {
+      const message = "Caught error on Solana provider.";
+      if (arch.svm.isSolanaError(err)) {
+        logger.warn({ at, message, provider: providerName, cause: err.cause });
+      } else {
+        const cause = typeguards.isError(err) ? err.message : "unknown cause";
+        logger.warn({ at, message, provider: providerName, cause });
+      }
+
+      abortController.abort();
     }
   };
 
@@ -136,20 +154,38 @@ async function listen(
       .logsNotifications({ mentions: [address(eventAuthority)] }, config)
       .subscribe({ abortSignal });
 
-    for await (const log of subscription) {
-      const { signature } = log.value;
-      const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
+    try {
+      for await (const log of subscription) {
+        const { signature } = log.value;
+        const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
 
-      const events = rawEvents
-        .filter(({ name }) => eventNames.includes(name))
-        .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
+        const events = rawEvents
+          .filter(({ name }) => eventNames.includes(name))
+          .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-      events.forEach((event) => eventMgr.add(event, providerName));
+        events.forEach((event) => eventMgr.add(event, providerName));
+      }
+    } catch (err: unknown) {
+      const message = "Caught error on Solana provider.";
+      if (arch.svm.isSolanaError(err)) {
+        logger.warn({ at, message, provider: providerName, cause: err.cause });
+      } else {
+        const cause = typeguards.isError(err) ? err.message : "unknown cause";
+        logger.warn({ at, message, provider: providerName, cause });
+      }
+
+      if (!abortController.signal.aborted && --nProviders < quorum) {
+        logger.warn({ at, message: `Insufficient ${chain} providers to continue.`, quorum, nProviders });
+        abortController.abort();
+      }
     }
   };
 
   const providerNames = urls.map(getOriginFromURL);
-  await Promise.all([readSlot(providers[0]), ...providers.map((provider, i) => readEvent(provider, providerNames[i]))]);
+  await Promise.all([
+    readSlot(providers[0], providerNames[0]),
+    ...providers.map((provider, i) => readEvent(provider, providerNames[i])),
+  ]);
 }
 
 /**
