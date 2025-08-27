@@ -8,14 +8,14 @@ import {
   EvmAddress,
   Address,
   getHubPoolAddress,
-  getSpokePoolAddressEvm,
+  getSpokePoolAddress,
 } from "../../utils";
 
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
   protected l1Bridge: Contract;
   protected readonly hubPoolAddress: EvmAddress;
-  protected readonly spokePoolAddress: EvmAddress;
+  protected readonly spokePoolAddress: Address;
 
   constructor(
     protected l2chainId: number,
@@ -25,7 +25,7 @@ export abstract class BaseL2BridgeAdapter {
     protected l1Token: EvmAddress
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
-    this.spokePoolAddress = getSpokePoolAddressEvm(l2chainId);
+    this.spokePoolAddress = getSpokePoolAddress(l2chainId);
   }
 
   abstract constructWithdrawToL1Txns(
