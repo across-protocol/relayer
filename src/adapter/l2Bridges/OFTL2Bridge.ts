@@ -151,7 +151,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     const finalizedGuids = new Set<string>(l1BridgeFinalizationEvents.map((event) => event.args.guid));
 
-    const l2ToL1AmountConverter = await this.getL2ToL1AmountConverter();
+    const l2ToL1AmountConverter = this.getL2ToL1AmountConverter();
     let outstandingWithdrawalAmount = bnZero;
     for (const events of l2BridgeInitiationEvents) {
       if (!finalizedGuids.has(events.args.guid)) {

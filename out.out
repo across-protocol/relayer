@@ -1,0 +1,1751 @@
+yarn run v1.22.22
+$ /Users/dev/dev/relayer/node_modules/.bin/ts-node ./index.ts --relayer --wallet mnemonic
+2025-08-27 21:11:26 [[34mdebug[39m]: {
+  "at": "RedisUtils#getRedis",
+  "message": "Connected to redis server at redis://127.0.0.1:6379 successfully!",
+  "dbSize": 44596,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:26 [[34mdebug[39m]: {
+  "at": "Relayer#run",
+  "message": "Relayer started 🏃‍♂️",
+  "loggedConfig": {
+    "hubPoolChainId": 1,
+    "pollingDelay": 0,
+    "maxBlockLookBack": {
+      "1": 10000,
+      "10": 10000,
+      "56": 10000,
+      "130": 10000,
+      "137": 3499,
+      "232": 10000,
+      "288": 4990,
+      "324": 1500,
+      "480": 10000,
+      "690": 10000,
+      "919": 10000,
+      "1135": 10000,
+      "1301": 10000,
+      "1868": 10000,
+      "4202": 10000,
+      "8453": 10000,
+      "34443": 10000,
+      "37111": 10000,
+      "41455": 10000,
+      "42161": 10000,
+      "57073": 10000,
+      "59144": 5000,
+      "80002": 10000,
+      "81457": 10000,
+      "84532": 10000,
+      "129399": 10000,
+      "421614": 10000,
+      "534352": 10000,
+      "763373": 10000,
+      "7777777": 10000,
+      "11155111": 10000,
+      "11155420": 10000,
+      "168587773": 10000,
+      "34268394551451": 1000
+    },
+    "spokePoolChainsOverride": [],
+    "sendingTransactionsEnabled": false,
+    "maxRelayerLookBack": 34400,
+    "version": "3.0.0",
+    "maxConfigVersion": 6,
+    "blockRangeEndBlockBuffer": {
+      "1": 5,
+      "10": 60,
+      "56": 5,
+      "130": 120,
+      "137": 128,
+      "232": 120,
+      "288": 0,
+      "324": 120,
+      "480": 60,
+      "690": 60,
+      "919": 0,
+      "1135": 60,
+      "1301": 0,
+      "1868": 60,
+      "4202": 0,
+      "8453": 60,
+      "34443": 60,
+      "37111": 0,
+      "41455": 240,
+      "42161": 240,
+      "57073": 120,
+      "59144": 40,
+      "80002": 0,
+      "81457": 60,
+      "84532": 0,
+      "129399": 0,
+      "421614": 0,
+      "534352": 40,
+      "763373": 0,
+      "7777777": 60,
+      "11155111": 0,
+      "11155420": 0,
+      "168587773": 0,
+      "34268394551451": 150
+    },
+    "timeToCache": 3600,
+    "arweaveGateway": {
+      "url": "arweave.net",
+      "port": 443,
+      "protocol": "https"
+    },
+    "multiCallChunkSize": {},
+    "toBlockOverride": {},
+    "externalListener": false,
+    "listenerPath": {},
+    "inventoryConfig": {
+      "wrapEtherTarget": "200000000000000000",
+      "wrapEtherThreshold": "300000000000000000",
+      "wrapEtherTargetPerChain": {
+        "1": "4000000000000000000"
+      },
+      "wrapEtherThresholdPerChain": {
+        "1": "6000000000000000000"
+      },
+      "tokenConfig": {
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+          "1": {
+            "targetPct": "700000000000000000",
+            "thresholdPct": "600000000000000000",
+            "targetOverageBuffer": "1500000000000000000"
+          },
+          "42161": {
+            "targetPct": "300000000000000000",
+            "thresholdPct": "250000000000000000",
+            "targetOverageBuffer": "1100000000000000000",
+            "withdrawExcessPeriod": 86400
+          }
+        }
+      }
+    },
+    "debugProfitability": true,
+    "sendingRelaysEnabled": false,
+    "sendingRebalancesEnabled": true,
+    "sendingMessageRelaysEnabled": {},
+    "sendingSlowRelaysEnabled": true,
+    "relayerTokens": [
+      "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    ],
+    "relayerOriginChains": [
+      1,
+      42161,
+      34268394551451
+    ],
+    "relayerDestinationChains": [
+      1,
+      42161,
+      34268394551451
+    ],
+    "relayerGasPadding": "150000000000000000",
+    "relayerGasMultiplier": "1000000000000000000",
+    "relayerMessageGasMultiplier": "1000000000000000000",
+    "minRelayerFeePct": "100000000000000",
+    "minFillTime": {},
+    "acceptInvalidFills": false,
+    "slowDepositors": [],
+    "minDepositConfirmations": {
+      "1": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "10": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "137": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "324": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "480": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "690": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "1135": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "8453": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "41455": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "42161": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "59144": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "81457": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "534352": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "7777777": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      },
+      "34268394551451": {
+        "0": {
+          "usdThreshold": "200000000000000000000",
+          "minConfirmations": 0
+        },
+        "1": {
+          "usdThreshold": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "minConfirmations": 1
+        }
+      }
+    },
+    "loggingInterval": 30,
+    "maintenanceInterval": 60,
+    "ignoreLimits": false,
+    "tryMulticallChains": []
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:27 [[34mdebug[39m]: {
+  "at": "ArweaveClient:constructor",
+  "message": "Arweave client initialized",
+  "gateway": "https://arweave.net:443",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:27 [[34mdebug[39m]: {
+  "at": "AcrossConfigStore",
+  "message": "Updating ConfigStore client",
+  "searchConfig": {
+    "from": 14717196,
+    "to": 23235058,
+    "maxLookBack": 10000
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:29 [[34mdebug[39m]: {
+  "at": "ConfigStore",
+  "message": "ConfigStore client updated!",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:29 [[34mdebug[39m]: {
+  "at": "RelayerConfig::validate",
+  "message": "Ignoring 18 chains.",
+  "ignoredChainIds": [
+    10,
+    137,
+    324,
+    8453,
+    59144,
+    34443,
+    1135,
+    81457,
+    534352,
+    690,
+    7777777,
+    480,
+    41455,
+    57073,
+    1868,
+    130,
+    232,
+    56
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:29 [[34mdebug[39m]: {
+  "at": "HubPoolClient",
+  "message": "Updating HubPool client",
+  "searchConfig": [
+    {
+      "eventName": "SetPoolRebalanceRoute",
+      "searchConfig": {
+        "from": 14819537,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "L1TokenEnabledForLiquidityProvision",
+      "searchConfig": {
+        "from": 14819537,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "ProposeRootBundle",
+      "searchConfig": {
+        "from": 23232754,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "RootBundleCanceled",
+      "searchConfig": {
+        "from": 23232754,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "RootBundleDisputed",
+      "searchConfig": {
+        "from": 23232754,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "RootBundleExecuted",
+      "searchConfig": {
+        "from": 23232754,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    },
+    {
+      "eventName": "CrossChainContractsSet",
+      "searchConfig": {
+        "from": 14819537,
+        "to": 23235058,
+        "maxLookBack": 10000
+      }
+    }
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:31 [[34mdebug[39m]: {
+  "at": "HubPoolClient#_update",
+  "message": "Time to query new events from RPC for 1: 1827 ms",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:32 [[34mdebug[39m]: {
+  "at": "HubPoolClient::update",
+  "message": "HubPool client updated!",
+  "searchEndBlock": 23235058,
+  "currentTime": "1756329083",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:34 [[34mdebug[39m]: {
+  "at": "ClientHelper#constructSpokePoolClientsWithStartBlocks",
+  "message": "Enabled chains in block range",
+  "startBlocks": {
+    "1": 23232208,
+    "42161": 372821507,
+    "34268394551451": 362845115
+  },
+  "toBlockOverride": {},
+  "enabledChains": [
+    1,
+    42161,
+    34268394551451
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:35 [[34mdebug[39m]: {
+  "at": "ClientHelper#getSpokePoolClientsForContract",
+  "message": "Constructing SpokePoolClients",
+  "fromBlocks": {
+    "1": 23232208,
+    "42161": 372821507,
+    "34268394551451": 362845115
+  },
+  "toBlocks": {
+    "1": 23235058,
+    "42161": 372959304,
+    "34268394551451": 362932496
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:35 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updating Profit client",
+  "tokens": {
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "UMA": "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828",
+    "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "BOBA": "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc",
+    "BADGER": "0x3472A5A71965499acd81997a54BBA8D852C6E53d",
+    "BAL": "0xba100000625a3754423978a60c9317c58a424e3D",
+    "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "ACX": "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F",
+    "SNX": "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F",
+    "POOL": "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e",
+    "LSK": "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f",
+    "WGHO": "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a",
+    "WLD": "0x163f8C2467924be0ae7B5347228CABF260318753",
+    "VLR": "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74",
+    "ETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "SOL": "So11111111111111111111111111111111111111112"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:35 [[34mdebug[39m]: {
+  "at": "PriceClient#getPricesByAddress",
+  "message": "USD cache miss (age > 300 S).",
+  "tokens": {
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": 1756329095,
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": 1756329095,
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": 1756329095,
+    "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": 1756329095,
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F": 1756329095,
+    "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": 1756329095,
+    "0x3472A5A71965499acd81997a54BBA8D852C6E53d": 1756329095,
+    "0xba100000625a3754423978a60c9317c58a424e3D": 1756329095,
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": 1756329095,
+    "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": 1756329095,
+    "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": 1756329095,
+    "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": 1756329095,
+    "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": 1756329095,
+    "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": 1756329095,
+    "0x163f8C2467924be0ae7B5347228CABF260318753": 1756329095,
+    "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": 1756329095,
+    "So11111111111111111111111111111111111111112": 1756329095
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:35 [[34mdebug[39m]: {
+  "at": "PriceClient#updatePrices",
+  "message": "Looking up prices via Across API.",
+  "tokens": [
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828",
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc",
+    "0x3472A5A71965499acd81997a54BBA8D852C6E53d",
+    "0xba100000625a3754423978a60c9317c58a424e3D",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F",
+    "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F",
+    "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e",
+    "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f",
+    "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a",
+    "0x163f8C2467924be0ae7B5347228CABF260318753",
+    "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74",
+    "So11111111111111111111111111111111111111112"
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:36 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updated gas cost",
+  "enabledChainIds": [
+    1,
+    42161,
+    34268394551451
+  ],
+  "totalGasCosts": {
+    "1": {
+      "nativeGasCost": "126007",
+      "tokenGasCost": "149830434448611",
+      "gasPrice": "1189064373",
+      "scaledNativeGasCost": "144908",
+      "scaledTokenGasCost": "172304999615902",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    },
+    "42161": {
+      "nativeGasCost": "128946",
+      "tokenGasCost": "1289460128946",
+      "gasPrice": "10000001",
+      "scaledNativeGasCost": "148287",
+      "scaledTokenGasCost": "1482879148287",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    },
+    "34268394551451": {
+      "nativeGasCost": "63035",
+      "tokenGasCost": "5922",
+      "gasPrice": "5922",
+      "scaledNativeGasCost": "72490",
+      "scaledTokenGasCost": "6810",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "PriceClient#updateCache",
+  "message": "Updated 17 price(s), skipped 0.",
+  "updated": [
+    {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "price": 4581.58,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "price": 0.999817,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "price": 112376,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828",
+      "price": 1.42,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+      "price": 0.999945,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc",
+      "price": 0.094278,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x3472A5A71965499acd81997a54BBA8D852C6E53d",
+      "price": 0.916224,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0xba100000625a3754423978a60c9317c58a424e3D",
+      "price": 1.34,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "price": 1,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F",
+      "price": 0.164899,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F",
+      "price": 0.735038,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e",
+      "price": 0.280259,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f",
+      "price": 0.3866,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a",
+      "price": 0.999359,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x163f8C2467924be0ae7B5347228CABF260318753",
+      "price": 0.955071,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74",
+      "price": 0.02404067,
+      "timestamp": 1756329035
+    },
+    {
+      "address": "So11111111111111111111111111111111111111112",
+      "price": 208.05,
+      "timestamp": 1756329035
+    }
+  ],
+  "skipped": {},
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updated token prices",
+  "tokenPrices": {
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "4581580000000000000000",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "999817000000000000",
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "112376000000000000000000",
+    "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "1420000000000000000",
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F": "999945000000000000",
+    "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "94278000000000000",
+    "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "916224000000000000",
+    "0xba100000625a3754423978a60c9317c58a424e3D": "1340000000000000000",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "1000000000000000000",
+    "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "164899000000000000",
+    "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "735038000000000000",
+    "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "280259000000000000",
+    "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "386600000000000000",
+    "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "999359000000000000",
+    "0x163f8C2467924be0ae7B5347228CABF260318753": "955071000000000000",
+    "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "24040670000000000",
+    "So11111111111111111111111111111111111111112": "208050000000000000000"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "AdapterManager#constructor",
+  "message": "Initialized AdapterManager",
+  "adapterChains": [
+    1,
+    42161,
+    34268394551451
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "AddressAggregator::update",
+  "message": "Updating addresses.",
+  "sources": [
+    "fs:./addresses.json",
+    "Risk Labs"
+  ],
+  "supportedSources": [
+    "bybit",
+    "fs",
+    "processEnv",
+    "risklabs"
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "TokenBalanceClient",
+  "message": "Updating TokenBalance client",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "AddressAggregator::update",
+  "message": "Loaded 12331 addresses from fs:./addresses.json.",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:37 [[34mdebug[39m]: {
+  "at": "TokenClient",
+  "datadog": true,
+  "task": "update",
+  "duration": 253.7717909999992,
+  "message": "Updated TokenBalance client.",
+  "data": {
+    "balanceData": {
+      "1": {
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000",
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "51858636",
+        "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "32498",
+        "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "120274911925007735914",
+        "0x6B175474E89094C44Da98b954EedeAC495271d0F": "13694148158695423445",
+        "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "0",
+        "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0",
+        "0xba100000625a3754423978a60c9317c58a424e3D": "11664029098931866540",
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": "174000167",
+        "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "15139290320674984404547",
+        "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "31724988974372663908",
+        "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "8007280743410174287",
+        "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "3383611976856747252",
+        "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "80791392899695484287",
+        "0x163f8C2467924be0ae7B5347228CABF260318753": "27374063669564221572",
+        "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "100000000000000000000"
+      },
+      "42161": {
+        "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "180629940528830758",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "81579858",
+        "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8": "0",
+        "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f": "55766",
+        "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22": "6769565470097201152",
+        "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1": "17772527222444567736",
+        "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E": "0",
+        "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8": "5110505438891798371",
+        "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": "117428644",
+        "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d": "1379714540993068100555",
+        "0xCF934E2402A5e072928a39a956964eb8F2B5B79C": "8952783653296723292"
+      },
+      "34268394551451": {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "5549840"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "AddressAggregator::update",
+  "message": "Loaded 12331 addresses from Risk Labs.",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "AddressAggregator::update",
+  "message": "Loaded 12331 addresses.",
+  "sources": [
+    "fs:./addresses.json",
+    "Risk Labs"
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "Relayer::init",
+  "message": "Completed one-time init.",
+  "relayerEvmAddress": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D",
+  "relayerSvmAddress": "86ZyCV5E9XRYucpvQX8jupXveGyDLpnbmi8v5ixpXCrT",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 1,
+  "message": "Updating SpokePool client for chain 1",
+  "eventsToQuery": [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot"
+  ],
+  "searchConfig": {
+    "from": 23232208,
+    "to": 23235058,
+    "maxLookBack": 10000
+  },
+  "spokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 42161,
+  "message": "Updating SpokePool client for chain 42161",
+  "eventsToQuery": [
+    "FundsDeposited",
+    "RequestedSpeedUpDeposit",
+    "FilledRelay",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot"
+  ],
+  "searchConfig": {
+    "from": 372821507,
+    "to": 372959304,
+    "maxLookBack": 10000
+  },
+  "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:38 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 34268394551451,
+  "message": "Updating SpokePool client for chain 34268394551451",
+  "eventsToQuery": [
+    "FundsDeposited",
+    "FilledRelay",
+    "RelayedRootBundle",
+    "ExecutedRelayerRefundRoot"
+  ],
+  "searchConfig": {
+    "from": 362845115,
+    "to": 362932496,
+    "maxLookBack": 1000
+  },
+  "spokePool": "DLv3NggMiSaef97YCkew5xKUHDh13tVGZ7tydt3ZeAru",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:40 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 42161,
+  "message": "Time to query new events from RPC for 42161: 1422 ms",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:40 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 42161,
+  "message": "Using 1098 newly queried FundsDeposited deposit events for chain 42161",
+  "earliestEvent": 372821600,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:42 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 1,
+  "message": "Time to query new events from RPC for 1: 3990 ms",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:42 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 1,
+  "message": "Using 1923 newly queried FundsDeposited deposit events for chain 1",
+  "earliestEvent": 23232209,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:47 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 34268394551451,
+  "message": "Time to query new events from RPC for 34268394551451: 8837 ms",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:47 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 34268394551451,
+  "message": "Using 22 newly queried FundsDeposited deposit events for chain 34268394551451",
+  "earliestEvent": 362851364,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:48 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 34268394551451,
+  "message": "Using 36 newly queried FilledRelay events for chain 34268394551451",
+  "earliestEvent": 362848178,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:48 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 34268394551451,
+  "message": "SpokePool client for chain 34268394551451 updated!",
+  "nextFirstHeightToSearch": 362932497,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:55 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 42161,
+  "message": "Using 1611 newly queried FilledRelay events for chain 42161",
+  "earliestEvent": 372821663,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:55 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 42161,
+  "message": "SpokePool client for chain 42161 updated!",
+  "nextFirstHeightToSearch": 372959305,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 1,
+  "message": "Using 1903 newly queried FilledRelay events for chain 1",
+  "earliestEvent": 23232208,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "SpokePoolClient",
+  "chainId": 1,
+  "message": "SpokePool client for chain 1 updated!",
+  "nextFirstHeightToSearch": 23235059,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "AcrossAPIClient",
+  "message": "Querying /liquid-reserves",
+  "timeout": 3000,
+  "tokens": [
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+  ],
+  "endpoint": "https://app.across.to/api",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "CrossChainTransferClient",
+  "message": "Updating cross chain transfers",
+  "chainIds": [
+    42161,
+    34268394551451
+  ],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "AdapterManager",
+  "message": "Getting outstandingCrossChainTransfers for 42161",
+  "adapterSupportedL1Tokens": [
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+  ],
+  "searchConfigs": {
+    "l1SearchConfig": {
+      "from": 23232208,
+      "to": 23235058,
+      "maxLookBack": 10000
+    },
+    "l2SearchConfig": {
+      "from": 372821507,
+      "to": 372959304,
+      "maxLookBack": 10000
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "AdapterManager",
+  "message": "Getting outstandingCrossChainTransfers for 34268394551451",
+  "adapterSupportedL1Tokens": [],
+  "searchConfigs": {
+    "l1SearchConfig": {
+      "from": 23232208,
+      "to": 23235058,
+      "maxLookBack": 10000
+    },
+    "l2SearchConfig": {
+      "from": 362845115,
+      "to": 362932496,
+      "maxLookBack": 1000
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "TokenBalanceClient",
+  "message": "Updating TokenBalance client",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "TokenClient",
+  "datadog": true,
+  "task": "update",
+  "duration": 315.5191659999982,
+  "message": "Updated TokenBalance client.",
+  "data": {
+    "balanceData": {
+      "1": {
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000",
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "51858636",
+        "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "32498",
+        "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "120274911925007735914",
+        "0x6B175474E89094C44Da98b954EedeAC495271d0F": "13694148158695423445",
+        "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "0",
+        "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0",
+        "0xba100000625a3754423978a60c9317c58a424e3D": "11664029098931866540",
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": "174000167",
+        "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "15139290320674984404547",
+        "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "31724988974372663908",
+        "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "8007280743410174287",
+        "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "3383611976856747252",
+        "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "80791392899695484287",
+        "0x163f8C2467924be0ae7B5347228CABF260318753": "27374063669564221572",
+        "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "100000000000000000000"
+      },
+      "42161": {
+        "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "180629940528830758",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "81579858",
+        "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8": "0",
+        "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f": "55766",
+        "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22": "6769565470097201152",
+        "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1": "17772527222444567736",
+        "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E": "0",
+        "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8": "5110505438891798371",
+        "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": "117428644",
+        "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d": "1379714540993068100555",
+        "0xCF934E2402A5e072928a39a956964eb8F2B5B79C": "8952783653296723292"
+      },
+      "34268394551451": {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "5549840"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:56 [[34mdebug[39m]: {
+  "at": "CrossChainTransferClient",
+  "message": "Updated cross chain transfers",
+  "outstandingCrossChainTransfers": {
+    "42161": {
+      "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D": {
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+          "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": {
+            "totalAmount": "0",
+            "depositTxHashes": []
+          }
+        }
+      }
+    },
+    "34268394551451": {}
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:11:57 [[34mdebug[39m]: {
+  "at": "AcrossAPIClient",
+  "message": "🏁 Fetched HubPool liquid reserves",
+  "limits": {
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "1976724128986"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:27 [[34mdebug[39m]: {
+  "at": "ArweaveClient:getByTopic",
+  "message": "Retrieved 0 matching transactions from Arweave",
+  "transactions": [],
+  "metaInformation": {
+    "tag": "bundles-23234523",
+    "originQueryAddress": "Z6hjBM8FHu90lYWB8o5jR1dfX92FlV2WBaND9xgp8Lg",
+    "appVersion": 4
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:27 [[34mdebug[39m]: {
+  "at": "ArweaveClient:getByTopic",
+  "message": "Retrieved 0 matching transactions from Arweave",
+  "transactions": [],
+  "metaInformation": {
+    "tag": "bundles-23234872",
+    "originQueryAddress": "Z6hjBM8FHu90lYWB8o5jR1dfX92FlV2WBaND9xgp8Lg",
+    "appVersion": 4
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "BundleDataClient#getNextBundleRefunds",
+  "message": "Loading approximate refunds for next bundle in 0.167s.",
+  "blockRanges": "[[23234873,23235053],[140364007,140364007],[75731951,75731951],[977154,977154],[372950360,372959064],[64313361,64313361],[34768722,34768722],[22589933,22589933],[28079604,28079604],[20799000,20799000],[23758488,23758488],[20213493,20213493],[22070850,22070850],[34816476,34816476],[18495576,18495576],[11499399,11499399],[22828380,22828380],[11596020,11596020],[25578432,25578432],[4127411,4127411],[59104859,59104859],[362926818,362932346]]",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "InventoryClient#getAllBundleRefunds",
+  "message": "Remaining refunds from last validated bundle (excludes already executed refunds)",
+  "refunds": {
+    "1": {
+      "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7": {
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "0"
+      },
+      "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "0",
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "0",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "0"
+      },
+      "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "0",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "0"
+      }
+    },
+    "10": {
+      "0x00000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e58": {
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "67641430"
+      }
+    },
+    "42161": {
+      "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831": {
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "0",
+        "0x000000000000000000000000eff7337b37c8d217d01cb8223fe497abd75190d5": "0",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "0",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "0",
+        "0x0000000000000000000000003d7dc36aa2b542ad239012730dfdb23f03d75be9": "0",
+        "0x0000000000000000000000007c255279c098fdf6c3116d2becd9978002c09f4b": "0",
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "0",
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "0"
+      },
+      "0x00000000000000000000000082af49447d8a07e3bd95bd0d56f35241523fbab1": {
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "0",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "0",
+        "0x000000000000000000000000eff7337b37c8d217d01cb8223fe497abd75190d5": "0",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "0"
+      },
+      "0x000000000000000000000000fd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9": {
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "0",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "0"
+      }
+    },
+    "34268394551451": {
+      "0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61": {
+        "0xa61164440a720bee95f3579404c415b7fbcda4379eead6fd229df27b3bf706b4": "10000000"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "InventoryClient#getAllBundleRefunds",
+  "message": "Refunds from pending bundle",
+  "refunds": {
+    "1": {
+      "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "134299805524877665",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "297669529940428148",
+        "0x000000000000000000000000ee51012a186832adc6473ab26b88f5624255a95c": "2081625000000000000",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "4000000000000000"
+      },
+      "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "2805285453",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "33845137595"
+      }
+    },
+    "42161": {
+      "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831": {
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "5587812293",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "9879163275",
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "10865713966",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "24296738866",
+        "0x000000000000000000000000eff7337b37c8d217d01cb8223fe497abd75190d5": "9138000000",
+        "0x0000000000000000000000003d7dc36aa2b542ad239012730dfdb23f03d75be9": "21000000000"
+      },
+      "0x00000000000000000000000082af49447d8a07e3bd95bd0d56f35241523fbab1": {
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "59694348711491610",
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "8029421404123061",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "779863196953267545",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "16020000000000000"
+      },
+      "0x000000000000000000000000fd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9": {
+        "0x0000000000000000000000001b59718eafa2bffe5318e07c1c3cb2edde354f9c": "228289200",
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "9997750152"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "InventoryClient#getAllBundleRefunds",
+  "message": "Refunds from upcoming bundle",
+  "refunds": {
+    "1": {
+      "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "20000000",
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "50000000",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "200032134"
+      },
+      "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "124531714064884424",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "132049250000000000",
+        "0x000000000000000000000000ee51012a186832adc6473ab26b88f5624255a95c": "1813987500000000000"
+      }
+    },
+    "42161": {
+      "0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831": {
+        "0x000000000000000000000000ef1ec136931ab5728b0783fd87d109c9d15d31f1": "675169985",
+        "0x000000000000000000000000394311a6aaa0d8e3411d8b62de4578d41322d1bd": "3664295377",
+        "0x000000000000000000000000699ee12a1d97437a4a1e87c71e5d882b3881e2e3": "16425124229",
+        "0x0000000000000000000000007c255279c098fdf6c3116d2becd9978002c09f4b": "7001729050",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "2493750000"
+      },
+      "0x000000000000000000000000fd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9": {
+        "0x00000000000000000000000007ae8551be970cb1cca11dd7a11f47ae82e70e67": "1089000000"
+      },
+      "0x00000000000000000000000082af49447d8a07e3bd95bd0d56f35241523fbab1": {
+        "0x00000000000000000000000095b4298680f9418f7e32155ea7069ade25caf5f1": "8000000000000000",
+        "0x000000000000000000000000cad97616f91872c02ba3553db315db4015cbe850": "168469605511007526",
+        "0x00000000000000000000000015652636f3898f550b257b89926d5566821c32e1": "29443157225543645",
+        "0x00000000000000000000000018105a39db36eb6f865704be858bcc7954c66467": "700000000000000"
+      }
+    },
+    "34268394551451": {
+      "0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61": {
+        "0x7ec9b03fca03c494aa67009b15d937a73284ef858e45c98411f64d22d5e5c380": "3531832107"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "datadog": true,
+  "task": "bundleRefunds",
+  "duration": 31402.802749999995,
+  "message": "Time to calculate total refunds per chain",
+  "data": {},
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "Relayer::checkForUnfilledDepositsAndFill",
+  "message": "0 unfilled deposits found.",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "TokenBalanceClient",
+  "message": "Updating TokenBalance client",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updating Profit client",
+  "tokens": {
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "UMA": "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828",
+    "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "BOBA": "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc",
+    "BADGER": "0x3472A5A71965499acd81997a54BBA8D852C6E53d",
+    "BAL": "0xba100000625a3754423978a60c9317c58a424e3D",
+    "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "ACX": "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F",
+    "SNX": "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F",
+    "POOL": "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e",
+    "LSK": "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f",
+    "WGHO": "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a",
+    "WLD": "0x163f8C2467924be0ae7B5347228CABF260318753",
+    "VLR": "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74",
+    "ETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "SOL": "So11111111111111111111111111111111111111112"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:28 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updated token prices",
+  "tokenPrices": {
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "4581580000000000000000",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "999817000000000000",
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "112376000000000000000000",
+    "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "1420000000000000000",
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F": "999945000000000000",
+    "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "94278000000000000",
+    "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "916224000000000000",
+    "0xba100000625a3754423978a60c9317c58a424e3D": "1340000000000000000",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": "1000000000000000000",
+    "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "164899000000000000",
+    "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "735038000000000000",
+    "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "280259000000000000",
+    "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "386600000000000000",
+    "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "999359000000000000",
+    "0x163f8C2467924be0ae7B5347228CABF260318753": "955071000000000000",
+    "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "24040670000000000",
+    "So11111111111111111111111111111111111111112": "208050000000000000000"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:29 [[34mdebug[39m]: {
+  "at": "TokenClient",
+  "datadog": true,
+  "task": "update",
+  "duration": 575.6775420000049,
+  "message": "Updated TokenBalance client.",
+  "data": {
+    "balanceData": {
+      "1": {
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000",
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "51858636",
+        "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "32498",
+        "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "120274911925007735914",
+        "0x6B175474E89094C44Da98b954EedeAC495271d0F": "13694148158695423445",
+        "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "0",
+        "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0",
+        "0xba100000625a3754423978a60c9317c58a424e3D": "11664029098931866540",
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": "174000167",
+        "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "15139290320674984404547",
+        "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "31724988974372663908",
+        "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "8007280743410174287",
+        "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "3383611976856747252",
+        "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "80791392899695484287",
+        "0x163f8C2467924be0ae7B5347228CABF260318753": "27374063669564221572",
+        "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "100000000000000000000"
+      },
+      "42161": {
+        "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "180629940528830758",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "81579858",
+        "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8": "0",
+        "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f": "55766",
+        "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22": "6769565470097201152",
+        "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1": "17772527222444567736",
+        "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E": "0",
+        "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8": "5110505438891798371",
+        "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": "117428644",
+        "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d": "1379714540993068100555",
+        "0xCF934E2402A5e072928a39a956964eb8F2B5B79C": "8952783653296723292"
+      },
+      "34268394551451": {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "5549840"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "ProfitClient",
+  "message": "Updated gas cost",
+  "enabledChainIds": [
+    1,
+    42161,
+    34268394551451
+  ],
+  "totalGasCosts": {
+    "1": {
+      "nativeGasCost": "126007",
+      "tokenGasCost": "167147861864466",
+      "gasPrice": "1326496638",
+      "scaledNativeGasCost": "144908",
+      "scaledTokenGasCost": "192220041144135",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    },
+    "42161": {
+      "nativeGasCost": "128953",
+      "tokenGasCost": "1289530128953",
+      "gasPrice": "10000001",
+      "scaledNativeGasCost": "148295",
+      "scaledTokenGasCost": "1482959648295",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    },
+    "34268394551451": {
+      "nativeGasCost": "63035",
+      "tokenGasCost": "8150",
+      "gasPrice": "8150",
+      "scaledNativeGasCost": "72490",
+      "scaledTokenGasCost": "9372",
+      "gasPadding": "1.15",
+      "gasMultiplier": "1.0"
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Checking ETH->WETH Wrap status",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "Arbitrum OneAdapter",
+  "message": "ETH balance below threshold",
+  "threshold": "300000000000000000",
+  "nativeTokenBalance": "64201124807096606",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "MainnetAdapter",
+  "message": "ETH balance below threshold",
+  "threshold": "6000000000000000000",
+  "nativeTokenBalance": "63157059763963730",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "TokenBalanceClient",
+  "message": "Updating TokenBalance client",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "TokenClient",
+  "datadog": true,
+  "task": "update",
+  "duration": 235.5199580000044,
+  "message": "Updated TokenBalance client.",
+  "data": {
+    "balanceData": {
+      "1": {
+        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000",
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "51858636",
+        "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": "32498",
+        "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828": "120274911925007735914",
+        "0x6B175474E89094C44Da98b954EedeAC495271d0F": "13694148158695423445",
+        "0x42bBFa2e77757C645eeaAd1655E0911a7553Efbc": "0",
+        "0x3472A5A71965499acd81997a54BBA8D852C6E53d": "0",
+        "0xba100000625a3754423978a60c9317c58a424e3D": "11664029098931866540",
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": "174000167",
+        "0x44108f0223A3C3028F5Fe7AEC7f9bb2E66beF82F": "15139290320674984404547",
+        "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F": "31724988974372663908",
+        "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e": "8007280743410174287",
+        "0x6033F7f88332B8db6ad452B7C6D5bB643990aE3f": "3383611976856747252",
+        "0x1ff1dC3cB9eeDbC6Eb2d99C03b30A05cA625fB5a": "80791392899695484287",
+        "0x163f8C2467924be0ae7B5347228CABF260318753": "27374063669564221572",
+        "0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74": "100000000000000000000"
+      },
+      "42161": {
+        "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "180629940528830758",
+        "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "81579858",
+        "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8": "0",
+        "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f": "55766",
+        "0xd693Ec944A85eeca4247eC1c3b130DCa9B0C3b22": "6769565470097201152",
+        "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1": "17772527222444567736",
+        "0xBfa641051Ba0a0Ad1b0AcF549a89536A0D76472E": "0",
+        "0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8": "5110505438891798371",
+        "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": "117428644",
+        "0x53691596d1BCe8CEa565b84d4915e69e03d9C99d": "1379714540993068100555",
+        "0xCF934E2402A5e072928a39a956964eb8F2B5B79C": "8952783653296723292"
+      },
+      "34268394551451": {
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "5549840"
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Considering rebalance",
+  "tokenDistribution": {
+    "USDT": {
+      "1": {
+        "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+          "actualBalanceOnChain": "174.00",
+          "virtualBalanceOnChain": "174.00",
+          "outstandingTransfers": "0.000",
+          "tokenShortFalls": "0.000",
+          "proRataShare": "59.70%"
+        }
+      },
+      "42161": {
+        "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9": {
+          "actualBalanceOnChain": "117.42",
+          "virtualBalanceOnChain": "117.42",
+          "outstandingTransfers": "0.000",
+          "tokenShortFalls": "0.000",
+          "proRataShare": "40.29%"
+        }
+      }
+    }
+  },
+  "cumulativeBalances": {
+    "USDT": "291.42"
+  },
+  "inventoryConfig": {
+    "wrapEtherTarget": "200000000000000000",
+    "wrapEtherThreshold": "300000000000000000",
+    "wrapEtherTargetPerChain": {
+      "1": "4000000000000000000"
+    },
+    "wrapEtherThresholdPerChain": {
+      "1": "6000000000000000000"
+    },
+    "tokenConfig": {
+      "0xdAC17F958D2ee523a2206206994597C13D831ec7": {
+        "1": {
+          "targetPct": "700000000000000000",
+          "thresholdPct": "600000000000000000",
+          "targetOverageBuffer": "1500000000000000000"
+        },
+        "42161": {
+          "targetPct": "300000000000000000",
+          "thresholdPct": "250000000000000000",
+          "targetOverageBuffer": "1100000000000000000",
+          "withdrawExcessPeriod": 86400
+        }
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "No rebalances required",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:30 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Evaluated withdrawing excess balance on Arbitrum One for token USDT: HAS EXCESS ✅",
+  "l1Token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+  "l2Token": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+  "cumulativeBalance": "291.42",
+  "currentAllocPct": "0.402941094248914188",
+  "excessWithdrawThresholdPct": "0.3135",
+  "targetPct": "0.3",
+  "withdrawalParams": {
+    "withdrawPct": "0.102941094248914188",
+    "desiredWithdrawalAmount": "30.00"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Total withdrawal volume for the last 86400 seconds is UNDER the limit of 3.93 for USDT on Arbitrum One, proceeding to withdraw 30.00.",
+  "excessWithdrawThresholdPct": "0.3135",
+  "targetPct": "0.3",
+  "maximumWithdrawalPct": "0.0135",
+  "maximumWithdrawalAmount": "3.93",
+  "pendingWithdrawalAmount": "0.000",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Excess balances to withdraw",
+  "withdrawalsRequired": {
+    "0": {
+      "0": "42161",
+      "1": {
+        "0": {
+          "l2Token": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+          "amountToWithdraw": "30000000"
+        }
+      }
+    }
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "AdapterManager",
+  "message": "Withdrawing token from L2",
+  "chainId": 42161,
+  "l2Token": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+  "amount": "30000000",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "MultiCallerClient#executeTxnQueue",
+  "message": "Simulating 1 transaction(s) on Arbitrum One.",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "MultiCallerClient#executeChainTxnQueue",
+  "message": "Successfully simulated Arbitrum One transaction batch!",
+  "batchTxn": {
+    "contract": "0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92",
+    "chainId": 42161,
+    "method": "send",
+    "unpermissionsed": false,
+    "nonMulticall": true,
+    "args": {
+      "0": {
+        "dstEid": 30101,
+        "to": "0x0000000000000000000000009a8f92a830a5cb89a3816e3d267cb7791c16b04d",
+        "amountLD": "30000000",
+        "minAmountLD": "30000000",
+        "extraOptions": "0x",
+        "composeMsg": "0x",
+        "oftCmd": "0x"
+      },
+      "1": {
+        "0": "487284928042386",
+        "1": "0",
+        "nativeFee": "487284928042386",
+        "lzTokenFee": "0"
+      },
+      "2": "0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D"
+    },
+    "value": "487284928042386",
+    "message": "🎰 Withdrew 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9 via OftL2Bridge to L1",
+    "mrkdwn": "Withdrew 30.00 USDT from Arbitrum One to L1 via OftL2Bridge",
+    "gasLimit": "295300"
+  },
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "MultiCallerClient#executeTxnQueue",
+  "message": "1/1 Arbitrum One transaction simulation(s) succeeded!",
+  "mrkdwn": "  *1. 🎰 Withdrew 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9 via OftL2Bridge to L1: Withdrew 30.00 USDT from Arbitrum One to L1 via OftL2Bridge\n",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "MulticallerClient#executeTxnQueue",
+  "message": "Exiting simulation mode 🎮",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "L2->L1 withdrawals on Arbitrum One submitted",
+  "chainId": "42161",
+  "withdrawalsRequired": [
+    {
+      "l2Token": "USDT",
+      "amountToWithdraw": "30.00"
+    }
+  ],
+  "txnReceipt": [],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[32minfo[39m]: {
+  "at": "InventoryClient",
+  "message": "Executed excess L2 inventory withdrawal 📒",
+  "mrkdwn": "*Withdrawals from Arbitrum One:*\n - 30.00 USDT withdrawn. This meets target allocation of 30.00% (trigger of 31.35%) of the total 291.42 USDT over all chains (ignoring hubpool repayments). This chain has a shortfall of 0.000 USDT. This chain's current allocation is 40.29%\n",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Checking WETH unwrap thresholds for chains with thresholds set",
+  "chains": [],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "Considered WETH unwraps",
+  "unwrapsRequired": [],
+  "unexecutedUnwraps": [],
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "InventoryClient",
+  "message": "No unwraps required",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "Relayer::runMaintenance",
+  "message": "Completed relayer maintenance.",
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "RedisUtils#disconnectRedisClient",
+  "message": "Disconnecting from redis server.",
+  "url": "redis://127.0.0.1:6379",
+  "success": true,
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+2025-08-27 21:12:31 [[34mdebug[39m]: {
+  "at": "Relayer#run",
+  "datadog": true,
+  "task": "relayer",
+  "duration": 64773.515457999994,
+  "message": "Relayer instance completed.",
+  "data": {},
+  "bot-identifier": "ihor-test",
+  "run-identifier": "22c6b6a2-cd49-4c1d-becc-fc2ea8352db2"
+}
+Done in 76.72s.
