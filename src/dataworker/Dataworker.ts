@@ -41,6 +41,7 @@ import {
   toSvmRelayerRefundLeaf,
   toSvmSlowFillLeaf,
   forEachAsync,
+  fetchTokenInfo,
   convertRelayDataParamsToBytes32,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
@@ -79,7 +80,13 @@ import {
 } from "../dataworker/DataworkerUtils";
 import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
 import _ from "lodash";
-import { ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA, CONTRACT_ADDRESSES, spokePoolClientsToProviders } from "../common";
+import {
+  ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
+  CONTRACT_ADDRESSES,
+  IOFT_ABI_FULL,
+  spokePoolClientsToProviders,
+} from "../common";
+import * as OFT from "../utils/OFTUtils";
 import * as sdk from "@across-protocol/sdk";
 import {
   BundleData,
@@ -2359,19 +2366,11 @@ export class Dataworker {
     const chainId = client.chainId;
     const submitExecution = this.config.sendingTransactionsEnabled;
 
-    // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf. This is currently
-    // unique to the L2 -> L1 relay direction for Linea. We will make this variable generic defaulting to undefined
-    // for other chains.
-    const LINEA_FEE_TO_SEND_MSG_TO_L1 = sdkUtils.chainIsLinea(chainId)
-      ? await this._getRequiredEthForLineaRelayLeafExecution(client)
-      : undefined;
-    const getMsgValue = (leaf: RelayerRefundLeaf): BigNumber | undefined => {
-      // Only need to include a msg.value if amountToReturn > 0 and we need to send tokens back to HubPool.
-      if (LINEA_FEE_TO_SEND_MSG_TO_L1 && leaf.amountToReturn.gt(0)) {
-        return LINEA_FEE_TO_SEND_MSG_TO_L1;
-      }
-      return undefined;
-    };
+    // Pre-compute msg.value per leaf id to use consistently in allocation and execution
+    const msgValuesByLeafId: Map<number, BigNumber | undefined> = new Map();
+    await forEachAsync(leaves, async (leaf) => {
+      msgValuesByLeafId.set(leaf.leafId, await this._getMsgValueForRelayerRefundLeaf(client, leaf));
+    });
 
     // Filter for leaves where the contract has the funding to send the required tokens.
     const fundedLeaves = (
@@ -2424,7 +2423,7 @@ export class Dataworker {
             },
           ];
 
-          const valueToPassViaPayable = getMsgValue(leaf);
+          const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
           // If we have to pass ETH via the payable function, then we need to add a balance request for the signer
           // to ensure that it has enough ETH to send.
           // NOTE: this is ETH required separately from the amount required to send the tokens. Since Solana does not require payments in native tokens for leaf
@@ -2483,7 +2482,7 @@ export class Dataworker {
       }\nchainId: ${chainId}\ntoken: ${symbol}\namount: ${leaf.amountToReturn.toString()}`;
       if (submitExecution) {
         if (isEVMSpokePoolClient(client)) {
-          const valueToPassViaPayable = getMsgValue(leaf);
+          const valueToPassViaPayable = msgValuesByLeafId.get(leaf.leafId);
           const ethersLeaf = {
             ...leaf,
             l2TokenAddress: leaf.l2TokenAddress.toEvmAddress(),
@@ -2717,6 +2716,67 @@ export class Dataworker {
     const l2MessagerContract = new Contract(l2MessageAddress, l2MessageABI, client.spokePool.provider);
     // Get the latest relay fee from the L2Linea Messenger contract.
     return l2MessagerContract.minimumFeeInWei();
+  }
+
+  /**
+   * Compute the msg.value to attach when executing a relayer refund leaf on L2.
+   * - If amountToReturn == 0 or non-EVM chain: undefined
+   * - If OFT is configured on the SpokePool for the token: quote native fee via OFT messenger and return fee*2
+   * - Else if Linea: return the pre-fetched Linea L2->L1 message fee
+   * - Additionally, enforce OFT-on-Linea mutual exclusion and throw if encountered
+   */
+  private async _getMsgValueForRelayerRefundLeaf(
+    client: SpokePoolClient,
+    leaf: RelayerRefundLeaf
+  ): Promise<BigNumber | undefined> {
+    // We don't support providing SOL value with the executor call, so if spokePool is not evm, or the return amount is 0, exit early
+    if (!isEVMSpokePoolClient(client) || !leaf.amountToReturn.gt(0)) {
+      return undefined;
+    }
+
+    // If left undefined after block below, oft messaging is not supported by the spoke
+    let associatedOftMessenger: string | undefined = undefined;
+    try {
+      const messenger: string = await client.spokePool.oftMessengers(leaf.l2TokenAddress.toNative());
+      associatedOftMessenger = messenger;
+    } catch {
+      // todo: based on error type, decide whether oft messaging is not supported or we just got an RPC error. Throw on RPC error
+      // todo: alternatively, keep a mapping of Spoke Pools that support OFT transfers
+      // oft messaging not supported
+    }
+
+    const oftMessengerIsSet = associatedOftMessenger !== undefined && associatedOftMessenger !== ZERO_ADDRESS;
+    const chainIsLinea = sdkUtils.chainIsLinea(client.chainId);
+
+    // If the chain is Linea, then we need to allocate ETH in the call to executeRelayerRefundLeaf
+    if (chainIsLinea) {
+      if (oftMessengerIsSet) {
+        // todo: should we just leave enforcement of this to the contracts?
+        // This cannot happen and ideally will be caught in the contract auditing phase. The way we handle msg.value on
+        // the contracts for OFT is not compatible with having other parts of logic work with msg.value, like in Linea case
+        throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
+      }
+      return await this._getRequiredEthForLineaRelayLeafExecution(client);
+    }
+
+    if (!oftMessengerIsSet) return undefined;
+
+    // Chain is not Linea, and OFT messenger is set, we need to quote oft send back to mainnet. We then return the received quote X 2 to protect ourselves against random fee fluctuations. The Spoke smart contract will return excess fee atomically to the executor wallet
+
+    const IOFTContract = new Contract(associatedOftMessenger, IOFT_ABI_FULL, client.spokePool.provider);
+    const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);
+    const hubPoolAddr = EvmAddress.from(this.clients.hubPoolClient.hubPool.address);
+
+    const [{ decimals }, sharedDecimals] = await Promise.all([
+      fetchTokenInfo(leaf.l2TokenAddress.toNative(), client.spokePool.provider),
+      IOFTContract.sharedDecimals() as number,
+    ]);
+
+    const roundedAmount = OFT.roundAmountToSend(leaf.amountToReturn, decimals, sharedDecimals);
+    const params = OFT.buildSimpleSendParamEvm(hubPoolAddr, dstEid, roundedAmount);
+    const fees: OFT.MessagingFeeStruct = await IOFTContract.quoteSend(params, false);
+    const nativeFee = BigNumber.from(fees.nativeFee);
+    return nativeFee.mul(2);
   }
 
   /**
