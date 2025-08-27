@@ -7,27 +7,23 @@ import {
   assert,
   createFormatFunction,
   ConvertDecimals,
-  fetchTokenInfo,
   getNetworkName,
   getTranslatedTokenAddress,
   paginatedEventQuery,
   bnZero,
   EventSearchConfig,
+  getTokenInfo,
 } from "../../utils";
+import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
-
-interface TokenInfo {
-  symbol: string;
-  decimals: number;
-}
 
 export class OFTL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
-  private l2TokenInfo?: TokenInfo;
+  private l2TokenInfo: sdkInterfaces.TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter?: (amount: BigNumber) => BigNumber;
@@ -55,6 +51,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     this.l2ChainEid = OFT.getEndpointId(l2chainId);
     this.l1ChainEid = OFT.getEndpointId(hubChainId);
+
+    this.l2TokenInfo = getTokenInfo(this.l2Token, l2chainId);
   }
 
   async constructWithdrawToL1Txns(
@@ -75,7 +73,6 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
-    this.l2TokenInfo ??= await fetchTokenInfo(this.l2Token.toNative(), this.l2Bridge.signer);
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l1ChainEid,
@@ -123,10 +120,11 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     assert(l2Token.isEVM(), `Non-evm l2Token not supported: ${l2Token.toNative()}`);
 
-    assert(
-      this.l2Token.eq(l2Token),
-      `l2Token should equal this.l2Token. ${this.l2Token.toNative()} != ${l2Token.toNative()}`
-    );
+    if (!this.l2Token.eq(l2Token)) {
+      // Return 0 for tokens not associated with this OFTBridge
+      // https://github.com/across-protocol/relayer/pull/2509#discussion_r2305205369
+      return bnZero;
+    }
 
     // Determine the expected recipient on L1. If the initiator on L2 is a SpokePool,
     // then the recipient on L1 is the HubPool. Otherwise, it is the same EOA address.
@@ -189,13 +187,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       return this.l2ToL1AmountConverter;
     }
 
-    // Ensure we have L2 token info for decimals and fetch L1 token info in parallel
-    const [l2TokenInfo, l1TokenInfo] = await Promise.all([
-      this.l2TokenInfo ?? fetchTokenInfo(this.l2Token.toNative(), this.l2Bridge.signer),
-      fetchTokenInfo(this.l1Token.toNative(), this.l1Bridge.signer),
-    ]);
-    this.l2TokenInfo ??= l2TokenInfo;
-
+    const l1TokenInfo = getTokenInfo(this.l1Token, this.hubChainId);
     this.l2ToL1AmountConverter = ConvertDecimals(this.l2TokenInfo.decimals, l1TokenInfo.decimals);
 
     return this.l2ToL1AmountConverter;

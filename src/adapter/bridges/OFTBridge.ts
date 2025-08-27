@@ -4,14 +4,15 @@ import {
   BigNumber,
   EventSearchConfig,
   Provider,
-  fetchTokenInfo,
   paginatedEventQuery,
   assert,
   EvmAddress,
   Address,
   winston,
   CHAIN_IDs,
+  getTokenInfo,
 } from "../../utils";
+import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { processEvent } from "../utils";
 import * as OFT from "../../utils/OFTUtils";
 import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
@@ -21,7 +22,7 @@ export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
   private readonly l1ChainEid: number;
   private readonly l2ChainEid: number;
-  private tokenDecimals?: number;
+  private l1TokenInfo: sdkInterfaces.TokenInfo;
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
 
@@ -52,6 +53,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, l1Signer);
     this.l2Bridge = new Contract(l2OftMessenger.toNative(), IOFT_ABI_FULL, l2SignerOrProvider);
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.hubChainId] ?? OFT_DEFAULT_FEE_CAP;
+    this.l1TokenInfo = getTokenInfo(this.l1TokenAddress, this.hubChainId);
   }
 
   async constructL1ToL2Txn(
@@ -110,10 +112,8 @@ export class OFTBridge extends BaseBridgeAdapter {
   private async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
     // Fetch `sharedDecimals` if not already fetched
     this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
-    // Same for `tokenDecimals`
-    this.tokenDecimals ??= (await fetchTokenInfo(this.l1TokenAddress.toNative(), this.l1Bridge.signer)).decimals;
 
-    return OFT.roundAmountToSend(amount, this.tokenDecimals, this.sharedDecimals);
+    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, this.sharedDecimals);
   }
 
   async queryL1BridgeInitiationEvents(
