@@ -1,5 +1,16 @@
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
-import { CHAIN_IDs, getNetworkName, Contract, Signer, getDeployedAddress, getDeployedBlockNumber } from ".";
+import {
+  CHAIN_IDs,
+  getNetworkName,
+  Contract,
+  Signer,
+  getDeployedAddress,
+  getDeployedBlockNumber,
+  EvmAddress,
+  chainIsEvm,
+  SvmAddress,
+  Address,
+} from ".";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
@@ -47,6 +58,16 @@ export function getSpokePool(chainId: number, address?: string): Contract {
   const factoryName = castSpokePoolName(chainId);
   const artifact = typechain[`${factoryName}__factory`];
   return new Contract(address ?? getDeployedAddress("SpokePool", chainId), artifact.abi);
+}
+
+export function getSpokePoolAddress(chainId: number): Address {
+  const evmChain = chainIsEvm(chainId);
+  const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
+  return evmChain ? EvmAddress.from(addr) : SvmAddress.from(addr);
+}
+
+export function getHubPoolAddress(chainId: number): EvmAddress {
+  return EvmAddress.from(getDeployedAddress("HubPool", chainId, true));
 }
 
 export function getParamType(contractName: string, functionName: string, paramName: string): string {

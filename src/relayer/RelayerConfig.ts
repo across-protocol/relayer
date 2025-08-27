@@ -36,7 +36,7 @@ export class RelayerConfig extends CommonConfig {
   readonly debugProfitability: boolean;
   readonly sendingRelaysEnabled: boolean;
   readonly sendingRebalancesEnabled: boolean;
-  readonly sendingMessageRelaysEnabled: boolean;
+  readonly sendingMessageRelaysEnabled: { [chainId: number]: boolean } = {};
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
   readonly relayerOriginChains: number[] = [];
@@ -84,7 +84,6 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TOKENS,
       SEND_RELAYS,
       SEND_REBALANCES,
-      SEND_MESSAGE_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
@@ -276,7 +275,6 @@ export class RelayerConfig extends CommonConfig {
     );
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingRebalancesEnabled = SEND_REBALANCES === "true";
-    this.sendingMessageRelaysEnabled = SEND_MESSAGE_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
 
@@ -374,6 +372,12 @@ export class RelayerConfig extends CommonConfig {
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
+
+      const sendMessageRelaysChain = process.env[`SEND_MESSAGE_RELAYS_${chainId}`];
+      const sendMessageRelays = isDefined(sendMessageRelaysChain)
+        ? sendMessageRelaysChain === "true"
+        : process.env["SEND_MESSAGE_RELAYS"] === "true";
+      this.sendingMessageRelaysEnabled[chainId] = sendMessageRelays;
     });
 
     // Only validate config for chains that the relayer cares about.

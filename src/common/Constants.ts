@@ -451,7 +451,7 @@ export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdap
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
   [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-  [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalacing is supported.
+  [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BOB_SEPOLIA]: OpStackDefaultERC20Bridge,
 };
@@ -656,10 +656,18 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
 
 // Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
-// This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains, like Mode.
+// This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains.
 // This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
 // relayer to unintentionally overdraw the HubPool's available reserves.
-export const SLOW_WITHDRAWAL_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.BASE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.BLAST];
+export const SLOW_WITHDRAWAL_CHAINS = [
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.BLAST,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.SONEIUM,
+  CHAIN_IDs.UNICHAIN,
+];
 
 // Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
 // gateway, while function calls are directed at the gateway router.

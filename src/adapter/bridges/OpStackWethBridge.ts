@@ -22,7 +22,6 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
   protected l1Weth: EvmAddress;
-  private readonly hubPoolAddress: string;
 
   private readonly l2Gas = 200000;
 
@@ -55,7 +54,6 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
     this.l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
-    this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
   }
 
   async constructL1ToL2Txn(
@@ -98,7 +96,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isL2ChainContract || (isContract && fromAddress.toNative() !== this.hubPoolAddress)) {
+    if (isL2ChainContract || (isContract && !fromAddress.eq(this.hubPoolAddress))) {
       return this.convertEventListToBridgeEvents([]);
     }
 
@@ -160,7 +158,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
-      if (fromAddress.toNative() !== this.hubPoolAddress) {
+      if (!fromAddress.eq(this.hubPoolAddress)) {
         return this.convertEventListToBridgeEvents([]);
       }
 

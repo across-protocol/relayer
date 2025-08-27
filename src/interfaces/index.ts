@@ -73,3 +73,4 @@ export const { FillType, FillStatus } = interfaces;
 export type FillStatus = interfaces.FillStatus;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
+export type PubSubMechanismInterface = interfaces.PubSubMechanismInterface;

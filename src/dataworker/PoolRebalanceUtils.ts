@@ -75,12 +75,30 @@ export function generateMarkdownForRootBundle(
 
   const convertTokenListFromWei = (chainId: number, tokenAddresses: Address[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
-      return convertFromWei(weiVals[index], decimals);
+      try {
+        const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
+        return convertFromWei(weiVals[index], decimals);
+      } catch (error) {
+        hubPoolClient.logger.debug({
+          at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenListFromWei",
+          message: `Error getting token info for address ${token} on chain ${chainId}`,
+          error,
+        });
+        return weiVals[index].toString();
+      }
     });
   };
   const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) => {
-    return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+    try {
+      return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+    } catch (error) {
+      hubPoolClient.logger.debug({
+        at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenAddressToSymbol",
+        message: `Error getting token info for address ${tokenAddress} on chain ${chainId}`,
+        error,
+      });
+      return "UNKNOWN TOKEN";
+    }
   };
   const convertL1TokenAddressesToSymbols = (l1Tokens: EvmAddress[]) => {
     return l1Tokens.map((l1Token) => {
@@ -104,10 +122,19 @@ export function generateMarkdownForRootBundle(
   relayerRefundLeaves.forEach((leaf, index) => {
     // Shorten keys for ease of reading from Slack.
     delete leaf.leafId;
-    leaf.amountToReturn = convertFromWei(
-      leaf.amountToReturn,
-      hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
-    );
+    try {
+      leaf.amountToReturn = convertFromWei(
+        leaf.amountToReturn,
+        hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
+      );
+    } catch (error) {
+      hubPoolClient.logger.debug({
+        at: "PoolRebalanceUtils#generateMarkdownForRootBundle",
+        message: `Error getting token info for address ${leaf.l2TokenAddress} on chain ${leaf.chainId}`,
+        error,
+      });
+      leaf.amountToReturn = leaf.amountToReturn.toString();
+    }
     leaf.refundAmounts = convertTokenListFromWei(
       leaf.chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
@@ -123,6 +150,8 @@ export function generateMarkdownForRootBundle(
   slowRelayLeaves.forEach((leaf, index) => {
     const { outputToken } = leaf.relayData;
     const destinationChainId = leaf.chainId;
+    // @devgetTokenInfoForAddress should always succeed for slow leaves as we should always be aware of these tokens in
+    // TOKEN_SYMBOLS_MAP.
     const outputTokenDecimals = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
