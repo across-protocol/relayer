@@ -45,7 +45,7 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
  * @returns A 32-byte string to be used when calling on-chain OFT contracts
  */
 export function formatToAddress(receiver: EvmAddress): string {
-  return toBytes32(receiver.toNative());
+  return receiver.toBytes32();
 }
 
 /**
