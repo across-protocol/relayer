@@ -2759,7 +2759,9 @@ export class Dataworker {
       return await this._getRequiredEthForLineaRelayLeafExecution(client);
     }
 
-    if (!oftMessengerIsSet) return undefined;
+    if (!oftMessengerIsSet) {
+      return undefined;
+    }
 
     // Chain is not Linea, and OFT messenger is set, we need to quote oft send back to mainnet. We then return the received quote X 2 to protect ourselves against random fee fluctuations. The Spoke smart contract will return excess fee atomically to the executor wallet
 
