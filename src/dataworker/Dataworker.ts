@@ -250,6 +250,7 @@ export class Dataworker {
     )[1];
 
     return this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -521,7 +522,8 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -2598,7 +2600,8 @@ export class Dataworker {
     );
   }
 
-  _getPoolRebalanceRoot(
+  async _getPoolRebalanceRoot(
+    spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2607,14 +2610,14 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): PoolRebalanceRoot {
+  ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
+      this.rootCache[key] = await _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
         bundleV3Deposits,
@@ -2622,7 +2625,7 @@ export class Dataworker {
         bundleSlowFills,
         unexecutableSlowFills,
         expiredDepositsToRefundV3,
-        this.clients,
+        { ...this.clients, spokePoolClients },
         this.maxL1TokenCountOverride
       );
     }
