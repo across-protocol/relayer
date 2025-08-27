@@ -221,7 +221,7 @@ export async function waitForPubSub(
 }
 
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
-  // todo understand why redisClients arent't GCed automagically.
+  // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
   for (const [url, client] of clients) {
     const logParams = {
@@ -251,7 +251,7 @@ export function shouldCache(eventTimestamp: number, latestTime: number): boolean
   return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
 }
 
-// JSON.stringify(object) ends up stringfying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
+// JSON.stringify(object) ends up stringifying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
 // this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
 // object with BigNumber values.
 export function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }): unknown {

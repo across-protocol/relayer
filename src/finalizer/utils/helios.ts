@@ -416,7 +416,7 @@ async function getRelevantL1Events(
   const hubPoolStoreContract = getHubPoolStoreContract(l1ChainId, l1Provider);
 
   /**
-   * @dev We artificially shorten the lookback time peiod for L1 events by a factor of 2. We want to avoid race conditions where
+   * @dev We artificially shorten the lookback time period for L1 events by a factor of 2. We want to avoid race conditions where
    * we see an old event on L1, but not look back far enough on L2 to see that the event has been executed successfully.
    */
   const toBlock = l1SpokePoolClient.latestHeightSearched;
