@@ -9,13 +9,12 @@ import {
   fetchTokenInfo,
   getNetworkName,
   getTranslatedTokenAddress,
-  isDefined,
   paginatedEventQuery,
   bnZero,
   EventSearchConfig,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { EVM_OFT_MESSENGERS, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import * as OFT from "../../utils/OFTUtils";
 
 interface TokenInfo {
@@ -23,7 +22,7 @@ interface TokenInfo {
   decimals: number;
 }
 
-export class OftL2Bridge extends BaseL2BridgeAdapter {
+export class OFTL2Bridge extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
   private readonly l2ChainEid: number;
   private readonly l1ChainEid: number;
@@ -44,11 +43,8 @@ export class OftL2Bridge extends BaseL2BridgeAdapter {
     assert(translatedL2Token.isEVM());
     this.l2Token = translatedL2Token;
 
-    const l1OftMessenger = EVM_OFT_MESSENGERS.get(l1Token.toNative())?.get(hubChainId);
-    assert(isDefined(l1OftMessenger), `No OFT messenger configured for ${l1Token.toNative()} on chain ${hubChainId}`);
-
-    const l2OftMessenger = EVM_OFT_MESSENGERS.get(l1Token.toNative())?.get(l2chainId);
-    assert(isDefined(l2OftMessenger), `No OFT messenger configured for ${l1Token.toNative()} on chain ${l2chainId}`);
+    const l1OftMessenger = OFT.getMessengerEvm(l1Token, hubChainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1Token, l2chainId);
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 

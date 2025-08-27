@@ -5,7 +5,6 @@ import {
   EventSearchConfig,
   Provider,
   fetchTokenInfo,
-  isDefined,
   paginatedEventQuery,
   assert,
   EvmAddress,
@@ -15,7 +14,7 @@ import {
 } from "../../utils";
 import { processEvent } from "../utils";
 import * as OFT from "../../utils/OFTUtils";
-import { EVM_OFT_MESSENGERS, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
+import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 
 export class OFTBridge extends BaseBridgeAdapter {
@@ -42,17 +41,8 @@ export class OFTBridge extends BaseBridgeAdapter {
     );
 
     // Route discovery via configured IOFT messengers: if both L1 and L2 messengers exist, the route exists
-    const l1OftMessenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(l1ChainId);
-    assert(
-      isDefined(l1OftMessenger),
-      `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${l1ChainId}`
-    );
-
-    const l2OftMessenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(l2ChainId);
-    assert(
-      isDefined(l2OftMessenger),
-      `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${l2ChainId}`
-    );
+    const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId);
+    const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId);
 
     super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
 

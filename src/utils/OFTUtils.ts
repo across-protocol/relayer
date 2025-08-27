@@ -1,6 +1,7 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, isDefined, toBytes32 } from ".";
+import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined, toBytes32 } from ".";
 import { BytesLike } from "ethers";
+import { EVM_OFT_MESSENGERS } from "../common/Constants";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -27,6 +28,16 @@ export function getEndpointId(chainId: number): number {
     throw new Error(`No OFT domain found for chainId: ${chainId}`);
   }
   return eid;
+}
+
+/**
+ * @returns IOFT messenger for a given chain. Only supports EVM chains for now
+ * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
+ */
+export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): EvmAddress {
+  const messenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(chainId);
+  assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
+  return messenger;
 }
 
 /**
