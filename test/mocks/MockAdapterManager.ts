@@ -96,9 +96,7 @@ export class MockAdapterManager extends AdapterManager {
 
   getTotalPendingWithdrawalAmount(
     lookbackPeriodSeconds: number,
-    chainsToEvaluate: number[],
-    relayer: Address,
-    l1Token: EvmAddress
+    chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
     return Promise.resolve(
       Object.fromEntries(
