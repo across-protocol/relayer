@@ -1,4 +1,4 @@
-FROM node:22.18
+FROM node:20
 
 WORKDIR /relayer
 
