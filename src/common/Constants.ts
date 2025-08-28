@@ -49,6 +49,7 @@ import {
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
 import { HyperlaneXERC20BridgeL2 } from "../adapter/l2Bridges/HyperlaneXERC20Bridge";
+import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
 
 /**
  * Note: When adding new chains, it's preferred to retain alphabetical ordering of CHAIN_IDs in Object mappings.
@@ -616,6 +617,7 @@ export const CUSTOM_L2_BRIDGE: {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -976,4 +978,32 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all supported chains that have non-eth for gas token should go here.
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
+};
+
+// Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
+// Notice that if oft messenger is defined for 2 chains in this mapping, we assume that messaging between those 2 chains is supported.
+// This is a bit of a loose assumption, but I think it holds true in practice. We could lock this down further by introducing something
+// like OFT_SUPPORTED_ROUTES table
+export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map([
+  [
+    TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([
+      [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
+      [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
+      [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
+      [CHAIN_IDs.OPTIMISM, EvmAddress.from("0xF03b4d9AC1D5d1E7c4cEf54C2A313b9fe051A0aD")],
+      [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
+      [CHAIN_IDs.UNICHAIN, EvmAddress.from("0xc07bE8994D035631c36fb4a89C918CeFB2f03EC3")],
+    ]),
+  ],
+]);
+
+// 0.1 ETH is a default cap for chains that use ETH as their gas token
+export const OFT_DEFAULT_FEE_CAP = toWei("0.1");
+export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
+  // all supported chains that have non-eth for gas token should go here.
+  // 0.4 BNB fee cap on BSC
+  [CHAIN_IDs.BSC]: toWei("0.4"),
+  // 1600 MATIC/POL cap on Polygon
+  [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
