@@ -1,7 +1,8 @@
 import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageWithSigners } from "@solana/kit";
+import { updateOrAppendSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
-import { mapAsync, winston, SvmAddress } from "../../../../utils";
+import { mapAsync, winston, SvmAddress, isDefined } from "../../../../utils";
 import { arch } from "@across-protocol/sdk";
 
 /**
@@ -25,7 +26,7 @@ export async function finalizeCCTPV1MessagesSVM(
   const svmProvider = solanaClient.svmEventsClient.getRpc();
   return mapAsync(attestedMessages, async (message) => {
     const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
-    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
+    const _receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
       svmProvider,
       signer,
       attestedCCTPMessage,
@@ -33,6 +34,10 @@ export async function finalizeCCTPV1MessagesSVM(
       SvmAddress.from(message.recipient)
     );
 
+    const computeUnitAmount = process.env["SVM_COMPUTE_UNIT_OVERRIDE"];
+    const receiveMessageIx = isDefined(computeUnitAmount)
+      ? updateOrAppendSetComputeUnitLimitInstruction(Number(computeUnitAmount), _receiveMessageIx)
+      : _receiveMessageIx;
     if (simulate) {
       const result = await svmProvider
         .simulateTransaction(
