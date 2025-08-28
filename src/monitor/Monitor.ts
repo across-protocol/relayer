@@ -1305,6 +1305,11 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
     }
+    await Promise.all(
+      this.monitorConfig.monitoredRelayers.map(async (relayer) => {
+        await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toBytes32()]);
+      })
+    );
   }
 
   updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
@@ -1333,6 +1338,39 @@ export class Monitor {
         );
       }
     }
+  }
+
+  async updatePendingL2Withdrawals(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
+    const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
+    const supportedChains = this.crossChainAdapterSupportedChains.filter((chainId) =>
+      this.monitorChains.includes(chainId)
+    );
+    await Promise.all(
+      supportedChains.map(async (chainId) => {
+        const l2ToL1Tokens = this.getL2ToL1TokenMap(allL1Tokens, chainId);
+        const l2TokenAddresses = Object.keys(l2ToL1Tokens);
+        await Promise.all(
+          l2TokenAddresses.map(async (l2Token) => {
+            const tokenInfo = l2ToL1Tokens[l2Token];
+            const bridgedTransferBalance =
+              await this.clients.crossChainTransferClient.adapterManager.getL2PendingWithdrawalAmount(
+                7200,
+                chainId,
+                relayer,
+                toAddressType(l2Token, chainId)
+              );
+            // Add pending withdrawals as a "cross chain transfer" to the hub balance
+            this.updateRelayerBalanceTable(
+              relayerBalanceTable,
+              tokenInfo.symbol,
+              getNetworkName(this.clients.hubPoolClient.chainId),
+              BalanceType.PENDING_TRANSFERS,
+              bridgedTransferBalance
+            );
+          })
+        );
+      })
+    );
   }
 
   getTotalTransferAmount(transfers: TokenTransfer[]): BigNumber {
