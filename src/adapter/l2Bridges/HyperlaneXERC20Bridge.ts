@@ -10,7 +10,6 @@ import {
   paginatedEventQuery,
   Address,
   EventSearchConfig,
-  toBytes32,
   bnZero,
   getTranslatedTokenAddress,
   getTokenInfo,
@@ -21,19 +20,13 @@ import {
 import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID } from "@across-protocol/constants";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
-import {
-  CONTRACT_ADDRESSES,
-  HYPERLANE_ROUTERS,
-  HYPERLANE_DEFAULT_FEE_CAP,
-  HYPERLANE_FEE_CAP_OVERRIDES,
-} from "../../common";
+import { HYPERLANE_ROUTERS, HYPERLANE_DEFAULT_FEE_CAP, HYPERLANE_FEE_CAP_OVERRIDES } from "../../common";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   readonly l2Token: EvmAddress;
   private readonly originDomainId: number;
   private readonly destinationDomainId: number;
-  private readonly hubPoolAddress: string;
 
   constructor(
     l2chainId: number,
@@ -73,8 +66,6 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
       this.destinationDomainId != HYPERLANE_NO_DOMAIN_ID,
       `Hyperlane domain id not set for chain ${hubChainId}. Set it first before using HyperlaneXERC20BridgeL2`
     );
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId]?.hubPool?.address;
-    assert(isDefined(this.hubPoolAddress), `HubPool address not found for hubChainId ${hubChainId}`);
   }
 
   async constructWithdrawToL1Txns(
@@ -130,7 +121,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     let recipientBytes32: string;
     const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.l2Bridge.provider);
     if (isSpokePool) {
-      recipientBytes32 = toBytes32(this.hubPoolAddress);
+      recipientBytes32 = this.hubPoolAddress.toBytes32();
     } else {
       recipientBytes32 = fromAddress.toBytes32();
     }
