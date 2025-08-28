@@ -1342,33 +1342,43 @@ export class Monitor {
 
   async updatePendingL2Withdrawals(relayer: Address, relayerBalanceTable: RelayerBalanceTable): Promise<void> {
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
-    const supportedChains = this.crossChainAdapterSupportedChains.filter((chainId) =>
-      this.monitorChains.includes(chainId)
+    const supportedChains = this.crossChainAdapterSupportedChains.filter(
+      (chainId) => this.monitorChains.includes(chainId) && chainId !== CHAIN_IDs.BSC // @todo temporarily skip BSC as the following
+      // getTotalPendingWithdrawalAmount() async call is getting rate limited by the Binance API.
+      // We should add more rate limiting or retry logic to this call.
     );
     await Promise.all(
-      supportedChains.map(async (chainId) => {
-        const l2ToL1Tokens = this.getL2ToL1TokenMap(allL1Tokens, chainId);
-        const l2TokenAddresses = Object.keys(l2ToL1Tokens);
-        await Promise.all(
-          l2TokenAddresses.map(async (l2Token) => {
-            const tokenInfo = l2ToL1Tokens[l2Token];
-            const bridgedTransferBalance =
-              await this.clients.crossChainTransferClient.adapterManager.getL2PendingWithdrawalAmount(
-                7200,
-                chainId,
-                relayer,
-                toAddressType(l2Token, chainId)
-              );
-            // Add pending withdrawals as a "cross chain transfer" to the hub balance
-            this.updateRelayerBalanceTable(
-              relayerBalanceTable,
-              tokenInfo.symbol,
-              getNetworkName(this.clients.hubPoolClient.chainId),
-              BalanceType.PENDING_TRANSFERS,
-              bridgedTransferBalance
-            );
-          })
-        );
+      allL1Tokens.map(async (l1Token) => {
+        const pendingWithdrawalBalances =
+          await this.clients.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
+            7200,
+            supportedChains,
+            relayer,
+            l1Token.address
+          );
+        for (const _chainId of Object.keys(pendingWithdrawalBalances)) {
+          const chainId = Number(_chainId);
+          if (pendingWithdrawalBalances[chainId].eq(bnZero)) {
+            continue;
+          }
+          if (!this.clients.crossChainTransferClient.adapterManager.l2TokenExistForL1Token(l1Token.address, chainId)) {
+            return;
+          }
+          const l2Token = this.clients.crossChainTransferClient.adapterManager.l2TokenForL1Token(
+            l1Token.address,
+            chainId
+          );
+          const l2TokenInfo = getTokenInfo(l2Token, chainId);
+          const l2ToL1DecimalConverter = sdkUtils.ConvertDecimals(l2TokenInfo.decimals, l1Token.decimals);
+          // Add pending withdrawals as a "cross chain transfer" to the hub balance
+          this.updateRelayerBalanceTable(
+            relayerBalanceTable,
+            l1Token.symbol,
+            getNetworkName(this.clients.hubPoolClient.chainId),
+            BalanceType.PENDING_TRANSFERS,
+            l2ToL1DecimalConverter(pendingWithdrawalBalances[Number(chainId)])
+          );
+        }
       })
     );
   }
