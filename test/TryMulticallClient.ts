@@ -427,8 +427,8 @@ describe("TryMulticallClient", async function () {
         let emptyBundles = 0;
         const nBundles = nTxns / chunkSize;
         for (let i = 0; i < nBundles; i++) {
-          const wdow = i * chunkSize;
-          const sum = queueCopy.slice(wdow, wdow + chunkSize).reduce((sum, current) => sum + current, 0);
+          const window = i * chunkSize;
+          const sum = queueCopy.slice(window, window + chunkSize).reduce((sum, current) => sum + current, 0);
           if (sum === 0) {
             emptyBundles++;
           }

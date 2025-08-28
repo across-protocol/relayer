@@ -483,7 +483,7 @@ describe("Cross Chain Adapter: zkSync", async function () {
         },
       });
 
-      // Make a single l1 -> l2 deposit via the chaina adapter.
+      // Make a single l1 -> l2 deposit via the chain adapter.
       await adapter.sendTokenToTargetChain(
         toAddress(monitoredEoa),
         toAddress(l1Weth),
