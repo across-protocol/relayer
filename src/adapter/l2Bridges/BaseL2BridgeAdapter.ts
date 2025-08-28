@@ -1,9 +1,21 @@
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { BigNumber, Contract, EventSearchConfig, Provider, Signer, EvmAddress, Address } from "../../utils";
+import {
+  BigNumber,
+  Contract,
+  EventSearchConfig,
+  Provider,
+  Signer,
+  EvmAddress,
+  Address,
+  getHubPoolAddress,
+  getSpokePoolAddress,
+} from "../../utils";
 
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
   protected l1Bridge: Contract;
+  protected readonly hubPoolAddress: EvmAddress;
+  protected readonly spokePoolAddress: Address;
 
   constructor(
     protected l2chainId: number,
@@ -11,7 +23,10 @@ export abstract class BaseL2BridgeAdapter {
     protected l2Signer: Signer,
     protected l1Provider: Provider | Signer,
     protected l1Token: EvmAddress
-  ) {}
+  ) {
+    this.hubPoolAddress = getHubPoolAddress(hubChainId);
+    this.spokePoolAddress = getSpokePoolAddress(l2chainId);
+  }
 
   abstract constructWithdrawToL1Txns(
     toAddress: Address,
