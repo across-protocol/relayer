@@ -218,23 +218,27 @@ export class AdapterManager {
     const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const totalBalance: { [l2ChainId: number]: BigNumber } = {};
     await Promise.all(
-      l2ChainIds
-        .filter((chainId) => chainId !== this.hubPoolClient.chainId)
-        .map(async (chainId) => {
-          totalBalance[chainId] = bnZero;
-          if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
-            return;
-          }
-          const l2Token = this.l2TokenForL1Token(l1Token, chainId);
-          const l2TokenInfo = getTokenInfo(l2Token, chainId);
-          const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
-          const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
-            lookbackPeriodSeconds,
-            fromAddress,
-            l2Token
-          );
-          totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
-        })
+      l2ChainIds.map(async (chainId) => {
+        totalBalance[chainId] = bnZero;
+        if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
+          return;
+        }
+        if (chainId === this.hubPoolClient.chainId) {
+          return;
+        }
+        if (!fromAddress.isValidOn(chainId)) {
+          return;
+        }
+        const l2Token = this.l2TokenForL1Token(l1Token, chainId);
+        const l2TokenInfo = getTokenInfo(l2Token, chainId);
+        const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
+        const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
+          lookbackPeriodSeconds,
+          fromAddress,
+          l2Token
+        );
+        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+      })
     );
     return totalBalance;
   }
