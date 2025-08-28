@@ -114,10 +114,9 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     fromAddress: Address,
     l2Token: Address
   ): Promise<BigNumber> {
-    assert(
-      this.l2Token.eq(l2Token),
-      `this.l2Token does not match l2Token getL2PendingWithdrawalAmount was called with: ${this.l2Token} != ${l2Token}`
-    );
+    if (!l2Token.eq(this.l2Token)) {
+      return bnZero;
+    }
 
     let recipientBytes32: string;
     const isSpokePool = await isContractDeployedToAddress(fromAddress.toNative(), this.l2Bridge.provider);
