@@ -71,6 +71,7 @@
     "run-disputer": "DISPUTER_ENABLED=true node ./dist/index.js --dataworker",
     "run-executor": "EXECUTOR_ENABLED=true node ./dist/index.js --dataworker",
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
+    "run-rebalancer": "node ./dist/index.js --rebalancer",
     "run-monitor": "node ./dist/index.js --monitor",
     "run-finalizer": "node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
