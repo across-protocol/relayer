@@ -9,13 +9,14 @@ import {
   assert,
   isDefined,
   getTimestampForBlock,
-  mapAsync,
   getBinanceApiClient,
   floatToBN,
   CHAIN_IDs,
   compareAddressesSimple,
   isContractDeployedToAddress,
   winston,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -96,32 +97,29 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _depositHistory = await binanceApiClient.depositHistory({
-      coin: this.tokenSymbol,
-      startTime: fromTimestamp,
-    });
+    const _depositHistory = await getBinanceDeposits(
+      binanceApiClient,
+      this.getL1Bridge().provider,
+      this.l2Provider,
+      fromTimestamp
+    );
+
     // Only consider deposits which happened on L1.
     const depositHistory = _depositHistory.filter((deposit) => deposit.network === "ETH");
-    const depositTxReceipts = await mapAsync(
-      depositHistory.map((deposit) => deposit.txId),
-      async (transactionHash) => this.getL1Bridge().provider.getTransactionReceipt(transactionHash as string)
-    );
+
     // FilterMap to remove all deposits which originated from another EOA.
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
     const processedDeposits = depositHistory
-      .map((deposit, idx) => {
-        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toNative())) {
+      .map((deposit) => {
+        if (!compareAddressesSimple(deposit.externalAddress, fromAddress.toNative())) {
           return undefined;
         }
         return {
           amount: floatToBN(deposit.amount, l1Decimals),
-          txnRef: depositTxReceipts[idx].transactionHash,
-          txnIndex: depositTxReceipts[idx].transactionIndex,
-          // Only query the first log in the deposit event since a deposit corresponds to a single ERC20 `Transfer` event.
-          // Alternatively, if this was a native token transfer, then there were no logs, so just assign 0. This should not
-          // affect `sortEvents*` since the transaction index should be able to discriminate any two rebalances.
-          logIndex: depositTxReceipts[idx].logs[0]?.logIndex ?? 0,
-          blockNumber: depositTxReceipts[idx].blockNumber,
+          txnRef: deposit.txnRef,
+          txnIndex: deposit.txnIndex,
+          logIndex: deposit.logIndex,
+          blockNumber: deposit.blockNumber,
         };
       })
       .filter(isDefined);
@@ -149,31 +147,28 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _withdrawalHistory = await binanceApiClient.withdrawHistory({
-      coin: this.tokenSymbol,
-      startTime: fromTimestamp,
-    });
+    const _withdrawalHistory = await getBinanceWithdrawals(
+      binanceApiClient,
+      this.tokenSymbol,
+      this.getL1Bridge().provider,
+      this.l2Provider,
+      fromTimestamp
+    );
     // Filter withdrawals based on whether their destination network was BSC.
     const withdrawalHistory = _withdrawalHistory.filter(
-      (withdrawal) => withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.address, toAddress.toNative())
-    );
-    const withdrawalTxReceipts = await mapAsync(
-      withdrawalHistory.map((withdrawal) => withdrawal.txId as string),
-      async (transactionHash) => this.l2Provider.getTransactionReceipt(transactionHash as string)
+      (withdrawal) =>
+        withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.externalAddress, toAddress.toNative())
     );
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
     return {
-      [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal, idx) => {
+      [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal) => {
         return {
           amount: floatToBN(withdrawal.amount, l1Decimals),
-          txnRef: withdrawalTxReceipts[idx].transactionHash,
-          txnIndex: withdrawalTxReceipts[idx].transactionIndex,
-          // Same as resolving initiation events. Only query the first log since it is just an ERC20 `Transfer` call.
-          // Alternatively, if this was a native token transfer, then there were no logs, so just assign 0. This should not
-          // affect `sortEvents*` since the transaction index should be able to discriminate any two rebalances.
-          logIndex: withdrawalTxReceipts[idx].logs[0]?.logIndex ?? 0,
-          blockNumber: withdrawalTxReceipts[idx].blockNumber,
+          txnRef: withdrawal.txnRef,
+          txnIndex: withdrawal.txnIndex,
+          logIndex: withdrawal.logIndex,
+          blockNumber: withdrawal.blockNumber,
         };
       }),
     };
