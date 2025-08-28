@@ -6,6 +6,13 @@ import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, ethers, mapAsync,
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
 
+// Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
+const KNOWN_BINANCE_ERROR_REASONS = [
+  "Timestamp for this request is outside of the recvWindow",
+  "Too many requests; current request has limited",
+  "TypeError: fetch failed",
+];
+
 type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
@@ -144,10 +151,7 @@ export async function getBinanceDeposits(
     });
   } catch (_err) {
     const err = _err.toString();
-    if (
-      err.includes("Timestamp for this request is outside of the recvWindow") ||
-      err.includes("Too many requests; current request has limited")
-    ) {
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries != maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
       return getBinanceDeposits(binanceApi, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
@@ -190,10 +194,7 @@ export async function getBinanceWithdrawals(
     });
   } catch (_err) {
     const err = _err.toString();
-    if (
-      err.includes("Timestamp for this request is outside of the recvWindow") ||
-      err.includes("Too many requests; current request has limited")
-    ) {
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries != maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
       return getBinanceDeposits(binanceApi, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
