@@ -28,6 +28,7 @@ import {
   parseUnits,
   TOKEN_SYMBOLS_MAP,
   toAddressType,
+  depositForcesOriginChainRepayment,
 } from "../src/utils";
 import {
   MockAdapterManager,
@@ -968,6 +969,65 @@ describe("InventoryClient: Refund chain selection", async function () {
         expect(possibleRepaymentChains).to.include(chainId);
       });
       expect(possibleRepaymentChains.length).to.equal(4);
+    });
+  });
+
+  describe("Prioritizes LP utilization and origin chain is a fast rebalance source", function () {
+    beforeEach(async function () {
+      inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        inventoryConfig,
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        bundleDataClient,
+        adapterManager,
+        crossChainTransferClient,
+        false, // simMode
+        true // prioritizeUtilization <--- this is the only difference from the previous tests
+      );
+      (inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [POLYGON]: TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON],
+          [ARBITRUM]: TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM],
+        },
+      });
+      hubPoolClient.setTokenMapping(mainnetUsdc, POLYGON, TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON]);
+      hubPoolClient.setTokenMapping(mainnetUsdc, ARBITRUM, TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM]);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: ARBITRUM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON], POLYGON),
+        inputAmount: toMegaWei(10),
+        outputToken: toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM], ARBITRUM),
+        outputAmount: toMegaWei(10),
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+    });
+    it("returns only origin chain as repayment chain, even if it is over allocated", async function () {
+      // Assert that this deposit does not force origin chain repayment, which allows this test to isolate that if
+      // prioritizeLpUtilization is true and the origin token and chain is a fast repayment source,
+      // then the origin chain will be prioritized over the hub chain.
+      expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
+      tokenClient.setTokenData(
+        sampleDepositData.originChainId,
+        toAddressType(l2TokensForWeth[sampleDepositData.originChainId], sampleDepositData.originChainId),
+        toMegaWei(1000)
+      );
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
     });
   });
 });
