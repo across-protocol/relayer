@@ -105,7 +105,9 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     );
 
     // Only consider deposits which happened on L1.
-    const depositHistory = _depositHistory.filter((deposit) => deposit.network === "ETH");
+    const depositHistory = _depositHistory.filter(
+      (deposit) => deposit.network === "ETH" && deposit.coin === this.tokenSymbol
+    );
 
     // FilterMap to remove all deposits which originated from another EOA.
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
