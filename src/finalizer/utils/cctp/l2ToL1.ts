@@ -62,16 +62,18 @@ export async function cctpL2toL1Finalizer(
     outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
-  const pendingDeposits = outstandingDeposits.filter(({ status }) => status === "pending").map((deposit) => {
-    const formatter = createFormatFunction(2, 4, false, 6);
-    const recipient = toAddressType(deposit.recipient, spokePoolClient.chainId);
-    const transactionHash = deposit.log?.transactionHash;
-    return {
-      amount: formatter(deposit.amount),
-      recipient,
-      transactionHash,
-    };
-  });
+  const pendingDeposits = outstandingDeposits
+    .filter(({ status }) => status === "pending")
+    .map((deposit) => {
+      const formatter = createFormatFunction(2, 4, false, 6);
+      const recipient = toAddressType(deposit.recipient, spokePoolClient.chainId);
+      const transactionHash = deposit.log?.transactionHash;
+      return {
+        amount: formatter(deposit.amount),
+        recipient,
+        transactionHash,
+      };
+    });
   logger.debug({
     at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP ${spokePoolClient.chainId} to L1`,
