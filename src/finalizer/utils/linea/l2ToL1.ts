@@ -354,7 +354,6 @@ export async function lineaL2ToL1Finalizer(
     },
     notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
       const withdrawalBlock = tokensBridged.blockNumber;
-
       const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
       const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
       const amountToReturn = formatter(tokensBridged.amountToReturn);
