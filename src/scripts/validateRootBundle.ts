@@ -22,8 +22,6 @@ import {
   getDisputeForTimestamp,
   disconnectRedisClients,
   Signer,
-  getEndBlockBuffers,
-  getWidestPossibleExpectedBlockRange,
 } from "../utils";
 import {
   constructSpokePoolClientsForFastDataworker,
@@ -31,7 +29,7 @@ import {
 } from "../dataworker/DataworkerClientHelper";
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
+import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -169,12 +167,6 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     baseSigner,
     fromBlocks,
     toBlocks
-  );
-
-  const mainnetBundleEndBlock = getBlockForChain(
-    rootBundle.bundleEvaluationBlockNumbers,
-    clients.hubPoolClient.chainId,
-    dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
 
   const bundleImpliedBlockRanges = getImpliedBundleBlockRanges(
