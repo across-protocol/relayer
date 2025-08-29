@@ -17,6 +17,8 @@ import {
   Address,
   toKitAddress,
   getStatePda,
+  toAddressType,
+  createFormatFunction,
 } from "../../../utils";
 import {
   AttestedCCTPDeposit,
@@ -60,10 +62,23 @@ export async function cctpL2toL1Finalizer(
     outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
+  const pending = outstandingDeposits
+    .filter(({ status }) => status === "pending")
+    .map((deposit) => {
+      const formatter = createFormatFunction(2, 4, false, 6);
+      const recipient = toAddressType(deposit.recipient, spokePoolClient.chainId);
+      const transactionHash = deposit.log?.transactionHash;
+      return {
+        amount: formatter(deposit.amount),
+        recipient,
+        transactionHash,
+      };
+    });
   logger.debug({
     at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP ${spokePoolClient.chainId} to L1`,
     statusesGrouped,
+    pending,
   });
 
   const { address, abi } = getCctpMessageTransmitter(spokePoolClient.chainId, hubPoolClient.chainId);
