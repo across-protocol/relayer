@@ -19,6 +19,7 @@ import {
   isEVMSpokePoolClient,
   toAddressType,
   Address,
+  createFormatFunction,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -353,9 +354,15 @@ export async function lineaL2ToL1Finalizer(
     },
     notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
       const withdrawalBlock = tokensBridged.blockNumber;
+
+      const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
+      const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+      const amountToReturn = formatter(tokensBridged.amountToReturn);
       return {
         txnHash: message.txHash,
         withdrawalBlock,
+        token: l2TokenInfo.symbol,
+        amountToReturn,
         maturedHours:
           (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
       };
