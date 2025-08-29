@@ -26,7 +26,7 @@ export enum DepositNetwork {
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
 // token.
-export type Coin = {
+type Coin = {
   symbol: string;
   balance: string;
   networkList: Network[];
@@ -42,7 +42,7 @@ type Network = {
 };
 
 // A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
-export type BinanceInteraction = SortableEvent & {
+type BinanceInteraction = SortableEvent & {
   // The amount of `coin` transferred in this interaction.
   amount: number;
   // The external (non binance-wallet) EOA involved with this interaction.
@@ -56,7 +56,7 @@ export type BinanceInteraction = SortableEvent & {
 };
 
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
-export type ParsedAccountCoins = Coin[];
+type ParsedAccountCoins = Coin[];
 
 /**
  * Returns an API client to interface with Binance
