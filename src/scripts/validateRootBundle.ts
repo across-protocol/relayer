@@ -31,7 +31,7 @@ import {
 } from "../dataworker/DataworkerClientHelper";
 import { PendingRootBundle, ProposedRootBundle } from "../interfaces";
 import { createDataworker } from "../dataworker";
-import { getBlockForChain } from "../dataworker/DataworkerUtils";
+import { getBlockForChain, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 
 config();
 let logger: winston.Logger;
@@ -48,7 +48,7 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
   // enough data to limit # of excess historical deposit queries.
   // - SPOKE_ROOTS_LOOKBACK_COUNT unused in this script so set to something < DATAWORKER_FAST_LOOKBACK_COUNT
   // to avoid configuration error.
-  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "10";
+  process.env.DATAWORKER_FAST_LOOKBACK_COUNT = "40";
   process.env.SPOKE_ROOTS_LOOKBACK_COUNT = "1";
   const { clients, config, dataworker } = await createDataworker(logger, baseSigner);
   logger[startupLogLevel(config)]({
@@ -177,20 +177,16 @@ export async function validate(_logger: winston.Logger, baseSigner: Signer): Pro
     dataworker.chainIdListForBundleEvaluationBlockNumbers
   );
 
-  // Get widest possible block range that could be used at time of root bundle proposal.
-  const widestPossibleBlockRanges = await getWidestPossibleExpectedBlockRange(
-    clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
-    spokePoolClients,
-    getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
-    clients,
-    mainnetBundleEndBlock,
-    clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
+  const bundleImpliedBlockRanges = getImpliedBundleBlockRanges(
+    clients.hubPoolClient,
+    clients.configStoreClient,
+    precedingProposeRootBundleEvent
   );
 
   // Validate the event:
   const { valid, reason } = await dataworker.validateRootBundle(
     config.hubPoolChainId,
-    widestPossibleBlockRanges,
+    bundleImpliedBlockRanges,
     rootBundle,
     spokePoolClients,
     fromBlocks
