@@ -148,6 +148,8 @@ export async function constructSpokePoolClientsWithLookback(
       enabledChains.map(async (chainId) => {
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
+        } else if (isDefined(config.fromBlockOverride[chainId])) {
+          return [chainId, config.fromBlockOverride[chainId]];
         } else {
           const blockFinder = await getBlockFinder(logger, chainId);
           return [chainId, await getBlockForTimestamp(logger, chainId, lookback, blockFinder, redis)];
