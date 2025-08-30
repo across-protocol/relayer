@@ -104,6 +104,7 @@ export class TransactionClient {
           mrkdwn,
           // @dev `error` _sometimes_ doesn't decode correctly (especially on Polygon), so fish for the reason.
           errorMessage: isError(error) ? (error as Error).message : undefined,
+          method: txn.method,
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
