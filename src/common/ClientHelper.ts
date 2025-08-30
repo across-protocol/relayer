@@ -252,8 +252,8 @@ export async function constructSpokePoolClientsWithStartBlocks(
     await Promise.all(
       enabledChains.map(async (chainId) => {
         // Allow caller to hardcode the spoke pool client end blocks.
-        if (isDefined(toBlockOverride[chainId])) {
-          return [chainId, toBlockOverride[chainId]];
+        if (isDefined(config.toBlockOverride[chainId])) {
+          return [chainId, config.toBlockOverride[chainId]];
         }
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
