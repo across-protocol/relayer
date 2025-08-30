@@ -20,3 +20,4 @@ export * from "./TransactionClient";
 export * from "./InventoryClient";
 export * from "./AcrossAPIClient";
 export * from "./SvmFillerClient";
+export * from "./BundleDataApproxClient";

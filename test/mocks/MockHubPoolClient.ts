@@ -2,13 +2,14 @@ import { clients } from "@across-protocol/sdk";
 import { Contract, winston, BigNumber } from "../utils";
 import { ConfigStoreClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
-import { L1Token } from "../../src/interfaces";
+import { L1Token, ProposedRootBundle } from "../../src/interfaces";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
   public enableAllL2Tokens: boolean | undefined;
   private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
+  validatedRootBundles: ProposedRootBundle[] = [];
 
   constructor(
     logger: winston.Logger,
@@ -18,6 +19,14 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     chainId = 1
   ) {
     super(logger, hubPool, configStoreClient, deploymentBlock, chainId);
+  }
+
+  setValidatedRootBundles(validatedRootBundles: ProposedRootBundle[]): void {
+    this.validatedRootBundles = validatedRootBundles;
+  }
+
+  getValidatedRootBundles(): ProposedRootBundle[] {
+    return this.validatedRootBundles.length > 0 ? this.validatedRootBundles : super.getValidatedRootBundles();
   }
 
   setLatestBundleEndBlockForChain(chainId: number, latestBundleEndBlock: number): void {
