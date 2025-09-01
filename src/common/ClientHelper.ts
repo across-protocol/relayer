@@ -148,6 +148,8 @@ export async function constructSpokePoolClientsWithLookback(
       enabledChains.map(async (chainId) => {
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
+        } else if (isDefined(config.fromBlockOverride[chainId])) {
+          return [chainId, config.fromBlockOverride[chainId]];
         } else {
           const blockFinder = await getBlockFinder(logger, chainId);
           return [chainId, await getBlockForTimestamp(logger, chainId, lookback, blockFinder, redis)];
@@ -252,8 +254,8 @@ export async function constructSpokePoolClientsWithStartBlocks(
     await Promise.all(
       enabledChains.map(async (chainId) => {
         // Allow caller to hardcode the spoke pool client end blocks.
-        if (isDefined(toBlockOverride[chainId])) {
-          return [chainId, toBlockOverride[chainId]];
+        if (isDefined(config.toBlockOverride[chainId])) {
+          return [chainId, config.toBlockOverride[chainId]];
         }
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
