@@ -16,6 +16,9 @@ import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 
+// Logger flush delay in seconds to ensure all logs are written before exit
+const LOGGER_FLUSH_DELAY_SECONDS = 5;
+
 let logger: typeof Logger;
 let cmd: string;
 
@@ -83,7 +86,7 @@ if (require.main === module) {
     })
     .finally(async () => {
       await waitForLogger(logger);
-      await delay(5); // Wait 5s for logger to flush.
+      await delay(LOGGER_FLUSH_DELAY_SECONDS); // Wait for logger to flush.
       exit(exitCode);
     });
 }
