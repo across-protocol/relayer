@@ -2,7 +2,7 @@ const { getHardhatConfig } = require("@uma/common");
 
 const path = require("path");
 const coreWkdir = path.dirname(require.resolve("@uma/core/package.json"));
-// @TODO what should be here? 
+// @TODO what should be here?
 // Do we even run this tests?
 const packageWkdir = path.dirname(require.resolve("@uma/logger/package.json"));
 
