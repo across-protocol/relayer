@@ -2,7 +2,7 @@ const express = require("express");
 const timeoutSpoke = express();
 timeoutSpoke.use(express.json()); // Enables json to be parsed by the express process.
 
-const { delay } = require("@uma/financial-templates-lib");
+const { delay } = require("@uma/logger");
 
 let responseDelay;
 

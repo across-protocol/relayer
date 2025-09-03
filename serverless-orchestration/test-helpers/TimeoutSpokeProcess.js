@@ -1,5 +1,5 @@
 // script the sleeps for a defined duration then closes. Can be used to debug hub/spoke interactions.
-const { delay } = require("@uma/financial-templates-lib");
+const { delay } = require("@uma/logger");
 
 async function Run() {
   console.log("Running timeoutsimulatedSpoke");

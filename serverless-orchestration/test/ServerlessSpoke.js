@@ -14,7 +14,7 @@ const OptimisticOracleV2 = getContract("OptimisticOracleV2");
 // Custom winston transport module to monitor winston log outputs
 const winston = require("winston");
 const sinon = require("sinon");
-const { SpyTransport, lastSpyLogIncludes } = require("@uma/financial-templates-lib");
+const { SpyTransport, lastSpyLogIncludes } = require("@uma/logger");
 const { runDefaultFixture } = require("@uma/common");
 
 describe("ServerlessSpoke.js", function () {
