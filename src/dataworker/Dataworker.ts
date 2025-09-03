@@ -2769,7 +2769,7 @@ export class Dataworker {
     // (no refund) so we don't attach that. After Arbitrum_Spoke (and possibly Universal_Spoke) are upgraded to handle
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
-    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON]);
+    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON, CHAIN_IDs.BSC]);
 
     if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
       return bnZero;

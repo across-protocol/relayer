@@ -1,4 +1,3 @@
-import { type Binance } from "binance-api-node";
 import { SUPPORTED_TOKENS } from "../../common";
 import {
   winston,
@@ -12,12 +11,15 @@ import {
   floatToBN,
   bnZero,
   getTokenInfo,
-  ethers,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
   Address,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
+  getAccountCoins,
+  DepositNetwork,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -32,48 +34,8 @@ enum Status {
   WaitingUserConfirm = 8,
 }
 
-// Alias for Binance network symbols.
-enum DepositNetwork {
-  Ethereum = "ETH",
-  BSC = "BSC",
-}
-
-// A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
-// token.
-type Coin = {
-  symbol: string;
-  balance: string;
-  networkList: Network[];
-};
-
-// Network represents basic information corresponding to a Binance supported deposit/withdrawal network. It is always associated with a coin.
-type Network = {
-  name: string;
-  coin: string;
-  withdrawMin: string;
-  withdrawMax: string;
-  contractAddress: string;
-};
-
-// A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
-type BinanceInteraction = {
-  // The amount of `coin` transferred in this interaction.
-  amount: number;
-  // The external (non binance-wallet) EOA involved with this interaction.
-  externalAddress: string;
-  // The coin used in this interaction (i.e. the token symbol).
-  coin: string;
-  // The network on which this interaction took place.
-  network: string;
-  // The status of the deposit/withdrawal.
-  status?: number;
-};
-
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
-
-// ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
-type ParsedAccountCoins = Coin[];
 
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
@@ -233,68 +195,4 @@ export async function binanceFinalizer(
     callData: [],
     crossChainMessages: [],
   };
-}
-
-// Gets all binance deposits for the Binance account starting from `startTime`-present.
-async function getBinanceDeposits(
-  binanceApi: Binance,
-  l1Provider: ethers.providers.Provider,
-  l2Provider: ethers.providers.Provider,
-  startTime: number
-): Promise<BinanceInteraction[]> {
-  const _depositHistory = await binanceApi.depositHistory({ startTime });
-  const depositHistory = Object.values(_depositHistory);
-
-  return mapAsync(depositHistory, async (deposit) => {
-    const provider = deposit.network === DepositNetwork.Ethereum ? l1Provider : l2Provider;
-    const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
-    return {
-      amount: Number(deposit.amount),
-      externalAddress: depositTxnReceipt.from,
-      coin: deposit.coin,
-      network: deposit.network,
-      status: deposit.status,
-    };
-  });
-}
-
-// Gets all Binance withdrawals of a specific coin starting from `startTime`-present.
-async function getBinanceWithdrawals(
-  binanceApi: Binance,
-  coin: string,
-  startTime: number
-): Promise<BinanceInteraction[]> {
-  const withdrawals = await binanceApi.withdrawHistory({ coin, startTime });
-
-  return Object.values(withdrawals).map((withdrawal) => {
-    return {
-      amount: Number(withdrawal.amount),
-      externalAddress: withdrawal.address,
-      coin,
-      network: withdrawal.network,
-      status: withdrawal.status,
-    };
-  });
-}
-
-// The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
-// parses the unknown into a readable object to be used by the finalizers.
-async function getAccountCoins(binanceApi: Binance): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
-  return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
-      return {
-        name: network["network"],
-        coin: network["coin"],
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        contractAddress: network["contractAddress"],
-      } as Network;
-    });
-    return {
-      symbol: coin["coin"],
-      balance: coin["free"],
-      networkList,
-    } as Coin;
-  });
 }
