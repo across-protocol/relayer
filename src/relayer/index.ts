@@ -32,7 +32,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalListener, pollingDelay, sendingTransactionsEnabled, sendingSlowRelaysEnabled } = config;
+  const { externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
   let stop = false;
@@ -55,9 +55,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients } = relayerClients;
-  const simulate = !sendingTransactionsEnabled;
+  const { spokePoolClients, inventoryClient } = relayerClients;
+  const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
+  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
+  let inventoryInit = false;
 
   try {
     for (let run = 1; !stop; ++run) {
@@ -84,6 +86,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
       }
+      // Execute bundleRefundsPromise only after all spokePoolClients are updated.
+      if (!inventoryInit && inventoryManagement) {
+        await inventoryClient.executeBundleRefundsPromise();
+        inventoryInit = true;
+      }
 
       // Signal to any existing relayer that a handover is underway, or alternatively
       // check for handover initiated by another (newer) relayer instance.
@@ -104,7 +111,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       }
 
       if (!stop) {
-        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(sendingSlowRelaysEnabled, simulate);
+        txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
@@ -150,4 +157,46 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   }
 
   mark.stop({ message: "Relayer instance completed." });
+}
+
+export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const personality = "Rebalancer";
+  const at = `${personality}::run`;
+
+  logger = _logger;
+  const config = new RelayerConfig(process.env);
+
+  // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+  const { addressFilter: _addressFilter, ...loggedConfig } = config;
+  logger.debug({ at, message: `${personality} started 🏃‍♂️`, loggedConfig });
+  const clients = await constructRelayerClients(logger, config, baseSigner);
+
+  const { inventoryClient, tokenClient } = clients;
+  const inventoryManagement = clients.inventoryClient.isInventoryManagementEnabled();
+  if (!inventoryManagement) {
+    logger.debug({ at, message: "Inventory management disabled, nothing to do." });
+    return;
+  }
+
+  const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
+
+  try {
+    await rebalancer.init();
+    await rebalancer.update();
+    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+    await rebalancer.runMaintenance();
+
+    // It's necessary to update token balances in case WETH was wrapped.
+    tokenClient.clearTokenData();
+    await tokenClient.update();
+    if (config.sendingTransactionsEnabled) {
+      await inventoryClient.setTokenApprovals();
+    }
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.withdrawExcessBalances();
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `${personality} instance completed.` });
+  }
 }

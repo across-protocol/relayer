@@ -2,7 +2,7 @@ import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, isDefined, TOKEN_SYMBOLS_MAP, toBytes32 } from "../../src/utils";
+import { bnOne, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 
@@ -17,7 +17,8 @@ export class MockProfitClient extends ProfitClient {
     hubPoolClient: HubPoolClient | MockHubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     enabledChainIds: number[],
-    relayerAddress: string,
+    relayerAddressEvm: EvmAddress,
+    relayerAddressSvm: SvmAddress,
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
     gasMultiplier = toBNWei("1"),
@@ -29,7 +30,8 @@ export class MockProfitClient extends ProfitClient {
       hubPoolClient,
       spokePoolClients,
       enabledChainIds,
-      relayerAddress,
+      relayerAddressEvm,
+      relayerAddressSvm,
       defaultMinRelayerFeePct,
       debugProfitability,
       gasMultiplier,
@@ -83,7 +85,7 @@ export class MockProfitClient extends ProfitClient {
   setTokenPrice(token: string, price: BigNumber | undefined): void {
     const address = this.resolveTokenAddress(token);
     if (price) {
-      this.tokenPrices[toBytes32(address)] = price;
+      this.tokenPrices[address] = price;
     } else {
       delete this.tokenPrices[address];
     }
@@ -93,7 +95,7 @@ export class MockProfitClient extends ProfitClient {
     this.tokenPrices = {};
     Object.entries(tokenPrices).forEach(([token, price]) => {
       const address = this.resolveTokenAddress(token);
-      this.tokenPrices[toBytes32(address)] = price;
+      this.tokenPrices[address] = price;
     });
   }
 

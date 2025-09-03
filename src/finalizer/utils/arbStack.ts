@@ -45,7 +45,7 @@ type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
   registered: boolean;
 };
 // These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
-// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
+// We should export this out of a common file but we don't use this SDK elsewhere currently.
 const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [
   {
     // Addresses are available here:
@@ -112,6 +112,7 @@ export async function arbStackFinalizer(
   // Arbitrum orbit takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
+    logger,
     chainId,
     getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
     undefined,

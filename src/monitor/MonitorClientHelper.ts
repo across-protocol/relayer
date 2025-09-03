@@ -25,7 +25,11 @@ export async function constructMonitorClients(
   baseSigner: Signer
 ): Promise<MonitorClients> {
   const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.maxRelayerLookBack
+  // exceeds half a month, then we'll just use the gensis block since in that case, this monitor is being used
+  // for non-production circumstances.
+  const hubPoolLookback = config.maxRelayerLookBack > 3600 * 24 * 15 ? undefined : 3600 * 24 * 30;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);

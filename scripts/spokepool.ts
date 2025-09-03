@@ -25,6 +25,7 @@ import {
   populateV3Relay,
   toBN,
   toAddressType,
+  chainIsEvm,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -252,17 +253,17 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   }
   const network = getNetworkName(fromChainId);
 
+  // todo: only EVM `fromChainId`s are supported now
+  assert(chainIsEvm(fromChainId));
   const depositor = toAddressType(await signer.getAddress(), fromChainId);
-  const recipient = toAddressType(String(args.recipient) ?? depositor.toNative(), toChainId);
-
-  const message = String(args.message ?? sdkConsts.EMPTY_MESSAGE);
-  const _exclusiveRelayer = String(args.exclusiveRelayer);
-  const exclusivityDeadline = args.exclusivityDeadline ? Number(args.exclusivityDeadline) : undefined;
+  const recipient = toAddressType(String(args.recipient ?? depositor.toNative()), toChainId);
 
   if (!recipient.isValidOn(toChainId)) {
     console.log(`Invalid recipient address for chain ${toChainId}: (${recipient}).`);
     return false;
   }
+
+  const message = String(args.message ?? sdkConsts.EMPTY_MESSAGE);
 
   const token = utils.resolveToken(args.token as string, fromChainId);
   const inputToken = toAddressType(token.address, fromChainId);
@@ -292,8 +293,18 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     await approval.wait();
     console.log("Approval complete...");
   }
+
   const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
-  const exclusiveRelayer = toAddressType(_exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative(), toChainId);
+
+  // Use the exclusiveRelayer provided by the user if present; otherwise fall back to the
+  // value supplied by the quote (for SVM chains this will be the zero address).
+  const exclusiveRelayer = toAddressType(
+    String(args.exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative()),
+    toChainId
+  );
+  const exclusivityParameter = args.exclusivityDeadline
+    ? Number(args.exclusivityDeadline)
+    : depositQuote.exclusivityDeadline;
 
   const deposit = await spokePool.deposit(
     depositor.toBytes32(),
@@ -303,10 +314,10 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     inputAmount,
     depositQuote.outputAmount,
     toChainId,
-    exclusiveRelayer,
+    exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
     depositQuote.fillDeadline,
-    exclusivityDeadline ?? depositQuote.exclusivityDeadline,
+    exclusivityParameter,
     message
   );
   const { hash: transactionHash } = deposit;

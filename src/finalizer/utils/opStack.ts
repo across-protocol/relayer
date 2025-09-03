@@ -5,7 +5,6 @@ import * as viem from "viem";
 import * as viemChains from "viem/chains";
 import {
   getWithdrawals,
-  GetWithdrawalStatusReturnType,
   buildProveWithdrawal,
   getWithdrawalStatus,
   getL2Output,
@@ -122,7 +121,7 @@ export async function opStackFinalizer(
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
-  const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
+  const latestBlockToProve = await getBlockForTimestamp(logger, chainId, minimumFinalizationTime, undefined, redis);
 
   // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these
@@ -390,7 +389,7 @@ async function viem_multicallOptimismFinalizations(
       hash: event.txnRef as `0x${string}`,
     });
     const withdrawal = getWithdrawals(receipt)[logIndexesForMessage[i]];
-    const withdrawalStatus: GetWithdrawalStatusReturnType = await getWithdrawalStatus(publicClientL1 as viem.Client, {
+    const withdrawalStatus = await getWithdrawalStatus(publicClientL1 as viem.Client, {
       receipt,
       chain: publicClientL1.chain as viem.Chain,
       targetChain: viemOpStackTargetChainParam,

@@ -94,6 +94,19 @@ export class MockAdapterManager extends AdapterManager {
     }
   }
 
+  getTotalPendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    chainsToEvaluate: number[]
+  ): Promise<{ [chainId: number]: BigNumber }> {
+    return Promise.resolve(
+      Object.fromEntries(
+        chainsToEvaluate.map((chainId) => {
+          return [chainId, bnZero];
+        })
+      )
+    );
+  }
+
   withdrawTokenFromL2(
     address: string,
     l2ChainId: number,

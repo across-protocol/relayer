@@ -2,10 +2,11 @@ import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill, CachingMechanismInterface } from "../interfaces";
+import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { RedisCache } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk";
+import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -56,6 +57,21 @@ export class RedisClient {
       }
       await this.client.set(key, val);
     }
+  }
+
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    await this.client.subscribe(channel, listener);
+    return 1;
+  }
+
+  async duplicate(): Promise<RedisClient> {
+    const newClient = this.client.duplicate();
+    await newClient.connect();
+    return new RedisClient(newClient, this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
@@ -129,6 +145,23 @@ export async function getRedisCache(
   }
 }
 
+export async function getRedisPubSub(
+  logger?: winston.Logger,
+  url?: string
+): Promise<PubSubMechanismInterface | undefined> {
+  // Don't permit redis to be used in test.
+  if (isDefined(process.env.RELAYER_TEST)) {
+    return undefined;
+  }
+
+  const client = await getRedis(logger, url);
+  if (client) {
+    // since getRedis returns the same client instance for the same url,
+    // we need to duplicate it before creating a new RedisPubSub instance
+    return new RedisPubSub(await client.duplicate());
+  }
+}
+
 export async function setRedisKey(
   key: string,
   val: string,
@@ -160,8 +193,35 @@ export async function getDeposit(key: string, redisClient: RedisClient): Promise
   }
 }
 
+export async function waitForPubSub(
+  redisClient: PubSubMechanismInterface,
+  channel: string,
+  message: string,
+  maxWaitMs = 60000
+): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return new Promise((resolve, _reject) => {
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const listener = (msg: string, chl: string) => {
+      if (chl === channel && msg !== message) {
+        abortController.abort();
+      }
+    };
+    void redisClient.sub(channel, listener);
+
+    signal.addEventListener("abort", () => {
+      resolve(true);
+    });
+
+    setTimeout(() => {
+      resolve(false);
+    }, maxWaitMs);
+  });
+}
+
 export async function disconnectRedisClients(logger?: winston.Logger): Promise<void> {
-  // todo understand why redisClients arent't GCed automagically.
+  // todo understand why redisClients aren't GCed automagically.
   const clients = Object.entries(redisClients);
   for (const [url, client] of clients) {
     const logParams = {
@@ -191,7 +251,7 @@ export function shouldCache(eventTimestamp: number, latestTime: number): boolean
   return latestTime - eventTimestamp >= REDIS_CACHEABLE_AGE;
 }
 
-// JSON.stringify(object) ends up stringfying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
+// JSON.stringify(object) ends up stringifying BigNumber objects as "{type:BigNumber,hex...}" so we can pass
 // this reviver function as the second arg to JSON.parse to instruct it to correctly revive a stringified
 // object with BigNumber values.
 export function objectWithBigNumberReviver(_: string, value: { type: string; hex: BigNumberish }): unknown {

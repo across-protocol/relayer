@@ -39,6 +39,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
       if (config.botModes.reportEnabled) {
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
+        await acrossMonitor.reportInvalidFillsRelatedToSvm();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
@@ -65,6 +66,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.checkBinanceWithdrawalLimits();
       } else {
         logger.debug({ at: "Monitor#index", message: "Binance withdrawal limits check disabled" });
+      }
+
+      if (config.botModes.closePDAsEnabled) {
+        await acrossMonitor.closePDAs();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
       }
 
       await clients.multiCallerClient.executeTxnQueues();

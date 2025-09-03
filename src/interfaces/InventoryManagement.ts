@@ -1,5 +1,4 @@
-import { utils as ethersUtils } from "ethers";
-import { BigNumber, TOKEN_SYMBOLS_MAP } from "../utils";
+import { BigNumber, EvmAddress, SvmAddress, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
@@ -68,7 +67,20 @@ export interface InventoryConfig {
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
-  return (
-    Object.keys(config).every((k) => ethersUtils.isAddress(k)) || Object.keys(config).every((k) => TOKEN_SYMBOLS_MAP[k])
-  );
+  // Keys are token symbols.
+  if (Object.keys(config).every((k) => isDefined(TOKEN_SYMBOLS_MAP[k]))) {
+    return true;
+  }
+
+  // Keys are token addresses.
+  return Object.keys(config).every((k) => {
+    try {
+      // Try to coerce k into an Address. If it fails, it wasn't an address (or was non-natively encoded).
+      const address = k.startsWith("0x") ? EvmAddress.from(k) : SvmAddress.from(k);
+      return address.isEVM() || address.isSVM();
+    } catch {
+      // Keys are probably chainIds.
+      return false;
+    }
+  });
 }

@@ -15,6 +15,7 @@ import {
   Signer,
   EvmAddress,
   getTokenInfo,
+  toBN,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 
@@ -102,7 +103,9 @@ export class OpStackUSDCBridge extends BaseL2BridgeAdapter {
     const withdrawalAmount = l2Events.reduce((totalAmount, { args: l2Args }) => {
       const received = l1Events.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
-        if (counted.has(idx) || l1Args._amount.ne(l2Args._amount)) {
+        // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
+        // and we will need to adjust this logic.
+        if (counted.has(idx) || !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))) {
           return false;
         }
 

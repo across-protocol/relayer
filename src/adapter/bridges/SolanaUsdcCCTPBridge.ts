@@ -17,6 +17,7 @@ import {
   isDefined,
   getSvmSignerFromEvmSigner,
   getAssociatedTokenAddress,
+  winston,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
@@ -41,7 +42,16 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
   private solanaEventsClient: arch.svm.SvmCpiEventsClient;
   private svmAddress: string;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2Provider: SVMProvider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2Provider: SVMProvider,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
+  ) {
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,

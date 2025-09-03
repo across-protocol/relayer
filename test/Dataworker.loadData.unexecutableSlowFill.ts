@@ -238,8 +238,10 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     await spokePoolClient_1.update();
     const deposits = spokePoolClient_1.getDeposits();
     expect(deposits.length).to.equal(3);
-    const eligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address === x.outputToken);
-    const ineligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address !== x.outputToken);
+    const eligibleSlowFills = depositsWithSlowFillRequests.filter((x) => erc20_2.address === x.outputToken.toNative());
+    const ineligibleSlowFills = depositsWithSlowFillRequests.filter(
+      (x) => erc20_2.address !== x.outputToken.toNative()
+    );
 
     // Generate slow fill requests for the slow fill-eligible deposits
     await requestSlowFill(spokePool_2, relayer, eligibleSlowFills[0]);

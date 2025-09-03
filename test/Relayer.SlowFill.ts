@@ -38,7 +38,7 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { SvmAddress, EvmAddress, toAddressType } from "../src/utils";
+import { SvmAddress, EvmAddress } from "../src/utils";
 
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig"; // Tested
@@ -183,6 +183,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        sendingMessageRelaysEnabled: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
@@ -236,25 +237,26 @@ describe("Relayer: Initiates slow fill requests", async function () {
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method } = spokePool_1.interface.parseTransaction(txn);
     expect(method).to.equal("requestSlowFill");
-    expect(spyLogIncludes(spy, -5, "Insufficient balance to fill all deposits")).to.be.true;
+    expect(
+      spyLogIncludes(
+        spy,
+        -10,
+        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1337 would also not be profitable."
+      )
+    ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
     await Promise.all([spokePoolClient_1.update(), spokePoolClient_2.update(), hubPoolClient.update()]);
-    const slowFillRequest = spokePoolClient_2.getSlowFillRequest({
-      ...deposit,
-      inputToken: toAddressType(inputToken, originChainId),
-      outputToken: toAddressType(outputToken, destinationChainId),
-      depositor: toAddressType(deposit.depositor, originChainId),
-      recipient: toAddressType(deposit.recipient, destinationChainId),
-      exclusiveRelayer: toAddressType(deposit.exclusiveRelayer, destinationChainId),
-    });
+    const slowFillRequest = spokePoolClient_2.getSlowFillRequest(deposit);
     expect(slowFillRequest).to.exist;
 
     const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    // We do not want to rebalance to a chain when the fill for which we are rebalancing is unprofitable.
+    // This means we should _not_ log the token shortfall.
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.false;
   });
 });

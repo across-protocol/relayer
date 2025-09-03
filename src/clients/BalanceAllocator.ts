@@ -10,6 +10,7 @@ import {
   chainIsEvm,
   getSvmProvider,
   getSolanaTokenBalance,
+  getRedisCache,
 } from "../utils";
 
 // This type is used to map used and current balances of different users.
@@ -178,7 +179,7 @@ export class BalanceAllocator {
     } else {
       assert(token.isSVM());
       assert(holder.isSVM());
-      return getSolanaTokenBalance(getSvmProvider(), token, holder);
+      return getSolanaTokenBalance(getSvmProvider(await getRedisCache()), token, holder);
     }
   }
 }

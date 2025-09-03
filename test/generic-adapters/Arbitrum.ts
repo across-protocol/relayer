@@ -3,9 +3,8 @@ import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
-import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_ADDRESS, ZERO_BYTES } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
