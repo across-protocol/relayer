@@ -87,7 +87,7 @@ export async function scrapeEvents(spokePool: Contract, eventNames: string[], op
  */
 async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: string[], quorum = 1): Promise<void> {
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  let nProviders = urls.length;
+  const nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
   const providers = urls.map((url) =>
