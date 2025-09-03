@@ -120,16 +120,6 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     const message = `Caught ${chain} provider error.`;
     const { message: errorMessage, details, shortMessage, metaMessages } = error as BaseError;
     logger.debug({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
-
-    if (!stop && --nProviders < quorum) {
-      stop = true;
-      logger.warn({
-        at: "RelayerSpokePoolListener::run",
-        message: `Insufficient ${chain} providers to continue.`,
-        quorum,
-        nProviders,
-      });
-    }
   };
 
   providers.forEach((provider, idx) => {
