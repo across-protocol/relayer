@@ -53,6 +53,8 @@ import {
   assert,
   CHAIN_IDs,
   chainIsOPStack,
+  isDefined,
+  BigNumber,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
@@ -60,6 +62,7 @@ import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "..
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
+import _ from "lodash";
 
 config();
 let logger: winston.Logger;
@@ -387,7 +390,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           }
         }
 
-        const relayedRoot = dataworker.clients.bundleDataClient.getExecutedRefunds(
+        const relayedRoot = _getExecutedRefunds(
           spokePoolClients[leaf.chainId],
           mostRecentValidatedBundle.relayerRefundRoot
         );
@@ -630,6 +633,47 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       endBlock.toNumber(),
     ]);
     return blockRangesImpliedByBundleEndBlocks;
+  }
+
+  function _getExecutedRefunds(
+    spokePoolClient: SpokePoolClient,
+    relayerRefundRoot: string
+  ): {
+    [tokenAddress: string]: {
+      [relayer: string]: BigNumber;
+    };
+  } {
+    if (!isDefined(spokePoolClient)) {
+      return {};
+    }
+    // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
+    // The caller should take caution if they're trying to use this function to find matching refunds for older
+    // root bundles as opposed to more recent ones.
+    const bundle = _.findLast(
+      spokePoolClient.getRootBundleRelays(),
+      (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
+    );
+    if (bundle === undefined) {
+      return {};
+    }
+
+    const executedRefundLeaves = spokePoolClient
+      .getRelayerRefundExecutions()
+      .filter((leaf) => leaf.rootBundleId === bundle.rootBundleId);
+    const executedRefunds: { [tokenAddress: string]: { [relayer: string]: BigNumber } } = {};
+    for (const refundLeaf of executedRefundLeaves) {
+      const tokenAddress = refundLeaf.l2TokenAddress.toBytes32();
+      const executedTokenRefunds = (executedRefunds[tokenAddress] ??= {});
+
+      for (let i = 0; i < refundLeaf.refundAddresses.length; i++) {
+        const relayer = refundLeaf.refundAddresses[i].toBytes32();
+        const refundAmount = refundLeaf.refundAmounts[i];
+
+        executedTokenRefunds[relayer] ??= bnZero;
+        executedTokenRefunds[relayer] = executedTokenRefunds[relayer].add(refundAmount);
+      }
+    }
+    return executedRefunds;
   }
 
   /**
