@@ -27,7 +27,7 @@ import { MockBundleDataApproxClient, MockConfigStoreClient, MockHubPoolClient, M
 import { interfaces } from "@across-protocol/sdk";
 import { ProposedRootBundle, RootBundleRelayWithBlock } from "../src/interfaces";
 
-describe("BundleDataApproxClient: Accounting for unexected, upcoming relayer refunds and deposits", async function () {
+describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer refunds and deposits", async function () {
   const { MAINNET, OPTIMISM, BSC, POLYGON } = CHAIN_IDs;
   const enabledChainIds = [MAINNET, OPTIMISM, BSC];
   const mainnetWeth = TOKEN_SYMBOLS_MAP.WETH.addresses[MAINNET];
@@ -140,7 +140,10 @@ describe("BundleDataApproxClient: Accounting for unexected, upcoming relayer ref
         inputTokenSymbol === "USDC" ? l2TokensForUsdc[originChainId] : l2TokensForWeth[originChainId],
         originChainId
       ),
-      outputToken: toAddressType(randomAddress(), destinationChainId),
+      outputToken: toAddressType(
+        inputTokenSymbol === "USDC" ? l2TokensForUsdc[destinationChainId] : l2TokensForWeth[destinationChainId],
+        destinationChainId
+      ),
       destinationChainId,
       depositor: toAddressType(owner.address, originChainId),
       recipient: toAddressType(owner.address, destinationChainId),
