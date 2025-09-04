@@ -309,7 +309,7 @@ export class InventoryClient {
     this.bundleDataApproxClient.initialize();
   }
 
-  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: Address): BigNumber {
+  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: EvmAddress): BigNumber {
     return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token, relayer);
   }
 
