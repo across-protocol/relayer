@@ -63,6 +63,7 @@ import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpo
 import { createConsoleTransport } from "@uma/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import _ from "lodash";
+import { SpokePoolClient } from "../clients/SpokePoolClient";
 
 config();
 let logger: winston.Logger;
