@@ -779,9 +779,9 @@ export class InventoryClient {
         // @dev upcoming refunds are always pushed last into this list, that's why we can pop() it.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
-        const upcomingRefundsAfterLastValidatedBundle: sdkUtils.BigNumber = Object.values(
+        const upcomingRefundsAfterLastValidatedBundle = Object.values(
           allBundleRefunds.pop()?.[chainId]?.[l2Token.toNative()] ?? {}
-        ).reduce((acc: sdkUtils.BigNumber, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
+        ).reduce((acc, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance
