@@ -5,6 +5,7 @@ import {
   winston,
   SvmAddress,
   sendAndConfirmSolanaTransaction,
+  simulateSolanaTransaction,
   toKitAddress,
   CHAIN_IDs,
   getCCTPDepositAccounts,
@@ -49,7 +50,7 @@ export async function bridgeTokensToHubPool(
   // the transfer liability PDA has any pending withdraw amounts.
   const transferLiability = await getTransferLiabilityPda(svmSpokeProgramId, toKitAddress(l2Usdc));
   const transferLiabilityAccount = await SvmSpokeClient.fetchTransferLiability(svmProvider, transferLiability);
-  const pendingWithdrawAmount = Math.max(
+  const pendingWithdrawAmount = Math.min(
     Number(transferLiabilityAccount.data.pendingToHubPool),
     CCTP_MAX_SEND_AMOUNT.toNumber()
   );
@@ -102,10 +103,20 @@ export async function bridgeTokensToHubPool(
   const bridgeTokensToHubPoolTx = pipe(await createDefaultTransaction(svmProvider, signer), (tx) =>
     appendTransactionMessageInstructions([bridgeTokensToHubPoolIx], tx)
   );
-  const withdrawSignature = await sendAndConfirmSolanaTransaction(bridgeTokensToHubPoolTx, signer, svmProvider);
   const formatUsdc = createFormatFunction(2, 4, false, 6);
-  return {
-    message: `Withdrew ${formatUsdc(pendingWithdrawAmount.toString())} USDC from Solana to the hub pool.`,
-    signature: withdrawSignature,
-  };
+  if ((process.env["SEND_TRANSACTIONS"] ?? "false") === "true") {
+    const withdrawSignature = await sendAndConfirmSolanaTransaction(bridgeTokensToHubPoolTx, signer, svmProvider);
+    return {
+      message: `Withdrew ${formatUsdc(pendingWithdrawAmount.toString())} USDC from Solana to the hub pool.`,
+      signature: withdrawSignature,
+    };
+  } else {
+    const withdrawSimulation = await simulateSolanaTransaction(bridgeTokensToHubPoolTx, svmProvider);
+    return {
+      message: `Simulated withdrawal of ${formatUsdc(pendingWithdrawAmount.toString())} USDC with result ${
+        withdrawSimulation?.value
+      }`,
+      signature: "",
+    };
+  }
 }
