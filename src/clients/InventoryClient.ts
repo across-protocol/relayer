@@ -775,13 +775,13 @@ export class InventoryClient {
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
-        const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
+        const allBundleRefunds: CombinedRefunds[] = lodash.cloneDeep(await this.bundleRefundsPromise);
         // @dev upcoming refunds are always pushed last into this list, that's why we can pop() it.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
-        const upcomingRefundsAfterLastValidatedBundle = Object.values(
+        const upcomingRefundsAfterLastValidatedBundle: sdkUtils.BigNumber = Object.values(
           allBundleRefunds.pop()?.[chainId]?.[l2Token.toNative()] ?? {}
-        ).reduce((acc, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
+        ).reduce((acc: sdkUtils.BigNumber, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance
@@ -1047,7 +1047,7 @@ export class InventoryClient {
           cumulativeBalance,
           hash,
           chainId,
-        } of rebalances) {
+        } of rebalances as ExecutedRebalance[]) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
             `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
@@ -1075,7 +1075,7 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
+        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances as ExecutedRebalance[]) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
             throw new Error(

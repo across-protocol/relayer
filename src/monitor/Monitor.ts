@@ -200,6 +200,22 @@ export class Monitor {
     }
   }
 
+  async reportInvalidFills(): Promise<void> {
+    const invalidFills = await sdkUtils.findInvalidFills(this.clients.spokePoolClients);
+
+    invalidFills.forEach((invalidFill) => {
+      // Log the fill data
+      this.logger.warn({
+        at: "Monitor::reportInvalidFills",
+        message: `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit`,
+        fill: invalidFill.fill,
+        reason: invalidFill.reason,
+        deposit: invalidFill.deposit ?? undefined,
+        notificationPath: "across-invalid-fills",
+      });
+    });
+  }
+
   async reportUnfilledDeposits(): Promise<void> {
     const { hubPoolClient, spokePoolClients } = this.clients;
     const unfilledDeposits: Record<number, DepositWithBlock[]> = Object.fromEntries(

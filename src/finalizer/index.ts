@@ -61,6 +61,10 @@ let logger: winston.Logger;
  */
 type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
 
+type Finalization = {
+  txn: AugmentedTransaction | Multicall2Call;
+  crossChainMessage?: CrossChainMessage;
+};
 /**
  * A list of finalizers that can be used to finalize messages on a chain. These are
  * broken down into two categories: finalizers that finalize messages on L1 and finalizers
@@ -394,7 +398,7 @@ export async function finalize(
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
         const multicallTxns: Multicall2Call[] = [];
 
-        finalizations.forEach(({ txn }) => {
+        (finalizations as Finalization[]).forEach(({ txn }) => {
           if (isAugmentedTransaction(txn)) {
             // It's an AugmentedTransaction, enqueue directly
             txn.nonMulticall = true; // cautiously enforce an invariant that should already be present

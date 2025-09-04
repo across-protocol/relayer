@@ -316,7 +316,7 @@ export class MultiCallerClient {
     // Split transactions by target contract if they are not all the same.
     const txnsGroupedByTarget = lodash.groupBy(transactions, (txn) => txn.contract.address);
     return Object.values(txnsGroupedByTarget).map((txns) => {
-      return this._buildMultiCallBundle(txns);
+      return this._buildMultiCallBundle(txns as AugmentedTransaction[]);
     });
   }
 
@@ -409,7 +409,7 @@ export class MultiCallerClient {
       const groupIdChunks = Object.values(lodash.groupBy(groupIdTxns, "groupId"))
         .map((txns) => {
           return lodash.chunk(
-            txns.sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
+            (txns as AugmentedTransaction[]).sort((a, b) => a.contract.address.localeCompare(b.contract.address)),
             chunkSize
           );
         })
