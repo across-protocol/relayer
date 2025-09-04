@@ -422,7 +422,7 @@ export class Monitor {
     for (const relayer of relayers) {
       const report = reports[relayer.toBytes32()];
       let summaryMrkdwn = "*[Summary]*\n";
-      let mrkdwn = "Token amounts: current, pending execution, future, cross-chain transfers, total\n";
+      let mrkdwn = "Token amounts: current, pending execution, cross-chain transfers, total\n";
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
