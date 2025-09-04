@@ -58,7 +58,6 @@ export class BundleDataApproxClient {
   // Return the next starting block for each chain following the bundle end block of the last executed bundle that
   // was relayed to that chain.
   protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
-    const configStoreClient = this.hubPoolClient.configStoreClient;
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
         const spokePoolClient = this.spokePoolClients[chainId];
@@ -69,23 +68,24 @@ export class BundleDataApproxClient {
           return [chainId, 0];
         }
 
-        // Step 2: Match the last RelayedRootBundle event to a proposed root bundle.
+        // Step 2: Match the last RelayedRootBundle event to a proposed root bundle. If there is no corresponding root
+        // bundle then its likely that the proposed root bundle was very old, possibly because this chain hasn't had
+        // refund root relayed to it in a while, so for the purposes of this function, we'll assume that there are
+        // no refunds for this chain.
         const correspondingProposedRootBundle = this.hubPoolClient
           .getValidatedRootBundles()
           .find((bundle) => bundle.relayerRefundRoot === lastRelayedRootToChain.relayerRefundRoot);
-        assert(
-          isDefined(correspondingProposedRootBundle),
-          `InventoryClient#getApproximateUpcomingRefunds: No corresponding proposed root bundle found for relayed root bundle to chain ${chainId}`
-        );
+        if (!isDefined(correspondingProposedRootBundle)) {
+          return [chainId, Number.MAX_SAFE_INTEGER];
+        }
 
-        // Step 3. Find the next bundle start blocks by passing in the proposal block number as the "latest mainnet
-        // block", which should be equal to the "corresponding proposed root bundle" bundle start blocks.
-        const nextBundleStartBlock = this.hubPoolClient.getNextBundleStartBlockNumber(
-          configStoreClient.getChainIdIndicesForBlock(),
-          correspondingProposedRootBundle.blockNumber,
-          chainId
+        // Step 3. Find the next bundle start blocks following the proposed root bundle.
+        const bundleEndBlock = this.hubPoolClient.getBundleEndBlockForChain(
+          correspondingProposedRootBundle,
+          chainId,
+          this.chainIdList
         );
-        return [chainId, nextBundleStartBlock];
+        return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
       })
     );
   }
