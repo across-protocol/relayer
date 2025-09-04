@@ -78,11 +78,14 @@ export class BundleDataApproxClient {
           `InventoryClient#getApproximateUpcomingRefunds: No corresponding proposed root bundle found for relayed root bundle to chain ${chainId}`
         );
 
-        // Step 3. Use the proposed root bundle information to set the fromBlocks we should use to search for upcoming
-        // refunds for the relayer on this chain.
-        const chainIdIndex = configStoreClient.getChainIdIndicesForBlock().indexOf(chainId);
-        const bundleEndBlock = correspondingProposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
-        return [chainId, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
+        // Step 3. Find the next bundle start blocks by passing in the proposal block number as the "latest mainnet
+        // block", which should be equal to the "corresponding proposed root bundle" bundle start blocks.
+        const nextBundleStartBlock = this.hubPoolClient.getNextBundleStartBlockNumber(
+          configStoreClient.getChainIdIndicesForBlock(),
+          correspondingProposedRootBundle.blockNumber,
+          chainId
+        );
+        return [chainId, nextBundleStartBlock];
       })
     );
   }

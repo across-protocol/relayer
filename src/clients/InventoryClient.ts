@@ -309,8 +309,8 @@ export class InventoryClient {
     this.bundleDataApproxClient.initialize();
   }
 
-  getUpcomingRefunds(chainId: number, l1Token: EvmAddress): BigNumber {
-    return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token);
+  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: EvmAddress): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token, relayer);
   }
 
   getUpcomingDeposits(chainId: number, l1Token: EvmAddress): BigNumber {
@@ -497,7 +497,7 @@ export class InventoryClient {
         continue;
       }
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, Number(chainId));
-      const refundAmount = this.getUpcomingRefunds(chainId, l1Token);
+      const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
     }
