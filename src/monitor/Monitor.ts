@@ -1,4 +1,4 @@
-import { BalanceAllocator } from "../clients";
+import { BalanceAllocator, BundleDataApproxClient } from "../clients";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
@@ -79,13 +79,7 @@ export const REBALANCE_FINALIZE_GRACE_PERIOD = Number(process.env.REBALANCE_FINA
 
 // bundle frequency.
 export const ALL_CHAINS_NAME = "All chains";
-const ALL_BALANCE_TYPES = [
-  BalanceType.CURRENT,
-  BalanceType.PENDING,
-  BalanceType.NEXT,
-  BalanceType.PENDING_TRANSFERS,
-  BalanceType.TOTAL,
-];
+const ALL_BALANCE_TYPES = [BalanceType.CURRENT, BalanceType.PENDING, BalanceType.PENDING_TRANSFERS, BalanceType.TOTAL];
 
 type BalanceRequest = { chainId: number; token: Address; account: Address };
 
@@ -103,6 +97,8 @@ export class Monitor {
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
   // have an inventory manager adapter.
   public crossChainAdapterSupportedChains: number[];
+  private bundleDataApproxClient: BundleDataApproxClient;
+  private l1Tokens: L1Token[];
 
   public constructor(
     readonly logger: winston.Logger,
@@ -122,6 +118,14 @@ export class Monitor {
     });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
     this.additionalL1Tokens = this.monitorConfig.additionalL1NonLpTokens;
+    this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    this.bundleDataApproxClient = new BundleDataApproxClient(
+      this.clients.spokePoolClients,
+      this.clients.hubPoolClient,
+      this.monitorChains,
+      this.l1Tokens.map(({ address }) => address),
+      this.logger
+    );
   }
 
   public async update(): Promise<void> {
@@ -131,6 +135,7 @@ export class Monitor {
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
+    this.bundleDataApproxClient.initialize();
 
     const searchConfigs = Object.fromEntries(
       Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
@@ -142,11 +147,11 @@ export class Monitor {
         },
       ])
     );
-    const { hubPoolClient } = this.clients;
-    const l1Tokens = hubPoolClient.getL1Tokens().map(({ address }) => address);
     const tokensPerChain = Object.fromEntries(
       this.monitorChains.filter(chainIsEvm).map((chainId) => {
-        const l2Tokens = l1Tokens.map((l1Token) => this.getRemoteTokenForL1Token(l1Token, chainId)).filter(isDefined);
+        const l2Tokens = this.l1Tokens
+          .map((l1Token) => this.getRemoteTokenForL1Token(l1Token.address, chainId))
+          .filter(isDefined);
         return [chainId, l2Tokens];
       })
     );
@@ -155,9 +160,8 @@ export class Monitor {
 
   async checkUtilization(): Promise<void> {
     this.logger.debug({ at: "Monitor#checkUtilization", message: "Checking for pool utilization ratio" });
-    const l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     const l1TokenUtilizations = await Promise.all(
-      l1Tokens.map(async (l1Token) => {
+      this.l1Tokens.map(async (l1Token) => {
         const utilization = await this.clients.hubPoolClient.getCurrentPoolUtilization(l1Token.address);
         return {
           l1Token: l1Token.address,
@@ -383,15 +387,13 @@ export class Monitor {
         address: l1TokenInfo.address,
       };
     });
-    const allL1Tokens = [...this.clients.hubPoolClient.getL1Tokens(), ...additionalL1Tokens].map(
-      ({ symbol, ...tokenInfo }) => {
-        return {
-          ...tokenInfo,
-          // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
-          symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
-        };
-      }
-    );
+    const allL1Tokens = [...this.l1Tokens, ...additionalL1Tokens].map(({ symbol, ...tokenInfo }) => {
+      return {
+        ...tokenInfo,
+        // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
+        symbol: TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol,
+      };
+    });
     // @dev Handle special case for L1 USDC which is mapped to two L2 tokens on some chains, so we can more easily
     // see L2 Bridged USDC balance versus Native USDC. Add USDC.e right after the USDC element.
     const indexOfUsdc = allL1Tokens.findIndex(({ symbol }) => symbol === "USDC");
@@ -846,11 +848,6 @@ export class Monitor {
 
     // Fetch the data from the latest root bundle.
     const bundle = hubPoolClient.getLatestProposedRootBundle();
-    // If there is an outstanding root bundle, then add it to the bundles to check. Otherwise, ignore it.
-    const bundlesToCheck = validatedBundles.map((validatedBundle) => validatedBundle.txnRef).includes(bundle.txnRef)
-      ? validatedBundles
-      : [...validatedBundles, bundle];
-
     const nextBundleMainnetStartBlock = hubPoolClient.getNextBundleStartBlockNumber(
       this.clients.bundleDataClient.chainIdListForBundleEvaluationBlockNumbers,
       hubPoolClient.latestHeightSearched,
@@ -898,19 +895,9 @@ export class Monitor {
     // Do all async tasks in parallel. We want to know about the pool rebalances, slow fills in the most recent proposed bundle, refunds
     // from the last `n` bundles, pending refunds which have not been made official via a root bundle proposal, and the current balances of
     // all the spoke pools.
-    const [
-      poolRebalanceRoot,
-      currentBundleData,
-      accountedBundleRefunds,
-      unaccountedBundleRefunds,
-      currentSpokeBalances,
-    ] = await Promise.all([
+    const [poolRebalanceRoot, currentBundleData, currentSpokeBalances] = await Promise.all([
       this.clients.bundleDataClient.loadData(lastProposedBundleBlockRanges, this.clients.spokePoolClients, true),
       this.clients.bundleDataClient.loadData(slowFillBlockRange, this.clients.spokePoolClients, true),
-      mapAsync(bundlesToCheck, async (proposedBundle) =>
-        this.clients.bundleDataClient.getPendingRefundsFromBundle(proposedBundle)
-      ),
-      this.clients.bundleDataClient.getApproximateRefundsForBlockRange(enabledChainIds, blockRangeTail),
       Object.fromEntries(
         await mapAsync(chainIds, async (chainId) => {
           const spokePool = this.clients.spokePoolClients[chainId].spokePoolAddress;
@@ -950,7 +937,7 @@ export class Monitor {
     ).leaves;
 
     // Get the pool rebalance leaf amounts.
-    const enabledTokens = [...hubPoolClient.getL1Tokens()];
+    const enabledTokens = [...this.l1Tokens];
     for (const leaf of poolRebalanceLeaves) {
       if (!chainIds.includes(leaf.chainId)) {
         continue;
@@ -976,34 +963,15 @@ export class Monitor {
 
     // Calculate the pending refunds.
     for (const chainId of chainIds) {
+      const l2TokenMap = this.getL2ToL1TokenMap(enabledTokens, chainId);
       const l2TokenAddresses = monitoredTokenSymbols
         .map((symbol) => l2TokenForChain(chainId, symbol))
         .filter(isDefined);
       pendingRelayerRefunds[chainId] = {};
       l2TokenAddresses.forEach((l2Token) => {
-        const pendingValidatedDeductions = accountedBundleRefunds
-          .map((refund) => refund[chainId]?.[l2Token.toBytes32()])
-          .filter(isDefined)
-          .reduce(
-            (totalPendingRefunds, refunds) =>
-              Object.values(refunds).reduce(
-                (totalBundleRefunds, bundleRefund) => totalBundleRefunds.add(bundleRefund),
-                bnZero
-              ),
-            bnZero
-          );
-        const nextBundleDeductions = [unaccountedBundleRefunds]
-          .map((refund) => refund[chainId]?.[l2Token.toBytes32()])
-          .filter(isDefined)
-          .reduce(
-            (totalPendingRefunds, refunds) =>
-              Object.values(refunds).reduce(
-                (totalBundleRefunds, bundleRefund) => totalBundleRefunds.add(bundleRefund),
-                bnZero
-              ),
-            bnZero
-          );
-        pendingRelayerRefunds[chainId][l2Token.toNative()] = pendingValidatedDeductions.add(nextBundleDeductions);
+        const l1Token = l2TokenMap[l2Token.toNative()];
+        const upcomingBundleRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address);
+        pendingRelayerRefunds[chainId][l2Token.toNative()] = upcomingBundleRefunds;
       });
 
       this.logger.debug({
@@ -1104,7 +1072,7 @@ export class Monitor {
     }
     const lastFullyExecutedBundleTime = lastFullyExecutedBundle.challengePeriodEndTimestamp;
 
-    const allL1Tokens = this.clients.hubPoolClient.getL1Tokens();
+    const allL1Tokens = this.l1Tokens;
     const poolRebalanceLeaves = this.clients.hubPoolClient.getExecutedLeavesForRootBundle(
       lastFullyExecutedBundle,
       latestHeightSearched
@@ -1287,19 +1255,27 @@ export class Monitor {
   }
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
-    const validatedBundleRefunds: CombinedRefunds[] =
-      await this.clients.bundleDataClient.getPendingRefundsFromValidBundles();
-    const nextBundleRefunds = await this.clients.bundleDataClient.getNextBundleRefunds();
-
     // Calculate which fills have not yet been refunded for each monitored relayer.
-    for (const refunds of validatedBundleRefunds) {
-      for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.PENDING);
-      }
-    }
-    for (const refunds of nextBundleRefunds) {
-      for (const relayer of this.monitorConfig.monitoredRelayers) {
-        this.updateRelayerRefunds(refunds, relayerBalanceReport[relayer.toBytes32()], relayer, BalanceType.NEXT);
+    for (const relayer of this.monitorConfig.monitoredRelayers) {
+      for (const l1Token of this.l1Tokens) {
+        for (const chainId of this.monitorChains) {
+          const upcomingRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address, relayer);
+          if (upcomingRefunds.gt(0)) {
+            const l2TokenAddress = getRemoteTokenForL1Token(
+              l1Token.address,
+              chainId,
+              this.clients.hubPoolClient.chainId
+            );
+            const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddress, chainId);
+            this.updateRelayerBalanceTable(
+              relayerBalanceReport[relayer.toBytes32()],
+              l1Token.symbol,
+              getNetworkName(chainId),
+              BalanceType.PENDING,
+              decimalConverter(upcomingRefunds)
+            );
+          }
+        }
       }
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {

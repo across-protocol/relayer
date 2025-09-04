@@ -5,7 +5,7 @@
 
 import { SpokePoolClientsByChain } from "../interfaces";
 import { assert, BigNumber, isDefined, winston } from "../utils";
-import { Address, bnZero, EvmAddress, getL1TokenAddress } from "../utils/SDKUtils";
+import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export class BundleDataApproxClient {
@@ -16,7 +16,7 @@ export class BundleDataApproxClient {
     private readonly spokePoolClients: SpokePoolClientsByChain,
     private readonly hubPoolClient: HubPoolClient,
     private readonly chainIdList: number[],
-    private readonly l1Tokens: EvmAddress[],
+    private readonly l1Tokens: Address[],
     private readonly logger: winston.Logger
   ) {}
 
@@ -25,7 +25,7 @@ export class BundleDataApproxClient {
   // are valid and will be refunded on the repayment chain selected. Assume additionally that the repayment chain
   // set is a valid one for the deposit.
   protected getApproximateRefundsForToken(
-    l1Token: EvmAddress,
+    l1Token: Address,
     fromBlocks: { [chainId: number]: number }
   ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
     const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
@@ -87,7 +87,7 @@ export class BundleDataApproxClient {
     );
   }
 
-  private getApproximateUpcomingRefunds(l1Token: EvmAddress): ReturnType<typeof this.getApproximateRefundsForToken> {
+  private getApproximateUpcomingRefunds(l1Token: Address): ReturnType<typeof this.getApproximateRefundsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
     this.logger.debug({
@@ -100,7 +100,7 @@ export class BundleDataApproxClient {
   }
 
   private getApproximateDepositsForToken(
-    l1Token: EvmAddress,
+    l1Token: Address,
     fromBlocks: { [chainId: number]: number }
   ): { [chainId: number]: BigNumber } {
     const depositsForChain: { [chainId: number]: BigNumber } = {};
@@ -127,7 +127,7 @@ export class BundleDataApproxClient {
   }
 
   private getApproximateUpcomingDepositsForToken(
-    l1Token: EvmAddress
+    l1Token: Address
   ): ReturnType<typeof this.getApproximateDepositsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
@@ -140,7 +140,7 @@ export class BundleDataApproxClient {
     return depositsForChain;
   }
 
-  protected getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
+  protected getL1TokenAddress(l2Token: Address, chainId: number): Address | undefined {
     try {
       return getL1TokenAddress(l2Token, chainId);
     } catch {
@@ -157,7 +157,7 @@ export class BundleDataApproxClient {
     }
   }
 
-  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: EvmAddress): BigNumber {
+  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
     assert(
       isDefined(this.upcomingRefunds),
       "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
@@ -172,7 +172,7 @@ export class BundleDataApproxClient {
     );
   }
 
-  getUpcomingDeposits(chainId: number, l1Token: EvmAddress): BigNumber {
+  getUpcomingDeposits(chainId: number, l1Token: Address): BigNumber {
     assert(
       isDefined(this.upcomingDeposits),
       "BundleDataApproxClient#getUpcomingDeposits: Upcoming deposits not initialized"
