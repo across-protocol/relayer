@@ -38,11 +38,23 @@ export class BundleDataApproxClient {
       spokePoolClient
         .getFills()
         .filter((fill) => {
-          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
-          if (!isDefined(expectedL1Token)) {
+          if (fill.blockNumber < fromBlocks[chainId]) {
             return false;
           }
-          return l1Token.eq(expectedL1Token) && fill.blockNumber >= fromBlocks[chainId];
+          const expectedL1Token = this.getL1TokenAddress(fill.inputToken, fill.originChainId);
+          if (!isDefined(expectedL1Token) || !expectedL1Token.eq(l1Token)) {
+            return false;
+          }
+          // A simple check that this fill is *probably* valid is to check that the output and input token
+          // map to the same L1 token. This means that this method will ignore refunds for swaps, but these
+          // are currently very rare in practice. This prevents invalid fills with very large input amounts
+          // from skewing the numbers.
+          const outputMappedL1Token = this.getL1TokenAddress(fill.outputToken, fill.destinationChainId);
+          if (!isDefined(outputMappedL1Token) || !outputMappedL1Token.eq(expectedL1Token)) {
+            return false;
+          }
+
+          return true;
         })
         .forEach((fill) => {
           const { inputAmount: refundAmount, repaymentChainId, relayer } = fill;
