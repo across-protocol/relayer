@@ -970,7 +970,7 @@ export class Monitor {
       pendingRelayerRefunds[chainId] = {};
       l2TokenAddresses.forEach((l2Token) => {
         const l1Token = l2TokenMap[l2Token.toNative()];
-        const upcomingBundleRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address);
+        const upcomingBundleRefunds = this.getUpcomingRefunds(chainId, l1Token.address);
         pendingRelayerRefunds[chainId][l2Token.toNative()] = upcomingBundleRefunds;
       });
 
@@ -1259,7 +1259,7 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of this.l1Tokens) {
         for (const chainId of this.monitorChains) {
-          const upcomingRefunds = this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token.address, relayer);
+          const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
             const l2TokenAddress = getRemoteTokenForL1Token(
               l1Token.address,
@@ -1286,6 +1286,10 @@ export class Monitor {
         await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toBytes32()]);
       })
     );
+  }
+
+  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token, relayer);
   }
 
   updateCrossChainTransfers(relayer: Address, relayerBalanceTable: RelayerBalanceTable): void {
