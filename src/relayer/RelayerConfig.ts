@@ -351,7 +351,8 @@ export class RelayerConfig extends CommonConfig {
         : chainIds;
 
     const ignoredChainIds = chainIds.filter(
-      (chainId) => !relayerChainIds.includes(chainId) && chainId !== CHAIN_IDs.BOBA
+      (chainId) =>
+        !relayerChainIds.includes(chainId) && (chainId !== CHAIN_IDs.BOBA || chainId !== CHAIN_IDs.ALEPH_ZERO)
     );
     if (ignoredChainIds.length > 0 && logger) {
       logger.debug({

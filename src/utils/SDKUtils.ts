@@ -34,6 +34,7 @@ export const {
   getEventAuthority,
   getClaimAccountPda,
   createDefaultTransaction,
+  getCCTPDepositAccounts,
 } = sdk.arch.svm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 
