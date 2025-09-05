@@ -12,11 +12,12 @@ import {
   getBinanceApiClient,
   getTranslatedTokenAddress,
   floatToBN,
-  mapAsync,
   getTimestampForBlock,
   CHAIN_IDs,
   getTokenInfo,
   compareAddressesSimple,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -92,41 +93,36 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
+    const l1Provider = this.l1Provider instanceof Signer ? this.l1Provider.provider : this.l1Provider;
     const binanceApiClient = await this.getBinanceClient();
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
     const fromTimestamp = (await getTimestampForBlock(this.l2Bridge.provider, l2EventConfig.from)) * 1_000;
     const [_depositHistory, _withdrawHistory] = await Promise.all([
-      binanceApiClient.depositHistory({
-        coin: this.l1TokenInfo.symbol,
-        startTime: fromTimestamp,
-      }),
-      binanceApiClient.withdrawHistory({
-        coin: this.l1TokenInfo.symbol,
-        startTime: fromTimestamp,
-      }),
+      getBinanceDeposits(binanceApiClient, l1Provider, this.l2Bridge.provider, fromTimestamp),
+      getBinanceWithdrawals(
+        binanceApiClient,
+        this.l1TokenInfo.symbol,
+        l1Provider,
+        this.l2Bridge.provider,
+        fromTimestamp
+      ),
     ]);
     const [depositHistory, withdrawHistory] = [
-      _depositHistory.filter((deposit) => deposit.network === "BSC"),
+      _depositHistory.filter((deposit) => deposit.network === "BSC" && deposit.coin === this.l1TokenInfo.symbol),
       _withdrawHistory.filter((withdrawal) => withdrawal.network === "ETH"),
     ];
 
-    // Filter based on `fromAddress`.
-    const depositTxReceipts = await mapAsync(
-      depositHistory.map((deposit) => deposit.txId),
-      async (transactionHash) => this.l2Bridge.provider.getTransactionReceipt(transactionHash as string)
-    );
-
     // FilterMap to remove all deposits originating from other EOAs.
     const depositsInitiatedForAddress = depositHistory
-      .map((deposit, idx) => {
-        if (!compareAddressesSimple(depositTxReceipts[idx].from, fromAddress.toNative())) {
+      .map((deposit) => {
+        if (!compareAddressesSimple(deposit.externalAddress, fromAddress.toNative())) {
           return undefined;
         }
         return deposit;
       })
       .filter(isDefined);
     const withdrawalsFinalizedForAddress = withdrawHistory.filter((withdrawal) =>
-      compareAddressesSimple(withdrawal.address, fromAddress.toNative())
+      compareAddressesSimple(withdrawal.externalAddress, fromAddress.toNative())
     );
 
     const totalDepositAmountForAddress = depositsInitiatedForAddress.reduce(
