@@ -496,7 +496,7 @@ export class InventoryClient {
       if (!repaymentToken) {
         continue;
       }
-      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, Number(chainId));
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
       const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
       const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
       totalRefundsPerChain[chainId] = convertedRefundAmount;
