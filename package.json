@@ -90,6 +90,7 @@
     "@typechain/hardhat": "^6.1.6",
     "@types/bluebird": "^3.5.38",
     "@types/chai": "^4.3.5",
+    "@types/lodash": "^4.17.20",
     "@types/minimist": "^1.2.2",
     "@types/mocha": "^10.0.1",
     "@types/node": "^24.3.0",

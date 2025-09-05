@@ -775,7 +775,7 @@ export class InventoryClient {
 
         // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
         // been accounted for in the latest running balance set in `runningBalanceForToken`.
-        const allBundleRefunds: CombinedRefunds[] = lodash.cloneDeep(await this.bundleRefundsPromise);
+        const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
         // @dev upcoming refunds are always pushed last into this list, that's why we can pop() it.
         // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
         // one of the refund entries for a chain can be undefined.
@@ -1047,7 +1047,7 @@ export class InventoryClient {
           cumulativeBalance,
           hash,
           chainId,
-        } of rebalances as ExecutedRebalance[]) {
+        } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
             `InventoryClient::rebalanceInventoryIfNeeded no token info for L2 token ${l2Token} on chain ${chainId}`;
@@ -1075,7 +1075,7 @@ export class InventoryClient {
       for (const [_chainId, rebalances] of Object.entries(groupedUnexecutedRebalances)) {
         const chainId = Number(_chainId);
         mrkdwn += `*Insufficient amount to rebalance to ${getNetworkName(chainId)}:*\n`;
-        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances as ExecutedRebalance[]) {
+        for (const { l1Token, l2Token, balance, cumulativeBalance, amount } of rebalances) {
           const tokenInfo = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
           if (!tokenInfo) {
             throw new Error(
