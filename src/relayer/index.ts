@@ -178,6 +178,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     logger.debug({ at, message: "Inventory management disabled, nothing to do." });
     return;
   }
+  inventoryClient.setBundleData();
 
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
 
