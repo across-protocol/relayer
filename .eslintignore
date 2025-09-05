@@ -3,3 +3,4 @@ artifacts
 dist
 cache
 typechain*
+serverless-orchestration
