@@ -150,7 +150,7 @@ export class InventoryClient {
     ignoreL1ToL2PendingAmount = false
   ): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
-    let balance: BigNumber;
+    let balance = bnZero;
 
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
 
@@ -164,8 +164,6 @@ export class InventoryClient {
         );
         balance = pendingWithdrawalVolume;
       }
-    } else {
-      balance = bnZero;
     }
 
     // Return the balance for a specific l2 token on the remote chain.
