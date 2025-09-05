@@ -229,6 +229,16 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(spyLogIncludes(spy, -1, 'expectedPostRelayAllocation":"74074074074074074"')).to.be.true; // (5+5)/(135)=0.074074
     });
 
+    it("Correctly factors in pending L2->L1 withdrawals when deciding where to refund", async function () {
+      // This fakes a 10 WETH pending withdrawal on each L2 chain, of which there are 4, so the cumulative balance
+      // should go from 140 to 180.
+      adapterManager.setL2PendingWithdrawalAmount(7200, toWei(10));
+      await inventoryClient.update();
+
+      await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(spyLogIncludes(spy, -1, 'cumulativeVirtualBalance":"180000000000000000000"')).to.be.true;
+    });
+
     it("Normalizes repayment amount to correct precision", async function () {
       // Identical setup to previous test but we'll pretend the L2 token uses a different precision than the L1 token.
       hubPoolClient.mapTokenInfo(l2TokensForWeth[ARBITRUM], "WETH", 6);
