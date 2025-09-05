@@ -114,7 +114,7 @@ export async function bridgeTokensToHubPool(
     const withdrawSimulation = await simulateSolanaTransaction(bridgeTokensToHubPoolTx, svmProvider);
     return {
       message: `Simulated withdrawal of ${formatUsdc(pendingWithdrawAmount.toString())} USDC with result ${
-        withdrawSimulation?.value
+        withdrawSimulation?.value?.logs
       }`,
       signature: "",
     };
