@@ -63,7 +63,7 @@ import {
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
-import { CombinedRefunds, getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
+import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import {
@@ -1272,8 +1272,9 @@ export class Monitor {
 
   async updateLatestAndFutureRelayerRefunds(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     // Calculate which fills have not yet been refunded for each monitored relayer.
+    const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      for (const l1Token of this.l1Tokens) {
+      for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
@@ -1399,46 +1400,6 @@ export class Monitor {
     }
     return reports;
   }
-
-  private updateRelayerRefunds(
-    fillsToRefundPerChain: CombinedRefunds,
-    relayerBalanceTable: RelayerBalanceTable,
-    relayer: Address,
-    balanceType: BalanceType
-  ) {
-    const l1Tokens = this.getL1TokensForRelayerBalancesReport();
-    for (const chainId of this.monitorChains) {
-      const l2ToL1Tokens = this.getL2ToL1TokenMap(l1Tokens, chainId);
-      const fillsToRefund = fillsToRefundPerChain[chainId];
-      // Skip chains that don't have any refunds.
-      if (fillsToRefund === undefined) {
-        continue;
-      }
-
-      for (const _tokenAddress of Object.keys(fillsToRefund)) {
-        const tokenAddress = toAddressType(_tokenAddress, chainId);
-        // If there are no refunds for the monitored relayer for this token, then ignore this token.
-        if (!isDefined(fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()])) {
-          continue;
-        }
-        const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(tokenAddress, chainId);
-        // Skip token if there are no refunds (although there are valid fills).
-        // This is an edge case that shouldn't usually happen.
-        if (
-          fillsToRefund[tokenAddress.toBytes32()] === undefined ||
-          l2ToL1Tokens[tokenAddress.toNative()] === undefined
-        ) {
-          continue;
-        }
-
-        const totalRefundAmount = fillsToRefund[tokenAddress.toBytes32()][relayer.toBytes32()];
-        const { symbol } = l2ToL1Tokens[tokenAddress.toNative()];
-        const amount = decimalConverter(totalRefundAmount);
-        this.updateRelayerBalanceTable(relayerBalanceTable, symbol, getNetworkName(chainId), balanceType, amount);
-      }
-    }
-  }
-
   protected getRemoteTokenForL1Token(l1Token: EvmAddress, chainId: number | string): Address | undefined {
     return chainId === this.clients.hubPoolClient.chainId
       ? l1Token
