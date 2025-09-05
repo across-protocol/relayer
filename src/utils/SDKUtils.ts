@@ -105,7 +105,7 @@ export const {
 
 export const {
   getRefundsFromBundle,
-  isChainDisabled,
+  isChainDisabledAtBlock,
   getWidestPossibleExpectedBlockRange,
   getEndBlockBuffers,
   buildPoolRebalanceLeafTree,
