@@ -45,11 +45,6 @@ import {
   L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE,
 } from "./imports";
 
-type MessageWithStatusAndTokensBridged = {
-  message: MessageWithStatus;
-  tokensBridged: TokensBridged;
-};
-
 // Normally we avoid importing directly from a node_modules' /dist package but we need access to some
 // of the internal classes and functions in order to replicate SDK logic so that we can by pass hardcoded
 // ethers.Provider instances and use our own custom provider instead.
@@ -290,7 +285,7 @@ export async function lineaL2ToL1Finalizer(
     claimed = [],
     claimable = [],
     unknown = [],
-  } = groupBy(mergedMessages as MessageWithStatusAndTokensBridged[], ({ message }) => {
+  } = groupBy(mergedMessages, ({ message }) => {
     return message.status === OnChainMessageStatus.CLAIMED
       ? "claimed"
       : message.status === OnChainMessageStatus.CLAIMABLE
@@ -357,23 +352,20 @@ export async function lineaL2ToL1Finalizer(
       claimable: claimable.length,
       notReceived: unknown.length,
     },
-    notReceivedTxns: await mapAsync(
-      unknown as MessageWithStatusAndTokensBridged[],
-      async ({ message, tokensBridged }) => {
-        const withdrawalBlock = tokensBridged.blockNumber;
-        const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
-        const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
-        const amountToReturn = formatter(tokensBridged.amountToReturn);
-        return {
-          txnHash: message.txHash,
-          withdrawalBlock,
-          token: l2TokenInfo.symbol,
-          amountToReturn,
-          maturedHours:
-            (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
-        };
-      }
-    ),
+    notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
+      const withdrawalBlock = tokensBridged.blockNumber;
+      const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
+      const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+      const amountToReturn = formatter(tokensBridged.amountToReturn);
+      return {
+        txnHash: message.txHash,
+        withdrawalBlock,
+        token: l2TokenInfo.symbol,
+        amountToReturn,
+        maturedHours:
+          (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
+      };
+    }),
   });
 
   return { callData: multicall3Call, crossChainMessages: transfers };
