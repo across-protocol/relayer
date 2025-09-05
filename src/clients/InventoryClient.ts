@@ -944,8 +944,8 @@ export class InventoryClient {
           log({
             at: "InventoryClient",
             message,
-            l1Token: l1Token.toNative(),
-            l2Token: l2Token.toNative(),
+            l1Token,
+            l2Token,
             l2ChainId: chainId,
             balance,
             currentBalance,
@@ -965,20 +965,8 @@ export class InventoryClient {
       // Extract unexecutable rebalances for logging.
 
       this.log("Considered inventory rebalances", {
-        rebalancesRequired: rebalancesRequired.map((rebalance) => {
-          return {
-            ...rebalance,
-            l1Token: rebalance.l1Token.toNative(),
-            l2Token: rebalance.l2Token.toNative(),
-          };
-        }),
-        possibleRebalances: possibleRebalances.map((rebalance) => {
-          return {
-            ...rebalance,
-            l1Token: rebalance.l1Token.toNative(),
-            l2Token: rebalance.l2Token.toNative(),
-          };
-        }),
+        rebalancesRequired,
+        possibleRebalances,
       });
 
       // Finally, execute the rebalances.
