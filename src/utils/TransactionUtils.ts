@@ -72,9 +72,9 @@ const isFillRelayError = (error: unknown): boolean => {
   const errorStack = (error as Error).stack;
   const isFillRelayError = errorStack?.includes(fillRelaySelector);
   const isMulticallError = errorStack?.includes(multicallSelector);
-  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector);
+  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
 
-  return isFillRelayError && isFillRelayInMulticallError;
+  return isFillRelayError || isFillRelayInMulticallError;
 };
 
 export function getNetworkError(err: unknown): string {
@@ -168,7 +168,7 @@ export async function runTransaction(
     }
   } catch (error) {
     if (retriesRemaining > 0 && txnRetryable(error)) {
-      // If error is due to a nonce collision or gas underpricement then re-submit to fetch latest params.
+      // If error is due to a nonce collision or gas underpricing then re-submit to fetch latest params.
       retriesRemaining -= 1;
       logger.debug({
         at: "TxUtil#runTransaction",
@@ -208,8 +208,10 @@ export async function runTransaction(
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
-        logger[txnRetryable(error) || isFillRelayError(error) ? "warn" : "error"]({
+        const isWarning = txnRetryable(error) || isFillRelayError(error);
+        logger[isWarning ? "warn" : "error"]({
           ...commonFields,
+          notificationPath: isWarning ? "across-warn" : "across-error",
           error: stringifyThrownValue(error),
         });
       }

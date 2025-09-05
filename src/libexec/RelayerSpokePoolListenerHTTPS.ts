@@ -213,7 +213,7 @@ async function run(argv: string[]): Promise<void> {
     stop = true;
   });
 
-  // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and dedpulication.
+  // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and deduplication.
   logger.debug({ at: "RelayerSpokePoolListener::run", message: `Scraping previous ${chain} events.`, opts });
 
   if (latestBlock.number > startBlock) {

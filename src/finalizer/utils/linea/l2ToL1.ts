@@ -19,6 +19,7 @@ import {
   isEVMSpokePoolClient,
   toAddressType,
   Address,
+  createFormatFunction,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -127,7 +128,7 @@ async function getFinalizationMessagingInfo(
       treeDepth = BigNumber.from(parsedLog.args.treeDepth).toNumber();
       l2MerkleRoots.push(parsedLog.args.l2MerkleRoot);
     } else if (topic === L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE) {
-      blocksNumber.push(parsedLog.args.l2Block);
+      blocksNumber.push(BigNumber.from(parsedLog.args.l2Block).toNumber());
     }
   }
   if (l2MerkleRoots.length === 0) {
@@ -171,7 +172,7 @@ export async function lineaL2ToL1Finalizer(
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
@@ -250,9 +251,9 @@ export async function lineaL2ToL1Finalizer(
       l2TokenAddress: sdkUtils.EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[l2ChainId]),
       txnRef: event.transactionHash,
       blockNumber: event.blockNumber,
-      txnIndex: event.transactionIndex,
+      txnIndex: event.parsed.transactionIndex,
       logIndex: event.logIndex,
-      amountToReturn: event.args._value,
+      amountToReturn: BigNumber.from(event.parsed.args._value),
       chainId: l2ChainId,
       leafId: 0,
     });
@@ -305,7 +306,7 @@ export async function lineaL2ToL1Finalizer(
         l2SearchConfig,
         l1SearchConfig
       );
-      return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessageWithProof({
+      return l1ClaimingService.l1Contract.contract.claimMessageWithProof({
         from: message.messageSender,
         to: message.destination,
         fee: message.fee,
@@ -353,9 +354,14 @@ export async function lineaL2ToL1Finalizer(
     },
     notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
       const withdrawalBlock = tokensBridged.blockNumber;
+      const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
+      const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+      const amountToReturn = formatter(tokensBridged.amountToReturn);
       return {
         txnHash: message.txHash,
         withdrawalBlock,
+        token: l2TokenInfo.symbol,
+        amountToReturn,
         maturedHours:
           (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
       };

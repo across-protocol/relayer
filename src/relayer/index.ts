@@ -86,9 +86,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
       }
-      // Execute bundleRefundsPromise only after all spokePoolClients are updated.
+
+      // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
       if (!inventoryInit && inventoryManagement) {
-        await inventoryClient.executeBundleRefundsPromise();
+        inventoryClient.setBundleData();
         inventoryInit = true;
       }
 
@@ -157,4 +158,47 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   }
 
   mark.stop({ message: "Relayer instance completed." });
+}
+
+export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const personality = "Rebalancer";
+  const at = `${personality}::run`;
+
+  logger = _logger;
+  const config = new RelayerConfig(process.env);
+
+  // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+  const { addressFilter: _addressFilter, ...loggedConfig } = config;
+  logger.debug({ at, message: `${personality} started 🏃‍♂️`, loggedConfig });
+  const clients = await constructRelayerClients(logger, config, baseSigner);
+
+  const { inventoryClient, tokenClient } = clients;
+  const inventoryManagement = clients.inventoryClient.isInventoryManagementEnabled();
+  if (!inventoryManagement) {
+    logger.debug({ at, message: "Inventory management disabled, nothing to do." });
+    return;
+  }
+  inventoryClient.setBundleData();
+
+  const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
+
+  try {
+    await rebalancer.init();
+    await rebalancer.update();
+    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+    await rebalancer.runMaintenance();
+
+    // It's necessary to update token balances in case WETH was wrapped.
+    tokenClient.clearTokenData();
+    await tokenClient.update();
+    if (config.sendingTransactionsEnabled) {
+      await inventoryClient.setTokenApprovals();
+    }
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    await inventoryClient.withdrawExcessBalances();
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `${personality} instance completed.` });
+  }
 }

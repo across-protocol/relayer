@@ -3,7 +3,7 @@ import { Contract } from "ethers";
 import winston from "winston";
 import { CHAIN_IDs, MakeOptional, EventSearchConfig, assign, isDefined, toBytes32, toAddressType } from "../utils";
 import { IGNORED_HUB_EXECUTED_BUNDLES, IGNORED_HUB_PROPOSED_BUNDLES } from "../common";
-import { CrossChainContractsSet } from "../interfaces";
+import { CrossChainContractsSet, ProposedRootBundle } from "../interfaces";
 import { zeroAddress } from "viem";
 
 export type LpFeeRequest = clients.LpFeeRequest;
@@ -68,6 +68,14 @@ export class HubPoolClient extends clients.HubPoolClient {
     }
 
     return await super.computeRealizedLpFeePct(deposit);
+  }
+
+  getBundleEndBlockForChain(
+    proposeRootBundleEvent: ProposedRootBundle,
+    chainId: number,
+    chainIdList: number[]
+  ): number {
+    return super.getBundleEndBlockForChain(proposeRootBundleEvent, chainId, chainIdList);
   }
 
   async update(eventsToQuery?: any): Promise<void> {

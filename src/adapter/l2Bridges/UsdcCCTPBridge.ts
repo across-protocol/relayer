@@ -93,7 +93,9 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     fromAddress: EvmAddress,
     l2Token: EvmAddress
   ): Promise<BigNumber> {
-    assert(l2Token.eq(this.l2UsdcTokenAddress));
+    if (!l2Token.eq(this.l2UsdcTokenAddress)) {
+      return bnZero;
+    }
 
     const l2EventFilterArgs = this.IS_CCTP_V2
       ? [this.l2UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()]
