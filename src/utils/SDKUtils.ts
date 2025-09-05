@@ -34,6 +34,7 @@ export const {
   getEventAuthority,
   getClaimAccountPda,
   createDefaultTransaction,
+  getCCTPDepositAccounts,
 } = sdk.arch.svm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 
@@ -104,7 +105,7 @@ export const {
 
 export const {
   getRefundsFromBundle,
-  isChainDisabled,
+  isChainDisabledAtBlock,
   getWidestPossibleExpectedBlockRange,
   getEndBlockBuffers,
   buildPoolRebalanceLeafTree,
