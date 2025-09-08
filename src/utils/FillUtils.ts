@@ -88,7 +88,14 @@ export function repaymentChainCanBeQuicklyRebalanced(
   const originChainIsCctpEnabled =
     compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[deposit.originChainId], deposit.inputToken.toNative()) &&
     sdkUtils.chainIsCCTPEnabled(deposit.originChainId);
-  return originChainIsCctpEnabled || [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId);
+  const originChainIsOFTEnabled =
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[deposit.originChainId], deposit.inputToken.toNative()) &&
+    sdkUtils.chainIsOFTEnabled(deposit.originChainId);
+  return (
+    originChainIsCctpEnabled ||
+    originChainIsOFTEnabled ||
+    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId)
+  );
 }
 
 export function getAllUnfilledDeposits(
