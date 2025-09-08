@@ -95,6 +95,8 @@ export function repaymentChainCanBeQuicklyRebalanced(
   return (
     originChainIsCctpEnabled ||
     originChainIsOFTEnabled ||
+    // We assume that all repayments sent to Mainnet and BSC can be quickly rebalanced to a different chain using
+    // canonical bridges out of L1 or the Binance API respectively.
     [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(repaymentChainId)
   );
 }
