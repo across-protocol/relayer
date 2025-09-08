@@ -452,7 +452,6 @@ export class InventoryClient {
       return [];
     }
 
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
@@ -475,6 +474,7 @@ export class InventoryClient {
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
     // If the relayer wants to prioritize LP utilization, then we should always take repayment on the origin chain
     // if it is a quick rebalance source.
+    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (
       (this.prioritizeLpUtilization || forceOriginRepayment) &&
       repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)
