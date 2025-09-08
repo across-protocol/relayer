@@ -965,7 +965,6 @@ describe("InventoryClient: Refund chain selection", async function () {
         tokenClient,
         enabledChainIds,
         hubPoolClient,
-        bundleDataClient,
         adapterManager,
         crossChainTransferClient,
         false, // simMode
