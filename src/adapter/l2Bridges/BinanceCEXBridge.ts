@@ -18,6 +18,7 @@ import {
   compareAddressesSimple,
   getBinanceDeposits,
   getBinanceWithdrawals,
+  DepositNetworks,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -30,6 +31,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   protected binanceApiClient;
   // Store the token info for the bridge so we can reference the L1 decimals and L1 token symbol.
   protected l1TokenInfo: L1Token;
+  // The deposit network corresponding to the L2.
+  protected depositNetwork: string;
 
   constructor(
     l2chainId: number,
@@ -52,6 +55,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       symbol: l1TokenInfo.symbol === "WETH" ? "ETH" : l1TokenInfo.symbol,
     };
 
+    this.depositNetwork = DepositNetworks[l2chainId];
+
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
   }
 
@@ -65,7 +70,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
     const depositAddress = await binanceApiClient.depositAddress({
       coin: this.l1TokenInfo.symbol,
-      network: "BSC",
+      network: this.depositNetwork,
     });
     const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
     const transferTxn: AugmentedTransaction = {
@@ -108,7 +113,9 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       ),
     ]);
     const [depositHistory, withdrawHistory] = [
-      _depositHistory.filter((deposit) => deposit.network === "BSC" && deposit.coin === this.l1TokenInfo.symbol),
+      _depositHistory.filter(
+        (deposit) => deposit.network === this.depositNetwork && deposit.coin === this.l1TokenInfo.symbol
+      ),
       _withdrawHistory.filter((withdrawal) => withdrawal.network === "ETH"),
     ];
 

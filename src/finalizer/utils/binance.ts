@@ -19,7 +19,6 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   getAccountCoins,
-  DepositNetwork,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -120,13 +119,17 @@ export async function binanceFinalizer(
       }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
-      for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
-        const withdrawNetwork =
-          depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
+      // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
+      // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
+      for (const withdrawNetwork of ["BSC", "ETH"]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
+        const finalizingOnL2 = withdrawNetwork === "BSC";
         const depositAmounts = depositsInScope
-          .filter((deposit) => deposit.coin === symbol && deposit.network === depositNetwork)
+          .filter(
+            (deposit) =>
+              deposit.coin === symbol && (finalizingOnL2 ? deposit.network === "ETH" : deposit.network !== "ETH")
+          )
           .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
 
         const withdrawalsInScope = withdrawals.filter(
@@ -145,7 +148,7 @@ export async function binanceFinalizer(
 
         logger.debug({
           at: "BinanceFinalizer",
-          message: `(${depositNetwork} -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
+          message: `(X -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
           totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
           withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
           amountToFinalize,
@@ -155,7 +158,7 @@ export async function binanceFinalizer(
         if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
           logger.warn({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
+            message: `(X -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
           });
           amountToFinalize = Number(networkLimits.withdrawMax);
         }
@@ -164,7 +167,7 @@ export async function binanceFinalizer(
         if (amountToFinalize > Number(coinBalance)) {
           logger.debug({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
+            message: `(X -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
             balance: coinBalance,
           });
@@ -184,14 +187,14 @@ export async function binanceFinalizer(
           });
           logger.info({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Finalized deposit on ${withdrawNetwork} for ${amountToFinalize} ${symbol}.`,
+            message: `(X -> ${withdrawNetwork}) Finalized deposit on ${withdrawNetwork} for ${amountToFinalize} ${symbol}.`,
             amount: amountToFinalize,
             withdrawalId,
           });
         } else {
           logger.debug({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
+            message: `(X -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
           });
         }
       }
