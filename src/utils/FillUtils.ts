@@ -1,6 +1,6 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, EvmAddress, TOKEN_SYMBOLS_MAP } from "../utils";
+import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type RelayerUnfilledDeposit = {
