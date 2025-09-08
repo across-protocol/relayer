@@ -477,6 +477,8 @@ export class InventoryClient {
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (
       (this.prioritizeLpUtilization || forceOriginRepayment) &&
+      // @todo: Consider requiring also that the deposit amount is large enough that its worth taking repayment on
+      // origin chain instead of waiting the ~30 mins for the "fast rebalancing" CCTP/OFT bridge to complete.
       repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)
     ) {
       return [deposit.originChainId];
