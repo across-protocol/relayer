@@ -1,6 +1,6 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, EvmAddress, TOKEN_SYMBOLS_MAP } from "../utils";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type RelayerUnfilledDeposit = {
@@ -82,19 +82,20 @@ export function depositForcesOriginChainRepayment(
  * be filled or ignored given current inventory allocation levels.
  */
 export function repaymentChainCanBeQuicklyRebalanced(
-  deposit: Pick<DepositWithBlock, "originChainId" | "inputToken">,
+  repaymentChainId: number,
+  repaymentToken: Address,
   hubPoolClient: HubPoolClient
 ): boolean {
   const originChainIsCctpEnabled =
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[deposit.originChainId], deposit.inputToken.toNative()) &&
-    sdkUtils.chainIsCCTPEnabled(deposit.originChainId);
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative()) &&
+    sdkUtils.chainIsCCTPEnabled(repaymentChainId);
   const originChainIsOFTEnabled =
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[deposit.originChainId], deposit.inputToken.toNative()) &&
-    sdkUtils.chainIsOFTEnabled(deposit.originChainId);
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
+    sdkUtils.chainIsOFTEnabled(repaymentChainId);
   return (
     originChainIsCctpEnabled ||
     originChainIsOFTEnabled ||
-    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId)
+    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(repaymentChainId)
   );
 }
 
