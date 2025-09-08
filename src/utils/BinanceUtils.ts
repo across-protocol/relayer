@@ -6,7 +6,7 @@ import Binance, {
 } from "binance-api-node";
 import minimist from "minimist";
 import { SortableEvent } from "../interfaces";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, ethers, mapAsync, delay } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, ethers, mapAsync, delay, CHAIN_IDs } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -24,10 +24,11 @@ type WithdrawalQuota = {
 };
 
 // Alias for Binance network symbols.
-export enum DepositNetwork {
-  Ethereum = "ETH",
-  BSC = "BSC",
-}
+export const DepositNetworks: { [chainId: number]: string } = {
+  [CHAIN_IDs.MAINNET]: "ETH",
+  [CHAIN_IDs.BSC]: "BSC",
+  [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
+};
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
 // token.
@@ -147,7 +148,7 @@ export async function getBinanceDeposits(
   }
   const depositHistory = Object.values(_depositHistory);
   return mapAsync(depositHistory, async (deposit) => {
-    const provider = deposit.network === DepositNetwork.Ethereum ? l1Provider : l2Provider;
+    const provider = deposit.network === "ETH" ? l1Provider : l2Provider;
     const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
     return {
       amount: Number(deposit.amount),
@@ -193,7 +194,7 @@ export async function getBinanceWithdrawals(
   }
   const withdrawHistory = Object.values(_withdrawHistory);
   return mapAsync(withdrawHistory, async (withdrawal) => {
-    const provider = withdrawal.network === DepositNetwork.Ethereum ? l1Provider : l2Provider;
+    const provider = withdrawal.network === "ETH" ? l1Provider : l2Provider;
     const withdrawalTxnReceipt = await provider.getTransactionReceipt(withdrawal.txId);
     return {
       amount: Number(withdrawal.amount),
