@@ -94,7 +94,7 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { inventoryClient, tokenClient } = this.clients;
+    const { tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
       tokenClient.update(),
@@ -102,10 +102,6 @@ export class Relayer {
 
     if (this.config.sendingRelaysEnabled && this.config.sendingTransactionsEnabled) {
       await tokenClient.setOriginTokenApprovals();
-    }
-
-    if (this.config.sendingRebalancesEnabled && this.config.sendingTransactionsEnabled) {
-      await inventoryClient.setTokenApprovals();
     }
 
     this.logger.debug({
@@ -175,14 +171,6 @@ export class Relayer {
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.wrapL2EthIfAboveThreshold();
-
-    if (this.config.sendingRebalancesEnabled) {
-      // It's necessary to update token balances in case WETH was wrapped.
-      tokenClient.clearTokenData();
-      await tokenClient.update();
-      await inventoryClient.rebalanceInventoryIfNeeded();
-      await inventoryClient.withdrawExcessBalances();
-    }
 
     // Unwrap WETH after filling deposits, but before rebalancing.
     await inventoryClient.unwrapWeth();
@@ -335,7 +323,10 @@ export class Relayer {
     }
 
     // Skip deposit with message if sending fills with messages is not supported.
-    if (!this.config.sendingMessageRelaysEnabled && !isMessageEmpty(resolveDepositMessage(deposit))) {
+    if (
+      !this.config.sendingMessageRelaysEnabled[destinationChainId] &&
+      !isMessageEmpty(resolveDepositMessage(deposit))
+    ) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::filterDeposit",
         message: "Skipping fill for deposit with message",
@@ -771,8 +762,10 @@ export class Relayer {
       if (!isProfitable) {
         profitClient.captureUnprofitableFill(deposit, realizedLpFeePct, relayerFeePct, gasCost);
 
-        const relayKey = sdkUtils.getRelayEventKey(deposit);
-        this.ignoredDeposits[relayKey] = true;
+        if (destinationChainId !== CHAIN_IDs.SOLANA) {
+          const relayKey = sdkUtils.getRelayEventKey(deposit);
+          this.ignoredDeposits[relayKey] = true;
+        }
       }
       return;
     }

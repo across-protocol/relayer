@@ -492,18 +492,6 @@ export function getDisabledBlockRanges(): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
 }
 
-export function createRefunds(
-  outputToken: string,
-  refundAmount: BigNumber,
-  repaymentToken: string
-): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
-  return {
-    [toBytes32(repaymentToken)]: {
-      [toBytes32(outputToken)]: refundAmount,
-    },
-  };
-}
-
 // A helper function to parse key - value map into a Fill object
 export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
   const { message, ...relayData } = relayDataFromArgs(fillArgs);

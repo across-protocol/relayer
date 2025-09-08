@@ -16,6 +16,9 @@ import {
   CHAIN_IDs,
   getTokenInfo,
   winston,
+  Signer,
+  isSignerWallet,
+  assert,
 } from "../../../utils";
 import { HubPoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
@@ -28,14 +31,24 @@ export type MessageWithStatus = Message & {
   txHash: string;
 };
 
+export interface ParsedMessageSentLog {
+  parsed: MessageSentEvent.Log;
+  logIndex: number;
+  transactionHash: string;
+  blockNumber: number;
+}
+
 export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
-export function initLineaSdk(l1ChainId: number, l2ChainId: number): LineaSDK {
+export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer?: Signer): LineaSDK {
+  assert(isSignerWallet(signer), "Signer is not a Wallet");
   return new LineaSDK({
     l1RpcUrl: Object.values(getNodeUrlList(l1ChainId))[0],
     l2RpcUrl: Object.values(getNodeUrlList(l2ChainId))[0],
     network: l1ChainId === CHAIN_IDs.MAINNET ? "linea-mainnet" : "linea-goerli",
-    mode: "read-only",
+    mode: "read-write",
+    l1SignerPrivateKey: signer._signingKey().privateKey,
+    l2SignerPrivateKey: signer._signingKey().privateKey,
   });
 }
 
@@ -62,7 +75,7 @@ export function makeGetMessagesWithStatusByTxHash(
     }
 
     const messages = txReceipt.logs
-      .filter((log) => log.address === l2MessageService.contract.address)
+      .filter((log) => log.address === l2MessageService.contractAddress)
       .flatMap((log) => {
         const parsedLog = l2MessageService.contract.interface.parseLog(log);
 
@@ -71,7 +84,7 @@ export function makeGetMessagesWithStatusByTxHash(
         }
 
         const { _from, _to, _fee, _value, _nonce, _calldata, _messageHash } =
-          parsedLog.args as MessageSentEvent["args"];
+          parsedLog.args as unknown as MessageSentEvent.Log["args"];
 
         return {
           messageSender: _from,
@@ -134,13 +147,17 @@ export function getL2MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l2Provider: ethers.providers.Provider
 ): Contract {
-  return l1ClaimingService.l2Contract.contract.connect(l2Provider);
+  const address = l1ClaimingService.l2Contract.contractAddress;
+  const iface = new ethers.utils.Interface(l1ClaimingService.l2Contract.getContractAbi());
+  return new Contract(address, iface, l2Provider);
 }
 export function getL1MessageServiceContractFromL1ClaimingService(
   l1ClaimingService: L1ClaimingService,
   l1Provider: ethers.providers.Provider
 ): Contract {
-  return l1ClaimingService.l1Contract.contract.connect(l1Provider);
+  const address = l1ClaimingService.l1Contract.contractAddress;
+  const iface = new ethers.utils.Interface(l1ClaimingService.l1Contract.getContractAbi());
+  return new Contract(address, iface, l1Provider);
 }
 export async function getMessageSentEventForMessageHash(
   messageHash: string,
@@ -196,7 +213,7 @@ export async function getBlockRangeByHoursOffsets(
 }
 
 export function determineMessageType(
-  event: MessageSentEvent,
+  event: MessageSentEvent.Log,
   hubPoolClient: HubPoolClient
 ):
   | {
@@ -211,12 +228,12 @@ export function determineMessageType(
   const { _calldata, _value } = event.args;
   // First check a WETH deposit. A WETH deposit is a message with a positive
   // value and an empty calldata.
-  if (_calldata === "0x" && _value.gt(0)) {
+  if (_calldata === "0x" && _value > 0n) {
     return {
       type: "bridge",
       l1TokenSymbol: "WETH",
       l1TokenAddress: TOKEN_SYMBOLS_MAP.WETH.addresses[hubPoolClient.chainId],
-      amount: _value,
+      amount: BigNumber.from(_value),
     };
   }
   // Next check if the calldata is a valid Linea bridge. This should be in the form of a
@@ -250,10 +267,25 @@ export async function findMessageSentEvents(
   contract: Contract,
   senderAddresses: string[],
   searchConfig: EventSearchConfig
-): Promise<MessageSentEvent[]> {
-  return paginatedEventQuery(contract, contract.filters.MessageSent(senderAddresses), searchConfig) as Promise<
-    MessageSentEvent[]
-  >;
+): Promise<ParsedMessageSentLog[]> {
+  const rawLogs = await paginatedEventQuery(contract, contract.filters.MessageSent(senderAddresses), searchConfig);
+  return rawLogs.map((log) => {
+    const parsed = contract.interface.parseLog(log) as unknown as MessageSentEvent.Log;
+    return {
+      parsed,
+      logIndex: log.logIndex,
+      transactionHash: log.transactionHash,
+      blockNumber: log.blockNumber,
+    };
+  });
+}
+
+export async function findTokenBridgeEvents(
+  bridgeContract: Contract,
+  senderAddresses: string[],
+  searchConfig: EventSearchConfig
+): Promise<Log[]> {
+  return paginatedEventQuery(bridgeContract, bridgeContract.filters.BridgingInitiatedV2(senderAddresses), searchConfig);
 }
 
 export async function findMessageFromTokenBridge(
@@ -261,33 +293,45 @@ export async function findMessageFromTokenBridge(
   messageServiceContract: L1MessageServiceContract | L2MessageServiceContract,
   senderAddresses: string[],
   searchConfig: EventSearchConfig
-): Promise<MessageSentEvent[]> {
+): Promise<ParsedMessageSentLog[]> {
   const bridgeEvents = await paginatedEventQuery(
     bridgeContract,
     bridgeContract.filters.BridgingInitiatedV2(senderAddresses),
     searchConfig
   );
-  const messageSent = messageServiceContract.contract.interface.getEventTopic("MessageSent");
+  const iface = new ethers.utils.Interface(messageServiceContract.getContractAbi());
+  const messageSentTopic = iface.getEventTopic("MessageSent");
   const associatedMessages = await Promise.all(
     bridgeEvents.map(async ({ args, transactionHash }) => {
       const { logs } = await bridgeContract.provider.getTransactionReceipt(transactionHash);
       return logs
-        .filter((log) => log.topics[0] === messageSent)
-        .map((log) => ({
-          ...log,
-          args: messageServiceContract.contract.interface.decodeEventLog("MessageSent", log.data, log.topics),
-        }))
-        .filter((log) => {
+        .filter((log) => log.topics[0] === messageSentTopic)
+        .map((log) => {
+          const parsed = messageServiceContract.contract.interface.parseLog(log) as unknown as MessageSentEvent.Log;
+          const decodedArgs = parsed.args;
           // Start with the TokenBridge calldata format.
           try {
-            const decoded = bridgeContract.interface.decodeFunctionData("completeBridging", log.args._calldata);
-            return compareAddressesSimple(decoded._recipient, args.recipient) && decoded._amount.eq(args.amount);
-          } catch (_e) {
-            // We don't care about this because we have more to check
-            return false;
+            const decoded = bridgeContract.interface.decodeFunctionData("completeBridging", decodedArgs._calldata);
+            const isMatch =
+              compareAddressesSimple(decoded._recipient, args.recipient) &&
+              decoded._amount.toString() === args.amount.toString();
+
+            if (!isMatch) {
+              return null;
+            }
+
+            return {
+              parsed,
+              logIndex: log.logIndex,
+              transactionHash: log.transactionHash,
+              blockNumber: log.blockNumber,
+            };
+          } catch {
+            return null;
           }
-        });
+        })
+        .filter((e): e is ParsedMessageSentLog => e !== null);
     })
   );
-  return associatedMessages.flat() as unknown as MessageSentEvent[];
+  return associatedMessages.flat();
 }
