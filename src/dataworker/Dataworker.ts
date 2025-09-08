@@ -52,6 +52,7 @@ import {
   waitForNewSolanaBlock,
   toKitAddress,
   createDefaultTransaction,
+  getNativeTokenAddressForChain,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2439,7 +2440,7 @@ export class Dataworker {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              tokens: [getNativeTokenAddressForChain(leaf.chainId) ?? toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
               holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
