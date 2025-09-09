@@ -36,6 +36,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
+import { ethers } from "../../utils";
 
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
@@ -77,6 +78,77 @@ function getArbitrumOrbitFinalizationTime(chainId: number): number {
   return getOrbitNetwork(chainId)?.challengePeriodSeconds ?? 7 * 60 * 60 * 24;
 }
 
+// One-time short-circuit: finalize specific Arbitrum withdrawal txs to a given L1 recipient.
+// Guarded by chain check so it only applies on Arbitrum mainnet.
+const FORCE_ARBITRUM_WITHDRAWAL_TXS: string[] = [
+  "0x45985398119d72437ff2598573b22fd18e9f04b8a566b98dc8eacbc226822833",
+  "0xcaaff85d5f7808c4a2cd34324bac03b0d53f8ddcb42ec7237aa8143b793a85b1",
+  "0xed523b7f1814724ae08fa8648aa9b74dd24241dbf7d605618c5a2202feadbfbd",
+  "0xeeb44a7526240235b3a04991f36f76489996665dec8d11b1c9a23a8fde703bd5",
+];
+const FORCE_L1_RECIPIENT = "0xc186fA914353c44b2E33eBE05f21846F1048bEda";
+
+async function getForcedArbWithdrawalEvents(
+  logger: winston.Logger,
+  chainId: number,
+  txHashes: string[],
+  l1Recipient: string
+): Promise<TokensBridged[]> {
+  const l2Provider = getCachedProvider(chainId, true);
+  const iface = new ethers.utils.Interface(ARBITRUM_ERC20_GATEWAY_L2_ABI);
+  const topic = iface.getEventTopic("WithdrawalInitiated");
+  const recipientChecksum = ethers.utils.getAddress(l1Recipient);
+
+  const results: TokensBridged[] = [];
+
+  for (const txn of txHashes) {
+    try {
+      const receipt = await l2Provider.getTransactionReceipt(txn);
+      // Preserve on-chain log order so getUniqueLogIndex aligns with L2 message ordering.
+      for (const log of receipt.logs) {
+        if (!log.topics || log.topics.length === 0 || log.topics[0] !== topic) continue;
+        let parsed: ethers.utils.LogDescription | undefined;
+        try {
+          parsed = iface.parseLog(log);
+        } catch {
+          continue; // Skip non-matching logs defensively.
+        }
+        // Filter to the specified L1 recipient only.
+        const toAddr = ethers.utils.getAddress(parsed.args._to);
+        if (toAddr !== recipientChecksum) continue;
+
+        // Map l1 token to configured L2 token address for this chain.
+        try {
+          const l2Token = getL2TokenAddresses(parsed.args.l1Token)[chainId];
+          results.push({
+            // Only fields required by downstream logic.
+            amountToReturn: parsed.args._amount,
+            chainId,
+            leafId: 0,
+            l2TokenAddress: EvmAddress.from(l2Token),
+            txnRef: receipt.transactionHash,
+            txnIndex: receipt.transactionIndex,
+          } as unknown as TokensBridged);
+        } catch (err) {
+          logger.debug({
+            at: `Finalizer#ArbitrumForcedShortCircuit`,
+            message: `Skipping forced withdrawal: unknown token or mapping failure`,
+            txn,
+            reason: (err as Error)?.message,
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn({
+        at: `Finalizer#ArbitrumForcedShortCircuit`,
+        message: `Failed to fetch or parse receipt for ${txn}`,
+        reason: (err as Error)?.message,
+      });
+    }
+  }
+  return results;
+}
+
 export async function arbStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
@@ -108,6 +180,30 @@ export async function arbStackFinalizer(
 
   const { chainId } = spokePoolClient;
   const networkName = getNetworkName(chainId);
+
+  // Forced short-circuit path: only attempt to finalize the provided Arbitrum tx hashes.
+  if (chainId === CHAIN_IDs.ARBITRUM && FORCE_ARBITRUM_WITHDRAWAL_TXS.length > 0) {
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `Using forced short-circuit to finalize specific Arbitrum withdrawals only`,
+      txCount: FORCE_ARBITRUM_WITHDRAWAL_TXS.length,
+    });
+    const forcedEvents = await getForcedArbWithdrawalEvents(
+      logger,
+      chainId,
+      FORCE_ARBITRUM_WITHDRAWAL_TXS,
+      FORCE_L1_RECIPIENT
+    );
+    // Sum all amounts with full precision (uint256) and log as a decimal string.
+    const totalAmountWei = forcedEvents.reduce((acc, e) => acc.add(e.amountToReturn), ethers.BigNumber.from(0));
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `Total to-be-received amount from forced Arbitrum withdrawals (wei, uint256)`,
+      amountWei: totalAmountWei.toString(),
+      txCount: forcedEvents.length,
+    });
+    return await multicallArbitrumFinalizations(forcedEvents, signer, hubPoolClient, logger, chainId);
+  }
 
   // Arbitrum orbit takes 7 days to finalize withdrawals, so don't look up events younger than that.
   const redis = await getRedisCache(logger);
