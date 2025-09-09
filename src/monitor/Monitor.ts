@@ -128,6 +128,13 @@ export class Monitor {
     );
   }
 
+  /**
+   * @description Perform one-time monitor init.
+   */
+  async init(): Promise<void> {
+    this.bundleDataApproxClient.initialize();
+  }
+
   public async update(): Promise<void> {
     // Clear balance cache at the start of each update.
     // Note: decimals don't need to be cleared because they shouldn't ever change.
@@ -135,7 +142,6 @@ export class Monitor {
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
-    this.bundleDataApproxClient.initialize();
 
     const searchConfigs = Object.fromEntries(
       Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
