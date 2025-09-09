@@ -473,11 +473,8 @@ export class InventoryClient {
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
-    if (
-      forceOriginRepayment &&
-      repaymentChainCanBeQuicklyRebalanced(deposit.originChainId, inputToken, this.hubPoolClient)
-    ) {
-      return [deposit.originChainId];
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+      return [originChainId];
     }
 
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
@@ -531,20 +528,13 @@ export class InventoryClient {
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
-    // We can always take repayment on the origin chain if it is a quick rebalance source.
-    if (
-      // @todo: Consider requiring also that the deposit amount is large enough that its worth taking repayment on
-      // origin chain instead of waiting the ~30 mins for the "fast rebalancing" CCTP/OFT bridge to complete.
-      repaymentChainCanBeQuicklyRebalanced(deposit.originChainId, inputToken, this.hubPoolClient)
-    ) {
-      return [...chainsToEvaluate, deposit.originChainId];
-    }
     // Add origin chain to take higher priority than destination chain if the destination chain
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
+    // We can also want to take repayment on the origin chain if it is a quick rebalance source.
     if (
-      deposit.toLiteChain &&
+      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {

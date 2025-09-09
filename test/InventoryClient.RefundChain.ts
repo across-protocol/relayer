@@ -761,40 +761,6 @@ describe("InventoryClient: Refund chain selection", async function () {
       });
       expect(possibleRepaymentChains.length).to.equal(4);
     });
-    it("Should have origin chain at end of possible repayment chain list if it is a fast repayment source", async function () {
-      hubPoolClient.setTokenMapping(mainnetUsdc, POLYGON, TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON]);
-      hubPoolClient.setTokenMapping(mainnetUsdc, ARBITRUM, TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM]);
-      sampleDepositData = {
-        depositId: bnZero,
-        fromLiteChain: false,
-        toLiteChain: false,
-        originChainId: POLYGON,
-        destinationChainId: ARBITRUM,
-        depositor: toAddressType(owner.address, MAINNET),
-        recipient: toAddressType(owner.address, MAINNET),
-        inputToken: toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON], POLYGON),
-        inputAmount: toMegaWei(10),
-        outputToken: toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM], ARBITRUM),
-        outputAmount: toMegaWei(10),
-        message: "0x",
-        messageHash: "0x",
-        quoteTimestamp: hubPoolClient.currentTime!,
-        fillDeadline: 0,
-        exclusivityDeadline: 0,
-        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
-      };
-      // Initial allocations of slow withdrawal chains 10 and 42161 under allocated so they should be added to top
-      // of possible repayment chain list.
-      (inventoryClient as MockInventoryClient).setExcessRunningBalances(mainnetUsdc, excessRunningBalances);
-      tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toWei(0));
-      tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM), toWei(0));
-      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([
-        ARBITRUM, // slow withdrawal chain with highest overage
-        OPTIMISM, // slow withdrawal chain with second highest overage
-        POLYGON, // origin chain
-        // no hub chain
-      ]);
-    });
   });
 
   describe("Origin chain is a fast rebalance source", function () {
@@ -820,12 +786,19 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusivityDeadline: 0,
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
+    });
+    it("no forced origin chain repayment returns origin chain as a repayment chain", async function () {
       // Make sure that deposit doesn't force origin chain repayment otherwise this test would succeed and return
       // the origin chain for the wrong reason (i.e. this would be a false positive).
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
+      const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([sampleDepositData.originChainId, MAINNET]);
     });
-    it("returns origin chain as repayment chain, even if it is over allocated", async function () {
-      // Should not include mainnet as a repayment chain in the case where the origin chain is a fast repayment chain.
+    it("forced origin chain repayment returns origin chain as only repayment chain", async function () {
+      sampleDepositData.fromLiteChain = true;
+      // Make sure that deposit forces origin chain repayment otherwise this test would succeed and return
+      // the origin chain for the wrong reason (i.e. this would be a false positive).
+      expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.true;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
     });
