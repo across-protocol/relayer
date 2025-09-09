@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.72",
     "@across-protocol/contracts": "^4.1.5",
-    "@across-protocol/sdk": "4.3.54",
+    "@across-protocol/sdk": "4.3.58",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -90,6 +90,7 @@
     "@typechain/hardhat": "^6.1.6",
     "@types/bluebird": "^3.5.38",
     "@types/chai": "^4.3.5",
+    "@types/lodash": "^4.17.20",
     "@types/minimist": "^1.2.2",
     "@types/mocha": "^10.0.1",
     "@types/node": "^24.3.0",

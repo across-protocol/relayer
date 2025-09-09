@@ -86,9 +86,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .map(({ chainId }) => getNetworkName(chainId));
         throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
       }
-      // Execute bundleRefundsPromise only after all spokePoolClients are updated.
+
+      // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
       if (!inventoryInit && inventoryManagement) {
-        await inventoryClient.executeBundleRefundsPromise();
+        inventoryClient.setBundleData();
         inventoryInit = true;
       }
 
@@ -177,6 +178,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     logger.debug({ at, message: "Inventory management disabled, nothing to do." });
     return;
   }
+  inventoryClient.setBundleData();
 
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
 
