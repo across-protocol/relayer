@@ -90,7 +90,7 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
-  private additionalL1Tokens: string[] = [];
+  private additionalL1Tokens: L1Token[] = [];
   private balanceAllocator: BalanceAllocator;
   // Chains for each spoke pool client.
   public monitorChains: number[];
@@ -117,13 +117,20 @@ export class Monitor {
       crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
     this.balanceAllocator = new BalanceAllocator(spokePoolClientsToProviders(clients.spokePoolClients));
-    this.additionalL1Tokens = this.monitorConfig.additionalL1NonLpTokens;
+    this.additionalL1Tokens = monitorConfig.additionalL1NonLpTokens.map((l1Token) => {
+      const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
+      assert(l1TokenInfo.address.isEVM());
+      return {
+        ...l1TokenInfo,
+        address: l1TokenInfo.address,
+      };
+    });
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.clients.spokePoolClients,
       this.clients.hubPoolClient,
       this.monitorChains,
-      this.l1Tokens.map(({ address }) => address),
+      [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
       this.logger
     );
   }
@@ -397,15 +404,7 @@ export class Monitor {
   }
 
   getL1TokensForRelayerBalancesReport(): L1Token[] {
-    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
-      const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
-      assert(l1TokenInfo.address.isEVM());
-      return {
-        ...l1TokenInfo,
-        address: l1TokenInfo.address,
-      };
-    });
-    const allL1Tokens = [...this.l1Tokens, ...additionalL1Tokens].map(({ symbol, ...tokenInfo }) => {
+    const allL1Tokens = [...this.l1Tokens, ...this.additionalL1Tokens].map(({ symbol, ...tokenInfo }) => {
       return {
         ...tokenInfo,
         // Remap symbols so that we're using a symbol available to us in TOKEN_SYMBOLS_MAP.
