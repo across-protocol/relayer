@@ -1,4 +1,3 @@
-import { SUPPORTED_TOKENS } from "../../common";
 import {
   winston,
   Signer,
@@ -51,8 +50,12 @@ export async function binanceFinalizer(
   _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = Array.from(_senderAddresses.keys()).map((address) => address.toEvmAddress());
-  const chainId = l2SpokePoolClient.chainId;
+  const senderAddresses = Object.fromEntries(
+    Array.from(_senderAddresses.entries()).map(([senderAddress, tokensToFinalize]) => [
+      senderAddress.toNative(),
+      tokensToFinalize,
+    ])
+  );
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
@@ -88,27 +91,21 @@ export async function binanceFinalizer(
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
-  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
-    symbol = symbol === "WBNB" ? "BNB" : symbol;
+  await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
+    for (const symbol of symbols) {
+      const coin = accountCoins.find((coin) => coin.symbol === symbol);
+      let coinBalance = coin.balance;
+      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
-    const coin = accountCoins.find((coin) => coin.symbol === symbol);
-    let coinBalance = coin.balance;
-    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-    const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
-
-    for (const address of senderAddresses) {
-      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
-      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
-      const depositsInScope = binanceDeposits.filter((deposit) =>
-        compareAddressesSimple(deposit.externalAddress, address)
-      );
+      // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
+      // with symbol `symbol` should be withdrawn to `address`.
+      const depositsInScope = binanceDeposits.filter((deposit) => deposit.coin === symbol);
       if (depositsInScope.length === 0) {
         logger.debug({
           at: "BinanceFinalizer",
-          message: `No finalizable deposits found for ${address}`,
+          message: `No finalizable deposits found for ${address} and token ${symbol}.`,
         });
         continue;
       }
@@ -121,12 +118,10 @@ export async function binanceFinalizer(
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === "BSC";
         const depositAmounts = depositsInScope
-          .filter(
-            (deposit) =>
-              deposit.coin === symbol &&
-              (finalizingOnL2
-                ? deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
-                : deposit.network !== BINANCE_NETWORKS[CHAIN_IDs.MAINNET])
+          .filter((deposit) =>
+            finalizingOnL2
+              ? deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
+              : deposit.network !== BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
           )
           .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
 
