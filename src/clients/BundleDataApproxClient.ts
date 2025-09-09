@@ -177,7 +177,10 @@ export class BundleDataApproxClient {
       isDefined(this.upcomingRefunds),
       "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
     );
-    assert(this.upcomingRefunds[l1Token.toNative()], "BundleDataApproxClient#getUpcomingRefunds: L1 token not found");
+    assert(
+      this.upcomingRefunds[l1Token.toNative()],
+      `"BundleDataApproxClient#getUpcomingRefunds: L1 token ${l1Token.toNative()} not found`
+    );
     if (isDefined(relayer)) {
       return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
     }
