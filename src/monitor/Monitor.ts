@@ -1285,7 +1285,7 @@ export class Monitor {
             );
             const decimalConverter = this.l2TokenAmountToL1TokenAmountConverter(l2TokenAddress, chainId);
             this.updateRelayerBalanceTable(
-              relayerBalanceReport[relayer.toBytes32()],
+              relayerBalanceReport[relayer.toNative()],
               l1Token.symbol,
               getNetworkName(chainId),
               BalanceType.PENDING,
