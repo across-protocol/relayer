@@ -18,6 +18,7 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   mapAsync,
+  BINANCE_NETWORKS,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -102,7 +103,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     // Only consider deposits which happened on L1.
     const depositHistory = _depositHistory.filter(
-      (deposit) => deposit.network === "ETH" && deposit.coin === this.tokenSymbol
+      (deposit) => deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] && deposit.coin === this.tokenSymbol
     );
 
     // FilterMap to remove all deposits which originated from another EOA.
@@ -150,7 +151,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // Filter withdrawals based on whether their destination network was BSC.
     const withdrawalHistory = _withdrawalHistory.filter(
       (withdrawal) =>
-        withdrawal.network === "BSC" && compareAddressesSimple(withdrawal.externalAddress, toAddress.toNative())
+        withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
+        compareAddressesSimple(withdrawal.externalAddress, toAddress.toNative())
     );
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
