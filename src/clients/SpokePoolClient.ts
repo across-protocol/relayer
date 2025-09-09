@@ -3,17 +3,7 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import {
-  Address,
-  chainIsSvm,
-  getNetworkName,
-  isDefined,
-  winston,
-  getRelayEventKey,
-  getMessageHash,
-  spreadEventWithBlockNumber,
-  toAddressType,
-} from "../utils";
+import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -34,14 +24,6 @@ type SpokePoolEventsAdded = {
 };
 
 export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
-
-export function isSpokePoolEventsAdded(message: unknown): message is SpokePoolEventsAdded {
-  return EventsAddedMessage.is(message);
-}
-
-export function isSpokePoolEventRemoved(message: unknown): message is SpokePoolEventRemoved {
-  return EventRemovedMessage.is(message);
-}
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -120,24 +102,21 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     stopWorker(): void {
+      const at = "SpokePoolClient#stopWorker";
+
       if (this.#worker.connected) {
         this.#worker.disconnect();
       } else {
-        this.logger.warn({
-          at: "SpokePoolClient#stopWorker",
-          message: `Skipped disconnecting on ${this.#chain} SpokePool listener (already disconnected).`,
-        });
+        const message = `Skipped disconnecting on ${this.#chain} SpokePool listener (already disconnected).`;
+        this.logger.warn({ at, message });
       }
 
       const { exitCode } = this.#worker;
       if (exitCode === null) {
         this.#worker.kill("SIGKILL");
       } else {
-        this.logger.warn({
-          at: "SpokePoolClient#stopWorker",
-          message: `Skipped SIGKILL on ${this.#chain} SpokePool listener (already exited).`,
-          exitCode,
-        });
+        const message = `Skipped SIGKILL on ${this.#chain} SpokePool listener (already exited).`;
+        this.logger.warn({ at, message, exitCode });
       }
     }
 
@@ -149,16 +128,13 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #childExit(code?: number, signal?: string): void {
+      const at = "SpokePoolClient#childExit";
       if (code === 0) {
         return;
       }
 
-      this.logger[signal === "SIGKILL" ? "debug" : "warn"]({
-        at: "SpokePoolClient#childExit",
-        message: `${this.#chain} SpokePool listener exited.`,
-        code,
-        signal,
-      });
+      const log = signal === "SIGKILL" ? this.logger.debug : this.logger.warn;
+      log({ at, message: `${this.#chain} SpokePool listener exited.`, code, signal });
     }
 
     /**
@@ -167,31 +143,30 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     _indexerUpdate(rawMessage: unknown): void {
-      assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type`);
+      const at = "SpokePoolClient#indexerUpdate";
+      assert(typeof rawMessage === "string", `Unexpected ${this.#chain} message data type (${typeof rawMessage})`);
 
       const message = JSON.parse(rawMessage);
-      if (isSpokePoolEventRemoved(message)) {
+      if (EventRemovedMessage.is(message)) {
         const event = JSON.parse(message.event, sdkUtils.jsonReviverWithBigNumbers);
         this.#pendingEventsRemoved.push(event);
         return;
       }
 
-      assert(isSpokePoolEventsAdded(message), `Expected ${this.#chain} SpokePoolEventsAdded message`);
+      if (!EventsAddedMessage.is(message)) {
+        this.logger.warn({ at, message: "Received unexpected message from SpokePoolListener.", rawMessage: message });
+        return;
+      }
 
       const { blockNumber, currentTime, nEvents, data } = message;
       if (nEvents > 0) {
         const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
-        assert(
-          Array.isArray(pendingEvents) && pendingEvents.length === nEvents,
-          Array.isArray(pendingEvents)
-            ? `Expected ${nEvents} ${this.#chain} pendingEvents, got ${pendingEvents.length}`
-            : `Expected array of ${this.#chain} pendingEvents`
-        );
 
-        this.logger.debug({
-          at: "SpokePoolClient#indexerUpdate",
-          message: `Received ${nEvents} ${this.#chain} events from indexer.`,
-        });
+        assert(Array.isArray(pendingEvents), `Expected array of ${this.#chain} pendingEvents`);
+        const nPending = pendingEvents.length;
+        assert(nPending === nEvents, `Expected ${nEvents} ${this.#chain} pendingEvents, got ${nPending}`);
+
+        this.logger.debug({ at, message: `Received ${nEvents} ${this.#chain} events from indexer.` });
 
         pendingEvents.forEach((event) => {
           const eventIdx = this._queryableEventNames().indexOf(event.event);
@@ -214,10 +189,9 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #removeEvent(event: Log): boolean {
-      let removed = false;
+      const at = "SpokePoolClient#removeEvent";
       const eventIdx = this._queryableEventNames().indexOf(event.event);
       const pendingEvents = this.#pendingEvents[eventIdx];
-
       const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
 
       // First check for removal from any pending events.
@@ -229,11 +203,11 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           pending.blockHash === blockHash
       );
 
+      let handled = false;
       if (pendingEventIdx !== -1) {
-        removed = true;
-
         // Drop the relevant event.
         pendingEvents.splice(pendingEventIdx, 1);
+        handled = true;
 
         this.logger.debug({
           at: "SpokePoolClient#removeEvent",
@@ -247,33 +221,20 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
       // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
       if (eventName === "FundsDeposited") {
-        const { depositId, destinationChainId } = event.args;
+        const { depositId } = event.args;
         assert(isDefined(depositId));
 
-        const spreadEvent = spreadEventWithBlockNumber(event) as DepositWithBlock & {
-          inputToken: string;
-          outputToken: string;
-          depositor: string;
-          recipient: string;
-          exclusiveRelayer: string;
-        };
-
-        const depositEvent = {
-          ...spreadEvent,
-          inputToken: toAddressType(spreadEvent.inputToken, this.chainId),
-          outputToken: toAddressType(spreadEvent.outputToken, destinationChainId),
-          depositor: toAddressType(spreadEvent.depositor, this.chainId),
-          recipient: toAddressType(spreadEvent.recipient, destinationChainId),
-          exclusiveRelayer: toAddressType(spreadEvent.exclusiveRelayer, destinationChainId),
-          messageHash: event.args.messageHash ?? getMessageHash(event.args.message),
-        } as DepositWithBlock;
-        const depositHash = getRelayEventKey(depositEvent);
-        if (isDefined(this.depositHashes[depositHash])) {
-          delete this.depositHashes[depositHash];
+        const result = Object.entries(this.depositHashes).find(([, deposit]) => deposit.txnRef === transactionHash);
+        if (isDefined(result)) {
+          const [depositKey, deposit] = result;
+          delete this.depositHashes[depositKey];
+          handled = true;
+          this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+        } else {
           this.logger.warn({
-            at: "SpokePoolClient#removeEvent",
-            message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event.`,
-            event,
+            at,
+            message: `Searched for ${this.#chain} deposit ${depositId} but didn't find it.`,
+            transactionHash,
           });
         }
       } else if (eventName === "EnabledDepositRoute") {
@@ -284,15 +245,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       } else {
         // Retaining any remaining event types should be non-critical for relayer operation. They may
         // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
-        this.logger.debug({
-          at: "SpokePoolClient#removeEvent",
-          message: `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`,
-          transactionHash,
-          blockHash,
-        });
+        handled = true;
+        const message = `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`;
+        this.logger.debug({ at, message, transactionHash, blockHash });
       }
 
-      return removed;
+      return handled;
     }
 
     async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {

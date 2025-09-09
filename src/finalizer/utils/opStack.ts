@@ -121,7 +121,7 @@ export async function opStackFinalizer(
   // - Don't try to withdraw tokens that are not past the 7 day challenge period
   const redis = await getRedisCache(logger);
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
-  const latestBlockToProve = await getBlockForTimestamp(chainId, minimumFinalizationTime, undefined, redis);
+  const latestBlockToProve = await getBlockForTimestamp(logger, chainId, minimumFinalizationTime, undefined, redis);
 
   // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process (e.g. DAI
   // on Optimism, SNX on Optimism, USDC.e on Worldchain, etc) so the easiest way to query for these

@@ -4,10 +4,9 @@ import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32 } from "../utils";
 import { utils } from "@across-protocol/sdk";
-import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
-import { getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId, ZERO_ADDRESS } from "../../src/utils";
 
 describe("Cross Chain Adapter: Linea", async function () {
   let adapter: BaseChainAdapter;

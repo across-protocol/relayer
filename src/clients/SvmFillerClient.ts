@@ -1,6 +1,7 @@
 import {
   CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
+  isSolanaError,
   KeyPairSigner,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
@@ -14,8 +15,9 @@ import {
   blockExplorerLink,
   winston,
   chainIsSvm,
+  delay,
 } from "../utils";
-import { arch } from "@across-protocol/sdk";
+import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
 
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
@@ -31,6 +33,9 @@ type QueuedSvmFill = {
   message: string;
   mrkdwn: string;
 };
+
+const retryableErrorCodes = [arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+const retryDelaySeconds = 1;
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -85,8 +90,32 @@ export class SvmFillerClient {
     this.queuedFills.push({ txPromise: slowFillTxPromise, message, mrkdwn });
   }
 
+  async _executeTxnQueueWithRetry(txPromise: ReadyTransactionPromise, retryAttempt: number): Promise<string> {
+    try {
+      const transaction = await txPromise;
+      const signature = await signAndSendTransaction(this.provider, transaction);
+      const signatureString = signature.toString();
+      return signatureString;
+    } catch (e: unknown) {
+      let code: number | undefined;
+
+      if (isSolanaError(e)) {
+        code = e.context.__code;
+      } else {
+        code = undefined;
+      }
+
+      if (retryableErrorCodes.includes(code) && retryAttempt > 0) {
+        await delay(retryDelaySeconds);
+        return this._executeTxnQueueWithRetry(txPromise, --retryAttempt);
+      }
+
+      throw e;
+    }
+  }
+
   // @dev returns promises with txn signatures (~hashes)
-  async executeTxnQueue(chainId: number, simulate = false): Promise<{ hash: string }[]> {
+  async executeTxnQueue(chainId: number, simulate = false, maxRetries = 2): Promise<{ hash: string }[]> {
     assert(this.chainId === chainId, "SvmFillerClient: Mismatched chainId");
     const queue = this.queuedFills;
     this.queuedFills = [];
@@ -100,9 +129,7 @@ export class SvmFillerClient {
     const signatures: string[] = [];
     for (const { txPromise, message, mrkdwn } of queue) {
       try {
-        const transaction = await txPromise;
-        const signature = await signAndSendTransaction(this.provider, transaction);
-        const signatureString = signature.toString();
+        const signatureString = await this._executeTxnQueueWithRetry(txPromise, maxRetries);
         signatures.push(signatureString);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
@@ -111,10 +138,21 @@ export class SvmFillerClient {
           signature: signatureString,
           explorer: blockExplorerLink(signatureString, this.chainId),
         });
-      } catch (e) {
+      } catch (e: unknown) {
+        if (!typeguards.isError(e)) {
+          throw e;
+        }
+
+        let message = "";
+        if (!isSolanaError(e)) {
+          message = e?.message ?? "Unknown error";
+        } else {
+          message = `Solana error code: ${e.context.__code}`;
+        }
+
         this.logger.error({
           at: "SvmFillerClient#executeTxnQueue",
-          message: `Failed to send fill transaction: ${message}`,
+          message: `Failed to send fill transaction (${message})`,
           mrkdwn,
           error: e,
         });

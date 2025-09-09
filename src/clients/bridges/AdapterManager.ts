@@ -14,25 +14,22 @@ import {
   isDefined,
   winston,
   Signer,
-  getL2TokenAddresses,
   TransactionResponse,
   assert,
-  Profiler,
   EvmAddress,
-  toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
   Address,
   isSVMSpokePoolClient,
+  bnZero,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
 export class AdapterManager {
-  private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -86,7 +83,8 @@ export class AdapterManager {
             hubChainId,
             l1Signer,
             l2SignerOrProvider,
-            EvmAddress.from(l1Token)
+            EvmAddress.from(l1Token),
+            logger
           );
           return [l1Token, bridge];
         }) ?? []
@@ -128,10 +126,6 @@ export class AdapterManager {
         constructL2Bridges(chainId),
         DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
       );
-    });
-    this.profiler = new Profiler({
-      logger: this.logger,
-      at: "AdapterManager",
     });
     logger.debug({
       at: "AdapterManager#constructor",
@@ -215,6 +209,40 @@ export class AdapterManager {
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
+  async getTotalPendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    l2ChainIds: number[],
+    fromAddress: Address,
+    l1Token: EvmAddress
+  ): Promise<{ [l2ChainId: number]: BigNumber }> {
+    const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const totalBalance: { [l2ChainId: number]: BigNumber } = {};
+    await Promise.all(
+      l2ChainIds.map(async (chainId) => {
+        totalBalance[chainId] = bnZero;
+        if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
+          return;
+        }
+        if (chainId === this.hubPoolClient.chainId) {
+          return;
+        }
+        if (!fromAddress.isValidOn(chainId)) {
+          return;
+        }
+        const l2Token = this.l2TokenForL1Token(l1Token, chainId);
+        const l2TokenInfo = getTokenInfo(l2Token, chainId);
+        const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
+        const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
+          lookbackPeriodSeconds,
+          fromAddress,
+          l2Token
+        );
+        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+      })
+    );
+    return totalBalance;
+  }
+
   // Check how many native tokens are on the target chain and if the number of tokens is above the wrap threshold, execute a wrap. Note that this only
   // needs to be done on chains where rebalancing the native token from L1 to L2 results in the relayer receiving the unwrapped native token
   // (not the ERC20), or if the relayer expects to be sent the native token perhaps as a gas refund from an original L1 to L2
@@ -253,16 +281,11 @@ export class AdapterManager {
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
-      if (!l2TokenForL1Token.eq(toAddressType(getL2TokenAddresses(l1Token.toEvmAddress())[chainId], chainId))) {
-        throw new Error(
-          `Token address mismatch (${l2TokenForL1Token} != ${getL2TokenAddresses(l1Token.toEvmAddress())[chainId]})`
-        );
-      }
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
-        message: "Implementor attempted to get a l2 token address for an L1 token that does not exist in the routings!",
+        message: "Implementer attempted to get a l2 token address for an L1 token that does not exist in the routings!",
         l1Token,
         chainId,
         error,

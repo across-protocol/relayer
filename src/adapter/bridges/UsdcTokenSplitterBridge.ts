@@ -11,6 +11,7 @@ import {
   assert,
   EvmAddress,
   Address,
+  winston,
 } from "../../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
@@ -22,14 +23,17 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    logger: winston.Logger
   ) {
     const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](
       l2chainId,
       hubChainId,
       l1Signer,
       l2SignerOrProvider,
-      l1Token
+      l1Token,
+      logger
     );
 
     super(l2chainId, hubChainId, l1Signer, [
@@ -37,7 +41,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
-    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
+    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
     this.canonicalBridge = canonicalBridge;
   }
 

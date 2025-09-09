@@ -2,7 +2,6 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
-  BundleDataClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -65,7 +64,7 @@ async function indexedSpokePoolClient(
   const redis = await getRedisCache(hubPoolClient.logger);
   const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
-    getBlockForTimestamp(chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
+    getBlockForTimestamp(logger, chainId, getCurrentTime() - opts.lookback, blockFinder, redis),
   ]);
   const searchConfig = { from, maxLookBack: opts.blockRange };
 
@@ -83,7 +82,7 @@ async function indexedSpokePoolClient(
     spokePoolClient.init(opts);
     return spokePoolClient;
   } else {
-    const provider = getSvmProvider();
+    const provider = getSvmProvider(await getRedisCache());
     const svmEventsClient = await arch.svm.SvmCpiEventsClient.create(provider);
     const programId = svmEventsClient.getProgramAddress();
     const statePda = await arch.svm.getStatePda(programId);
@@ -164,14 +163,8 @@ export async function constructRelayerClients(
   ]);
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
-  const tokenClient = new TokenClient(
-    logger,
-    signerAddr,
-    SvmAddress.from(svmSigner.publicKey.toBase58()),
-    spokePoolClients,
-    hubPoolClient,
-    relayerTokens
-  );
+  const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+  const tokenClient = new TokenClient(logger, signerAddr, svmAddress, spokePoolClients, hubPoolClient, relayerTokens);
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
@@ -185,6 +178,7 @@ export async function constructRelayerClients(
     spokePoolClients,
     enabledChainIds,
     signerAddr,
+    svmAddress,
     config.minRelayerFeePct,
     config.debugProfitability,
     config.relayerGasMultiplier,
@@ -196,14 +190,6 @@ export async function constructRelayerClients(
 
   const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, monitoredAddresses);
-
-  const bundleDataClient = new BundleDataClient(
-    logger,
-    commonClients,
-    spokePoolClients,
-    configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
-  );
 
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
@@ -219,7 +205,6 @@ export async function constructRelayerClients(
     tokenClient,
     enabledChainIds,
     hubPoolClient,
-    bundleDataClient,
     adapterManager,
     crossChainTransferClient,
     !config.sendingTransactionsEnabled
@@ -233,7 +218,7 @@ export async function constructRelayerClients(
   }
   const svmFillerClient =
     svmChainIds.length === 1
-      ? await SvmFillerClient.from(baseSigner, getSvmProvider(), svmChainIds[0], logger)
+      ? await SvmFillerClient.from(baseSigner, getSvmProvider(await getRedisCache()), svmChainIds[0], logger)
       : undefined;
 
   return {

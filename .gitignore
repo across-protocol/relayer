@@ -8,6 +8,11 @@ coverage.json
 typechain*
 dump.rdb*
 
+# Testing
+*.tar.gz
+.ledger
+/target
+
 # Hardhat files
 cache
 artifacts
@@ -21,3 +26,6 @@ addresses.json
 
 # AI context files
 CLAUDE.md
+
+# yalc
+.yalc

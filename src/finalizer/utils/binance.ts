@@ -1,4 +1,3 @@
-import { type Binance } from "binance-api-node";
 import { SUPPORTED_TOKENS } from "../../common";
 import {
   winston,
@@ -12,12 +11,15 @@ import {
   floatToBN,
   bnZero,
   getTokenInfo,
-  ethers,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
   Address,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
+  getAccountCoins,
+  DepositNetwork,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise } from "../types";
@@ -32,48 +34,8 @@ enum Status {
   WaitingUserConfirm = 8,
 }
 
-// Alias for Binance network symbols.
-enum DepositNetwork {
-  Ethereum = "ETH",
-  BSC = "BSC",
-}
-
-// A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
-// token.
-type Coin = {
-  symbol: string;
-  balance: string;
-  networkList: Network[];
-};
-
-// Network represents basic information corresponding to a Binance supported deposit/withdrawal network. It is always associated with a coin.
-type Network = {
-  name: string;
-  coin: string;
-  withdrawMin: string;
-  withdrawMax: string;
-  contractAddress: string;
-};
-
-// A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
-type BinanceInteraction = {
-  // The amount of `coin` transferred in this interaction.
-  amount: number;
-  // The external (non binance-wallet) EOA involved with this interaction.
-  externalAddress: string;
-  // The coin used in this interaction (i.e. the token symbol).
-  coin: string;
-  // The network on which this interaction took place.
-  network: string;
-  // The status of the deposit/withdrawal.
-  status?: number;
-};
-
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
-
-// ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
-type ParsedAccountCoins = Coin[];
 
 /**
  * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
@@ -125,33 +87,40 @@ export async function binanceFinalizer(
   });
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
-  await mapAsync(senderAddresses, async (address) => {
-    // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
-    // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
-    const depositsInScope = binanceDeposits.filter((deposit) =>
-      compareAddressesSimple(deposit.externalAddress, address)
+  // We can run this in parallel since deposits for each tokens are independent of each other.
+  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
+    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
+    symbol = symbol === "WBNB" ? "BNB" : symbol;
+
+    const coin = accountCoins.find((coin) => coin.symbol === symbol);
+    let coinBalance = coin.balance;
+    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+    const withdrawals = await getBinanceWithdrawals(
+      binanceApi,
+      symbol,
+      l1SpokePoolClient.spokePool.provider,
+      l2SpokePoolClient.spokePool.provider,
+      fromTimestamp
     );
-    if (depositsInScope.length === 0) {
-      logger.debug({
-        at: "BinanceFinalizer",
-        message: `No finalizable deposits found for ${address}`,
-      });
-      return;
-    }
 
-    // The inner loop finalizes all deposits for all supported tokens for the address.
-    await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-      // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-      let symbol = _symbol === "WETH" ? "ETH" : _symbol;
-      symbol = symbol === "WBNB" ? "BNB" : symbol;
-
-      const coin = accountCoins.find((coin) => coin.symbol === symbol);
-      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
+    for (const address of senderAddresses) {
+      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
+      const depositsInScope = binanceDeposits.filter((deposit) =>
+        compareAddressesSimple(deposit.externalAddress, address)
+      );
+      if (depositsInScope.length === 0) {
+        logger.debug({
+          at: "BinanceFinalizer",
+          message: `No finalizable deposits found for ${address}`,
+        });
+        continue;
+      }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
-      await mapAsync([DepositNetwork.Ethereum, DepositNetwork.BSC], async (depositNetwork) => {
+      for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
         const withdrawNetwork =
           depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
@@ -192,18 +161,20 @@ export async function binanceFinalizer(
         }
         // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
         // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
-        if (amountToFinalize > Number(coin.balance)) {
+        if (amountToFinalize > Number(coinBalance)) {
           logger.debug({
             at: "BinanceFinalizer",
             message: `(${depositNetwork} -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
-            balance: coin.balance,
+            balance: coinBalance,
           });
-          amountToFinalize = Number(coin.balance);
+          amountToFinalize = Number(coinBalance);
         }
         if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
-          // Lastly, we need to truncate the amount to withdraw to six decimal places.
+          // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
+          // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
+          coinBalance = (Number(coinBalance) - amountToFinalize).toFixed(8);
           const withdrawalId = await binanceApi.withdraw({
             coin: symbol,
             address,
@@ -223,75 +194,11 @@ export async function binanceFinalizer(
             message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
           });
         }
-      });
-    });
+      }
+    }
   });
   return {
     callData: [],
     crossChainMessages: [],
   };
-}
-
-// Gets all binance deposits for the Binance account starting from `startTime`-present.
-async function getBinanceDeposits(
-  binanceApi: Binance,
-  l1Provider: ethers.providers.Provider,
-  l2Provider: ethers.providers.Provider,
-  startTime: number
-): Promise<BinanceInteraction[]> {
-  const _depositHistory = await binanceApi.depositHistory({ startTime });
-  const depositHistory = Object.values(_depositHistory);
-
-  return mapAsync(depositHistory, async (deposit) => {
-    const provider = deposit.network === DepositNetwork.Ethereum ? l1Provider : l2Provider;
-    const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
-    return {
-      amount: Number(deposit.amount),
-      externalAddress: depositTxnReceipt.from,
-      coin: deposit.coin,
-      network: deposit.network,
-      status: deposit.status,
-    };
-  });
-}
-
-// Gets all Binance withdrawals of a specific coin starting from `startTime`-present.
-async function getBinanceWithdrawals(
-  binanceApi: Binance,
-  coin: string,
-  startTime: number
-): Promise<BinanceInteraction[]> {
-  const withdrawals = await binanceApi.withdrawHistory({ coin, startTime });
-
-  return Object.values(withdrawals).map((withdrawal) => {
-    return {
-      amount: Number(withdrawal.amount),
-      externalAddress: withdrawal.address,
-      coin,
-      network: withdrawal.network,
-      status: withdrawal.status,
-    };
-  });
-}
-
-// The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
-// parses the unknown into a readable object to be used by the finalizers.
-async function getAccountCoins(binanceApi: Binance): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
-  return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
-      return {
-        name: network["network"],
-        coin: network["coin"],
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        contractAddress: network["contractAddress"],
-      } as Network;
-    });
-    return {
-      symbol: coin["coin"],
-      balance: coin["free"],
-      networkList,
-    } as Coin;
-  });
 }

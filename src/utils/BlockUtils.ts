@@ -1,5 +1,5 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
-import { isDefined } from "./";
+import { isDefined, winston, type LatestBlockhash } from "./";
 import {
   BlockFinderHints,
   EVMBlockFinder,
@@ -7,6 +7,7 @@ import {
   isSVMSpokePoolClient,
   SVMBlockFinder,
   chainIsEvm,
+  SVMProvider,
 } from "./SDKUtils";
 import { getProvider, getSvmProvider } from "./ProviderUtils";
 import { getRedisCache } from "./RedisUtils";
@@ -21,13 +22,13 @@ let svmBlockFinder: SVMBlockFinder;
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder<utils.Block>> {
+export async function getBlockFinder(logger: winston.Logger, chainId: number): Promise<utils.BlockFinder<utils.Block>> {
   if (chainIsEvm(chainId)) {
     evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
     return evmBlockFinders[chainId];
   }
-  const provider = getSvmProvider();
-  svmBlockFinder ??= new SVMBlockFinder(provider);
+  const provider = getSvmProvider(await getRedisCache());
+  svmBlockFinder ??= new SVMBlockFinder(provider, [], logger);
   return svmBlockFinder;
 }
 
@@ -41,13 +42,14 @@ export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder
  * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
+  logger: winston.Logger,
   chainId: number,
   timestamp: number,
   blockFinder?: utils.BlockFinder<utils.Block>,
   redisCache?: interfaces.CachingMechanismInterface,
   hints: BlockFinderHints = {}
 ): Promise<number> {
-  blockFinder ??= await getBlockFinder(chainId);
+  blockFinder ??= await getBlockFinder(logger, chainId);
   redisCache ??= await getRedisCache();
   return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
@@ -77,10 +79,39 @@ export async function getTimestampsForBundleStartBlocks(
           return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           const provider = spokePoolClient.svmEventsClient.getRpc();
-          const { timestamp } = await arch.svm.getNearestSlotTime(provider, { slot: BigInt(startAt) });
+          const { timestamp } = await arch.svm.getNearestSlotTime(
+            provider,
+            {
+              slot: BigInt(startAt),
+            },
+            spokePoolClient.logger
+          );
           return [chainId, timestamp];
         }
       })
     ).filter(isDefined)
   );
+}
+
+export async function waitForNewSolanaBlock(provider: SVMProvider, _offset = 1): Promise<void> {
+  const offset = BigInt(_offset);
+  // Get the initial block height of the blockchain
+  const { value: initialBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+
+  return new Promise((resolve) => {
+    const SECOND = 1000;
+    const checkInterval = 1 * SECOND; // Interval to check for new blocks (1000ms)
+
+    // Set an interval to check for new block heights
+    const intervalId = setInterval(async () => {
+      // Get the current block height
+      const { value: currentBlock } = (await provider.getLatestBlockhash().send()) as { value: LatestBlockhash };
+
+      // If the current block height exceeds the target, resolve and clear interval
+      if (currentBlock.lastValidBlockHeight >= initialBlock.lastValidBlockHeight + offset) {
+        clearInterval(intervalId);
+        resolve();
+      }
+    }, checkInterval);
+  });
 }

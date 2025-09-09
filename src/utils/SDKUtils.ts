@@ -32,6 +32,8 @@ export const {
   getRootBundlePda,
   getTransferLiabilityPda,
   getEventAuthority,
+  getClaimAccountPda,
+  createDefaultTransaction,
 } = sdk.arch.svm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 
@@ -77,7 +79,7 @@ export const {
   blockExplorerLink,
   isContractDeployedToAddress,
   blockExplorerLinks,
-  createShortHexString: shortenHexString,
+  createShortenedString: shortenHexString,
   compareAddresses,
   compareAddressesSimple,
   getL1TokenAddress,
@@ -94,6 +96,8 @@ export const {
   getTokenInfo,
   convertRelayDataParamsToBytes32,
   convertFillParamsToBytes32,
+  getRandomInt,
+  randomAddress,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
 } = sdk.utils;

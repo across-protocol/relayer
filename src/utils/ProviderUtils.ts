@@ -7,6 +7,8 @@ import { delay, getOriginFromURL, Logger, SVMProvider } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 import * as viem from "viem";
+import { ClusterUrl } from "@solana/kit";
+import { CachingMechanismInterface } from "../interfaces";
 
 export const defaultTimeout = 60 * 1000;
 export class RetryProvider extends sdkProviders.RetryProvider {}
@@ -275,24 +277,42 @@ export function getWSProviders(chainId: number, quorum?: number): ethers.provide
 
 /**
  * @notice Returns a cached SVMProvider.
+ * @dev We are blocked from making this function async (i.e. which would be helpful so we could call getRedisCache
+ * from within the function) because the `createRpcClient` method makes a call to @solana/kit/createSolanaRpcFromTransport
+ * which has a bug as of @solana/kit@2.1.0 (patched in >= 2.2.0) that prevents any functions calling createRpcClient
+ * to be async. See https://github.com/anza-xyz/kit/commit/304a44fc68401001af45b1088eea825d8f437677 for more details.
+ * The reason we can't easily bump @solana/kit is because certain types in @solana/kit>=2.2.0 are
+ * incompatible with the types in lower versions, which we import through other packages like @coral/anchor.
+ * Read about package incompatibility issues here: https://github.com/anza-xyz/kit/releases/tag/v2.1.1
  */
-export function getSvmProvider(logger: winston.Logger = Logger, chainId = MAINNET_CHAIN_IDs.SOLANA): SVMProvider {
-  const nodeUrlList = getNodeUrlList(chainId);
+export function getSvmProvider(
+  redisClient: CachingMechanismInterface | undefined = undefined,
+  logger: winston.Logger = Logger,
+  chainId = MAINNET_CHAIN_IDs.SOLANA
+): SVMProvider {
   const namespace = getCacheNamespace(chainId);
   const maxConcurrency = getMaxConcurrency(chainId);
   const pctRpcCallsLogged = getPctRpcCallsLogged(chainId);
   const { retries, retryDelay } = getRetryParams(chainId);
-  const providerFactory = new sdkProviders.CachedSolanaRpcFactory(
-    namespace,
-    undefined, // redisClient
-    // @dev: We are not using a redis client for the SVMProvider because it doesn't seem to work currently.
-    retries,
-    retryDelay,
-    maxConcurrency,
-    pctRpcCallsLogged,
-    logger,
-    Object.values(nodeUrlList)[0],
-    chainId
+  const nodeQuorumThreshold = getChainQuorum(chainId);
+
+  const constructorArgumentLists = Object.values(getNodeUrlList(chainId, nodeQuorumThreshold)).map((url) => {
+    return [
+      namespace,
+      redisClient,
+      retries,
+      retryDelay,
+      maxConcurrency,
+      pctRpcCallsLogged,
+      logger,
+      url as ClusterUrl,
+      chainId,
+    ] as ConstructorParameters<typeof sdkProviders.CachedSolanaRpcFactory>;
+  });
+  const providerFactory = new sdkProviders.QuorumFallbackSolanaRpcFactory(
+    constructorArgumentLists,
+    nodeQuorumThreshold,
+    logger
   );
   return providerFactory.createRpcClient();
 }

@@ -1,5 +1,5 @@
 import { arch, utils } from "@across-protocol/sdk";
-import { TokenMessengerMinterIdl, MessageTransmitterIdl } from "@across-protocol/contracts";
+import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
@@ -19,10 +19,9 @@ import {
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
-import { getAnchorProgram } from "./AnchorUtils";
 import { Log } from "../interfaces";
-import { assert, Provider } from ".";
-import { BN, web3 } from "@coral-xyz/anchor";
+import { assert, getRedisCache, Provider } from ".";
+import { KeyPairSigner } from "@solana/kit";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -36,7 +35,7 @@ type CommonMessageData = {
   nonce: number; // This nonce makes sense only for v1 events, as it's emitted on src chain send
   nonceHash: string;
 };
-// Common data + auxilary data from depositForBurn event
+// Common data + auxiliary data from depositForBurn event
 type DepositForBurnMessageData = CommonMessageData & { amount: string; mintRecipient: string; burnToken: string };
 type CommonMessageEvent = CommonMessageData & { log: Log };
 type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
@@ -449,9 +448,9 @@ function getRelevantCCTPEventsFromReceipt(
     the logs array, not necessarily consecutively)
   */
 
-  // Indicies of individual `MessageSent` events in `receipt.logs`
-  const messageSentIndicies = [];
-  // Pairs of indicies representing a single CCTP token transfer
+  // Indices of individual `MessageSent` events in `receipt.logs`
+  const messageSentIndices = [];
+  // Pairs of indices representing a single CCTP token transfer
   const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
@@ -460,8 +459,8 @@ function getRelevantCCTPEventsFromReceipt(
 
     if (isMessageSentEvent) {
       if (_isMatchingCCTPVersion(messageSentVersion, isCctpV2)) {
-        // Record a `MessageSent` event into the `messageSentIndicies` array
-        messageSentIndicies.push(i);
+        // Record a `MessageSent` event into the `messageSentIndices` array
+        messageSentIndices.push(i);
       }
       return; // Continue to next log
     }
@@ -475,7 +474,7 @@ function getRelevantCCTPEventsFromReceipt(
     }
 
     if (_isMatchingCCTPVersion(depositForBurnVersion, isCctpV2)) {
-      if (messageSentIndicies.length === 0) {
+      if (messageSentIndices.length === 0) {
         throw new Error(
           "DepositForBurn event found without corresponding MessageSent event. Each DepositForBurn event must have a preceding MessageSent event in the same transaction. " +
             `Transaction: ${receipt.transactionHash}, DepositForBurn log index: ${i}`
@@ -483,13 +482,13 @@ function getRelevantCCTPEventsFromReceipt(
       }
 
       // Record a `MessageSent` + `DepositForBurn` pair into the `depositIndexPairs` array
-      const correspondingMessageSentIndex = messageSentIndicies.pop();
+      const correspondingMessageSentIndex = messageSentIndices.pop();
       depositIndexPairs.push([correspondingMessageSentIndex, i]);
     }
   });
 
   // Process all the individual tokenless CCTP messages
-  for (const messageSentIndex of messageSentIndicies) {
+  for (const messageSentIndex of messageSentIndices) {
     const event = _createMessageSentEvent(receipt.logs[messageSentIndex], isCctpV2, messageTransmitterInterface);
     if (_isRelevantCCTPEvent(event, sourceDomainId, destinationDomainId, senderAddresses, usdcAddress)) {
       relevantEvents.push(event);
@@ -518,7 +517,8 @@ async function getCCTPMessagesWithStatus(
   destinationChainId: number,
   l2ChainId: number,
   sourceEventSearchConfig: EventSearchConfig,
-  isSourceHubChain: boolean
+  isSourceHubChain: boolean,
+  signer?: KeyPairSigner
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const cctpMessageEvents = await getCCTPMessageEvents(
@@ -545,9 +545,19 @@ async function getCCTPMessagesWithStatus(
           status: "pending",
         };
       }
-      const processed = chainIsSvm(destinationChainId)
-        ? await _hasCCTPMessageBeenProcessedSvm(messageEvent.nonce, messageEvent.sourceDomain)
-        : await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      let processed;
+      if (chainIsSvm(destinationChainId)) {
+        assert(signer, "Signer is required for Solana CCTP messages");
+        processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
+          getSvmProvider(await getRedisCache()),
+          signer,
+          messageEvent.nonce,
+          messageEvent.sourceDomain
+        );
+      } else {
+        processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+      }
+
       if (!processed) {
         return {
           ...messageEvent,
@@ -623,7 +633,8 @@ export async function getAttestedCCTPMessages(
   sourceChainId: number,
   destinationChainId: number,
   l2ChainId: number,
-  sourceEventSearchConfig: EventSearchConfig
+  sourceEventSearchConfig: EventSearchConfig,
+  signer?: KeyPairSigner
 ): Promise<AttestedCCTPMessage[]> {
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
   const isMainnet = utils.chainIsProd(destinationChainId);
@@ -645,7 +656,8 @@ export async function getAttestedCCTPMessages(
     destinationChainId,
     l2ChainId,
     sourceEventSearchConfig,
-    isSourceHubChain
+    isSourceHubChain,
+    signer
   );
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
@@ -772,39 +784,6 @@ async function _hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethe
   return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
-// A CCTP message is processed if `isNonceUsed` is true on the message transmitter.
-async function _hasCCTPMessageBeenProcessedSvm(nonce: number, sourceDomain: number): Promise<boolean> {
-  // Specifically retrieve the Solana MessageTransmitter contract.
-  try {
-    const bnNonce = new BN(nonce);
-    const messageTransmitterProgram = await getAnchorProgram(MessageTransmitterIdl);
-    const [messageTransmitterPda] = web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("message_transmitter")],
-      messageTransmitterProgram.programId
-    );
-    const noncePda = await messageTransmitterProgram.methods
-      .getNoncePda({
-        nonce: bnNonce,
-        sourceDomain,
-      })
-      .accounts({
-        messageTransmitter: messageTransmitterPda,
-      })
-      .view();
-    const nonceUsed = await messageTransmitterProgram.methods
-      .isNonceUsed({
-        nonce: bnNonce,
-      })
-      .accounts({
-        usedNonces: noncePda,
-      })
-      .view();
-    return nonceUsed;
-  } catch {
-    return false;
-  }
-}
-
 async function _getCCTPDepositEventsSvm(
   senderAddresses: Address[],
   sourceChainId: number,
@@ -813,7 +792,7 @@ async function _getCCTPDepositEventsSvm(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<AttestedCCTPDeposit[]> {
   // Get the `DepositForBurn` events on Solana.
-  const provider = getSvmProvider();
+  const provider = getSvmProvider(await getRedisCache());
   const { address } = getCctpTokenMessenger(l2ChainId, sourceChainId);
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
@@ -925,7 +904,7 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = f
   const messageBytes = isSvm ? message.data : ethers.utils.defaultAbiCoder.decode(["bytes"], message.data)[0];
   const messageBytesArray = ethers.utils.arrayify(messageBytes);
 
-  // Values specific to `DepositForBurn`. These are values contained withing `messageBody` bytes (the last of the message.data fields)
+  // Values specific to `DepositForBurn`. These are values contained within `messageBody` bytes (the last of the message.data fields)
   const burnToken = ethers.utils.hexlify(messageBytesArray.slice(120, 152)); // burnToken 4 bytes32 32 Address of burned token on source domain
   const mintRecipient = ethers.utils.hexlify(messageBytesArray.slice(152, 184)); // mintRecipient 32 bytes starting index 152 (idx 36 of body after idx 116 which ends the header)
   const amount = ethers.utils.hexlify(messageBytesArray.slice(184, 216)); // amount 32 bytes starting index 184 (idx 68 of body after idx 116 which ends the header)

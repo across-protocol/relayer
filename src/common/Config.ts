@@ -25,6 +25,7 @@ export class CommonConfig {
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
+  public fromBlockOverride: Record<number, number> = {};
   public addressFilter: Set<string>;
 
   constructor(env: ProcessEnv) {
@@ -130,6 +131,12 @@ export class CommonConfig {
       if (isDefined(toBlock)) {
         assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
         this.toBlockOverride[chainId] = toBlock;
+      }
+      // Load any fromBlock overrides.
+      const fromBlock = Number(process.env[`FROM_BLOCK_OVERRIDE_${chainId}`]) || undefined;
+      if (isDefined(fromBlock)) {
+        assert(fromBlock > 0, `FROM_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
+        this.fromBlockOverride[chainId] = fromBlock;
       }
     }
   }
