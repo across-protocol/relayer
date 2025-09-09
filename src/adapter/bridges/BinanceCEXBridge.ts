@@ -17,6 +17,7 @@ import {
   winston,
   getBinanceDeposits,
   getBinanceWithdrawals,
+  mapAsync,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
@@ -97,12 +98,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _depositHistory = await getBinanceDeposits(
-      binanceApiClient,
-      this.getL1Bridge().provider,
-      this.l2Provider,
-      fromTimestamp
-    );
+    const _depositHistory = await getBinanceDeposits(binanceApiClient, fromTimestamp);
 
     // Only consider deposits which happened on L1.
     const depositHistory = _depositHistory.filter(
@@ -111,23 +107,24 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     // FilterMap to remove all deposits which originated from another EOA.
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
-    const processedDeposits = depositHistory
-      .map((deposit) => {
-        if (!compareAddressesSimple(deposit.externalAddress, fromAddress.toNative())) {
-          return undefined;
-        }
-        return {
-          amount: floatToBN(deposit.amount, l1Decimals),
-          txnRef: deposit.txnRef,
-          txnIndex: deposit.txnIndex,
-          logIndex: deposit.logIndex,
-          blockNumber: deposit.blockNumber,
-        };
-      })
-      .filter(isDefined);
+    const processedDeposits = await mapAsync(depositHistory, async (deposit) => {
+      const txnReceipt = await this.getL1Bridge().provider.getTransactionReceipt(deposit.txId);
+      if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
+        return undefined;
+      }
+      return {
+        amount: floatToBN(deposit.amount, l1Decimals),
+        txnRef: txnReceipt.transactionHash,
+        txnIndex: txnReceipt.transactionIndex,
+        // @dev Since a binance deposit/withdrawal is just an ERC20 transfer, it will be the first log in the transaction. This log may not exist
+        // if the transfer is with the native token.
+        logIndex: txnReceipt.logs[0]?.logIndex ?? 0,
+        blockNumber: txnReceipt.blockNumber,
+      };
+    });
 
     return {
-      [this.resolveL2TokenAddress(l1Token)]: processedDeposits,
+      [this.resolveL2TokenAddress(l1Token)]: processedDeposits.filter(isDefined),
     };
   }
 
@@ -149,13 +146,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
 
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
-    const _withdrawalHistory = await getBinanceWithdrawals(
-      binanceApiClient,
-      this.tokenSymbol,
-      this.getL1Bridge().provider,
-      this.l2Provider,
-      fromTimestamp
-    );
+    const _withdrawalHistory = await getBinanceWithdrawals(binanceApiClient, this.tokenSymbol, fromTimestamp);
     // Filter withdrawals based on whether their destination network was BSC.
     const withdrawalHistory = _withdrawalHistory.filter(
       (withdrawal) =>
@@ -164,13 +155,16 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 
     return {
-      [this.resolveL2TokenAddress(l1Token)]: withdrawalHistory.map((withdrawal) => {
+      [this.resolveL2TokenAddress(l1Token)]: await mapAsync(withdrawalHistory, async (withdrawal) => {
+        const txnReceipt = await this.l2Provider.getTransactionReceipt(withdrawal.txId);
         return {
           amount: floatToBN(withdrawal.amount, l1Decimals),
-          txnRef: withdrawal.txnRef,
-          txnIndex: withdrawal.txnIndex,
-          logIndex: withdrawal.logIndex,
-          blockNumber: withdrawal.blockNumber,
+          txnRef: txnReceipt.transactionHash,
+          txnIndex: txnReceipt.transactionIndex,
+          // @dev Since a binance deposit/withdrawal is just an ERC20 transfer, it will be the first log in the transaction. This log may not exist
+          // if the transfer is with the native token.
+          logIndex: txnReceipt.logs[0]?.logIndex ?? 0,
+          blockNumber: txnReceipt.blockNumber,
         };
       }),
     };

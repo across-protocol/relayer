@@ -62,7 +62,7 @@ export async function binanceFinalizer(
   const fromTimestamp = _fromTimestamp * 1_000;
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
-    getBinanceDeposits(binanceApi, hubSigner.provider, l2SpokePoolClient.spokePool.provider, fromTimestamp),
+    getBinanceDeposits(binanceApi, fromTimestamp),
     getAccountCoins(binanceApi),
   ]);
 
@@ -96,13 +96,7 @@ export async function binanceFinalizer(
     let coinBalance = coin.balance;
     const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
     const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-    const withdrawals = await getBinanceWithdrawals(
-      binanceApi,
-      symbol,
-      l1SpokePoolClient.spokePool.provider,
-      l2SpokePoolClient.spokePool.provider,
-      fromTimestamp
-    );
+    const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
     for (const address of senderAddresses) {
       // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.

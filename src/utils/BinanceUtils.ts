@@ -5,8 +5,7 @@ import Binance, {
   type Binance as BinanceApi,
 } from "binance-api-node";
 import minimist from "minimist";
-import { SortableEvent } from "../interfaces";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, ethers, mapAsync, delay, CHAIN_IDs } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -24,10 +23,12 @@ type WithdrawalQuota = {
 };
 
 // Alias for Binance network symbols.
-export const DepositNetworks: { [chainId: number]: string } = {
+export const BINANCE_NETWORKS: { [chainId: number]: string } = {
   [CHAIN_IDs.MAINNET]: "ETH",
   [CHAIN_IDs.BSC]: "BSC",
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
+  [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
+  [CHAIN_IDs.BASE]: "BASE",
 };
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
@@ -48,15 +49,17 @@ type Network = {
 };
 
 // A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
-type BinanceInteraction = SortableEvent & {
+type BinanceInteraction = {
   // The amount of `coin` transferred in this interaction.
   amount: number;
   // The external (non binance-wallet) EOA involved with this interaction.
-  externalAddress: string;
+  externalAddress?: string;
   // The coin used in this interaction (i.e. the token symbol).
   coin: string;
   // The network on which this interaction took place.
   network: string;
+  // The transaction hash of the deposit.
+  txId: string;
   // The status of the deposit/withdrawal.
   status?: number;
 };
@@ -128,42 +131,31 @@ export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promis
  */
 export async function getBinanceDeposits(
   binanceApi: BinanceApi,
-  l1Provider: ethers.providers.Provider,
-  l2Provider: ethers.providers.Provider,
   startTime: number,
   nRetries = 0,
   maxRetries = 3
 ): Promise<BinanceInteraction[]> {
-  let _depositHistory: DepositHistoryResponse;
+  let depositHistory: DepositHistoryResponse;
   try {
-    _depositHistory = await binanceApi.depositHistory({ startTime });
+    depositHistory = await binanceApi.depositHistory({ startTime });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
+      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
     }
     throw err;
   }
-  const depositHistory = Object.values(_depositHistory);
-  return mapAsync(depositHistory, async (deposit) => {
-    const provider = deposit.network === "ETH" ? l1Provider : l2Provider;
-    const depositTxnReceipt = await provider.getTransactionReceipt(deposit.txId);
+  return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      externalAddress: depositTxnReceipt.from,
+      externalAddress: undefined,
       coin: deposit.coin,
       network: deposit.network,
+      txId: deposit.txId,
       status: deposit.status,
-      blockNumber: depositTxnReceipt.blockNumber,
-      txnRef: depositTxnReceipt.transactionHash,
-      // Only query the first log in the deposit event since a deposit corresponds to a single ERC20 `Transfer` event.
-      // Alternatively, if this was a native token transfer, then there were no logs, so just assign 0. This should not
-      // affect `sortEvents*` since the transaction index should be able to discriminate any two rebalances.
-      logIndex: depositTxnReceipt.logs[0]?.logIndex ?? 0,
-      txnIndex: depositTxnReceipt.transactionIndex,
-    };
+    } satisfies BinanceInteraction;
   });
 }
 
@@ -174,40 +166,31 @@ export async function getBinanceDeposits(
 export async function getBinanceWithdrawals(
   binanceApi: BinanceApi,
   coin: string,
-  l1Provider: ethers.providers.Provider,
-  l2Provider: ethers.providers.Provider,
   startTime: number,
   nRetries = 0,
   maxRetries = 3
 ): Promise<BinanceInteraction[]> {
-  let _withdrawHistory: WithdrawHistoryResponse;
+  let withdrawHistory: WithdrawHistoryResponse;
   try {
-    _withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
   } catch (_err) {
     const err = _err.toString();
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
+      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
     }
     throw err;
   }
-  const withdrawHistory = Object.values(_withdrawHistory);
-  return mapAsync(withdrawHistory, async (withdrawal) => {
-    const provider = withdrawal.network === "ETH" ? l1Provider : l2Provider;
-    const withdrawalTxnReceipt = await provider.getTransactionReceipt(withdrawal.txId);
+  return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
       externalAddress: withdrawal.address,
       coin,
+      txId: withdrawal.txId,
       network: withdrawal.network,
       status: withdrawal.status,
-      blockNumber: withdrawalTxnReceipt.blockNumber,
-      txnRef: withdrawalTxnReceipt.transactionHash,
-      // Same logic as `getBinanceDeposits`.
-      logIndex: withdrawalTxnReceipt.logs[0]?.logIndex ?? 0,
-      txnIndex: withdrawalTxnReceipt.transactionIndex,
-    };
+    } satisfies BinanceInteraction;
   });
 }
 
