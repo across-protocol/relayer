@@ -531,15 +531,13 @@ export class InventoryClient {
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
-    // If the relayer wants to prioritize LP utilization, then we should always take repayment on the origin chain
-    // if it is a quick rebalance source.
+    // We can always take repayment on the origin chain if it is a quick rebalance source.
     if (
-      this.prioritizeLpUtilization &&
       // @todo: Consider requiring also that the deposit amount is large enough that its worth taking repayment on
       // origin chain instead of waiting the ~30 mins for the "fast rebalancing" CCTP/OFT bridge to complete.
       repaymentChainCanBeQuicklyRebalanced(deposit.originChainId, inputToken, this.hubPoolClient)
     ) {
-      return [deposit.originChainId];
+      return [...chainsToEvaluate, deposit.originChainId];
     }
     // Add origin chain to take higher priority than destination chain if the destination chain
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
