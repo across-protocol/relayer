@@ -196,7 +196,7 @@ describe("Dataworker: Build merkle roots", async function () {
     await requestSlowFill(spokePool_2, relayer, deposit);
     await updateAllClients();
 
-    // Propose first bundle with a destination chain block range that includes up to the slow fiil block.
+    // Propose first bundle with a destination chain block range that includes up to the slow fill block.
     const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
     const destinationChainBlockRange = [0, slowFillRequest.blockNumber];
     const blockRange1 = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map(
