@@ -438,7 +438,7 @@ export class Monitor {
     await this.updateLatestAndFutureRelayerRefunds(reports);
 
     for (const relayer of relayers) {
-      const report = reports[relayer.toBytes32()];
+      const report = reports[relayer.toNative()];
       let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, pending execution, cross-chain transfers, total\n";
       for (const token of allL1Tokens) {
@@ -533,7 +533,7 @@ export class Monitor {
           );
           const { symbol } = l2ToL1Tokens[l2TokenAddresses[i]];
           this.updateRelayerBalanceTable(
-            relayerBalanceReport[relayer.toBytes32()],
+            relayerBalanceReport[relayer.toNative()],
             symbol,
             getNetworkName(chainId),
             BalanceType.CURRENT,
@@ -1298,11 +1298,11 @@ export class Monitor {
       }
     }
     for (const relayer of this.monitorConfig.monitoredRelayers) {
-      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toBytes32()]);
+      this.updateCrossChainTransfers(relayer, relayerBalanceReport[relayer.toNative()]);
     }
     await Promise.all(
       this.monitorConfig.monitoredRelayers.map(async (relayer) => {
-        await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toBytes32()]);
+        await this.updatePendingL2Withdrawals(relayer, relayerBalanceReport[relayer.toNative()]);
       })
     );
   }
@@ -1389,13 +1389,13 @@ export class Monitor {
   initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
-      reports[relayer.toBytes32()] = {};
+      reports[relayer.toNative()] = {};
       for (const token of allL1Tokens) {
-        reports[relayer.toBytes32()][token.symbol] = {};
+        reports[relayer.toNative()][token.symbol] = {};
         for (const chainName of allChainNames) {
-          reports[relayer.toBytes32()][token.symbol][chainName] = {};
+          reports[relayer.toNative()][token.symbol][chainName] = {};
           for (const balanceType of ALL_BALANCE_TYPES) {
-            reports[relayer.toBytes32()][token.symbol][chainName][balanceType] = bnZero;
+            reports[relayer.toNative()][token.symbol][chainName][balanceType] = bnZero;
           }
         }
       }

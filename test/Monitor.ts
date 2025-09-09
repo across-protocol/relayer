@@ -289,6 +289,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
+    expect(reports[relayerAddress.toNative()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
       amountToDeposit
     );
 
@@ -302,7 +303,7 @@ describe("Monitor", async function () {
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
     expect(
-      reports[toBytes32(relayer.address)]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
+      reports[relayer.address]["L1Token1"][getNetworkName(destinationChainId)][BalanceType.PENDING_TRANSFERS]
     ).to.be.equal(toBN(5));
   });
 
