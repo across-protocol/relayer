@@ -425,7 +425,7 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
         const updated = await dataworkerInstance._updateExchangeRatesBeforeExecutingNonHubChainLeaves(
           {},
           balanceAllocator,
-          // Each leaf's net send amount is individually less than the post-updateliquid reserves,
+          // Each leaf's net send amount is individually less than the post-update liquid reserves,
           // but the sum of the three is greater than the post-update liquid reserves.
           // This should force the dataworker to submit an update.
           [
