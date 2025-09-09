@@ -135,6 +135,8 @@ export class Monitor {
     await updateMonitorClients(this.clients);
     await this.computeHubPoolBlocks();
     await this.computeSpokePoolsBlocks();
+    // We should initialize the bundle data approx client here because it depends on the spoke pool clients, and we
+    // should do it every time the spoke pool clients are updated.
     this.bundleDataApproxClient.initialize();
 
     const searchConfigs = Object.fromEntries(
