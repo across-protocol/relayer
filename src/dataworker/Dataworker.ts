@@ -52,6 +52,7 @@ import {
   waitForNewSolanaBlock,
   toKitAddress,
   createDefaultTransaction,
+  getNativeTokenAddressForChain,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -262,6 +263,7 @@ export class Dataworker {
     )[1];
 
     return this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForChains,
       latestMainnetBlock ?? mainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -533,7 +535,8 @@ export class Dataworker {
     };
     const [, mainnetBundleEndBlock] = blockRangesForProposal[0];
 
-    const poolRebalanceRoot = this._getPoolRebalanceRoot(
+    const poolRebalanceRoot = await this._getPoolRebalanceRoot(
+      spokePoolClients,
       blockRangesForProposal,
       latestMainnetBundleEndBlock,
       mainnetBundleEndBlock,
@@ -2437,7 +2440,7 @@ export class Dataworker {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              tokens: [getNativeTokenAddressForChain(leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
               holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
@@ -2602,7 +2605,8 @@ export class Dataworker {
     );
   }
 
-  _getPoolRebalanceRoot(
+  async _getPoolRebalanceRoot(
+    spokePoolClients: SpokePoolClientsByChain,
     blockRangesForChains: number[][],
     latestMainnetBlock: number,
     mainnetBundleEndBlock: number,
@@ -2611,14 +2615,14 @@ export class Dataworker {
     bundleSlowFills: BundleSlowFills,
     unexecutableSlowFills: BundleExcessSlowFills,
     expiredDepositsToRefundV3: ExpiredDepositsToRefundV3
-  ): PoolRebalanceRoot {
+  ): Promise<PoolRebalanceRoot> {
     const key = JSON.stringify(blockRangesForChains);
     // FIXME: Temporary fix to disable root cache rebalancing and to keep the
     //        executor running for tonight (2023-08-28) until we can fix the
     //        root cache rebalancing bug.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     if (!this.rootCache[key] || process.env.DATAWORKER_DISABLE_REBALANCE_ROOT_CACHE === "true") {
-      this.rootCache[key] = _buildPoolRebalanceRoot(
+      this.rootCache[key] = await _buildPoolRebalanceRoot(
         latestMainnetBlock,
         mainnetBundleEndBlock,
         bundleV3Deposits,
@@ -2626,7 +2630,7 @@ export class Dataworker {
         bundleSlowFills,
         unexecutableSlowFills,
         expiredDepositsToRefundV3,
-        this.clients,
+        { ...this.clients, spokePoolClients },
         this.maxL1TokenCountOverride
       );
     }
@@ -2747,7 +2751,7 @@ export class Dataworker {
     // If the SpokePool supports withdrawing tokens to Hub via OFT, estimate msg.value needed to cover OFT fee
     const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
 
-    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't hanlde msg.value being used for
+    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't handle msg.value being used for
     // different cases. If both msg value contributions are above 0, we have a bug. Throw
     if (lineaMsgValuePortion.gt(0) && oftMsgValuePortion.gt(0)) {
       throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
@@ -2766,7 +2770,7 @@ export class Dataworker {
     // (no refund) so we don't attach that. After Arbitrum_Spoke (and possibly Universal_Spoke) are upgraded to handle
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
-    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON]);
+    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON, CHAIN_IDs.BSC]);
 
     if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
       return bnZero;
@@ -2779,7 +2783,7 @@ export class Dataworker {
     }
 
     // Construct a message that SpokePool will be using to withdraw via OFT to mainnet. Use `.quoteSend` to estimate
-    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee chainging
+    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee changing
     // slightly. Excess fee will get refunded to executor
     const IOFTContract = new Contract(associatedOftMessenger, IOFT_ABI_FULL, client.spokePool.provider);
     const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);
