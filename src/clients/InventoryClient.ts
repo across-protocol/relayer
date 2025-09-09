@@ -532,7 +532,7 @@ export class InventoryClient {
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
-    // We can also want to take repayment on the origin chain if it is a quick rebalance source.
+    // We also want to take repayment on the origin chain if it is a quick rebalance source.
     if (
       (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
       !chainsToEvaluate.includes(originChainId) &&
