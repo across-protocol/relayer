@@ -263,9 +263,9 @@ describe("Monitor", async function () {
 
     // setupDataworker seeds relayer with 10 * 1500 erc20_2, erc20_1, and l1Token_1 tokens on two different
     // spoke pools, adding to a total of 6 * 10 * 1500 = 90,000 tokens.
-    expect(
-      reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()
-    ).to.be.equal("90000000000000000000000");
+    expect(reports[relayerAddress.toNative()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.CURRENT].toString()).to.be.equal(
+      "90000000000000000000000"
+    );
   });
 
   it("Monitor should get relayer refunds", async function () {
