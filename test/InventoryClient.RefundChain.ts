@@ -303,9 +303,11 @@ describe("InventoryClient: Refund chain selection", async function () {
       // In the case of a deposit that doesn't force origin chain repayment, the possible repayment chain
       // list should include the origin, destination, and hub chain.
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, hubPoolClient.chainId].forEach((chainId) => {
+      [sampleDepositData.originChainId, sampleDepositData.destinationChainId, hubPoolClient.chainId].forEach(
+        (chainId) => {
           expect(possibleRepaymentChains).to.include(chainId);
-        });
+        }
+      );
     });
   });
 
