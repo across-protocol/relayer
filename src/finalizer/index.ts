@@ -29,6 +29,9 @@ import {
   startupLogLevel,
   winston,
   CHAIN_IDs,
+  paginatedEventQuery,
+  getProvider,
+  compareAddressesSimple,
   Profiler,
   stringifyThrownValue,
   isEVMSpokePoolClient,
@@ -573,6 +576,68 @@ export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer):
 
   logger[startupLogLevel(config)]({ at: "Finalizer#index", message: "Finalizer started 🏋🏿‍♀️", config });
   const { commonClients, spokePoolClients } = await constructFinalizerClients(logger, config, baseSigner);
+
+  // One-time diagnostic: query mainnet HubPool TokensRelayed for USDT to a specific recipient over ~30-60 days.
+  try {
+    const mainnetProvider = await getProvider(CHAIN_IDs.MAINNET, logger);
+    const latest = await mainnetProvider.getBlockNumber();
+    const toBlock = latest;
+    const fromBlock = Math.max(0, latest - 400_000); // ~30-45 days at 12s/block; safe window
+
+    const { address: hubPoolAddress, abi: hubPoolAbi } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].hubPool;
+    const expectedHubPool = "0xc186fA914353c44b2E33eBE05f21846F1048bEda";
+    if (!compareAddressesSimple(hubPoolAddress, expectedHubPool)) {
+      logger.warn({
+        at: "Finalizer#index",
+        message: "Configured HubPool address does not match expected mainnet HubPool",
+        configured: hubPoolAddress,
+        expected: expectedHubPool,
+      });
+    }
+
+    const hubPool = new Contract(hubPoolAddress, hubPoolAbi, mainnetProvider);
+    const tokensRelayedEvents = await paginatedEventQuery(hubPool, hubPool.filters.TokensRelayed(), {
+      from: fromBlock,
+      to: toBlock,
+    });
+
+    const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+    const recipient = "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A";
+
+    const relevant = tokensRelayedEvents.filter(
+      (e) => compareAddressesSimple(e.args.l1Token, USDT) && compareAddressesSimple(e.args.to, recipient)
+    );
+
+    const totalAmountWei = relevant.reduce((acc, e) => acc.add(e.args.amount), bnZero);
+    logger.info({
+      at: "Finalizer#index",
+      message: "Mainnet HubPool TokensRelayed (USDT -> recipient) over lookback",
+      fromBlock,
+      toBlock,
+      count: relevant.length,
+      totalAmountWei: totalAmountWei.toString(),
+    });
+
+    if (relevant.length > 0) {
+      const details = relevant.map((e) => ({
+        txnHash: e.transactionHash,
+        blockNumber: e.blockNumber,
+        amount: e.args.amount.toString(),
+        l2Token: e.args.l2Token,
+      }));
+      logger.info({
+        at: "Finalizer#index",
+        message: "TokensRelayed details",
+        details,
+      });
+    }
+  } catch (err) {
+    logger.warn({
+      at: "Finalizer#index",
+      message: "TokensRelayed diagnostic query failed",
+      reason: (err as Error)?.message,
+    });
+  }
 
   try {
     for (;;) {
