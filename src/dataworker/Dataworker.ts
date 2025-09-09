@@ -52,6 +52,7 @@ import {
   waitForNewSolanaBlock,
   toKitAddress,
   createDefaultTransaction,
+  getNativeTokenAddressForChain,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2439,7 +2440,7 @@ export class Dataworker {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              tokens: [getNativeTokenAddressForChain(leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
               holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
@@ -2750,7 +2751,7 @@ export class Dataworker {
     // If the SpokePool supports withdrawing tokens to Hub via OFT, estimate msg.value needed to cover OFT fee
     const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
 
-    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't hanlde msg.value being used for
+    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't handle msg.value being used for
     // different cases. If both msg value contributions are above 0, we have a bug. Throw
     if (lineaMsgValuePortion.gt(0) && oftMsgValuePortion.gt(0)) {
       throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
@@ -2782,7 +2783,7 @@ export class Dataworker {
     }
 
     // Construct a message that SpokePool will be using to withdraw via OFT to mainnet. Use `.quoteSend` to estimate
-    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee chainging
+    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee changing
     // slightly. Excess fee will get refunded to executor
     const IOFTContract = new Contract(associatedOftMessenger, IOFT_ABI_FULL, client.spokePool.provider);
     const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);
