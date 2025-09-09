@@ -469,6 +469,17 @@ export class InventoryClient {
       );
     }
 
+    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
+    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
+    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
+    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    if (
+      forceOriginRepayment &&
+      repaymentChainCanBeQuicklyRebalanced(deposit.originChainId, inputToken, this.hubPoolClient)
+    ) {
+      return [deposit.originChainId];
+    }
+
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
     // false if the input token and origin chain weren't mapped to an L1 token.
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
@@ -506,7 +517,6 @@ export class InventoryClient {
     // hub in the next root bundle over the slow canonical bridge.
     // We need to calculate the latest running balance for each optimistic rollup chain.
     // We'll add the last proposed running balance plus new deposits and refunds.
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!forceOriginRepayment && this.prioritizeLpUtilization) {
       const excessRunningBalancePcts = await this.getExcessRunningBalancePcts(
         l1Token,
@@ -521,13 +531,10 @@ export class InventoryClient {
         .map(([chainId]) => Number(chainId));
       chainsToEvaluate.push(...chainsWithExcessSpokeBalances);
     }
-    // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
-    // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
-    // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
     // If the relayer wants to prioritize LP utilization, then we should always take repayment on the origin chain
     // if it is a quick rebalance source.
     if (
-      (this.prioritizeLpUtilization || forceOriginRepayment) &&
+      this.prioritizeLpUtilization &&
       // @todo: Consider requiring also that the deposit amount is large enough that its worth taking repayment on
       // origin chain instead of waiting the ~30 mins for the "fast rebalancing" CCTP/OFT bridge to complete.
       repaymentChainCanBeQuicklyRebalanced(deposit.originChainId, inputToken, this.hubPoolClient)

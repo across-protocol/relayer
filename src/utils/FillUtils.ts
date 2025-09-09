@@ -87,11 +87,11 @@ export function repaymentChainCanBeQuicklyRebalanced(
   hubPoolClient: HubPoolClient
 ): boolean {
   const originChainIsCctpEnabled =
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative()) &&
-    sdkUtils.chainIsCCTPEnabled(repaymentChainId);
+    sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
   const originChainIsOFTEnabled =
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative()) &&
-    sdkUtils.chainIsOFTEnabled(repaymentChainId);
+    sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative());
   return (
     originChainIsCctpEnabled ||
     originChainIsOFTEnabled ||
