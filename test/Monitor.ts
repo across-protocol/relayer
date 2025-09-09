@@ -288,7 +288,6 @@ describe("Monitor", async function () {
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
-    expect(reports[relayerAddress.toBytes32()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
     expect(reports[relayerAddress.toNative()]["L1Token1"][ALL_CHAINS_NAME][BalanceType.PENDING]).to.be.equal(
       amountToDeposit
     );
