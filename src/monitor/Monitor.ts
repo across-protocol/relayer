@@ -120,10 +120,7 @@ export class Monitor {
     this.additionalL1Tokens = monitorConfig.additionalL1NonLpTokens.map((l1Token) => {
       const l1TokenInfo = getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
       assert(l1TokenInfo.address.isEVM());
-      return {
-        ...l1TokenInfo,
-        address: l1TokenInfo.address,
-      };
+      return l1TokenInfo as L1Token;
     });
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
