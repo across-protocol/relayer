@@ -264,7 +264,10 @@ export async function getGasPrice(
   priorityScaler = Math.max(1, priorityScaler);
   const { chainId } = await provider.getNetwork();
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  if (isDefined(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`]) && isDefined(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`])) {
+  if (
+    isDefined(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`]) &&
+    isDefined(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`])
+  ) {
     return {
       maxFeePerGas: parseUnits(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
       maxPriorityFeePerGas: parseUnits(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
