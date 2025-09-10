@@ -12,7 +12,7 @@ import {
   winston,
   assert,
   getNetworkName,
-  isChainDisabled,
+  isChainDisabledAtBlock,
   EvmAddress,
   Address,
   isDefined,
@@ -69,7 +69,7 @@ export function generateMarkdownForRootBundle(
   bundleBlockRange.forEach((_blockRange, index) => {
     const chainId = chainIdListForBundleEvaluationBlockNumbers[index];
     bundleBlockRangePretty += `\n\t\t${chainId}: ${JSON.stringify(bundleBlockRange[index])}${
-      isChainDisabled(bundleBlockRange[index]) ? " 🥶" : ""
+      isChainDisabledAtBlock(chainId, bundleBlockRange[index][0][0], hubPoolClient.configStoreClient) ? " 🥶" : ""
     }`;
   });
 
