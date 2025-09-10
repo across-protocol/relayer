@@ -12,7 +12,6 @@ import {
   winston,
   assert,
   getNetworkName,
-  isChainDisabledAtBlock,
   EvmAddress,
   Address,
   isDefined,
