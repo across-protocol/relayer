@@ -71,7 +71,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
       // If there is another active relayer, allow up to 120 seconds for this instance to be ready.
-      // If this instance can't update, throw an error (for now).
       if (!ready && activeRelayer) {
         if (run * pollingDelay < maxStartupDelay) {
           const runTime = Math.round((performance.now() - tLoopStart.startTime) / 1000);
@@ -81,10 +80,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           continue;
         }
 
-        const badChains = Object.values(spokePoolClients)
+        const degraded = Object.values(spokePoolClients)
           .filter(({ isUpdated }) => !isUpdated)
           .map(({ chainId }) => getNetworkName(chainId));
-        throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
+        logger.debug({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded, });
       }
 
       // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
