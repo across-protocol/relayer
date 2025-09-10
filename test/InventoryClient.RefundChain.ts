@@ -670,10 +670,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
     it("includes hub chain and origin chain on repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      [sampleDepositData.originChainId, hubPoolClient.chainId].forEach((chainId) => {
+      const slowWithdrawalChain = OPTIMISM;
+      [sampleDepositData.originChainId, hubPoolClient.chainId, slowWithdrawalChain].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(2);
+      expect(possibleRepaymentChains.length).to.equal(3);
     });
   });
 
