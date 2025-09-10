@@ -151,7 +151,7 @@ async function getFinalizableTransactions(
         l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId)) ||
         l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], chainId))
       ) {
-        return { status: "USDC_ALT_L2_WITHDRAWAL" };
+        return { status: "ALT_L2_WITHDRAWAL" };
       }
 
       try {
