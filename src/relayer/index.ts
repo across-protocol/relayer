@@ -83,7 +83,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         const degraded = Object.values(spokePoolClients)
           .filter(({ isUpdated }) => !isUpdated)
           .map(({ chainId }) => getNetworkName(chainId));
-        logger.debug({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded, });
+        logger.debug({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
       }
 
       // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
