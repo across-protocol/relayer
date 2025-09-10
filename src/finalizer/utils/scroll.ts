@@ -6,12 +6,13 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import {
   Contract,
   Signer,
-  getBlockForTimestamp,
-  getCurrentTime,
-  getRedisCache,
   Multicall2Call,
   winston,
   convertFromWei,
+  getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
+  EvmAddress,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -45,6 +46,7 @@ export async function scrollFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId, targetAddress] = [
     hubPoolClient.chainId,
     spokePoolClient.chainId,
@@ -129,7 +131,7 @@ async function findOutstandingClaims(targetAddress: string): Promise<ScrollClaim
  * Returns the Scroll Relay contract for the given chain ID and signer.
  * @param l1ChainId The chain ID to use - i.e. the hub chain ID
  * @param signer The signer that will be used to sign the transaction
- * @returns A Scroll Relay contract, instnatiated with the given signer
+ * @returns A Scroll Relay contract, instantiated with the given signer
  */
 function getScrollRelayContract(l1ChainId: number, signer: Signer) {
   const { abi: scrollRelayAbi, address: scrollRelayAddress } = CONTRACT_ADDRESSES[l1ChainId]?.scrollRelayMessenger;
@@ -172,7 +174,7 @@ function populateClaimWithdrawal(
   l2ChainId: number,
   hubPoolClient: HubPoolClient
 ): CrossChainMessage {
-  const l1Token = hubPoolClient.getTokenInfo(hubPoolClient.chainId, claim.l1Token);
+  const l1Token = getTokenInfo(EvmAddress.from(claim.l1Token), hubPoolClient.chainId);
   return {
     originationChainId: l2ChainId,
     l1TokenSymbol: l1Token.symbol,

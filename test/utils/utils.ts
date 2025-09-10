@@ -1,5 +1,4 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
-import { TokenRolesEnum } from "@uma/common";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
@@ -9,7 +8,16 @@ import chaiExclude from "chai-exclude";
 import sinon from "sinon";
 import winston from "winston";
 import { GLOBAL_CONFIG_STORE_KEYS } from "../../src/clients";
-import { Deposit, DepositWithBlock, FillWithBlock, SlowFillLeaf } from "../../src/interfaces";
+import {
+  Deposit,
+  DepositWithBlock,
+  Fill,
+  FillWithBlock,
+  RelayData,
+  RelayExecutionEventInfo,
+  SlowFillLeaf,
+  SlowFillRequest,
+} from "../../src/interfaces";
 import {
   BigNumber,
   isDefined,
@@ -20,6 +28,8 @@ import {
   utf8ToHex,
   ZERO_ADDRESS,
   getMessageHash,
+  toBytes32,
+  toAddressType,
 } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -29,6 +39,9 @@ import {
 } from "../constants";
 import { SpokePoolDeploymentResult, SpyLoggerResult } from "../types";
 import { INFINITE_FILL_DEADLINE } from "../../src/common";
+
+// Replicated from @uma/common
+const TokenRolesEnum = { OWNER: "0", MINTER: "1", BURNER: "3" };
 
 export {
   SpyTransport,
@@ -46,7 +59,6 @@ export const {
   buildSlowRelayTree,
   buildV3SlowRelayTree,
   createRandomBytes32,
-  enableRoutes,
   getContractFactory,
   getUpdatedV3DepositSignature,
   hubPoolFixture,
@@ -109,23 +121,16 @@ export function createSpyLogger(): SpyLoggerResult {
   return { spy, spyLogger };
 }
 
-export async function deploySpokePoolWithToken(
-  fromChainId = 0,
-  toChainId = 0,
-  enableRoute = true
-): Promise<SpokePoolDeploymentResult> {
+export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
   const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
-
-  if (enableRoute) {
-    await utils.enableRoutes(spokePool, [
-      { originToken: erc20.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-      { originToken: weth.address, destinationChainId: toChainId == 0 ? utils.destinationChainId : toChainId },
-    ]);
-  }
   return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
+}
+
+export async function deployMulticall3(signer: SignerWithAddress) {
+  return sdkUtils.deploy(signer);
 }
 
 export async function deployConfigStore(
@@ -223,13 +228,6 @@ export async function deployNewTokenMapping(
   ).deploy("L2 Token Destination", "L2", 18);
   await l2TokenDestination.addMember(TokenRolesEnum.MINTER, l2TokenHolder.address);
 
-  await utils.enableRoutes(spokePoolDestination, [
-    { originToken: l2TokenDestination.address, destinationChainId: spokePoolChainId },
-  ]);
-  await utils.enableRoutes(spokePool, [
-    { originToken: l2Token.address, destinationChainId: spokePoolDestinationChainId },
-  ]);
-
   // Deploy L1 token and set as counterpart for L2 token:
   const l1Token = await (await utils.getContractFactory("ExpandedERC20", l1TokenHolder)).deploy("L1 Token", "L1", 18);
   await l1Token.addMember(TokenRolesEnum.MINTER, l1TokenHolder.address);
@@ -241,8 +239,8 @@ export async function deployNewTokenMapping(
 
   // Give signer initial balance and approve hub pool and spoke pool to pull funds from it
   await addLiquidity(l1TokenHolder, hubPool, l1Token, amountToSeedLpPool);
-  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], null, 100);
-  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], null, 100);
+  await setupTokensForWallet(spokePool, l2TokenHolder, [l2Token, l2TokenDestination], undefined, 100);
+  await setupTokensForWallet(spokePoolDestination, l2TokenHolder, [l2TokenDestination, l2Token], undefined, 100);
 
   // Set time to provider time so blockfinder can find block for deposit quote time.
   await spokePool.setCurrentTime(await getLastBlockTime(spokePool.provider));
@@ -318,15 +316,15 @@ export async function depositV3(
           )
       : spokePool
           .connect(signer)
-          .depositV3(
-            depositor,
-            recipient,
-            inputToken,
-            outputToken,
+          .deposit(
+            toBytes32(depositor),
+            toBytes32(recipient),
+            toBytes32(inputToken),
+            toBytes32(outputToken),
             inputAmount,
             outputAmount,
             destinationChainId,
-            exclusiveRelayer,
+            toBytes32(exclusiveRelayer),
             quoteTimestamp,
             fillDeadline,
             exclusivityDeadline,
@@ -339,21 +337,25 @@ export async function depositV3(
   const topic = spokePool.interface.getEventTopic(_topic);
   const eventLog = txnReceipt.logs.find(({ topics: [eventTopic] }) => eventTopic === topic);
   const { args } = spokePool.interface.parseLog(eventLog);
-  const { blockNumber, transactionHash, transactionIndex } = txnReceipt;
+  const { blockNumber, transactionHash: txnRef, transactionIndex: txnIndex } = txnReceipt;
   const { logIndex } = eventLog;
 
-  const depositObject = {
-    originChainId: Number(originChainId),
+  const depositArgs = spreadEvent(args);
+  const depositObject: DepositWithBlock = {
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef,
+    txnIndex,
     logIndex,
-    ...spreadEvent(args),
+    ...depositFromArgs(depositArgs),
+    originChainId: Number(originChainId),
+    quoteBlockNumber: 0,
     messageHash: args.messageHash ?? getMessageHash(args.message),
   };
+
   if (isLegacyDeposit) {
-    depositObject.outputToken = outputToken;
+    depositObject.outputToken = toAddressType(outputToken, originChainId);
   }
+
   return depositObject;
 }
 
@@ -363,7 +365,10 @@ export async function updateDeposit(
   depositor: SignerWithAddress
 ): Promise<string> {
   const { updatedRecipient: updatedRecipientAddress, updatedOutputAmount, updatedMessage } = deposit;
-  const updatedRecipient = sdkUtils.toBytes32(updatedRecipientAddress!);
+  if (updatedRecipientAddress === undefined) {
+    throw `updateDeposit cannot have updatedRecipientAddress undefined ${depositIntoPrimitiveTypes(deposit)}`;
+  }
+  const updatedRecipient = updatedRecipientAddress.toBytes32();
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));
   assert.ok(isDefined(updatedMessage));
@@ -396,9 +401,19 @@ export async function fillV3Relay(
   repaymentChainId?: number
 ): Promise<FillWithBlock> {
   const destinationChainId = Number(await spokePool.chainId());
-  assert.notEqual(deposit.originChainId, destinationChainId);
 
-  await spokePool.connect(signer).fillV3Relay(deposit, repaymentChainId ?? destinationChainId);
+  await spokePool.connect(signer).fillRelay(
+    {
+      ...deposit,
+      depositor: deposit.depositor.toBytes32(),
+      recipient: deposit.recipient.toBytes32(),
+      inputToken: deposit.inputToken.toBytes32(),
+      outputToken: deposit.outputToken.toBytes32(),
+      exclusiveRelayer: deposit.exclusiveRelayer.toBytes32(),
+    },
+    repaymentChainId ?? destinationChainId,
+    toBytes32(await signer.getAddress())
+  );
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
@@ -410,17 +425,11 @@ export async function fillV3Relay(
 
   const parsedEvent = spreadEvent(args);
   return {
-    destinationChainId,
     blockNumber,
-    transactionHash,
-    transactionIndex,
+    txnRef: transactionHash,
+    txnIndex: transactionIndex,
     logIndex,
-    ...parsedEvent,
-    messageHash: args.messageHash ?? getMessageHash(args.message),
-    relayExecutionInfo: {
-      ...parsedEvent.relayExecutionInfo,
-      updatedMessageHash: getMessageHash(parsedEvent.relayExecutionInfo.updatedMessage),
-    },
+    ...fillFromArgs({ ...parsedEvent, destinationChainId }),
   };
 }
 
@@ -437,7 +446,7 @@ export async function addLiquidity(
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
 }
 
-export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct: BigNumber): SlowFillLeaf[] {
+export function buildV3SlowRelayLeaves(deposits: Deposit[], lpFeePct: BigNumber): SlowFillLeaf[] {
   const chainId = deposits[0].destinationChainId;
   assert.isTrue(deposits.every(({ destinationChainId }) => chainId === destinationChainId));
   return deposits
@@ -445,11 +454,11 @@ export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct:
       const lpFee = deposit.inputAmount.mul(lpFeePct).div(toBNWei(1));
       const slowFillLeaf: SlowFillLeaf = {
         relayData: {
-          depositor: sdkUtils.toBytes32(deposit.depositor),
-          recipient: sdkUtils.toBytes32(deposit.recipient),
-          exclusiveRelayer: sdkUtils.toBytes32(deposit.exclusiveRelayer),
-          inputToken: sdkUtils.toBytes32(deposit.inputToken),
-          outputToken: sdkUtils.toBytes32(deposit.outputToken),
+          depositor: deposit.depositor,
+          recipient: deposit.recipient,
+          exclusiveRelayer: deposit.exclusiveRelayer,
+          inputToken: deposit.inputToken,
+          outputToken: deposit.outputToken,
           inputAmount: deposit.inputAmount,
           outputAmount: deposit.outputAmount,
           originChainId: deposit.originChainId,
@@ -473,7 +482,7 @@ export function buildV3SlowRelayLeaves(deposits: interfaces.Deposit[], lpFeePct:
 }
 
 // We use the offset input to bypass the bundleClient's cache key, which is the bundle block range. So, to make sure
-// that the client requeries fresh blockchain state, we need to slightly offset the block range to produce a different
+// that the client re-queries fresh blockchain state, we need to slightly offset the block range to produce a different
 // cache key.
 export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
@@ -483,14 +492,105 @@ export function getDisabledBlockRanges(): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
 }
 
-export function createRefunds(
-  outputToken: string,
-  refundAmount: BigNumber,
-  repaymentToken: string
-): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
+// A helper function to parse key - value map into a Fill object
+export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
+  const { message, ...relayData } = relayDataFromArgs(fillArgs);
+  const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
+  const relayExecutionInfo: RelayExecutionEventInfo = {
+    updatedRecipient: toAddressType(relayExecutionInfoArgs.updatedRecipient, fillArgs.destinationChainId),
+    updatedOutputAmount: relayExecutionInfoArgs.updatedOutputAmount,
+    updatedMessageHash: relayExecutionInfoArgs.updatedMessageHash,
+    fillType: relayExecutionInfoArgs.fillType,
+  };
+  if (relayExecutionInfoArgs.updatedMessage) {
+    relayExecutionInfo.updatedMessage = relayExecutionInfoArgs.updatedMessage;
+  }
   return {
-    [repaymentToken]: {
-      [outputToken]: refundAmount,
+    ...relayData,
+    messageHash: fillArgs.messageHash,
+    destinationChainId: fillArgs.destinationChainId,
+    relayer: toAddressType(fillArgs.relayer, fillArgs.destinationChainId),
+    repaymentChainId: fillArgs.repaymentChainId,
+    relayExecutionInfo,
+  };
+}
+
+// decomposes Fill into primitive types suitable for === comparisons
+export function fillIntoPrimitiveTypes(fill: Fill) {
+  return {
+    ...fill,
+    inputToken: fill.inputToken.toNative(),
+    outputToken: fill.outputToken.toNative(),
+    depositor: fill.depositor.toNative(),
+    recipient: fill.recipient.toNative(),
+    exclusiveRelayer: fill.exclusiveRelayer.toNative(),
+    relayer: fill.relayer.toNative(),
+    relayExecutionInfo: {
+      ...fill.relayExecutionInfo,
+      updatedRecipient: fill.relayExecutionInfo.updatedRecipient?.toNative(),
     },
+  };
+}
+
+export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
+  return {
+    originChainId: relayDataArgs.originChainId,
+    depositor: toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId),
+    recipient: toAddressType(relayDataArgs.recipient, relayDataArgs.destinationChainId),
+    depositId: relayDataArgs.depositId,
+    inputToken: toAddressType(relayDataArgs.inputToken, relayDataArgs.originChainId),
+    inputAmount: relayDataArgs.inputAmount,
+    outputToken: toAddressType(relayDataArgs.outputToken, relayDataArgs.destinationChainId),
+    outputAmount: relayDataArgs.outputAmount,
+    message: relayDataArgs.message,
+    fillDeadline: relayDataArgs.fillDeadline,
+    exclusiveRelayer: toAddressType(relayDataArgs.exclusiveRelayer, relayDataArgs.destinationChainId),
+    exclusivityDeadline: relayDataArgs.exclusivityDeadline,
+  };
+}
+
+export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
+  const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
+  return {
+    ...relayData,
+    destinationChainId: slowFillRequestArgs.destinationChainId,
+    messageHash: slowFillRequestArgs.messageHash ?? getMessageHash(slowFillRequestArgs.message),
+  };
+}
+
+// A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
+export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
+  const deposit: Deposit = {
+    ...relayDataFromArgs(depositArgs),
+    destinationChainId: depositArgs.destinationChainId,
+    messageHash: depositArgs.messageHash,
+    quoteTimestamp: depositArgs.quoteTimestamp,
+    fromLiteChain: depositArgs.fromLiteChain,
+    toLiteChain: depositArgs.toLiteChain,
+  };
+
+  if (depositArgs.speedUpSignature) {
+    deposit.speedUpSignature = depositArgs.speedUpSignature;
+  }
+
+  if (depositArgs.updatedRecipient) {
+    deposit.updatedRecipient = toAddressType(depositArgs.updatedRecipient, depositArgs.destinationChainId);
+    deposit.updatedOutputAmount = depositArgs.updatedOutputAmount;
+    deposit.updatedMessage = depositArgs.updatedMessage;
+  }
+
+  return deposit;
+}
+
+// decomposes Deposit into primitive types suitable for === comparisons
+export function depositIntoPrimitiveTypes(deposit: Deposit) {
+  return {
+    ...deposit,
+    inputToken: deposit.inputToken.toNative(),
+    outputToken: deposit.outputToken.toNative(),
+    depositor: deposit.depositor.toNative(),
+    recipient: deposit.recipient.toNative(),
+    exclusiveRelayer: deposit.exclusiveRelayer.toNative(),
+    updatedRecipient: deposit.updatedRecipient?.toNative(),
   };
 }

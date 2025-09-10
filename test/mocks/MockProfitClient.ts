@@ -1,7 +1,8 @@
+import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, isDefined, TOKEN_SYMBOLS_MAP } from "../../src/utils";
+import { bnOne, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 
@@ -16,7 +17,8 @@ export class MockProfitClient extends ProfitClient {
     hubPoolClient: HubPoolClient | MockHubPoolClient,
     spokePoolClients: SpokePoolClientsByChain,
     enabledChainIds: number[],
-    relayerAddress: string,
+    relayerAddressEvm: EvmAddress,
+    relayerAddressSvm: SvmAddress,
     defaultMinRelayerFeePct?: BigNumber,
     debugProfitability?: boolean,
     gasMultiplier = toBNWei("1"),
@@ -28,7 +30,8 @@ export class MockProfitClient extends ProfitClient {
       hubPoolClient,
       spokePoolClients,
       enabledChainIds,
-      relayerAddress,
+      relayerAddressEvm,
+      relayerAddressSvm,
       defaultMinRelayerFeePct,
       debugProfitability,
       gasMultiplier,
@@ -41,7 +44,6 @@ export class MockProfitClient extends ProfitClient {
       const address = addresses[hubPoolClient.chainId];
       if (isDefined(address)) {
         this.mapToken(symbol, address);
-        this.setTokenPrice(symbol, bnOne);
         if (this.hubPoolClient instanceof MockHubPoolClient) {
           this.hubPoolClient.addL1Token({ symbol, decimals, address });
         }
@@ -51,6 +53,9 @@ export class MockProfitClient extends ProfitClient {
           message: `Skipping ${symbol}: not supported on ${hubPoolClient.chainId}`,
         });
       }
+    });
+    Object.entries(this.tokenSymbolMap).forEach(([symbol]) => {
+      this.setTokenPrice(symbol, bnOne);
     });
 
     // Some tests run against mocked chains, so hack in the necessary parts

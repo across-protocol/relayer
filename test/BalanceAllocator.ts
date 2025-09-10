@@ -1,5 +1,5 @@
 import { BalanceAllocator, BalanceMap } from "../src/clients/BalanceAllocator";
-import { BigNumber } from "../src/utils";
+import { BigNumber, toAddressType, Address } from "../src/utils";
 import { randomAddress, chai } from "./utils";
 const { expect } = chai;
 
@@ -9,35 +9,35 @@ class TestBalanceAllocator extends BalanceAllocator {
   }
 
   mockBalances: BalanceMap = {};
-  setMockBalances(chainId: number, token: string, holder: string, balance?: BigNumber) {
+  setMockBalances(chainId: number, token: Address, holder: Address, balance?: BigNumber) {
     // Note: cannot use assign because it breaks the BigNumber object.
     if (!this.mockBalances[chainId]) {
       this.mockBalances[chainId] = {};
     }
-    if (!this.mockBalances[chainId][token]) {
-      this.mockBalances[chainId][token] = {};
+    if (!this.mockBalances[chainId][token.toBytes32()]) {
+      this.mockBalances[chainId][token.toBytes32()] = {};
     }
     if (!balance) {
-      delete this.mockBalances[chainId][token][holder];
+      delete this.mockBalances[chainId][token.toBytes32()][holder.toBytes32()];
     } else {
-      this.mockBalances[chainId][token][holder] = balance;
+      this.mockBalances[chainId][token.toBytes32()][holder.toBytes32()] = balance;
     }
   }
 
-  protected _queryBalance(chainId: number, token: string, holder: string): Promise<BigNumber> {
-    if (!this.mockBalances[chainId]?.[token]?.[holder]) {
+  protected _queryBalance(chainId: number, token: Address, holder: Address): Promise<BigNumber> {
+    if (!this.mockBalances[chainId]?.[token.toBytes32()]?.[holder.toBytes32()]) {
       throw new Error("No balance!");
     }
-    return Promise.resolve(this.mockBalances[chainId][token][holder]);
+    return Promise.resolve(this.mockBalances[chainId][token.toBytes32()][holder.toBytes32()]);
   }
 }
 
 describe("BalanceAllocator", async function () {
   let balanceAllocator: TestBalanceAllocator;
-  const testToken1 = randomAddress();
-  const testToken2 = randomAddress();
+  const testToken1 = toAddressType(randomAddress(), 1);
+  const testToken2 = toAddressType(randomAddress(), 1);
 
-  const testAccount1 = randomAddress();
+  const testAccount1 = toAddressType(randomAddress(), 1);
 
   beforeEach(async function () {
     balanceAllocator = new TestBalanceAllocator();

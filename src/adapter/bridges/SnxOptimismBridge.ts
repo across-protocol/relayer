@@ -6,6 +6,8 @@ import {
   Signer,
   Provider,
   isContractDeployedToAddress,
+  EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -17,13 +19,12 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
-    // Lint Appeasement
-    _l1Token;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
-      CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address,
-    ]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address)]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -33,28 +34,28 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositTo",
-      args: [toAddress, amount],
+      args: [toAddress.toNative(), amount],
     });
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    const hubPoolAddress = this.getHubPool().address;
+    const hubPoolAddress = EvmAddress.from(this.getHubPool().address);
     // @dev Since the SnxOptimism bridge has no _from field when querying for finalizations, we cannot use
     // the hub pool to determine cross chain transfers (since we do not assume knowledge of the spoke pool address).
-    if (fromAddress === hubPoolAddress) {
+    if (fromAddress.eq(hubPoolAddress)) {
       return Promise.resolve({});
     }
     // If `toAddress` is a contract on L2, then assume the contract is the spoke pool, and further assume that the sender
@@ -63,27 +64,27 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     fromAddress = isSpokePool ? hubPoolAddress : fromAddress;
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(fromAddress),
+      this.getL1Bridge().filters.DepositInitiated(fromAddress.toNative()),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount")),
     };
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(toAddress),
+      this.getL2Bridge().filters.DepositFinalized(toAddress.toNative()),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount", "_to", "_from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "_amount")),
     };
   }
 
@@ -95,7 +96,7 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     return new Contract(hubPoolContractData.address, hubPoolContractData.abi, this.l1Signer);
   }
 
-  private isL2ChainContract(address: string): Promise<boolean> {
-    return isContractDeployedToAddress(address, this.getL2Bridge().provider);
+  private isL2ChainContract(address: EvmAddress): Promise<boolean> {
+    return isContractDeployedToAddress(address.toNative(), this.getL2Bridge().provider);
   }
 }

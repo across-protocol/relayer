@@ -1,24 +1,32 @@
-import { TransactionReceipt, TransactionRequest } from "@ethersproject/abstract-provider";
-import { ethers } from "ethers";
+import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getCachedProvider,
   groupObjectCountsByProp,
   isDefined,
   Multicall2Call,
-  paginatedEventQuery,
   winston,
   convertFromWei,
+  isEVMSpokePoolClient,
+  ethers,
+  isSVMSpokePoolClient,
+  Address,
+  getKitKeypairFromEvmSigner,
 } from "../../../utils";
-import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import {
+  AttestedCCTPMessage,
+  CCTPMessageStatus,
+  getAttestedCCTPMessages,
+  getCctpMessageTransmitter,
+  isDepositForBurnEvent,
+} from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
-import { uniqWith } from "lodash";
+import { KeyPairSigner } from "@solana/kit";
+import { finalizeCCTPV1MessagesSVM } from "./svm/l1Tol2";
 
 export async function cctpL1toL2Finalizer(
   logger: winston.Logger,
@@ -26,23 +34,31 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[l2SpokePoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(
-    cctpMessageReceiverDetails.address,
-    cctpMessageReceiverDetails.abi,
-    l2SpokePoolClient.spokePool.provider
-  );
-  const decodedMessages = await resolveRelatedTxnReceipts(
-    l1ToL2AddressesToFinalize,
+  assert(isEVMSpokePoolClient(l1SpokePoolClient));
+  const searchConfig: EventSearchConfig = {
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
+  };
+  let signer: KeyPairSigner;
+  if (isSVMSpokePoolClient(l2SpokePoolClient)) {
+    signer = await getKitKeypairFromEvmSigner(_signer);
+  }
+  const outstandingMessages = await getAttestedCCTPMessages(
+    senderAddresses,
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
-    l1SpokePoolClient
+    l2SpokePoolClient.chainId,
+    searchConfig,
+    signer
   );
-  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+  const unprocessedMessages = outstandingMessages.filter(
+    (message) => message.status === "ready" && message.attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
-    decodedMessages,
+    outstandingMessages,
     (message: { status: CCTPMessageStatus }) => message.status
   );
   logger.debug({
@@ -51,56 +67,69 @@ export async function cctpL1toL2Finalizer(
     statusesGrouped,
   });
 
-  return {
-    crossChainMessages: await generateDepositData(
+  const { address, abi } = getCctpMessageTransmitter(l2SpokePoolClient.chainId, l2SpokePoolClient.chainId);
+  if (isEVMSpokePoolClient(l2SpokePoolClient)) {
+    const l2Messenger = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
+    return {
+      crossChainMessages: await generateCrosschainMessages(
+        unprocessedMessages,
+        hubPoolClient.chainId,
+        l2SpokePoolClient.chainId
+      ),
+      callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
+    };
+  } else {
+    assert(isSVMSpokePoolClient(l2SpokePoolClient));
+    const simulate = process.env["SEND_TRANSACTIONS"] !== "true";
+    // If the l2SpokePoolClient is not an EVM client, then we must have send the finalization here, since we cannot return SVM calldata.
+    const signatures = await finalizeCCTPV1MessagesSVM(
+      l2SpokePoolClient,
       unprocessedMessages,
-      hubPoolClient.chainId,
-      l2SpokePoolClient.chainId
-    ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
-  };
-}
+      signer,
+      logger,
+      simulate,
+      hubPoolClient.chainId
+    );
 
-async function findRelevantTxnReceiptsForCCTPDeposits(
-  currentChainId: number,
-  addressesToSearch: string[],
-  l1SpokePoolClient: SpokePoolClient
-): Promise<TransactionReceipt[]> {
-  const provider = getCachedProvider(currentChainId);
-  const tokenMessengerContract = new Contract(
-    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.address,
-    CONTRACT_ADDRESSES[currentChainId].cctpTokenMessenger.abi,
-    provider
-  );
-  const eventFilter = tokenMessengerContract.filters.DepositForBurn(
-    undefined,
-    TOKEN_SYMBOLS_MAP.USDC.addresses[currentChainId], // Filter by only USDC token deposits
-    undefined,
-    addressesToSearch // All depositors that we are monitoring for
-  );
-  const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
-  };
-  const events = await paginatedEventQuery(tokenMessengerContract, eventFilter, searchConfig);
-  const receipts = await Promise.all(events.map((event) => provider.getTransactionReceipt(event.transactionHash)));
-  // Return the receipts, without duplicated transaction hashes
-  return uniqWith(receipts, (a, b) => a.transactionHash.toLowerCase() === b.transactionHash.toLowerCase());
-}
+    let depositMessagesCount = 0;
+    let tokenlessMessagesCount = 0;
+    const amountFinalized = unprocessedMessages.reduce((acc, event) => {
+      if (isDepositForBurnEvent(event)) {
+        depositMessagesCount++;
+        return acc + Number(event.amount);
+      } else {
+        tokenlessMessagesCount++;
+        return acc;
+      }
+    }, 0);
 
-async function resolveRelatedTxnReceipts(
-  addressesToSearch: string[],
-  currentChainId: number,
-  targetDestinationChainId: number,
-  l1SpokePoolClient: SpokePoolClient
-): Promise<DecodedCCTPMessage[]> {
-  const allReceipts = await findRelevantTxnReceiptsForCCTPDeposits(
-    currentChainId,
-    addressesToSearch,
-    l1SpokePoolClient
-  );
-  return resolveCCTPRelatedTxns(allReceipts, currentChainId, targetDestinationChainId);
+    const anythingFinalized = unprocessedMessages.length > 0;
+    if (anythingFinalized) {
+      const logMessageParts: string[] = [];
+      if (depositMessagesCount > 0) {
+        logMessageParts.push(
+          `${depositMessagesCount} deposits for ${convertFromWei(
+            String(amountFinalized),
+            TOKEN_SYMBOLS_MAP.USDC.decimals
+          )} USDC`
+        );
+      }
+      if (tokenlessMessagesCount > 0) {
+        logMessageParts.push(`${tokenlessMessagesCount} tokenless messages`);
+      }
+
+      logger[simulate ? "debug" : "info"]({
+        at: `Finalizer#CCTPL1ToL2Finalizer:${l2SpokePoolClient.chainId}`,
+        message: `Finalized ${logMessageParts.join(" and ")} on Solana.`,
+        signatures,
+      });
+    }
+
+    return {
+      crossChainMessages: [],
+      callData: [],
+    };
+  }
 }
 
 /**
@@ -111,9 +140,9 @@ async function resolveRelatedTxnReceipts(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
+  messages: Pick<AttestedCCTPMessage, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
+  assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
   return Promise.all(
     messages.map(async (message) => {
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
@@ -135,16 +164,27 @@ async function generateMultiCallData(
  * @param destinationChainId The chain that these messages will be executed on
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
-async function generateDepositData(
-  messages: DecodedCCTPMessage[],
+async function generateCrosschainMessages(
+  messages: AttestedCCTPMessage[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
-  return messages.map((message) => ({
-    l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-    amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
-    type: "deposit",
-    originationChainId,
-    destinationChainId,
-  }));
+  return messages.map((message) => {
+    if (isDepositForBurnEvent(message)) {
+      return {
+        l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
+        amount: convertFromWei(message.amount, TOKEN_SYMBOLS_MAP.USDC.decimals), // Format out to 6 decimal places for USDC
+        type: "deposit",
+        originationChainId,
+        destinationChainId,
+      };
+    } else {
+      return {
+        type: "misc",
+        miscReason: `Finalization of CCTP crosschain message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+        originationChainId,
+        destinationChainId,
+      };
+    }
+  });
 }

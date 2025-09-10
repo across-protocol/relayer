@@ -1,0 +1,204 @@
+import { SUPPORTED_TOKENS } from "../../common";
+import {
+  winston,
+  Signer,
+  getTimestampForBlock,
+  mapAsync,
+  getBinanceApiClient,
+  TOKEN_SYMBOLS_MAP,
+  compareAddressesSimple,
+  formatUnits,
+  floatToBN,
+  bnZero,
+  getTokenInfo,
+  groupObjectCountsByProp,
+  isEVMSpokePoolClient,
+  assert,
+  EvmAddress,
+  Address,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
+  getAccountCoins,
+  DepositNetwork,
+} from "../../utils";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { FinalizerPromise } from "../types";
+
+// Alias for a Binance deposit/withdrawal status.
+enum Status {
+  Confirmed = 1,
+  Pending = 0,
+  Rejected = 2,
+  Credited = 6,
+  WrongDeposit = 7,
+  WaitingUserConfirm = 8,
+}
+
+// The precision of a `DECIMAL` type in the Binance API.
+const DECIMAL_PRECISION = 1_000_000;
+
+/**
+ * Unlike other finalizers, the Binance finalizer is only used to withdraw EOA deposits on Binance.
+ * This means we need to be cautious on the addresses to finalize, as a "finalization" is essentially a withdrawal
+ * from a Binance hot wallet.
+ */
+export async function binanceFinalizer(
+  logger: winston.Logger,
+  hubSigner: Signer,
+  _hubPoolClient: HubPoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l1SpokePoolClient: SpokePoolClient,
+  _senderAddresses: Address[]
+): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
+  const chainId = l2SpokePoolClient.chainId;
+  const hubChainId = l1SpokePoolClient.chainId;
+  const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
+
+  const [binanceApi, _fromTimestamp] = await Promise.all([
+    getBinanceApiClient(process.env["BINANCE_API_BASE"]),
+    getTimestampForBlock(hubSigner.provider, l1EventSearchConfig.from),
+  ]);
+  const fromTimestamp = _fromTimestamp * 1_000;
+
+  const [_binanceDeposits, accountCoins] = await Promise.all([
+    getBinanceDeposits(binanceApi, hubSigner.provider, l2SpokePoolClient.spokePool.provider, fromTimestamp),
+    getAccountCoins(binanceApi),
+  ]);
+
+  const statusesGrouped = groupObjectCountsByProp(_binanceDeposits, (deposit: { status: number }) => {
+    switch (deposit.status) {
+      case Status.Confirmed:
+        return "ready-to-finalize";
+      case Status.Rejected:
+        return "deposit-rejected";
+      case Status.WrongDeposit:
+        return "wrong-deposit";
+      default:
+        return "waiting-to-finalize";
+    }
+  });
+  logger.debug({
+    at: "BinanceFinalizer",
+    message: `Found ${_binanceDeposits.length} historical Binance deposits.`,
+    statusesGrouped,
+    fromTimestamp: fromTimestamp,
+  });
+  const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
+
+  // We can run this in parallel since deposits for each tokens are independent of each other.
+  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
+    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
+    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
+    symbol = symbol === "WBNB" ? "BNB" : symbol;
+
+    const coin = accountCoins.find((coin) => coin.symbol === symbol);
+    let coinBalance = coin.balance;
+    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+    const withdrawals = await getBinanceWithdrawals(
+      binanceApi,
+      symbol,
+      l1SpokePoolClient.spokePool.provider,
+      l2SpokePoolClient.spokePool.provider,
+      fromTimestamp
+    );
+
+    for (const address of senderAddresses) {
+      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
+      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
+      const depositsInScope = binanceDeposits.filter((deposit) =>
+        compareAddressesSimple(deposit.externalAddress, address)
+      );
+      if (depositsInScope.length === 0) {
+        logger.debug({
+          at: "BinanceFinalizer",
+          message: `No finalizable deposits found for ${address}`,
+        });
+        continue;
+      }
+
+      // Start by finalizing L1 -> L2, then go to L2 -> L1.
+      for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
+        const withdrawNetwork =
+          depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
+        const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
+        // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
+        const depositAmounts = depositsInScope
+          .filter((deposit) => deposit.coin === symbol && deposit.network === depositNetwork)
+          .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
+
+        const withdrawalsInScope = withdrawals.filter(
+          (withdrawal) =>
+            compareAddressesSimple(withdrawal.externalAddress, address) && withdrawal.network === withdrawNetwork
+        );
+        const withdrawalAmounts = withdrawalsInScope.reduce(
+          (sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)),
+          bnZero
+        );
+
+        // The amount we are able to finalize is `depositAmounts - withdrawalAmounts`. It is possible for `depositAmounts` to be less than `withdrawalAmounts` if there is a gap between
+        // the lookback windows used to query deposits and withdrawals, so we require this value to be > bnZero.
+        const _amountToFinalize = depositAmounts.sub(withdrawalAmounts);
+        let amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
+
+        logger.debug({
+          at: "BinanceFinalizer",
+          message: `(${depositNetwork} -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
+          totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
+          withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
+          amountToFinalize,
+        });
+        // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
+        // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
+        if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
+          logger.warn({
+            at: "BinanceFinalizer",
+            message: `(${depositNetwork} -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
+          });
+          amountToFinalize = Number(networkLimits.withdrawMax);
+        }
+        // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
+        // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
+        if (amountToFinalize > Number(coinBalance)) {
+          logger.debug({
+            at: "BinanceFinalizer",
+            message: `(${depositNetwork} -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
+            amountToFinalize,
+            balance: coinBalance,
+          });
+          amountToFinalize = Number(coinBalance);
+        }
+        if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
+          // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
+          amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
+          // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
+          coinBalance = (Number(coinBalance) - amountToFinalize).toFixed(8);
+          const withdrawalId = await binanceApi.withdraw({
+            coin: symbol,
+            address,
+            network: withdrawNetwork,
+            amount: amountToFinalize,
+            transactionFeeFlag: false,
+          });
+          logger.info({
+            at: "BinanceFinalizer",
+            message: `(${depositNetwork} -> ${withdrawNetwork}) Finalized deposit on ${withdrawNetwork} for ${amountToFinalize} ${symbol}.`,
+            amount: amountToFinalize,
+            withdrawalId,
+          });
+        } else {
+          logger.debug({
+            at: "BinanceFinalizer",
+            message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
+          });
+        }
+      }
+    }
+  });
+  return {
+    callData: [],
+    crossChainMessages: [],
+  };
+}

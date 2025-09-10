@@ -2,59 +2,21 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import { HubPoolClient } from "../clients";
 import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
-  bnZero,
   BigNumber,
-  fixedPointAdjustment as fixedPoint,
   MerkleTree,
   convertFromWei,
   formatFeePct,
   shortenHexString,
   shortenHexStrings,
   toBN,
-  toBNWei,
   winston,
   assert,
   getNetworkName,
   isChainDisabled,
+  EvmAddress,
+  Address,
+  isDefined,
 } from "../utils";
-import { DataworkerClients } from "./DataworkerClientHelper";
-
-// TODO: Is summing up absolute values really the best way to compute a root bundle's "volume"? Said another way,
-// how do we measure a root bundle's "impact" or importance?
-export async function computePoolRebalanceUsdVolume(
-  leaves: PoolRebalanceLeaf[],
-  clients: DataworkerClients
-): Promise<BigNumber> {
-  // Fetch the set of unique token addresses from the array of PoolRebalanceLeave objects.
-  // Map the resulting HubPool token addresses to symbol, decimals, and price.
-  const hubPoolTokens = Object.fromEntries(
-    Array.from(new Set(leaves.map(({ l1Tokens }) => l1Tokens).flat()))
-      .map((address) => clients.hubPoolClient.getTokenInfoForL1Token(address))
-      .map(({ symbol, decimals, address }) => [address, { symbol, decimals, price: bnZero }])
-  );
-
-  // Fetch all relevant token prices.
-  const prices = await clients.priceClient.getPricesByAddress(
-    Object.keys(hubPoolTokens).map((address) => address),
-    "usd"
-  );
-
-  // Scale token price to 18 decimals.
-  prices.forEach(({ address, price }) => (hubPoolTokens[address].price = toBNWei(price)));
-
-  const bn10 = toBN(10);
-  return leaves.reduce((result: BigNumber, poolRebalanceLeaf) => {
-    return poolRebalanceLeaf.l1Tokens.reduce((sum: BigNumber, l1Token: string, index: number) => {
-      const { decimals, price: usdTokenPrice } = hubPoolTokens[l1Token];
-
-      const netSendAmount = poolRebalanceLeaf.netSendAmounts[index];
-      const volume = netSendAmount.abs().mul(bn10.pow(18 - decimals)); // Scale volume to 18 decimals.
-
-      const usdVolume = volume.mul(usdTokenPrice).div(fixedPoint);
-      return sum.add(usdVolume);
-    }, result);
-  }, bnZero);
-}
 
 export function generateMarkdownForDisputeInvalidBundleBlocks(
   chainIdListForBundleEvaluationBlockNumbers: number[],
@@ -84,7 +46,7 @@ export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle)
     `\n\tPoolRebalance root: ${shortenHexString(pendingRootBundle.poolRebalanceRoot)}` +
     `\n\tRelayerRefund root: ${shortenHexString(pendingRootBundle.relayerRefundRoot)}` +
     `\n\tSlowRelay root: ${shortenHexString(pendingRootBundle.slowRelayRoot)}` +
-    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer)}`
+    `\n\tProposer: ${shortenHexString(pendingRootBundle.proposer.toEvmAddress())}`
   );
 }
 
@@ -111,16 +73,34 @@ export function generateMarkdownForRootBundle(
     }`;
   });
 
-  const convertTokenListFromWei = (chainId: number, tokenAddresses: string[], weiVals: string[]) => {
+  const convertTokenListFromWei = (chainId: number, tokenAddresses: Address[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      const { decimals } = hubPoolClient.getTokenInfo(chainId, token);
-      return convertFromWei(weiVals[index], decimals);
+      try {
+        const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
+        return convertFromWei(weiVals[index], decimals);
+      } catch (error) {
+        hubPoolClient.logger.debug({
+          at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenListFromWei",
+          message: `Error getting token info for address ${token} on chain ${chainId}`,
+          error,
+        });
+        return weiVals[index].toString();
+      }
     });
   };
-  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: string) => {
-    return hubPoolClient.getTokenInfo(chainId, tokenAddress).symbol;
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) => {
+    try {
+      return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+    } catch (error) {
+      hubPoolClient.logger.debug({
+        at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenAddressToSymbol",
+        message: `Error getting token info for address ${tokenAddress} on chain ${chainId}`,
+        error,
+      });
+      return "UNKNOWN TOKEN";
+    }
   };
-  const convertL1TokenAddressesToSymbols = (l1Tokens: string[]) => {
+  const convertL1TokenAddressesToSymbols = (l1Tokens: EvmAddress[]) => {
     return l1Tokens.map((l1Token) => {
       return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
     });
@@ -142,10 +122,19 @@ export function generateMarkdownForRootBundle(
   relayerRefundLeaves.forEach((leaf, index) => {
     // Shorten keys for ease of reading from Slack.
     delete leaf.leafId;
-    leaf.amountToReturn = convertFromWei(
-      leaf.amountToReturn,
-      hubPoolClient.getTokenInfo(leaf.chainId, leaf.l2TokenAddress).decimals
-    );
+    try {
+      leaf.amountToReturn = convertFromWei(
+        leaf.amountToReturn,
+        hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
+      );
+    } catch (error) {
+      hubPoolClient.logger.debug({
+        at: "PoolRebalanceUtils#generateMarkdownForRootBundle",
+        message: `Error getting token info for address ${leaf.l2TokenAddress} on chain ${leaf.chainId}`,
+        error,
+      });
+      leaf.amountToReturn = leaf.amountToReturn.toString();
+    }
     leaf.refundAmounts = convertTokenListFromWei(
       leaf.chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
@@ -153,7 +142,7 @@ export function generateMarkdownForRootBundle(
     );
     leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
     delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses);
+    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
     relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
@@ -161,7 +150,9 @@ export function generateMarkdownForRootBundle(
   slowRelayLeaves.forEach((leaf, index) => {
     const { outputToken } = leaf.relayData;
     const destinationChainId = leaf.chainId;
-    const outputTokenDecimals = hubPoolClient.getTokenInfo(destinationChainId, outputToken).decimals;
+    // @devgetTokenInfoForAddress should always succeed for slow leaves as we should always be aware of these tokens in
+    // TOKEN_SYMBOLS_MAP.
+    const outputTokenDecimals = hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId).decimals;
     const lpFeePct = sdkUtils.getSlowFillLeafLpFeePct(leaf);
 
     // Scale amounts to 18 decimals for realizedLpFeePct computation.
@@ -177,8 +168,8 @@ export function generateMarkdownForRootBundle(
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.
     const slowFill = {
       // Shorten select keys for ease of reading from Slack.
-      depositor: shortenHexString(leaf.relayData.depositor),
-      recipient: shortenHexString(leaf.relayData.recipient),
+      depositor: shortenHexString(leaf.relayData.depositor.toBytes32()),
+      recipient: shortenHexString(leaf.relayData.recipient.toBytes32()),
       originChainId: leaf.relayData.originChainId.toString(),
       destinationChainId: destinationChainId.toString(),
       depositId: leaf.relayData.depositId.toString(),
@@ -222,6 +213,12 @@ export function prettyPrintLeaves(
         result[key] = leaf[key].map((val) => val.toString());
       } else if (BigNumber.isBigNumber(leaf[key])) {
         result[key] = leaf[key].toString();
+      } else if (typeof leaf[key] === "number") {
+        result[key] = leaf[key];
+      } else if (Array.isArray(leaf[key]) && isDefined(leaf[key][0]) && Address.isAddress(leaf[key][0])) {
+        result[key] = leaf[key].map((val) => val.toNative());
+      } else if (Address.isAddress(leaf[key])) {
+        result[key] = leaf[key].toNative();
       } else {
         result[key] = leaf[key];
       }

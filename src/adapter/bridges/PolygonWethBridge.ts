@@ -8,6 +8,8 @@ import {
   bnZero,
   ZERO_ADDRESS,
   getL2TokenAddresses,
+  EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -26,18 +28,20 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: string
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     // @dev This method fetches the *SDK's* most up-to-date values of
     // TOKEN_SYMBOLS_MAP. This constructor will therefore break if
     // either the SDK, or the constants dependency in the SDK, is not
     // up-to-date.
-    const l2TokenAddresses = getL2TokenAddresses(l1Token, hubChainId);
+    const l2TokenAddresses = getL2TokenAddresses(l1Token.toNative(), hubChainId);
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonWethBridge;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
     const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
       CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [atomicDepositorAddress]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
@@ -49,12 +53,14 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
-    const bridgeCalldata = this.rootChainManager.interface.encodeFunctionData("depositEtherFor", [toAddress]);
+    const bridgeCalldata = this.rootChainManager.interface.encodeFunctionData("depositEtherFor", [
+      toAddress.toNative(),
+    ]);
     return Promise.resolve({
       contract: this.atomicDepositor,
       method: "bridgeWeth",
@@ -63,36 +69,34 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.LockedEther(undefined, toAddress),
+      this.getL1Bridge().filters.LockedEther(undefined, toAddress.toNative()),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) =>
-        processEvent(event, "amount", "depositReceiver", "depositor")
-      ),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress),
+      this.getL2Bridge().filters.Transfer(ZERO_ADDRESS, toAddress.toNative()),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "value")),
     };
   }
 }

@@ -1,45 +1,88 @@
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
 import {
   Contract,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
-  compareAddressesSimple,
   groupObjectCountsByProp,
   Multicall2Call,
   isDefined,
   winston,
   convertFromWei,
+  EventSearchConfig,
+  SvmAddress,
+  chainIsSvm,
+  Address,
+  toKitAddress,
+  getStatePda,
+  toAddressType,
+  createFormatFunction,
 } from "../../../utils";
-import { CCTPMessageStatus, DecodedCCTPMessage, resolveCCTPRelatedTxns } from "../../../utils/CCTPUtils";
+import {
+  AttestedCCTPDeposit,
+  CCTPMessageStatus,
+  getAttestedCCTPDeposits,
+  getCctpMessageTransmitter,
+} from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
   _signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
-  const cctpMessageReceiverDetails = CONTRACT_ADDRESSES[hubPoolClient.chainId].cctpMessageTransmitter;
-  const contract = new ethers.Contract(
-    cctpMessageReceiverDetails.address,
-    cctpMessageReceiverDetails.abi,
-    hubPoolClient.hubPool.provider
+  const searchConfig: EventSearchConfig = {
+    from: spokePoolClient.eventSearchConfig.from,
+    to: spokePoolClient.latestHeightSearched,
+    maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
+  };
+
+  const finalizingFromSolana = chainIsSvm(spokePoolClient.chainId);
+  const augmentedSenderAddresses = finalizingFromSolana
+    ? await augmentSendersListForSolana(senderAddresses, spokePoolClient)
+    : senderAddresses;
+
+  const outstandingDeposits = await getAttestedCCTPDeposits(
+    augmentedSenderAddresses,
+    spokePoolClient.chainId,
+    hubPoolClient.chainId,
+    spokePoolClient.chainId,
+    searchConfig
   );
-  const decodedMessages = await resolveRelatedTxnReceipts(spokePoolClient, hubPoolClient.chainId);
-  const unprocessedMessages = decodedMessages.filter((message) => message.status === "ready");
+
+  const unprocessedMessages = outstandingDeposits.filter(
+    ({ status, attestation }) => status === "ready" && attestation !== "PENDING"
+  );
   const statusesGrouped = groupObjectCountsByProp(
-    decodedMessages,
+    outstandingDeposits,
     (message: { status: CCTPMessageStatus }) => message.status
   );
+  const pending = outstandingDeposits
+    .filter(({ status }) => status === "pending")
+    .map((deposit) => {
+      const formatter = createFormatFunction(2, 4, false, 6);
+      const recipient = toAddressType(deposit.recipient, spokePoolClient.chainId);
+      const transactionHash = deposit.log?.transactionHash;
+      return {
+        amount: formatter(deposit.amount),
+        recipient,
+        transactionHash,
+      };
+    });
   logger.debug({
     at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP ${spokePoolClient.chainId} to L1`,
     statusesGrouped,
+    pending,
   });
+
+  const { address, abi } = getCctpMessageTransmitter(spokePoolClient.chainId, hubPoolClient.chainId);
+  const l1MessengerContract = new ethers.Contract(address, abi, hubPoolClient.hubPool.provider);
 
   return {
     crossChainMessages: await generateWithdrawalData(
@@ -47,31 +90,8 @@ export async function cctpL2toL1Finalizer(
       spokePoolClient.chainId,
       hubPoolClient.chainId
     ),
-    callData: await generateMultiCallData(contract, unprocessedMessages),
+    callData: await generateMultiCallData(l1MessengerContract, unprocessedMessages),
   };
-}
-
-async function resolveRelatedTxnReceipts(
-  client: SpokePoolClient,
-  targetDestinationChainId: number
-): Promise<DecodedCCTPMessage[]> {
-  const sourceChainId = client.chainId;
-  // Dedup the txnReceipt list because there might be multiple tokens bridged events in the same txn hash.
-
-  const uniqueTxnHashes = new Set<string>();
-  client
-    .getTokensBridged()
-    .filter((bridgeEvent) =>
-      compareAddressesSimple(bridgeEvent.l2TokenAddress, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId])
-    )
-    .forEach((bridgeEvent) => uniqueTxnHashes.add(bridgeEvent.transactionHash));
-
-  // Resolve the receipts to all collected txns
-  const txnReceipts = await Promise.all(
-    Array.from(uniqueTxnHashes).map((hash) => client.spokePool.provider.getTransactionReceipt(hash))
-  );
-
-  return resolveCCTPRelatedTxns(txnReceipts, sourceChainId, targetDestinationChainId);
 }
 
 /**
@@ -82,7 +102,7 @@ async function resolveRelatedTxnReceipts(
  */
 async function generateMultiCallData(
   messageTransmitter: Contract,
-  messages: DecodedCCTPMessage[]
+  messages: Pick<AttestedCCTPDeposit, "attestation" | "messageBytes">[]
 ): Promise<Multicall2Call[]> {
   assert(messages.every((message) => isDefined(message.attestation)));
   return Promise.all(
@@ -107,7 +127,7 @@ async function generateMultiCallData(
  * @returns A list of valid withdrawals for a given list of CCTP messages.
  */
 async function generateWithdrawalData(
-  messages: DecodedCCTPMessage[],
+  messages: Pick<AttestedCCTPDeposit, "amount">[],
   originationChainId: number,
   destinationChainId: number
 ): Promise<CrossChainMessage[]> {
@@ -118,4 +138,25 @@ async function generateWithdrawalData(
     originationChainId,
     destinationChainId,
   }));
+}
+
+/**
+ * When finalizing CCTP token transfers from Solana to Ethereum, especially transfers from the SpokePool, it's not enough
+ * to have SpokePool address in the `senderAddresses`. We instead need SpokePool's `statePda` in there, because that is
+ * what gets recorded as `depositor` in the `DepositForBurn` event
+ */
+async function augmentSendersListForSolana(
+  senderAddresses: Address[],
+  spokePoolClient: SpokePoolClient
+): Promise<Address[]> {
+  const spokeAddress = spokePoolClient.spokePoolAddress;
+  // This format is taken from `src/finalizer/index.ts`
+  if (senderAddresses.some((address) => address.eq(spokeAddress))) {
+    const _statePda = await getStatePda(toKitAddress(spokeAddress));
+    // This format has to match format in CCTPUtils.ts >
+    const statePda = SvmAddress.from(_statePda.toString());
+    return [...senderAddresses, statePda];
+  } else {
+    return senderAddresses;
+  }
 }

@@ -4,12 +4,23 @@ import { Contract } from "ethers";
 import { groupBy } from "lodash";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import { CONTRACT_ADDRESSES } from "../../../common";
-import { EventSearchConfig, Signer, convertFromWei, winston, CHAIN_IDs, ethers, BigNumber } from "../../../utils";
+import {
+  EventSearchConfig,
+  Signer,
+  convertFromWei,
+  winston,
+  CHAIN_IDs,
+  ethers,
+  getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
+  EvmAddress,
+  Address,
+} from "../../../utils";
 import { CrossChainMessage, FinalizerPromise } from "../../types";
 import {
   determineMessageType,
   findMessageFromTokenBridge,
-  findMessageFromUsdcBridge,
   findMessageSentEvents,
   getL1MessageServiceContractFromL1ClaimingService,
   initLineaSdk,
@@ -29,8 +40,10 @@ async function getL1ToL2MessageStatusUsingCustomProvider(
   messageHash: string,
   l2Provider: ethers.providers.Provider
 ): Promise<OnChainMessageStatus> {
-  const l2Contract = messageService.contract.connect(l2Provider);
-  const status: BigNumber = await l2Contract.inboxL1L2MessageStatus(messageHash);
+  const iface = new ethers.utils.Interface(messageService.contract.interface.fragments);
+  const l2Contract = new Contract(messageService.contractAddress, iface, l2Provider);
+
+  const status: bigint = await l2Contract.inboxL1L2MessageStatus(messageHash);
   return L1L2MessageStatuses[status.toString()];
 }
 
@@ -40,14 +53,16 @@ export async function lineaL1ToL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  l1ToL2AddressesToFinalize: string[]
+  _senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
+  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");
   }
   const l2ChainId = CHAIN_IDs.LINEA;
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2MessageServiceContract = lineaSdk.getL2Contract();
   const l1MessageServiceContract = lineaSdk.getL1Contract();
   const l1TokenBridge = new Contract(
@@ -55,35 +70,25 @@ export async function lineaL1ToL2Finalizer(
     CONTRACT_ADDRESSES[l1ChainId].lineaL1TokenBridge.abi,
     hubPoolClient.hubPool.provider
   );
-  const l1UsdcBridge = new Contract(
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.address,
-    CONTRACT_ADDRESSES[l1ChainId].lineaL1UsdcBridge.abi,
-    hubPoolClient.hubPool.provider
-  );
-
   const searchConfig: EventSearchConfig = {
-    fromBlock: l1SpokePoolClient.eventSearchConfig.fromBlock,
-    toBlock: l1SpokePoolClient.latestBlockSearched,
-    maxBlockLookBack: l1SpokePoolClient.eventSearchConfig.maxBlockLookBack,
+    from: l1SpokePoolClient.eventSearchConfig.from,
+    to: l1SpokePoolClient.latestHeightSearched,
+    maxLookBack: l1SpokePoolClient.eventSearchConfig.maxLookBack,
   };
 
-  const [wethAndRelayEvents, tokenBridgeEvents, usdcBridgeEvents] = await Promise.all([
+  const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
     findMessageSentEvents(
       getL1MessageServiceContractFromL1ClaimingService(lineaSdk.getL1ClaimingService(), hubPoolClient.hubPool.provider),
-      l1ToL2AddressesToFinalize,
+      senderAddresses,
       searchConfig
     ),
-    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
-    findMessageFromUsdcBridge(l1UsdcBridge, l1MessageServiceContract, l1ToL2AddressesToFinalize, searchConfig),
+    findMessageFromTokenBridge(l1TokenBridge, l1MessageServiceContract, senderAddresses, searchConfig),
   ]);
 
-  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents, ...usdcBridgeEvents];
+  const messageSentEvents = [...wethAndRelayEvents, ...tokenBridgeEvents];
   const enrichedMessageSentEvents = await sdkUtils.mapAsync(messageSentEvents, async (event) => {
-    const {
-      transactionHash: txHash,
-      logIndex,
-      args: { _from, _to, _fee, _value, _nonce, _calldata, _messageHash },
-    } = event;
+    const { parsed, logIndex, transactionHash: txHash } = event;
+    const { _from, _to, _fee, _value, _nonce, _calldata, _messageHash } = parsed.args;
     // It's unlikely that our multicall will have multiple transactions to bridge to Linea
     // so we can grab the statuses individually.
 
@@ -103,7 +108,7 @@ export async function lineaL1ToL2Finalizer(
       txHash,
       logIndex,
       status: messageStatus,
-      messageType: determineMessageType(event, hubPoolClient),
+      messageType: determineMessageType(event.parsed, hubPoolClient),
     };
   });
   // Group messages by status
@@ -125,17 +130,19 @@ export async function lineaL1ToL2Finalizer(
   // Populate txns for claimable messages
   const populatedTxns = await Promise.all(
     claimable.map(async (message) => {
-      return l2MessageServiceContract.contract.populateTransaction.claimMessage(
-        message.messageSender,
-        message.destination,
-        message.fee,
-        message.value,
-        await signer.getAddress(),
-        message.calldata,
-        message.messageNonce
-      );
+      return l2MessageServiceContract.claim({
+        messageSender: message.messageSender,
+        destination: message.destination,
+        fee: BigInt(message.fee.toString()),
+        value: BigInt(message.value.toString()),
+        messageNonce: BigInt(message.messageNonce.toString()),
+        calldata: message.calldata,
+        messageHash: message.messageHash,
+        feeRecipient: await signer.getAddress(),
+      });
     })
   );
+
   const multicall3Call = populatedTxns.map((txn) => ({
     target: l2MessageServiceContract.contractAddress,
     callData: txn.data,
@@ -152,7 +159,7 @@ export async function lineaL1ToL2Finalizer(
         miscReason: "lineaClaim:relayMessage",
       };
     } else {
-      const { decimals, symbol: l1TokenSymbol } = hubPoolClient.getTokenInfo(l1ChainId, messageType.l1TokenAddress);
+      const { decimals, symbol: l1TokenSymbol } = getTokenInfo(EvmAddress.from(messageType.l1TokenAddress), l1ChainId);
       const amountFromWei = convertFromWei(messageType.amount.toString(), decimals);
       crossChainCall = {
         originationChainId: l1ChainId,

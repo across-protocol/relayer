@@ -10,7 +10,7 @@ import {
   waitForLogger,
   stringifyThrownValue,
 } from "./src/utils";
-import { runRelayer } from "./src/relayer";
+import { runRelayer, runRebalancer } from "./src/relayer";
 import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
@@ -19,24 +19,25 @@ import { version } from "./package.json";
 let logger: typeof Logger;
 let cmd: string;
 
+const CMDS = {
+  dataworker: runDataworker,
+  finalizer: runFinalizer,
+  help: help,
+  monitor: runMonitor,
+  relayer: runRelayer,
+  rebalancer: runRebalancer,
+};
+
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
-
-  const cmds = {
-    dataworker: runDataworker,
-    finalizer: runFinalizer,
-    help: help,
-    monitor: runMonitor,
-    relayer: runRelayer,
-  };
 
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
-  cmd = Object.keys(cmds).find((_cmd) => !!args[_cmd]);
+  cmd = Object.keys(CMDS).find((_cmd) => !!args[_cmd]);
 
   if (cmd === "help") {
-    cmds[cmd]();
+    CMDS[cmd]();
   } // no return
   else if (cmd === undefined) {
     usage("");
@@ -48,7 +49,7 @@ export async function run(args: { [k: string]: boolean | string }): Promise<void
     // One global signer for use with a specific per-chain provider.
     // todo: Support a void signer for monitor mode (only) if no wallet was supplied.
     const signer = await retrieveSignerFromCLIArgs();
-    await cmds[cmd](logger, signer);
+    await CMDS[cmd](logger, signer);
   }
 }
 
@@ -58,8 +59,8 @@ if (require.main === module) {
   config();
 
   const opts = {
-    boolean: ["dataworker", "finalizer", "help", "monitor", "relayer"],
-    string: ["wallet", "keys", "address"],
+    boolean: Object.keys(CMDS),
+    string: ["wallet", "keys", "address", "binanceSecretKey"],
     default: { wallet: "secret" },
     alias: { h: "help" },
     unknown: usage,

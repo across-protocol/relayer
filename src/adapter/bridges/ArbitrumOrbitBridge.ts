@@ -12,11 +12,14 @@ import {
   ethers,
   bnZero,
   CHAIN_IDs,
+  EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
+import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
@@ -46,21 +49,23 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: string
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
       CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
     const { l1: l1Address, l2: l2Address } =
-      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
+      CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toNative()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
     const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].erc20Gateway.abi;
+    const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1Address]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId];
+      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
     }
     this.l1SubmitValue = bridgeSubmitValue[l2chainId];
     this.l2GasPrice = maxFeePerGas[l2chainId];
@@ -70,9 +75,9 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const { l1GatewayRouter, l2GasLimit, l2GasPrice, l1SubmitValue } = this;
@@ -85,42 +90,42 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     return Promise.resolve({
       contract: l1GatewayRouter,
       method: "outboundTransfer",
-      args: [l1Token, toAddress, amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
+      args: [l1Token.toNative(), toAddress.toNative(), amount, l2GasLimit, l2GasPrice, transactionSubmissionData],
       value: isDefined(this.gasToken) ? bnZero : l1SubmitValue,
     });
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress),
+      this.getL1Bridge().filters.DepositInitiated(undefined, undefined, toAddress.toNative()),
       eventConfig
     );
     return {
       [this.resolveL2TokenAddress(l1Token)]: events
-        .filter(({ args }) => args.l1Token === l1Token)
-        .map((event) => processEvent(event, "_amount", "_to", "_from")),
+        .filter(({ args }) => args.l1Token === l1Token.toNative())
+        .map((event) => processEvent(event, "_amount")),
     };
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const events = await paginatedEventQuery(
       this.getL2Bridge(),
-      this.getL2Bridge().filters.DepositFinalized(l1Token, undefined, toAddress),
+      this.getL2Bridge().filters.DepositFinalized(l1Token.toNative(), undefined, toAddress.toNative()),
       eventConfig
     );
     return {
-      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount", "to", "from")),
+      [this.resolveL2TokenAddress(l1Token)]: events.map((event) => processEvent(event, "amount")),
     };
   }
 }

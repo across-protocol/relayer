@@ -10,9 +10,11 @@ import { Log, SpokePoolClientMessage } from "./../types";
  * @param events An array of Log objects to be submitted.
  * @returns void
  */
-export function postEvents(blockNumber: number, currentTime: number, events: Log[]): void {
+export function postEvents(blockNumber: number, currentTime: number, events: Log[]): boolean {
   if (!isDefined(process.send)) {
-    return;
+    // Process was probably started standalone.
+    // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
+    return true;
   }
 
   events = sortEventsAscending(events);
@@ -22,7 +24,15 @@ export function postEvents(blockNumber: number, currentTime: number, events: Log
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
-  process.send(JSON.stringify(message));
+
+  const msg = JSON.stringify(message);
+  try {
+    process.send(msg);
+  } catch {
+    return false;
+  }
+
+  return true;
 }
 
 /**

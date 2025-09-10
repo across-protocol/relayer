@@ -1,5 +1,5 @@
 import { Refund, RelayerRefundLeaf, RelayerRefundLeafWithGroup, SpokePoolTargetBalance } from "../interfaces";
-import { BigNumber, bnZero, compareAddresses, getNetSendAmountForL1Token } from "../utils";
+import { BigNumber, bnZero, compareAddresses, getNetSendAmountForL1Token, Address, toAddressType } from "../utils";
 
 export function getAmountToReturnForRelayerRefundLeaf(
   spokePoolTargetBalance: SpokePoolTargetBalance,
@@ -9,22 +9,24 @@ export function getAmountToReturnForRelayerRefundLeaf(
   return netSendAmountForLeaf.lt(bnZero) ? netSendAmountForLeaf.mul(-1) : bnZero;
 }
 
-export function sortRefundAddresses(refunds: Refund): string[] {
+export function sortRefundAddresses(refunds: Refund, chainId: number): Address[] {
   const deepCopy = { ...refunds };
-  return [...Object.keys(deepCopy)].sort((addressA, addressB) => {
-    if (deepCopy[addressA].gt(deepCopy[addressB])) {
-      return -1;
-    }
-    if (deepCopy[addressA].lt(deepCopy[addressB])) {
-      return 1;
-    }
-    const sortOutput = compareAddresses(addressA, addressB);
-    if (sortOutput !== 0) {
-      return sortOutput;
-    } else {
-      throw new Error("Unexpected matching address");
-    }
-  });
+  return [...Object.keys(deepCopy)]
+    .sort((addressA, addressB) => {
+      if (deepCopy[addressA].gt(deepCopy[addressB])) {
+        return -1;
+      }
+      if (deepCopy[addressA].lt(deepCopy[addressB])) {
+        return 1;
+      }
+      const sortOutput = compareAddresses(addressA, addressB);
+      if (sortOutput !== 0) {
+        return sortOutput;
+      } else {
+        throw new Error("Unexpected matching address");
+      }
+    })
+    .map((address) => toAddressType(address, chainId));
 }
 
 // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
@@ -34,8 +36,8 @@ export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWi
     .sort((leafA, leafB) => {
       if (leafA.chainId !== leafB.chainId) {
         return leafA.chainId - leafB.chainId;
-      } else if (compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress) !== 0) {
-        return compareAddresses(leafA.l2TokenAddress, leafB.l2TokenAddress);
+      } else if (compareAddresses(leafA.l2TokenAddress.toBytes32(), leafB.l2TokenAddress.toBytes32()) !== 0) {
+        return compareAddresses(leafA.l2TokenAddress.toBytes32(), leafB.l2TokenAddress.toBytes32());
       } else if (leafA.groupIndex !== leafB.groupIndex) {
         return leafA.groupIndex - leafB.groupIndex;
       } else {

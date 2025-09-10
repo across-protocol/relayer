@@ -4,7 +4,7 @@ import {
   HubPoolClient,
   MultiCallerClient,
   SpokePoolClient,
-  TokenClient,
+  EVMSpokePoolClient,
 } from "../src/clients";
 import { CONFIG_STORE_VERSION } from "../src/common";
 import { Relayer } from "../src/relayer/Relayer";
@@ -18,7 +18,7 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockInventoryClient, MockProfitClient, SimpleMockHubPoolClient } from "./mocks";
+import { MockInventoryClient, MockProfitClient, SimpleMockTokenClient, SimpleMockHubPoolClient } from "./mocks";
 import { MockCrossChainTransferClient } from "./mocks/MockCrossChainTransferClient";
 import { MockedMultiCallerClient } from "./mocks/MockMultiCallerClient";
 import {
@@ -41,7 +41,9 @@ import {
   toBN,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
+import { EvmAddress, SvmAddress } from "../src/utils";
 
 describe("Relayer: Token balance shortfall", async function () {
   const noSlowRelays = false; // Don't send slow fills.
@@ -53,10 +55,11 @@ describe("Relayer: Token balance shortfall", async function () {
   let spy: sinon.SinonSpy, spyLogger: winston.Logger;
 
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
-  let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: TokenClient;
+  let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: SimpleMockTokenClient;
   let relayerInstance: Relayer;
   let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, profitClient: MockProfitClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+  let inventoryClient: MockInventoryClient;
 
   let inputToken: string, outputToken: string;
   let inputTokenDecimals: BigNumber;
@@ -95,6 +98,10 @@ describe("Relayer: Token balance shortfall", async function () {
       { destinationChainId: destinationChainId, l1Token, destinationToken: erc20_2 },
     ]);
 
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     ({ spy, spyLogger } = createSpyLogger());
     ({ configStore } = await deployConfigStore(
       owner,
@@ -105,7 +112,7 @@ describe("Relayer: Token balance shortfall", async function () {
       undefined,
       CHAIN_ID_TEST_LIST
     ));
-    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { fromBlock: 0 }, CONFIG_STORE_VERSION);
+    configStoreClient = new ConfigStoreClient(spyLogger, configStore, { from: 0 }, CONFIG_STORE_VERSION);
     await configStoreClient.update();
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
@@ -114,14 +121,14 @@ describe("Relayer: Token balance shortfall", async function () {
 
     multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1.connect(relayer),
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2.connect(relayer),
       hubPoolClient,
@@ -129,13 +136,34 @@ describe("Relayer: Token balance shortfall", async function () {
       spokePool2DeploymentBlock
     );
     const spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
+    tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);
     }
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+    inventoryClient = new MockInventoryClient(
+      null,
+      null,
+      null,
+      null,
+      null,
+      hubPoolClient,
+      null,
+      null,
+      new MockCrossChainTransferClient()
+    );
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -146,17 +174,7 @@ describe("Relayer: Token balance shortfall", async function () {
         tokenClient,
         profitClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(
-          null,
-          null,
-          null,
-          null,
-          null,
-          hubPoolClient,
-          null,
-          null,
-          new MockCrossChainTransferClient()
-        ),
+        inventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         tryMulticallClient,
       },
@@ -165,10 +183,16 @@ describe("Relayer: Token balance shortfall", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        sendingMessageRelaysEnabled: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
-
+    inventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);

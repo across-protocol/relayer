@@ -116,7 +116,7 @@ describe("EventManager: Event Handling ", async function () {
     expect(events.length).to.equal(0);
   });
 
-  it("Hashes events correctly", async function () {
+  it("Hashes events correctly: uniqueness", async function () {
     const log1 = eventTemplate;
     const hash1 = eventMgr.hashEvent(log1);
     expect(hash1).to.exist;
@@ -128,6 +128,45 @@ describe("EventManager: Event Handling ", async function () {
     const log3 = { ...log2, logIndex: log2.logIndex - 1 };
     const hash3 = eventMgr.hashEvent(log3);
     expect(hash3).to.equal(hash1);
+  });
+
+  it("Hashes events correctly: sorting", async function () {
+    const log = {
+      ...eventTemplate,
+      args: {
+        c: 3,
+        b: 2,
+        f: {
+          h: 7,
+          i: 8,
+          g: 6,
+        },
+        a: 1,
+        d: 4,
+        e: 5,
+      },
+    };
+    const sortedLog = {
+      ...log,
+      args: {
+        a: 1,
+        b: 2,
+        c: 3,
+        d: 4,
+        e: 5,
+        f: {
+          g: 6,
+          h: 7,
+          i: 8,
+        },
+      },
+    };
+
+    const hash1 = eventMgr.hashEvent(log);
+    expect(hash1).to.exist;
+
+    const hash2 = eventMgr.hashEvent(sortedLog);
+    expect(hash2).to.equal(hash1);
   });
 
   it("Does not submit duplicate events", async function () {

@@ -1,10 +1,41 @@
 import * as sdk from "@across-protocol/sdk";
 
-export class BlockFinder extends sdk.utils.BlockFinder {}
+// EVMBlockFinder returns _only_ EVMBlock types.
+export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
+export class SVMBlockFinder extends sdk.arch.svm.SVMBlockFinder {}
 export type BlockFinderHints = sdk.utils.BlockFinderHints;
+
+export class AddressAggregator extends sdk.addressAggregator.AddressAggregator {}
+export const addressAdapters = sdk.addressAggregator.adapters;
+
+export class SvmCpiEventsClient extends sdk.arch.svm.SvmCpiEventsClient {}
 
 export class PriceClient extends sdk.priceClient.PriceClient {}
 export const { acrossApi, coingecko, defiLlama } = sdk.priceClient.adapters;
+export const { isEVMSpokePoolClient, isSVMSpokePoolClient } = sdk.clients;
+
+export class Address extends sdk.utils.Address {}
+export class EvmAddress extends sdk.utils.EvmAddress {}
+export class SvmAddress extends sdk.utils.SvmAddress {}
+
+export type EvmGasPriceEstimate = sdk.gasPriceOracle.EvmGasPriceEstimate;
+
+export const { fillStatusArray, populateV3Relay, relayFillStatus, getTimestampForBlock, averageBlockTime } =
+  sdk.arch.evm;
+export const {
+  getAssociatedTokenAddress,
+  toAddress: toKitAddress,
+  getStatePda,
+  getFillStatusPda,
+  getRelayDataHash,
+  getInstructionParamsPda,
+  getRootBundlePda,
+  getTransferLiabilityPda,
+  getEventAuthority,
+  getClaimAccountPda,
+  createDefaultTransaction,
+} = sdk.arch.svm;
+export type SVMProvider = sdk.arch.svm.SVMProvider;
 
 export const {
   assign,
@@ -13,18 +44,17 @@ export const {
   groupObjectCountsByThreeProps,
   delay,
   getCurrentTime,
-  averageBlockTime,
   bnZero,
   bnOne,
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
+  chainIsOrbit,
   chainIsArbitrum,
   chainIsProd,
   chainIsMatic,
   chainIsLinea,
   dedupArray,
-  fillStatusArray,
   fixedPointAdjustment,
   forEachAsync,
   formatEther,
@@ -49,16 +79,27 @@ export const {
   blockExplorerLink,
   isContractDeployedToAddress,
   blockExplorerLinks,
-  createShortHexString: shortenHexString,
+  createShortenedString: shortenHexString,
+  compareAddresses,
   compareAddressesSimple,
-  getTokenInfo,
-  getL1TokenInfo,
+  getL1TokenAddress,
   getUsdcSymbol,
   Profiler,
   getMessageHash,
   getRelayEventKey,
   toBytes32,
   validateFillForDeposit,
+  toAddressType,
+  chainIsEvm,
+  chainIsSvm,
+  ConvertDecimals,
+  getTokenInfo,
+  convertRelayDataParamsToBytes32,
+  convertFillParamsToBytes32,
+  getRandomInt,
+  randomAddress,
+  convertRelayDataParamsToNative,
+  convertFillParamsToNative,
 } = sdk.utils;
 
 export const {

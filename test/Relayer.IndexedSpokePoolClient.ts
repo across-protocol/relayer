@@ -3,24 +3,35 @@ import winston from "winston";
 import { Result } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
-import { IndexedSpokePoolClient } from "../src/clients";
+import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
 import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
-class MockIndexedSpokePoolClient extends IndexedSpokePoolClient {
-  // Override `protected` attribute.
-  override indexerUpdate(rawMessage: unknown): void {
-    super.indexerUpdate(rawMessage);
-  }
+type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
 
-  override startWorker(): void {
-    return;
-  }
+// Minimum common-ish interface supplied by the SpokePoolClient.
+type MinSpokeListener = {
+  _indexerUpdate: (message: unknown) => void;
+};
+
+function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListener: T) {
+  return class extends SpokeListener {
+    // Permit parent _indexerUpdate method to be called externally.
+    indexerUpdate(rawMessage: unknown): void {
+      super._indexerUpdate(rawMessage);
+    }
+
+    // Suppress spawning of workers.
+    protected _startWorker(): void {
+      return;
+    }
+  };
 }
 
 describe("IndexedSpokePoolClient: Update", async function () {
+  const MockSpokeListener = _MockSpokeListener(SpokeListener(EVMSpokePoolClient));
   const chainId = CHAIN_IDs.MAINNET;
 
   const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
@@ -47,13 +58,12 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   let depositId: number;
   const getDepositEvent = (blockNumber: number): Log => {
-    const event = generateEvent("V3FundsDeposited", blockNumber);
+    const event = generateEvent("FundsDeposited", blockNumber);
     const args = {
       depositor: randomAddress(),
       recipient: randomAddress(),
       depositId: depositId++,
       inputToken: randomAddress(),
-      originChainId: 1,
       destinationChainId: Math.ceil(Math.random() * 1e3),
       inputAmount: sdkUtils.bnOne,
       outputToken: randomAddress(),
@@ -79,7 +89,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   let logger: winston.Logger;
   let spokePool: Contract;
-  let spokePoolClient: MockIndexedSpokePoolClient;
+  let spokePoolClient: any; // nasty @todo
   let currentTime: number;
 
   /**
@@ -100,7 +110,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
 
   const removeEvent = (event: Log): void => {
     event.removed = true;
-    const message: SpokePoolClientMessage = {
+    const message = {
       event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
     };
     spokePoolClient.indexerUpdate(JSON.stringify(message));
@@ -109,17 +119,10 @@ describe("IndexedSpokePoolClient: Update", async function () {
   beforeEach(async function () {
     let deploymentBlock: number;
     ({ spyLogger: logger } = createSpyLogger());
-    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId, 1_000_000));
-    const eventSearchConfig: EventSearchConfig | undefined = undefined;
-    spokePoolClient = new MockIndexedSpokePoolClient(
-      logger,
-      spokePool,
-      null,
-      chainId,
-      deploymentBlock,
-      eventSearchConfig,
-      {}
-    );
+    ({ spokePool, deploymentBlock } = await deploySpokePoolWithToken(chainId));
+    const searchConfig: EventSearchConfig | undefined = undefined;
+    spokePoolClient = new MockSpokeListener(logger, spokePool, null, chainId, deploymentBlock, searchConfig);
+    spokePoolClient.init({});
     depositId = 1;
     currentTime = Math.round(Date.now() / 1000);
   });
@@ -134,24 +137,25 @@ describe("IndexedSpokePoolClient: Update", async function () {
     postEvents(blockNumber, currentTime, events);
     await spokePoolClient.update();
 
-    expect(spokePoolClient.latestBlockSearched).to.equal(blockNumber);
+    expect(spokePoolClient.latestHeightSearched).to.equal(blockNumber);
 
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
     deposits.forEach((deposit, idx) => {
-      expect(deposit.transactionIndex).to.equal(events[idx].transactionIndex);
-      expect(deposit.transactionHash).to.equal(events[idx].transactionHash);
-      expect(deposit.logIndex).to.equal(events[idx].logIndex);
-      expect(deposit.depositId).to.equal(events[idx].args!.depositId);
-      expect(deposit.inputToken).to.equal(events[idx].args!.inputToken);
-      expect(deposit.inputAmount).to.equal(events[idx].args!.inputAmount);
-      expect(deposit.outputToken).to.equal(events[idx].args!.outputToken);
-      expect(deposit.outputAmount).to.equal(events[idx].args!.outputAmount);
-      expect(deposit.message).to.equal(events[idx].args!.message);
-      expect(deposit.quoteTimestamp).to.equal(events[idx].args!.quoteTimestamp);
-      expect(deposit.fillDeadline).to.equal(events[idx].args!.fillDeadline);
-      expect(deposit.exclusivityDeadline).to.equal(events[idx].args!.exclusivityDeadline);
-      expect(deposit.exclusiveRelayer).to.equal(events[idx].args!.exclusiveRelayer);
+      const log = events[idx];
+      expect(deposit.txnIndex).to.equal(log.transactionIndex);
+      expect(deposit.txnRef).to.equal(log.transactionHash);
+      expect(deposit.logIndex).to.equal(log.logIndex);
+      expect(deposit.depositId).to.equal(log.args!.depositId);
+      expect(deposit.inputToken.toEvmAddress()).to.equal(log.args!.inputToken);
+      expect(deposit.inputAmount).to.equal(log.args!.inputAmount);
+      expect(deposit.outputToken.toEvmAddress()).to.equal(log.args!.outputToken);
+      expect(deposit.outputAmount).to.equal(log.args!.outputAmount);
+      expect(deposit.message).to.equal(log.args!.message);
+      expect(deposit.quoteTimestamp).to.equal(log.args!.quoteTimestamp);
+      expect(deposit.fillDeadline).to.equal(log.args!.fillDeadline);
+      expect(deposit.exclusivityDeadline).to.equal(log.args!.exclusivityDeadline);
+      expect(deposit.exclusiveRelayer.toEvmAddress()).to.equal(log.args!.exclusiveRelayer);
     });
   });
 
@@ -171,7 +175,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     // Verify that the dropped event is _not_ present in deposits.
     const deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
-    const droppedDeposit = deposits.find((deposit) => deposit.transactionHash === droppedEvent.transactionHash);
+    const droppedDeposit = deposits.find(({ txnRef }) => txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 
@@ -194,7 +198,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     await spokePoolClient.update();
     deposits = spokePoolClient.getDeposits();
     expect(deposits.length).to.equal(events.length);
-    const droppedDeposit = deposits.find((deposit) => deposit.transactionHash === droppedEvent.transactionHash);
+    const droppedDeposit = deposits.find((deposit) => deposit.txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
   });
 

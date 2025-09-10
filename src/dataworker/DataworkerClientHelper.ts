@@ -8,17 +8,15 @@ import {
   updateClients,
   updateSpokePoolClients,
 } from "../common";
-import { PriceClient, acrossApi, coingecko, defiLlama, Signer, getArweaveJWKSigner } from "../utils";
-import { BundleDataClient, HubPoolClient, TokenClient } from "../clients";
+import { Signer, getArweaveJWKSigner } from "../utils";
+import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
 import { caching } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
-  tokenClient: TokenClient;
   bundleDataClient: BundleDataClient;
-  priceClient?: PriceClient;
 }
 
 export async function constructDataworkerClients(
@@ -26,20 +24,17 @@ export async function constructDataworkerClients(
   config: DataworkerConfig,
   baseSigner: Signer
 ): Promise<DataworkerClients> {
-  const signerAddr = await baseSigner.getAddress();
-  const commonClients = await constructClients(logger, config, baseSigner);
+  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.dataworkerFastLookbackCount
+  // exceeds ~720 then we'll just use the genesis block since in that case, this dataworker is being used for
+  // non-production circumstances (i.e. to execute a very old leaf). 720 is chosen because it's roughly equal to
+  // one month worth of bundles assuming 1 bundle an hour.
+  const BUNDLES_PER_MONTH = 720;
+  const hubPoolLookback = config.dataworkerFastLookbackCount > BUNDLES_PER_MONTH ? undefined : 3600 * 24 * 30;
+  const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
   const { hubPoolClient, configStoreClient } = commonClients;
 
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
-
-  // We don't pass any spoke pool clients to token client since data worker doesn't need to set approvals for L2 tokens.
-  const tokenClient = new TokenClient(logger, signerAddr, {}, hubPoolClient);
-  await tokenClient.update();
-  // Run approval on hub pool.
-  if (config.sendingTransactionsEnabled) {
-    await tokenClient.setBondTokenAllowance();
-  }
 
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
@@ -50,13 +45,6 @@ export async function constructDataworkerClients(
     configStoreClient.getChainIdIndicesForBlock(),
     config.blockRangeEndBlockBuffer
   );
-
-  // The proposer needs prices to calculate bundle volumes.
-  const priceClient = new PriceClient(logger, [
-    new acrossApi.PriceFeed(),
-    new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-    new defiLlama.PriceFeed(),
-  ]);
 
   // Define the Arweave client. We need to use a read-write signer for the
   // dataworker to persist bundle data if `persistingBundleData` is enabled.
@@ -72,8 +60,6 @@ export async function constructDataworkerClients(
   return {
     ...commonClients,
     bundleDataClient,
-    tokenClient,
-    priceClient,
     arweaveClient,
   };
 }
@@ -100,11 +86,8 @@ export async function constructSpokePoolClientsForFastDataworker(
   await updateSpokePoolClients(spokePoolClients, [
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
-    "V3FundsDeposited",
     "FundsDeposited",
-    "RequestedV3SlowFill",
     "RequestedSlowFill",
-    "FilledV3Relay",
     "FilledRelay",
   ]);
   Object.values(spokePoolClients).forEach(({ chainId, isUpdated }) =>
@@ -114,7 +97,7 @@ export async function constructSpokePoolClientsForFastDataworker(
 }
 
 export function getSpokePoolClientEventSearchConfigsForFastDataworker(
-  config: Omit<DataworkerConfig, "validate">,
+  config: Omit<DataworkerConfig, "validate" | "update">,
   clients: DataworkerClients,
   dataworker: Dataworker
 ): {

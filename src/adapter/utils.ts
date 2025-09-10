@@ -10,6 +10,7 @@ import {
   blockExplorerLink,
   mapAsync,
   winston,
+  Address,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
@@ -22,30 +23,35 @@ export {
   setTokenAllowanceInCache,
 } from "../clients/bridges/utils";
 
+export { getL2TokenAllowanceFromCache, setL2TokenAllowanceInCache } from "../clients/bridges/utils";
+
 export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
   return allowance.gte(toBN(MAX_SAFE_ALLOWANCE).div(2));
 }
 
 export async function approveTokens(
-  tokens: { token: ExpandedERC20; bridges: string[] }[],
-  chainId: number,
+  tokens: { token: ExpandedERC20; bridges: Address[] }[],
+  approvalChainId: number,
   hubChainId: number,
   logger: winston.Logger
 ): Promise<string> {
   const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
-  const approvalMarkdwn = await mapAsync(bridges, async ({ token: l1Token, bridge }) => {
+  const approvalMarkdwn = await mapAsync(bridges, async ({ token, bridge }) => {
     const txs = [];
-    if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-      txs.push(await runTransaction(logger, l1Token, "approve", [bridge, bnZero]));
+    if (approvalChainId == hubChainId) {
+      if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
+        txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), bnZero]));
+      }
     }
-    txs.push(await runTransaction(logger, l1Token, "approve", [bridge, MAX_SAFE_ALLOWANCE]));
+    txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
     const receipts = await Promise.all(txs.map((tx) => tx.wait()));
-    const hubNetwork = getNetworkName(hubChainId);
-    const spokeNetwork = getNetworkName(chainId);
+    const networkName = getNetworkName(approvalChainId);
+
     let internalMrkdwn =
-      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge, hubChainId)} ` +
-      `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-      `tx: ${blockExplorerLink(receipts[receipts.length - 1].transactionHash, hubChainId)}`;
+      ` - Approved token bridge ${blockExplorerLink(bridge.toNative(), approvalChainId)} ` +
+      `to spend ${await token.symbol()} ${blockExplorerLink(token.address, approvalChainId)} on ${networkName}.` +
+      `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, approvalChainId)}`;
+
     if (receipts.length > 1) {
       internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
     }
@@ -54,16 +60,10 @@ export async function approveTokens(
   return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
 
-export function processEvent(event: Log, amountField: string, toField: string, fromField: string): BridgeEvent {
-  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-    amount: BigNumber;
-    to: string;
-    from: string;
-  };
+export function processEvent(event: Log, amountField: string): BridgeEvent {
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent;
   return {
-    amount: eventSpread[amountField],
-    to: eventSpread[toField],
-    from: eventSpread[fromField],
     ...eventSpread,
+    amount: eventSpread[amountField],
   };
 }

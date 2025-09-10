@@ -6,9 +6,8 @@ import { DataworkerClients } from "../src/dataworker/DataworkerClientHelper";
 import { HubPoolClient, SpokePoolClient } from "../src/clients";
 import { originChainId } from "./constants";
 import { blockRangesAreInvalidForSpokeClients, InvalidBlockRange } from "../src/dataworker/DataworkerUtils";
-import { getDeployedBlockNumber } from "@across-protocol/contracts";
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { getTimestampsForBundleEndBlocks } from "../src/utils/BlockUtils";
+import { getTimestampsForBundleStartBlocks } from "../src/utils/BlockUtils";
 import { assert, Contract, getEndBlockBuffers, getWidestPossibleExpectedBlockRange } from "../src/utils";
 import { CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS } from "../src/common";
 
@@ -47,8 +46,8 @@ describe("Dataworker block range-related utility methods", async function () {
         )
       )
     );
-    const latestMainnetBlock = hubPoolClient.latestBlockSearched;
-    const startingWidestBlocks = getWidestPossibleExpectedBlockRange(
+    const latestMainnetBlock = hubPoolClient.latestHeightSearched;
+    const startingWidestBlocks = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       defaultEndBlockBuffers,
@@ -59,7 +58,7 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(startingWidestBlocks).to.deep.equal(latestBlocks.map((endBlock) => [0, endBlock]));
 
     // Sets end block to start block if chain is not on enabled chain list.
-    const disabledChainEndBlocks = getWidestPossibleExpectedBlockRange(
+    const disabledChainEndBlocks = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       defaultEndBlockBuffers,
@@ -79,7 +78,7 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // End block defaults to 0 if buffer is too large
     const largeBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(1000);
-    const zeroRange = getWidestPossibleExpectedBlockRange(
+    const zeroRange = await getWidestPossibleExpectedBlockRange(
       chainIdListForBundleEvaluationBlockNumbers,
       spokePoolClients,
       largeBuffers,
@@ -106,45 +105,43 @@ describe("Dataworker block range-related utility methods", async function () {
     // - Buffers are 0:
     let defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(0);
     chainIdListForBundleEvaluationBlockNumbers.forEach((_chainId) => {
-      mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestBlockSearched);
+      mockHubPoolClient.setLatestBundleEndBlockForChain(_chainId, spokePoolClients[_chainId].latestHeightSearched);
     });
-    expect(
-      getWidestPossibleExpectedBlockRange(
-        chainIdListForBundleEvaluationBlockNumbers,
-        spokePoolClients,
-        defaultEndBlockBuffers,
-        {
-          ...dataworkerClients,
-          hubPoolClient: mockHubPoolClient,
-        },
-        0,
-        chainIdListForBundleEvaluationBlockNumbers
-      )
-    ).to.deep.equal(
+    let blockRanges = await getWidestPossibleExpectedBlockRange(
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      defaultEndBlockBuffers,
+      {
+        ...dataworkerClients,
+        hubPoolClient: mockHubPoolClient,
+      },
+      0,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    expect(blockRanges).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
-        spokePoolClients[_chainId].latestBlockSearched,
-        spokePoolClients[_chainId].latestBlockSearched,
+        spokePoolClients[_chainId].latestHeightSearched,
+        spokePoolClients[_chainId].latestHeightSearched,
       ])
     );
 
     // - Works with Buffers > 0 such that the latest blocks minus buffers are < latest bundle end blocks.
     defaultEndBlockBuffers = Array(chainIdListForBundleEvaluationBlockNumbers.length).fill(10);
-    expect(
-      getWidestPossibleExpectedBlockRange(
-        chainIdListForBundleEvaluationBlockNumbers,
-        spokePoolClients,
-        defaultEndBlockBuffers,
-        {
-          ...dataworkerClients,
-          hubPoolClient: mockHubPoolClient,
-        },
-        0,
-        chainIdListForBundleEvaluationBlockNumbers
-      )
-    ).to.deep.equal(
+    blockRanges = await getWidestPossibleExpectedBlockRange(
+      chainIdListForBundleEvaluationBlockNumbers,
+      spokePoolClients,
+      defaultEndBlockBuffers,
+      {
+        ...dataworkerClients,
+        hubPoolClient: mockHubPoolClient,
+      },
+      0,
+      chainIdListForBundleEvaluationBlockNumbers
+    );
+    expect(blockRanges).to.deep.equal(
       chainIdListForBundleEvaluationBlockNumbers.map((_chainId) => [
-        spokePoolClients[_chainId].latestBlockSearched,
-        spokePoolClients[_chainId].latestBlockSearched,
+        spokePoolClients[_chainId].latestHeightSearched,
+        spokePoolClients[_chainId].latestHeightSearched,
       ])
     );
   });
@@ -160,7 +157,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Block ranges are invalid if any spoke pool client for a chain is undefined
     result = await blockRangesAreInvalidForSpokeClients(
       {},
-      [[0, spokePoolClients[chainId].latestBlockSearched]],
+      [[0, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       {}
     );
@@ -189,16 +186,16 @@ describe("Dataworker block range-related utility methods", async function () {
     if (mainnetDeploymentBlock === 0) {
       throw new Error("Mainnet SpokePoolClient has not been updated");
     }
-    if (spokePoolClients[chainId].latestBlockSearched === 0) {
+    if (spokePoolClients[chainId].latestHeightSearched === 0) {
       throw new Error(`Chain ${spokePoolClients[1].chainId} SpokePoolClient has not been updated`);
-    } else if (spokePoolClients[originChainId].latestBlockSearched === 0) {
+    } else if (spokePoolClients[originChainId].latestHeightSearched === 0) {
       throw new Error(`Chain ${originChainId} SpokePoolClient has not been updated`);
     }
 
     // Does not error if earliest block range object is empty:
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[0, spokePoolClients[chainId].latestBlockSearched]],
+      [[0, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       {}
     );
@@ -215,7 +212,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // that block ranges can be validated by spoke pool clients.
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched]],
+      [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       { [chainId]: mainnetDeploymentBlock + 2 }
     );
@@ -223,7 +220,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // Set block range toBlock > client's last block queried. Clients can no longer validate this block range.
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched + 3]],
+      [[mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestHeightSearched + 3]],
       chainIds,
       { [chainId]: mainnetDeploymentBlock + 2 }
     );
@@ -234,7 +231,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // latest invalid bundle start blocks below, so block ranges can't be validated by clients.
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched]],
+      [[mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       { [chainId]: mainnetDeploymentBlock + 2 }
     );
@@ -243,16 +240,16 @@ describe("Dataworker block range-related utility methods", async function () {
     expect(result[0].reason).to.contain("< earliestValidBundleStartBlockForChain");
 
     // Works even if the condition is true for one chain.
-    const optimismDeploymentBlock = getDeployedBlockNumber("SpokePool", 10);
+    const originDeploymentBlock = spokePoolClients[originChainId].deploymentBlock;
     result = await blockRangesAreInvalidForSpokeClients(
-      { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
+      { [chainId]: spokePoolClients[chainId], [originChainId]: spokePoolClients[originChainId] },
       [
-        [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestBlockSearched],
-        [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockSearched],
+        [mainnetDeploymentBlock + 1, spokePoolClients[chainId].latestHeightSearched],
+        [originDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
       ],
-      [chainId, 10],
+      [chainId, originChainId],
       // hub chain start block is higher than block range from block passed in for hub chain above
-      { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
+      { [chainId]: mainnetDeploymentBlock + 2, [originChainId]: originDeploymentBlock + 2 }
     );
     expect(result.length).to.equal(1);
     expect(result[0].chainId).to.equal(chainIds[0]);
@@ -260,13 +257,13 @@ describe("Dataworker block range-related utility methods", async function () {
 
     // Now both from blocks are above the earliest invalid start block.
     result = await blockRangesAreInvalidForSpokeClients(
-      { [chainId]: spokePoolClients[chainId], [10]: spokePoolClients[originChainId] },
+      { [chainId]: spokePoolClients[chainId], [originChainId]: spokePoolClients[originChainId] },
       [
-        [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestBlockSearched],
-        [optimismDeploymentBlock + 3, spokePoolClients[originChainId].latestBlockSearched],
+        [mainnetDeploymentBlock + 3, spokePoolClients[chainId].latestHeightSearched],
+        [originDeploymentBlock + 3, spokePoolClients[originChainId].latestHeightSearched],
       ],
-      [chainId, 10],
-      { [chainId]: mainnetDeploymentBlock + 2, [10]: optimismDeploymentBlock + 2 }
+      [chainId, originChainId],
+      { [chainId]: mainnetDeploymentBlock + 2, [originChainId]: originDeploymentBlock + 2 }
     );
     expect(result.length).to.equal(0);
 
@@ -275,7 +272,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // that don't have early enough data for the first bundle, which started at the deployment block height.
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[0, spokePoolClients[chainId].latestBlockSearched]],
+      [[0, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       {
         [chainId]: mainnetDeploymentBlock + 2,
@@ -288,7 +285,7 @@ describe("Dataworker block range-related utility methods", async function () {
     // This time, the deployment block is higher than the earliestValidBundleStartBlockForChain so the range is valid.
     result = await blockRangesAreInvalidForSpokeClients(
       _spokePoolClients,
-      [[0, spokePoolClients[chainId].latestBlockSearched]],
+      [[0, spokePoolClients[chainId].latestHeightSearched]],
       chainIds,
       {
         [chainId]: mainnetDeploymentBlock - 1,
@@ -305,29 +302,29 @@ describe("Dataworker block range-related utility methods", async function () {
     // Create a fake spoke pool so we can manipulate the fill deadline buffer. Make sure it returns a realistic
     // current time so that computing bundle end block timestamps gives us realistic numbers.
     const fakeSpokePool = await smock.fake(originSpokePoolClient.spokePool.interface);
-    fakeSpokePool.getCurrentTime.returns((originSpokePoolClient as unknown as { currentTime: number }).currentTime);
+    fakeSpokePool.getCurrentTime.returns(originSpokePoolClient.getCurrentTime());
     const mockSpokePoolClient = new MockSpokePoolClient(
       originSpokePoolClient.logger,
       fakeSpokePool as unknown as Contract,
       originSpokePoolClient.chainId,
-      originSpokePoolClient.eventSearchConfig.fromBlock - 1 // Set deployment block less than eventSearchConfig.fromBlock
+      originSpokePoolClient.eventSearchConfig.from - 1 // Set deployment block less than eventSearchConfig.fromBlock
       // to force blockRangesAreInvalidForSpokeClients to compare the client's oldestTime() with its
       // fill deadline buffer.
     );
-    const blockRanges = [[mainnetDeploymentBlock + 1, mockSpokePoolClient.latestBlockSearched]];
-    const endBlockTimestamps = await getTimestampsForBundleEndBlocks(
+    const blockRanges = [[mainnetDeploymentBlock + 1, mockSpokePoolClient.latestHeightSearched]];
+    const startBlockTimestamps = await getTimestampsForBundleStartBlocks(
       { [originChainId]: mockSpokePoolClient as SpokePoolClient },
       blockRanges,
       chainIds
     );
     // override oldest spoke pool client's oldest time searched to be realistic (i.e. not zero)
     mockSpokePoolClient.setBlockTimestamp(
-      mockSpokePoolClient.eventSearchConfig.fromBlock,
-      endBlockTimestamps[originChainId] - 1
+      mockSpokePoolClient.eventSearchConfig.from,
+      startBlockTimestamps[originChainId] - 1
     );
     const expectedTimeBetweenOldestAndEndBlockTimestamp =
-      endBlockTimestamps[originChainId] -
-      (await mockSpokePoolClient.getTimeAt(mockSpokePoolClient.eventSearchConfig.fromBlock));
+      startBlockTimestamps[originChainId] -
+      (await mockSpokePoolClient.getTimeAt(mockSpokePoolClient.eventSearchConfig.from));
     assert(
       expectedTimeBetweenOldestAndEndBlockTimestamp > 0,
       "unrealistic time between oldest and end block timestamp"
@@ -340,51 +337,32 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
+
     expect(result.length).to.equal(1);
     expect(result[0].chainId).to.equal(chainIds[0]);
     expect(result[0].reason).to.contain("cannot evaluate all possible expired deposits");
 
-    // Should be valid if not V3
-    result = await blockRangesAreInvalidForSpokeClients(
-      { [originChainId]: mockSpokePoolClient as SpokePoolClient },
-      blockRanges,
-      chainIds,
-      {
-        [originChainId]: mainnetDeploymentBlock,
-      },
-      false // isV3
-    );
-    expect(result.length).to.equal(0);
-
-    // Set oldest time older such that fill deadline buffer now exceeds the time between the end block and the oldest
+    // Set oldest time older such that fill deadline buffer now exceeds the time between the start block and the oldest
     // time plus the conservative bundle time. Block ranges should now be valid.
     const oldestBlockTimestampOverride =
-      endBlockTimestamps[originChainId] - fillDeadlineOverride - CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS - 1;
+      startBlockTimestamps[originChainId] - fillDeadlineOverride - CONSERVATIVE_BUNDLE_FREQUENCY_SECONDS - 1;
     assert(oldestBlockTimestampOverride > 0, "unrealistic oldest block timestamp");
-    mockSpokePoolClient.setBlockTimestamp(
-      mockSpokePoolClient.eventSearchConfig.fromBlock,
-      oldestBlockTimestampOverride
-    );
+    mockSpokePoolClient.setBlockTimestamp(mockSpokePoolClient.eventSearchConfig.from, oldestBlockTimestampOverride);
     result = await blockRangesAreInvalidForSpokeClients(
       { [originChainId]: mockSpokePoolClient as SpokePoolClient },
       blockRanges,
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
     expect(result.length).to.equal(0);
 
     // Finally, reset fill deadline buffer in contracts and reset the override in the mock to test that
     // the client calls from the contracts.
-    mockSpokePoolClient.setBlockTimestamp(
-      mockSpokePoolClient.eventSearchConfig.fromBlock,
-      oldestBlockTimestampOverride
-    );
+    mockSpokePoolClient.setBlockTimestamp(mockSpokePoolClient.eventSearchConfig.from, oldestBlockTimestampOverride);
     mockSpokePoolClient.setMaxFillDeadlineOverride(undefined);
     fakeSpokePool.fillDeadlineBuffer.returns(expectedTimeBetweenOldestAndEndBlockTimestamp); // This should be same
     // length as time between oldest time and end block timestamp so it should be a valid block range.
@@ -394,8 +372,7 @@ describe("Dataworker block range-related utility methods", async function () {
       chainIds,
       {
         [originChainId]: mainnetDeploymentBlock,
-      },
-      true // isV3
+      }
     );
     expect(result.length).to.equal(0);
   });

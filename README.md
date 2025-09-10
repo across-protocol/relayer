@@ -17,7 +17,7 @@ Check out [this guide](https://docs.across.to/relayers/running-a-relayer) for de
 
 ## Prerequisites
 
-After installing dependencies and building the repository, be sure to [install RedisDB](https://redis.io/docs/getting-started/installation/), an in-memory storage layer that is required to make the bots work. The bots query blockchain RPCs for a lot of smart contract events so it's important that the bot
+To install dependencies successfully, node version should be higher or equal to v20.18.0 && lower than v22. After installing dependencies and building the repository, be sure to [install RedisDB](https://redis.io/docs/latest/get-started), an in-memory storage layer that is required to make the bots work. The bots query blockchain RPCs for a lot of smart contract events so it's important that the bot
 cache some of this data in order to maintain its speed.
 
 The first time that the bot runs, it might be slower than usual as the Redis DB fills up. This slowdown should disappear on subsequent runs.
@@ -66,6 +66,38 @@ yarn lint-fix
 ```
 
 Read through [CONTRIBUTING.md](https://github.com/UMAprotocol/protocol/blob/master/CONTRIBUTING.md) for a general overview of our contribution process. These guidelines are shared between the UMA and Across codebases because they were built originally by the same teams.
+
+### Testing 
+
+#### Local SDK Development
+
+This repository depends on functionality from other across libraries such as [@across-protocol/sdk](https://github.com/across-protocol/sdk).
+
+To test local changes to the SDK alongside this repository you can use `yalc`:
+
+1. Install `yalc` globally:
+
+```sh
+npm install -g yalc
+```
+
+2. Inside the `@across-protocol/sdk` directory, watch for changes and publish the local SDK to your local yalc server:
+
+```sh
+yalc yalc:watch
+```
+
+3. Add/Link the local SDK in this repository:
+
+```sh
+yalc add @across-protocol/sdk
+```
+use `yalc link @across-protocol/sdk` if you dont want yalc to modify package.json file
+
+Any changes to the SDK will be automatically published to your local yalc server.
+
+Once you are done testing, you can remove the local SDK by running `yalc remove @across-protocol/sdk` in this repository.
+
 
 ## Bug Bounty
 

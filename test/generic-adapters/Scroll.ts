@@ -1,10 +1,10 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
+import { ZERO_ADDRESS } from "../../src/utils";
 import { ScrollERC20Bridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
-import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES } from "../../src/common";
 
 describe("Cross Chain Adapter: Scroll", async function () {
@@ -18,10 +18,14 @@ describe("Cross Chain Adapter: Scroll", async function () {
   let searchConfig: utils.EventSearchConfig;
   let spokeAddress, hubPoolAddress: string;
 
+  const toAddress = (address: string): EvmAddress => {
+    return utils.EvmAddress.from(address);
+  };
+  const bnOne = utils.bnOne;
   beforeEach(async function () {
     searchConfig = {
-      fromBlock: 0,
-      toBlock: 1_000_000,
+      from: 0,
+      to: 1_000_000,
     };
     const [deployer] = await ethers.getSigners();
 
@@ -37,11 +41,11 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
-    const l2SpokePoolClient = new SpokePoolClient(null, spokePool, null, l2ChainId, 0, {
-      fromBlock: 0,
+    const l2SpokePoolClient = new EVMSpokePoolClient(null, spokePool, null, l2ChainId, 0, {
+      from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(null, spokePool, null, hubChainId, 0, {
-      fromBlock: 0,
+    const l1SpokePoolClient = new EVMSpokePoolClient(null, spokePool, null, hubChainId, 0, {
+      from: 0,
     });
     spokeAddress = l2SpokePoolClient.spokePool.address;
     // For the purposes of this test, we will treat the hub pool as an EOA.
@@ -55,14 +59,14 @@ describe("Cross Chain Adapter: Scroll", async function () {
         hubChainId,
         l1SpokePoolClient.spokePool.signer,
         l2SpokePoolClient.spokePool.signer,
-        l1Weth
+        toAddress(l1Weth)
       ),
       [l1Usdc]: new ScrollERC20Bridge(
         l2ChainId,
         hubChainId,
         l1SpokePoolClient.spokePool.signer,
         l2SpokePoolClient.spokePool.signer,
-        l1Usdc
+        toAddress(l1Usdc)
       ),
     };
 
@@ -73,7 +77,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       }, // Don't need spoke pool clients for this test
       l2ChainId,
       hubChainId,
-      [monitoredEoa, l2SpokePoolClient.spokePool.address],
+      [toAddress(monitoredEoa), toAddress(l2SpokePoolClient.spokePool.address)],
       null,
       ["WETH", "USDC"],
       bridges,
@@ -95,28 +99,37 @@ describe("Cross Chain Adapter: Scroll", async function () {
       // to monitored address and value greater than 0
       await scrollBridgeContract.deposit(l1Weth, l2Weth, randomAddress(), monitoredEoa, 0);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, randomAddress(), 0);
-      await scrollBridgeContract.deposit(l1Weth, l2Weth, randomAddress(), monitoredEoa, 1);
+      await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, randomAddress(), 1);
 
       const wethBridge = adapter.bridges[l1Weth];
-      const result = await wethBridge.queryL1BridgeInitiationEvents(l1Weth, undefined, monitoredEoa, searchConfig);
+      const result = await wethBridge.queryL1BridgeInitiationEvents(
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2Weth].length).to.equal(1);
-      expect(result[l2Weth][0].to).to.equal(monitoredEoa);
       expect(result[l2Weth][0].amount).to.equal(1);
     });
     it("Get L2 finalized events", async function () {
       // Function should return only finalized events that match
       // on message hash.
-      await scrollBridgeContract.deposit(l1Weth, l2Weth, randomAddress(), monitoredEoa, 1);
+      await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, randomAddress(), monitoredEoa, 2);
       await scrollBridgeContract.deposit(l1Weth, l2Weth, monitoredEoa, randomAddress(), 1);
 
-      await scrollBridgeContract.finalize(l1Weth, l2Weth, randomAddress(), monitoredEoa, 1);
+      await scrollBridgeContract.finalize(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.finalize(l1Weth, l2Weth, monitoredEoa, randomAddress(), 1);
 
       const wethBridge = adapter.bridges[l1Weth];
-      const result = await wethBridge.queryL2BridgeFinalizationEvents(l1Weth, undefined, monitoredEoa, searchConfig);
+      const result = await wethBridge.queryL2BridgeFinalizationEvents(
+        toAddress(l1Weth),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
 
       expect(Object.keys(result).length).to.equal(1);
       expect(result[l2Weth][0].amount).to.equal(1);
@@ -128,7 +141,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       await scrollBridgeContract.finalize(l1Weth, l2Weth, monitoredEoa, monitoredEoa, 1);
       await adapter.updateSpokePoolClients();
       const unfinalizedTx = await pendingTx;
-      const result = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event.
@@ -145,7 +158,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       await scrollBridgeContract.finalize(l1Weth, l2Weth, hubPoolAddress, spokeAddress, 1);
       await adapter.updateSpokePoolClients();
       const unfinalizedTx = await pendingTx;
-      const result = await adapter.getOutstandingCrossChainTransfers([l1Weth]);
+      const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
@@ -158,24 +171,34 @@ describe("Cross Chain Adapter: Scroll", async function () {
   });
   describe("USDC", function () {
     it("Get L1 initiated events", async function () {
-      await scrollBridgeContract.deposit(l1Usdc, l2Usdc, randomAddress(), monitoredEoa, 1);
+      await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, randomAddress(), 1);
 
       const usdcBridge = adapter.bridges[l1Usdc];
-      const result = await usdcBridge.queryL1BridgeInitiationEvents(l1Usdc, undefined, monitoredEoa, searchConfig);
+      const result = await usdcBridge.queryL1BridgeInitiationEvents(
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Usdc][0].to).to.equal(monitoredEoa);
+      expect(result[l2Usdc][0].amount).to.deep.equal(bnOne);
     });
     it("Get L2 finalized events", async function () {
-      await scrollBridgeContract.finalize(l1Usdc, l2Usdc, randomAddress(), monitoredEoa, 1);
+      await scrollBridgeContract.finalize(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
       await scrollBridgeContract.finalize(l1Usdc, l2Usdc, monitoredEoa, randomAddress(), 1);
 
       const usdcBridge = adapter.bridges[l1Usdc];
-      const result = await usdcBridge.queryL2BridgeFinalizationEvents(l1Usdc, undefined, monitoredEoa, searchConfig);
+      const result = await usdcBridge.queryL2BridgeFinalizationEvents(
+        toAddress(l1Usdc),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
+        searchConfig
+      );
 
       expect(Object.keys(result).length).to.equal(1);
-      expect(result[l2Usdc][0].to).to.equal(monitoredEoa);
+      expect(result[l2Usdc][0].amount).to.equal(bnOne);
     });
     it("Matches L1 and L2 events", async function () {
       await scrollBridgeContract.deposit(l1Usdc, l2Usdc, monitoredEoa, monitoredEoa, 1);
@@ -184,7 +207,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
 
       await adapter.updateSpokePoolClients();
       const unfinalizedTx = await pendingTx;
-      const result = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
@@ -200,7 +223,7 @@ describe("Cross Chain Adapter: Scroll", async function () {
       await scrollBridgeContract.finalize(l1Usdc, l2Usdc, hubPoolAddress, spokeAddress, 1);
       await adapter.updateSpokePoolClients();
       const unfinalizedTx = await pendingTx;
-      const result = await adapter.getOutstandingCrossChainTransfers([l1Usdc]);
+      const result = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
 
       // There should be one outstanding transfer, since there are two deposit events and one
       // finalization event
@@ -226,7 +249,7 @@ class MockBaseChainAdapter extends BaseChainAdapter {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
     const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestBlockSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestBlockSearched = blockNumber;
+    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
+    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
   }
 }

@@ -1,10 +1,10 @@
 import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
-import { bnZero, TOKEN_SYMBOLS_MAP } from "../src/utils";
+import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, toAddressType } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
-const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "ETH", "MATIC"].map((symbol) => {
+const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "MATIC"].map((symbol) => {
   const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
   const address = addresses[1];
   return { symbol, decimals, address };
@@ -45,8 +45,16 @@ describe("ProfitClient: Price Retrieval", async () => {
     await hubPoolClient.update();
 
     mainnetTokens.forEach((token) => hubPoolClient.addL1Token(token));
-    const relayerAddress = randomAddress();
-    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, bnZero);
+    const relayerAddress = toAddressType(randomAddress(), hubPoolClient.chainId);
+    profitClient = new ProfitClientWithMockPriceClient(
+      spyLogger,
+      hubPoolClient,
+      {},
+      [],
+      relayerAddress,
+      relayerAddress,
+      bnZero
+    );
   });
 
   it("Correctly fetches token prices", async () => {
@@ -56,7 +64,11 @@ describe("ProfitClient: Price Retrieval", async () => {
     // The client should have fetched prices for all requested tokens.
     mainnetTokens.map(({ address }) => address).forEach((address) => expect(tokenPrices[address]).to.not.be.undefined);
     Object.values(tokenPrices).forEach((price) => expect(price.gt(bnZero)).to.be.true);
-    Object.keys(tokenPrices).forEach((token) => expect(profitClient.getPriceOfToken(token).gt(bnZero)).to.be.true);
+    Object.keys(tokenPrices).forEach(
+      (token) =>
+        expect(profitClient.getPriceOfToken(toAddressType(token, hubPoolClient.chainId).toEvmAddress()).gt(bnZero)).to
+          .be.true
+    );
   });
 
   it("Correctly resolves addresses for gas token symbols", async () => {
@@ -67,7 +79,9 @@ describe("ProfitClient: Price Retrieval", async () => {
   it("Remaps token symbols to equivalent token symbols", async () => {
     await profitClient.update();
     ["USDbC", "USDC.e"].forEach((unknownL1Token) =>
-      expect(profitClient.resolveTokenAddress(unknownL1Token)).to.equal(TOKEN_SYMBOLS_MAP["USDC"].addresses[1])
+      expect(profitClient.resolveTokenAddress(unknownL1Token).toEvmAddress()).to.equal(
+        TOKEN_SYMBOLS_MAP["USDC"].addresses[1]
+      )
     );
   });
 });

@@ -1,18 +1,18 @@
-import { Contract, bnZero, spreadEvent, toBytes32 } from "../../src/utils";
-import { interfaces } from "@across-protocol/sdk";
-import { SlowFillRequestWithBlock } from "../../src/interfaces";
-import { SignerWithAddress } from "./utils";
+import assert from "assert";
+import { Contract, bnZero, spreadEvent, toAddressType } from "../../src/utils";
+import { Deposit, DepositWithBlock, Fill, FillType, SlowFillRequestWithBlock } from "../../src/interfaces";
+import { SignerWithAddress, slowFillRequestFromArgs } from "./utils";
 
 export function V3FillFromDeposit(
-  deposit: interfaces.DepositWithBlock,
+  deposit: DepositWithBlock,
   relayer: string,
   repaymentChainId?: number,
-  fillType = interfaces.FillType.FastFill
-): interfaces.Fill {
-  const { blockNumber, transactionHash, logIndex, transactionIndex, quoteTimestamp, ...relayData } = deposit;
-  const fill: interfaces.Fill = {
+  fillType = FillType.FastFill
+): Fill {
+  const { blockNumber, txnRef, logIndex, txnIndex, quoteTimestamp, ...relayData } = deposit;
+  const fill: Fill = {
     ...relayData,
-    relayer,
+    relayer: toAddressType(relayer, deposit.destinationChainId),
     realizedLpFeePct: deposit.realizedLpFeePct ?? bnZero,
     repaymentChainId: repaymentChainId ?? deposit.destinationChainId,
     relayExecutionInfo: {
@@ -28,16 +28,16 @@ export function V3FillFromDeposit(
 export async function requestSlowFill(
   spokePool: Contract,
   relayer: SignerWithAddress,
-  deposit?: interfaces.Deposit
+  deposit: Deposit
 ): Promise<SlowFillRequestWithBlock> {
   await spokePool
     .connect(relayer)
     .requestSlowFill([
-      toBytes32(deposit.depositor),
-      toBytes32(deposit.recipient),
-      toBytes32(deposit.exclusiveRelayer),
-      toBytes32(deposit.inputToken),
-      toBytes32(deposit.outputToken),
+      deposit.depositor.toBytes32(),
+      deposit.recipient.toBytes32(),
+      deposit.exclusiveRelayer.toBytes32(),
+      deposit.inputToken.toBytes32(),
+      deposit.outputToken.toBytes32(),
       deposit.inputAmount,
       deposit.outputAmount,
       deposit.originChainId,
@@ -50,14 +50,16 @@ export async function requestSlowFill(
     spokePool.queryFilter(spokePool.filters.RequestedSlowFill()),
     spokePool.chainId(),
   ]);
-  const lastEvent = events[events.length - 1];
-  const requestObject: interfaces.SlowFillRequestWithBlock = {
+  const lastEvent = events.at(-1);
+  assert(lastEvent);
+  const slowFillRequest = slowFillRequestFromArgs(spreadEvent(lastEvent.args!));
+  const requestObject: SlowFillRequestWithBlock = {
+    ...slowFillRequest,
     destinationChainId,
     blockNumber: lastEvent.blockNumber,
-    transactionHash: lastEvent.transactionHash,
+    txnRef: lastEvent.transactionHash,
     logIndex: lastEvent.logIndex,
-    transactionIndex: lastEvent.transactionIndex,
-    ...spreadEvent(lastEvent.args!),
+    txnIndex: lastEvent.transactionIndex,
   };
   return requestObject;
 }

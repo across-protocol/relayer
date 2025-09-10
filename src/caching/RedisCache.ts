@@ -34,4 +34,12 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     // Return key to indicate that the value was set successfully.
     return key;
   }
+
+  public async pub(channel: string, message: string): Promise<number> {
+    return await this.redisClient.pub(channel, message);
+  }
+
+  public async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+    return await this.redisClient.sub(channel, listener);
+  }
 }

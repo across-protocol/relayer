@@ -28,6 +28,8 @@
 // Validate single chain and/or token:
 // $ SINGLE_CHAIN=42161 ts-node ./src/scripts/validateRunningBalances.ts
 // $ SINGLE_TOKEN_USDC ts-node ./src/scripts/validateRunningBalances.ts
+// Look at bundles #50-100 and query events up to 150 bundles ago:
+// $ BUNDLES_COUNT=150 PAGE_SIZE=50 PAGE=1 ts-node ./src/scripts/validateRunningBalances.ts
 
 import {
   bnZero,
@@ -51,6 +53,8 @@ import {
   assert,
   CHAIN_IDs,
   chainIsOPStack,
+  isDefined,
+  BigNumber,
 } from "../utils";
 import { createDataworker } from "../dataworker";
 import { _buildSlowRelayRoot, getBlockForChain } from "../dataworker/DataworkerUtils";
@@ -58,6 +62,8 @@ import { Log, ProposedRootBundle, SpokePoolClientsByChain, BundleData } from "..
 import { CONTRACT_ADDRESSES, constructSpokePoolClientsWithStartBlocks, updateSpokePoolClients } from "../common";
 import { createConsoleTransport } from "@uma/logger";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
+import _ from "lodash";
+import { SpokePoolClient } from "../clients/SpokePoolClient";
 
 config();
 let logger: winston.Logger;
@@ -65,9 +71,14 @@ let silentLogger: winston.Logger;
 
 const rootCache = {};
 
+// Add accidental transfers from users into the SpokePool's here. These fat finger transfers can confound this
+// script and report "excesses" that are not actually excesses. These balances are not pulled into the runningBalances
+// so they'll appear as excesses.
 const expectedExcesses: { [chainId: number]: { [token: string]: number } } = {
   [CHAIN_IDs.MAINNET]: { ["USDC"]: 31.745443 },
-  [CHAIN_IDs.BASE]: { ["USDC"]: 25 },
+  // 0.8 ETH https://basescan.org/tx/0x30212bf3df90b0abe40bb986afcb6907a406f25469cac864060e58d2b3502d1f
+  // 1.01 ETH https://basescan.org/tx/0x0a1316b0e88cbfcd4a14730d36465cf91000300eb2049f1dddc137208c80a263
+  [CHAIN_IDs.BASE]: { ["USDC"]: 25, ["WETH"]: 1.299 },
 };
 
 export async function runScript(baseSigner: Signer): Promise<void> {
@@ -91,6 +102,10 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   // Create spoke pool clients that only query events related to root bundle proposals and roots
   // being sent to L2s. Clients will load events from the endblocks set in `oldestBundleToLookupEventsFor`.
   const BUNDLE_LOOKBACK = 8; // The number of prior bundles to look back for when attempting to reconstruct
+  const PAGE_SIZE = Number(process.env.PAGE_SIZE ?? bundlesToValidate);
+  assert(PAGE_SIZE <= bundlesToValidate, "PAGE_SIZE must be less than or equal to BUNDLES_COUNT");
+  const PAGE = Number(process.env.PAGE ?? 0);
+  assert(PAGE * PAGE_SIZE < bundlesToValidate, "PAGE * PAGE_SIZE must be less than BUNDLES_COUNT");
   // bundle data for arbitrary bundle. For example, setting this to 8 ensures that we'll be validating a bundle X
   // using SpokePool clients that have events from as old the bundle X-8 to X.
   const oldestBundleToLookupEventsFor = validatedBundles[bundlesToValidate + BUNDLE_LOOKBACK];
@@ -121,13 +136,13 @@ export async function runScript(baseSigner: Signer): Promise<void> {
   });
 
   // @dev: Ignore the most recent bundle as its leaves might not have executed, so start x at 1.
-  for (let x = 1; x < bundlesToValidate; x++) {
+  for (let x = 1 + PAGE * PAGE_SIZE; x < Math.min(bundlesToValidate, (PAGE + 1) * PAGE_SIZE); x++) {
     const logs: string[] = [];
     const mostRecentValidatedBundle = validatedBundles[x];
-    const bundleBlockRanges = _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
+    const bundleBlockRanges = await _getBundleBlockRanges(mostRecentValidatedBundle, spokePoolClients);
     const followingBlockNumber =
       clients.hubPoolClient.getFollowingRootBundle(mostRecentValidatedBundle)?.blockNumber ||
-      clients.hubPoolClient.latestBlockSearched;
+      clients.hubPoolClient.latestHeightSearched;
     const poolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
       mostRecentValidatedBundle,
       followingBlockNumber
@@ -143,9 +158,13 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       if (process.env.SINGLE_CHAIN && leaf.chainId !== Number(process.env.SINGLE_CHAIN)) {
         continue;
       }
+      // Skip solana for now because it's not supported by this script.
+      if (leaf.chainId === CHAIN_IDs.SOLANA) {
+        continue;
+      }
       for (let i = 0; i < leaf.l1Tokens.length; i++) {
         const l1Token = leaf.l1Tokens[i];
-        const tokenInfo = clients.hubPoolClient.getTokenInfo(clients.hubPoolClient.chainId, l1Token);
+        const tokenInfo = clients.hubPoolClient.getTokenInfoForL1Token(l1Token);
         if (process.env.SINGLE_TOKEN && tokenInfo.symbol !== process.env.SINGLE_TOKEN) {
           continue;
         }
@@ -159,7 +178,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         logs.push(`**** Chain ${leaf.chainId} - ${tokenInfo.symbol} (${l1Token}) ****`);
         const decimals = tokenInfo.decimals;
         const l2Token = clients.hubPoolClient.getL2TokenForL1TokenAtBlock(l1Token, leaf.chainId, followingBlockNumber);
-        const l2TokenContract = new Contract(l2Token, ERC20.abi, await getProvider(leaf.chainId));
+        const l2TokenContract = new Contract(l2Token.toEvmAddress(), ERC20.abi, await getProvider(leaf.chainId));
         const runningBalance = leaf.runningBalances[i];
         const netSendAmount = leaf.netSendAmounts[i];
         const bundleEndBlockForChain =
@@ -168,7 +187,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           ];
         logs.push(`- Bundle end block for chain: ${bundleEndBlockForChain.toNumber()}`);
         let tokenBalanceAtBundleEndBlock = await l2TokenContract.balanceOf(
-          spokePoolClients[leaf.chainId].spokePool.address,
+          spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress(),
           {
             blockTag: bundleEndBlockForChain.toNumber(),
           }
@@ -186,7 +205,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         if (previousRelayedRootBundle) {
           const previousLeafExecution = spokePoolClients[leaf.chainId]
             .getRelayerRefundExecutions()
-            .find((e) => e.rootBundleId === previousRelayedRootBundle.rootBundleId && e.l2TokenAddress === l2Token);
+            .find((e) => e.rootBundleId === previousRelayedRootBundle.rootBundleId && e.l2TokenAddress.eq(l2Token));
           if (previousLeafExecution) {
             logs.push(`- Previous leaf executed at block ${previousLeafExecution.blockNumber}`);
             const previousLeafExecutedAfterBundleEndBlockForChain =
@@ -216,7 +235,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           if (leaf.chainId !== clients.hubPoolClient.chainId) {
             const _followingBlockNumber =
               clients.hubPoolClient.getFollowingRootBundle(previousValidatedBundle)?.blockNumber ||
-              clients.hubPoolClient.latestBlockSearched;
+              clients.hubPoolClient.latestHeightSearched;
             const previousBundlePoolRebalanceLeaves = clients.hubPoolClient.getExecutedLeavesForRootBundle(
               previousValidatedBundle,
               _followingBlockNumber
@@ -226,14 +245,18 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                 dataworker.chainIdListForBundleEvaluationBlockNumbers.indexOf(leaf.chainId)
               ];
             const previousPoolRebalanceLeaf = previousBundlePoolRebalanceLeaves.find(
-              (_leaf) => _leaf.chainId === leaf.chainId && _leaf.l1Tokens.includes(l1Token)
+              (_leaf) =>
+                _leaf.chainId === leaf.chainId &&
+                _leaf.l1Tokens.map((_l1Token) => _l1Token.toNative()).includes(l1Token.toNative())
             );
             if (previousPoolRebalanceLeaf) {
               const previousNetSendAmount =
-                previousPoolRebalanceLeaf.netSendAmounts[previousPoolRebalanceLeaf.l1Tokens.indexOf(l1Token)];
+                previousPoolRebalanceLeaf.netSendAmounts[
+                  previousPoolRebalanceLeaf.l1Tokens.map((_l1Token) => _l1Token.toNative()).indexOf(l1Token.toNative())
+                ];
               logs.push(`- Previous net send amount: ${fromWei(previousNetSendAmount.toString(), decimals)}`);
               if (previousNetSendAmount.gt(bnZero)) {
-                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePool.address;
+                const spokePoolAddress = spokePoolClients[leaf.chainId].spokePoolAddress.toEvmAddress();
                 let depositsToSpokePool: Log[];
                 // Handle the case that L1-->L2 deposits for some chains for ETH do not emit Transfer events, but
                 // emit other events instead. This is the case for OpStack chains which emit DepositFinalized events
@@ -250,13 +273,13 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       ovmL2Bridge,
                       ovmL2Bridge.filters.DepositFinalized(
                         ZERO_ADDRESS, // L1 token
-                        CONTRACT_ADDRESSES[leaf.chainId].eth.address, // L2 token
+                        CONTRACT_ADDRESSES[leaf.chainId].nativeToken.address, // L2 token
                         clients.hubPoolClient.hubPool.address // from
                       ),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args._amount.eq(previousNetSendAmount) && e.args._to === spokePoolAddress);
@@ -268,9 +291,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
                       l2TokenContract,
                       l2TokenContract.filters.Transfer(undefined, spokePoolAddress),
                       {
-                        fromBlock: previousBundleEndBlockForChain.toNumber(),
-                        toBlock: bundleEndBlockForChain.toNumber(),
-                        maxBlockLookBack: config.maxBlockLookBack[leaf.chainId],
+                        from: previousBundleEndBlockForChain.toNumber(),
+                        to: bundleEndBlockForChain.toNumber(),
+                        maxLookBack: config.maxBlockLookBack[leaf.chainId],
                       }
                     )
                   ).filter((e) => e.args.value.eq(previousNetSendAmount));
@@ -298,9 +321,9 @@ export async function runScript(baseSigner: Signer): Promise<void> {
             );
             const slowFills = _buildSlowRelayRoot(bundleData.bundleSlowFillsV3).leaves;
             // Compute how much the slow fill will execute by checking if any fills were sent after the slow fill amount
-            // was sent to the spoke pool. This would reduce the amount transferred when when the slow fill is executed.
+            // was sent to the spoke pool. This would reduce the amount transferred when the slow fill is executed.
             const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-              (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
+              (f) => f.chainId === leaf.chainId && f.relayData.outputToken.eq(l2Token)
             );
 
             if (slowFillsForPoolRebalanceLeaf.length > 0) {
@@ -308,8 +331,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
               for (const slowFillForChain of slowFillsForPoolRebalanceLeaf) {
                 const fillStatus = await spokePoolClients[leaf.chainId].relayFillStatus(
                   slowFillForChain.relayData,
-                  bundleEndBlockForChain.toNumber(),
-                  leaf.chainId
+                  bundleEndBlockForChain.toNumber()
                 );
 
                 // For v3 slow fills if there is a matching fast fill, then the fill is completed.
@@ -346,7 +368,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           // Not many bundles are expected to have slow fills so we can load them as necessary.
           const slowFills = _buildSlowRelayRoot(bundleData.bundleSlowFillsV3).leaves;
           const slowFillsForPoolRebalanceLeaf = slowFills.filter(
-            (f) => f.chainId === leaf.chainId && f.relayData.outputToken === l2Token
+            (f) => f.chainId === leaf.chainId && f.relayData.outputToken.eq(l2Token)
           );
           if (slowFillsForPoolRebalanceLeaf.length > 0) {
             let totalSlowFillAmount = bnZero;
@@ -369,7 +391,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           }
         }
 
-        const relayedRoot = dataworker.clients.bundleDataClient.getExecutedRefunds(
+        const relayedRoot = _getExecutedRefunds(
           spokePoolClients[leaf.chainId],
           mostRecentValidatedBundle.relayerRefundRoot
         );
@@ -383,7 +405,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
         // Transfer events where the sender is 0x0.
         let excess = toBN(tokenBalanceAtBundleEndBlock).add(netSendAmount).add(runningBalance);
 
-        if (relayedRoot === undefined || relayedRoot[l2Token] === undefined) {
+        if (relayedRoot === undefined || relayedRoot[l2Token.toBytes32()] === undefined) {
           // If we get here, then either the relayer refund root was not relayed from the Hub to the
           // Spoke yet or the refund leaf has not been executed.
           const reconstructedBundleData = await dataworker._proposeRootBundle(
@@ -398,7 +420,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           // There should be no more one leaf for this chainId and l2Token. If not, then there's an issue.
           // If there is no refund leaf, then we can early exit.
           const refundLeaves = reconstructedBundleData.relayerRefundLeaves.filter(
-            (l) => l.chainId === leaf.chainId && l.l2TokenAddress === l2Token
+            (l) => l.chainId === leaf.chainId && l.l2TokenAddress.eq(l2Token)
           );
           if (refundLeaves.length === 0) {
             continue;
@@ -434,8 +456,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
           // so there might be a false negative here where we don't subtract the refund leaf amount because we
           // can't find it and it legitimately wasn't relayed over yet.
           if (
-            leaf.transactionHash.toLowerCase() ===
-              "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
+            leaf.txnRef.toLowerCase() === "0xcfa760b08c0485a71ae0d3681b3e57be0b315b74d97541e80039828192a6e80e" &&
             leaf.chainId === CHAIN_IDs.REDSTONE
           ) {
             // Note: This bundle never made it to Redstone due to a configuration error when deploying the Redstone
@@ -449,7 +470,10 @@ export async function runScript(baseSigner: Signer): Promise<void> {
             );
           }
         } else {
-          const executedRelayerRefund = Object.values(relayedRoot[l2Token]).reduce((a, b) => a.add(b), bnZero);
+          const executedRelayerRefund = Object.values(relayedRoot[l2Token.toBytes32()]).reduce(
+            (a, b) => a.add(b),
+            bnZero
+          );
           excess = excess.sub(executedRelayerRefund);
           logs.push(`- Subtracted executed relayer refund: ${fromWei(executedRelayerRefund.toString(), decimals)}`);
         }
@@ -467,7 +491,7 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     logger.debug({
       at: "validateRunningBalances#index",
       message: `Bundle #${x} proposed at block ${mostRecentValidatedBundle.blockNumber}`,
-      proposalTxnHash: mostRecentValidatedBundle.transactionHash,
+      proposalTxnHash: mostRecentValidatedBundle.txnRef,
       bundleBlockRanges: JSON.stringify(bundleBlockRanges),
       logs,
     });
@@ -560,12 +584,12 @@ export async function runScript(baseSigner: Signer): Promise<void> {
       await updateSpokePoolClients(spokePoolClientsForBundle, [
         "RelayedRootBundle",
         "ExecutedRelayerRefundRoot",
-        "V3FundsDeposited",
-        "RequestedV3SlowFill",
-        "FilledV3Relay",
+        "FundsDeposited",
+        "RequestedSlowFill",
+        "FilledRelay",
       ]);
 
-      const blockRangesImpliedByBundleEndBlocks = _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
+      const blockRangesImpliedByBundleEndBlocks = await _getBundleBlockRanges(bundle, spokePoolClientsForBundle);
       const reconstructedBundleData = await dataworker._proposeRootBundle(
         blockRangesImpliedByBundleEndBlocks,
         spokePoolClients,
@@ -586,26 +610,71 @@ export async function runScript(baseSigner: Signer): Promise<void> {
     }
   }
 
-  function _getBundleBlockRanges(bundle: ProposedRootBundle, spokePoolClients: SpokePoolClientsByChain): number[][] {
+  async function _getBundleBlockRanges(
+    bundle: ProposedRootBundle,
+    spokePoolClients: SpokePoolClientsByChain
+  ): Promise<number[][]> {
     // Reconstruct bundle block range for bundle.
     const mainnetBundleEndBlock = getBlockForChain(
       bundle.bundleEvaluationBlockNumbers.map((x) => x.toNumber()),
       clients.hubPoolClient.chainId,
       dataworker.chainIdListForBundleEvaluationBlockNumbers
     );
-    const widestPossibleExpectedBlockRange = getWidestPossibleExpectedBlockRange(
+    const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
       clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleEndBlock),
       spokePoolClients,
       getEndBlockBuffers(dataworker.chainIdListForBundleEvaluationBlockNumbers, dataworker.blockRangeEndBlockBuffer),
       clients,
       bundle.blockNumber,
-      clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock)
+      clients.configStoreClient.getEnabledChains(mainnetBundleEndBlock),
+      false
     );
     const blockRangesImpliedByBundleEndBlocks = bundle.bundleEvaluationBlockNumbers.map((endBlock, index) => [
       widestPossibleExpectedBlockRange[index][0],
       endBlock.toNumber(),
     ]);
     return blockRangesImpliedByBundleEndBlocks;
+  }
+
+  function _getExecutedRefunds(
+    spokePoolClient: SpokePoolClient,
+    relayerRefundRoot: string
+  ): {
+    [tokenAddress: string]: {
+      [relayer: string]: BigNumber;
+    };
+  } {
+    if (!isDefined(spokePoolClient)) {
+      return {};
+    }
+    // @dev Search from right to left since there can be multiple root bundles with the same relayer refund root.
+    // The caller should take caution if they're trying to use this function to find matching refunds for older
+    // root bundles as opposed to more recent ones.
+    const bundle = _.findLast(
+      spokePoolClient.getRootBundleRelays(),
+      (bundle) => bundle.relayerRefundRoot === relayerRefundRoot
+    );
+    if (bundle === undefined) {
+      return {};
+    }
+
+    const executedRefundLeaves = spokePoolClient
+      .getRelayerRefundExecutions()
+      .filter((leaf) => leaf.rootBundleId === bundle.rootBundleId);
+    const executedRefunds: { [tokenAddress: string]: { [relayer: string]: BigNumber } } = {};
+    for (const refundLeaf of executedRefundLeaves) {
+      const tokenAddress = refundLeaf.l2TokenAddress.toBytes32();
+      const executedTokenRefunds = (executedRefunds[tokenAddress] ??= {});
+
+      for (let i = 0; i < refundLeaf.refundAddresses.length; i++) {
+        const relayer = refundLeaf.refundAddresses[i].toBytes32();
+        const refundAmount = refundLeaf.refundAmounts[i];
+
+        executedTokenRefunds[relayer] ??= bnZero;
+        executedTokenRefunds[relayer] = executedTokenRefunds[relayer].add(refundAmount);
+      }
+    }
+    return executedRefunds;
   }
 
   /**

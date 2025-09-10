@@ -1,8 +1,19 @@
-import { ethers, retrieveSignerFromCLIArgs, getProvider, ERC20, ZERO_ADDRESS, toBN, getGasPrice } from "../src/utils";
+import {
+  ethers,
+  retrieveSignerFromCLIArgs,
+  getProvider,
+  ERC20,
+  ZERO_ADDRESS,
+  toBN,
+  getGasPrice,
+  toGWei,
+  getNativeTokenSymbol,
+  LEGACY_TRANSACTION_CHAINS,
+} from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
 const args = minimist(process.argv.slice(2), {
-  string: ["token", "to", "amount", "chainId"],
+  string: ["token", "to", "amount", "chainId", "nonce", "maxFeePerGas", "maxPriorityFeePerGas"],
 });
 
 // Example run:
@@ -12,6 +23,17 @@ const args = minimist(process.argv.slice(2), {
 // \ --chainId 1
 // \ --wallet gckms
 // \ --keys bot1
+
+// Example run to clear up a stuck nonce with a maxFeePerGas of 1 Gwei and a maxPriorityFeePerGas of 2 Gwei
+// ts-node ./scripts/sendTokens.ts
+// \ --token 0x
+// \ --amount 0 --to <self-EOA>
+// \ --chainId 1868
+// \ --nonce 100
+// \ --maxFeePerGas 1
+// \ --maxPriorityFeePerGas 2
+// \ --wallet gckms
+// \ --keys bot4
 
 export async function run(): Promise<void> {
   console.log("Executing Token sender 💸");
@@ -36,17 +58,32 @@ export async function run(): Promise<void> {
   if (!ethers.utils.isAddress(recipient)) {
     throw new Error("invalid addresses");
   }
+  const nonce = args.nonce ? Number(args.nonce) : undefined;
+  const maxFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
+  const maxPriorityFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
+  const gas =
+    maxFeePerGas && maxPriorityFeePerGas
+      ? { maxFeePerGas, maxPriorityFeePerGas }
+      : await getGasPrice(connectedSigner.provider);
+  console.log(
+    `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
+  );
+  const gasParams = LEGACY_TRANSACTION_CHAINS.includes(Number(args.chainId))
+    ? { gasPrice: gas.maxFeePerGas.add(gas.maxPriorityFeePerGas) }
+    : { ...gas };
 
-  // Send ETH
-  if (token === ZERO_ADDRESS) {
+  // Send native token symbol
+  if (token === ZERO_ADDRESS || token === "0x") {
+    const nativeTokenSymbol = getNativeTokenSymbol(args.chainId);
     const amountFromWei = ethers.utils.formatUnits(args.amount, 18);
-    console.log(`Send ETH with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`);
+    console.log(
+      `Send ${nativeTokenSymbol} with amount ${amountFromWei} tokens to ${recipient} on chain ${args.chainId}`
+    );
     if (!(await askYesNoQuestion("\nConfirm that you want to execute this transaction?"))) {
       return;
     }
     console.log("sending...");
-    const gas = await getGasPrice(connectedSigner.provider);
-    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), ...gas });
+    const tx = await connectedSigner.sendTransaction({ to: recipient, value: toBN(args.amount), nonce, ...gasParams });
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }
@@ -62,15 +99,8 @@ export async function run(): Promise<void> {
       return;
     }
     console.log("sending...");
-    const tx = await erc20.transfer(recipient, args.amount, {
-      maxFeePerGas: 150000000000,
-      maxPriorityFeePerGas: 40000000000,
-    });
-    console.log(
-      `submitted with max fee per gas ${tx.maxFeePerGas.toString()} and priority fee ${tx.maxPriorityFeePerGas.toString()} at nonce ${
-        tx.nonce
-      }`
-    );
+    const tx = await erc20.transfer(recipient, args.amount, { nonce, ...gasParams });
+
     const receipt = await tx.wait();
     console.log("Transaction hash:", receipt.transactionHash);
   }

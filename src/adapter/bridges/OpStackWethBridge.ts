@@ -8,6 +8,8 @@ import {
   ZERO_ADDRESS,
   bnZero,
   TOKEN_SYMBOLS_MAP,
+  EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { Log } from "../../interfaces";
@@ -19,7 +21,7 @@ import WETH_ABI from "../../common/abi/Weth.json";
 export class OpStackWethBridge extends BaseBridgeAdapter {
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
-  private readonly hubPoolAddress: string;
+  protected l1Weth: EvmAddress;
 
   private readonly l2Gas = 200000;
 
@@ -28,17 +30,17 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    _l1Token: string
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
-    // Lint Appeasement
-    _l1Token;
     super(
       l2chainId,
       hubChainId,
       l1Signer,
-      l2SignerOrProvider,
       // To keep existing logic, we should use atomic depositor as the l1 bridge
-      [CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address]
+      [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
     );
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`];
@@ -51,17 +53,17 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
     this.l2Weth = new Contract(TOKEN_SYMBOLS_MAP.WETH.addresses[l2chainId], WETH_ABI, l2SignerOrProvider);
-    this.hubPoolAddress = CONTRACT_ADDRESSES[this.hubChainId]?.hubPool?.address;
+    this.l1Weth = EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId]);
   }
 
   async constructL1ToL2Txn(
-    toAddress: string,
-    l1Token: string,
-    l2Token: string,
+    toAddress: EvmAddress,
+    l1Token: EvmAddress,
+    l2Token: EvmAddress,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     const bridgeCalldata = this.getL1Bridge().interface.encodeFunctionData("depositETHTo", [
-      toAddress,
+      toAddress.toNative(),
       this.l2Gas,
       "0x",
     ]);
@@ -74,16 +76,14 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
   private convertEventListToBridgeEvents(events: Log[]): BridgeEvents {
     return {
-      [this.resolveL2TokenAddress(TOKEN_SYMBOLS_MAP.WETH.addresses[this.hubChainId])]: events.map((event) =>
-        processEvent(event, "_amount", "_to", "_from")
-      ),
+      [this.resolveL2TokenAddress(this.l1Weth)]: events.map((event) => processEvent(event, "_amount")),
     };
   }
 
   async queryL1BridgeInitiationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // We need to be smart about the filtering here because the ETHDepositInitiated event does not
@@ -96,27 +96,29 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // Since we can only index on the `fromAddress` for the ETHDepositInitiated event, we can't support
     // monitoring the spoke pool address
-    if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
+    if (isL2ChainContract || (isContract && !fromAddress.eq(this.hubPoolAddress))) {
       return this.convertEventListToBridgeEvents([]);
     }
 
     const events = await paginatedEventQuery(
       this.getL1Bridge(),
-      this.getL1Bridge().filters.ETHDepositInitiated(isContract ? fromAddress : this.atomicDepositor.address),
+      this.getL1Bridge().filters.ETHDepositInitiated(
+        isContract ? fromAddress.toNative() : this.atomicDepositor.address
+      ),
       eventConfig
     );
     // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
     // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
     if (!isContract) {
-      return this.convertEventListToBridgeEvents(events.filter((event) => event.args._to === fromAddress));
+      return this.convertEventListToBridgeEvents(events.filter((event) => event.args._to === fromAddress.toNative()));
     }
     return this.convertEventListToBridgeEvents(events);
   }
 
   async queryL2BridgeFinalizationEvents(
-    l1Token: string,
-    fromAddress: string,
-    toAddress: string,
+    l1Token: EvmAddress,
+    fromAddress: EvmAddress,
+    toAddress: EvmAddress,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     // Check if the sender is a contract on the L1 network.
@@ -124,7 +126,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
 
     // See above for why we don't want to monitor the spoke pool contract.
     const isL2ChainContract = await this.isL2ChainContract(fromAddress);
-    if (isL2ChainContract || (isContract && fromAddress !== this.hubPoolAddress)) {
+    if (isL2ChainContract) {
       return this.convertEventListToBridgeEvents([]);
     }
 
@@ -143,7 +145,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       )
         // If EOA sent the ETH via the AtomicDepositor, then remove any events where the
         // toAddress is not the EOA so we don't get confused with other users using the AtomicDepositor
-        .filter((event) => event.args._to === toAddress);
+        .filter((event) => event.args._to === toAddress.toNative());
 
       // We only care about WETH finalization events initiated by the relayer running this rebalancer logic, so only
       // filter on Deposit events sent from the provided signer. We can't simply filter on `fromAddress` because
@@ -156,32 +158,32 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
     } else {
       // Since we can only index on the `fromAddress` for the DepositFinalized event, we can't support
       // monitoring the spoke pool address
-      if (fromAddress !== this.hubPoolAddress) {
+      if (!fromAddress.eq(this.hubPoolAddress)) {
         return this.convertEventListToBridgeEvents([]);
       }
 
       return this.convertEventListToBridgeEvents(
         await paginatedEventQuery(
           this.getL2Bridge(),
-          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress),
+          this.getL2Bridge().filters.DepositFinalized(ZERO_ADDRESS, undefined, fromAddress.toNative()),
           eventConfig
         )
       );
     }
   }
 
-  async isHubChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.getL1Bridge().provider);
+  async isHubChainContract(address: EvmAddress): Promise<boolean> {
+    return utils.isContractDeployedToAddress(address.toNative(), this.getL1Bridge().provider);
   }
-  async isL2ChainContract(address: string): Promise<boolean> {
-    return utils.isContractDeployedToAddress(address, this.getL2Bridge().provider);
+  async isL2ChainContract(address: EvmAddress): Promise<boolean> {
+    return utils.isContractDeployedToAddress(address.toNative(), this.getL2Bridge().provider);
   }
 
   private queryL2WrapEthEvents(
-    fromAddress: string,
+    fromAddress: EvmAddress,
     eventConfig: EventSearchConfig,
     l2Weth = this.l2Weth
   ): Promise<Log[]> {
-    return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress), eventConfig);
+    return paginatedEventQuery(l2Weth, l2Weth.filters.Deposit(fromAddress.toNative()), eventConfig);
   }
 }

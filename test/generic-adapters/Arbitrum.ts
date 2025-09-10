@@ -1,16 +1,15 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
-import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_ADDRESS, ZERO_BYTES } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
-  fromBlock: 1,
-  toBlock: 1_000_000,
+  from: 1,
+  to: 1_000_000,
 };
 
 const monitoredEoa = randomAddress();
@@ -21,7 +20,6 @@ const l2UsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM];
 
 let erc20BridgeContract: Contract;
 let cctpBridgeContract: Contract;
-let cctpMessageTransmitterContract: Contract;
 
 let adapter: ArbitrumAdapter;
 
@@ -44,6 +42,9 @@ class ArbitrumAdapter extends BaseChainAdapter {
 }
 
 describe("Cross Chain Adapter: Arbitrum", async function () {
+  const toAddress = (address: string): EvmAddress => {
+    return EvmAddress.from(address);
+  };
   beforeEach(async function () {
     const [deployer] = await ethers.getSigners();
 
@@ -51,25 +52,24 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
-    cctpMessageTransmitterContract = await (await getContractFactory("CctpMessageTransmitter", deployer)).deploy();
 
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
-      fromBlock: 0,
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
+      from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
-      fromBlock: 0,
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.MAINNET, 0, {
+      from: 0,
     });
 
     const l1Signer = l1SpokePoolClient.spokePool.signer;
     const l2Signer = l2SpokePoolClient.spokePool.signer;
     const bridges = {
-      [l1Token]: new ArbitrumOrbitBridge(CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET, l1Signer, l2Signer, l1Token),
+      [l1Token]: new ArbitrumOrbitBridge(CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET, l1Signer, l2Signer, toAddress(l1Token)),
       [l1UsdcAddress]: new UsdcTokenSplitterBridge(
         CHAIN_IDs.ARBITRUM,
         CHAIN_IDs.MAINNET,
         l1Signer,
         l2Signer,
-        l1UsdcAddress
+        toAddress(l1UsdcAddress)
       ),
     };
 
@@ -80,7 +80,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       },
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.MAINNET,
-      [monitoredEoa],
+      [toAddress(monitoredEoa)],
       logger,
       SUPPORTED_TOKENS[CHAIN_IDs.ARBITRUM], // Supported Tokens.
       bridges,
@@ -91,11 +91,11 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     adapter.setL1Bridge(l1Token, erc20BridgeContract);
     adapter.setL2Bridge(l1Token, erc20BridgeContract);
     adapter.setCCTPL1Bridge(l1UsdcAddress, cctpBridgeContract);
-    adapter.setCCTPL2Bridge(l1UsdcAddress, cctpMessageTransmitterContract);
+    adapter.setCCTPL2Bridge(l1UsdcAddress, cctpBridgeContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("ERC20", () => {
@@ -104,16 +104,14 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       await erc20BridgeContract.emitDepositInitiated(l1Token, monitoredEoa, randomAddress(), 1, 1);
 
       const depositInitiatedEvents = await adapter.bridges[l1Token].queryL1BridgeInitiationEvents(
-        l1Token,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(depositInitiatedEvents[l2Token]).to.have.lengthOf(1);
       expect(depositInitiatedEvents[l2Token][0]._sequenceNumber.toNumber()).to.equal(0);
       expect(depositInitiatedEvents[l2Token][0]._amount.toNumber()).to.equal(1);
-      expect(depositInitiatedEvents[l2Token][0].from).to.equal(monitoredEoa);
-      expect(depositInitiatedEvents[l2Token][0].to).to.equal(monitoredEoa);
     });
 
     it("get DepositFinalized events from L2", async () => {
@@ -121,14 +119,13 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       await erc20BridgeContract.emitDepositFinalized(l1Token, monitoredEoa, randomAddress(), 1);
 
       const depositFinalizedEvents = await adapter.bridges[l1Token].queryL2BridgeFinalizationEvents(
-        l1Token,
-        monitoredEoa,
-        monitoredEoa,
+        toAddress(l1Token),
+        toAddress(monitoredEoa),
+        toAddress(monitoredEoa),
         searchConfig
       );
       expect(depositFinalizedEvents[l2Token]).to.have.lengthOf(1);
       expect(depositFinalizedEvents[l2Token][0].amount.toNumber()).to.equal(1);
-      expect(depositFinalizedEvents[l2Token][0].from).to.equal(monitoredEoa);
     });
 
     it("get outstanding cross-chain transfers", async () => {
@@ -147,7 +144,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         1
       );
 
-      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1Token]);
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       const transferObject = outstandingTransfers[monitoredEoa][l1Token][l2Token];
       expect(transferObject.totalAmount).to.equal(toBN(1));
       expect(transferObject.depositTxHashes).to.deep.equal([outstandingDepositEvent.hash]);
@@ -156,9 +153,9 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
   describe("Wrap ETH", () => {
     it("return simulated success tx if above threshold", async () => {
-      const tx = await adapter.wrapEthIfAboveThreshold(toBN(0), toBN(1), true);
+      const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
-      expect(tx?.hash).to.equal(ZERO_ADDRESS);
+      expect(tx?.hash).to.equal(ZERO_BYTES);
     });
   });
 
@@ -173,7 +170,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
@@ -183,14 +180,12 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
-        processedNonce
-      );
-      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([l1UsdcAddress]);
+
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1UsdcAddress)]);
       expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
     });
   });

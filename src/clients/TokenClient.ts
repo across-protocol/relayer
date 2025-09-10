@@ -4,6 +4,7 @@ import { CachingMechanismInterface, L1Token, Deposit } from "../interfaces";
 import {
   BigNumber,
   bnZero,
+  chainIsSvm,
   Contract,
   dedupArray,
   ERC20,
@@ -19,6 +20,19 @@ import {
   winston,
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
+  getRemoteTokenForL1Token,
+  getTokenInfo,
+  isEVMSpokePoolClient,
+  assert,
+  Address,
+  toAddressType,
+  isSVMSpokePoolClient,
+  getSvmProvider,
+  SvmAddress,
+  SVMProvider,
+  EvmAddress,
+  convertRelayDataParamsToBytes32,
+  getSolanaTokenBalance,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -33,9 +47,11 @@ export class TokenClient {
 
   constructor(
     readonly logger: winston.Logger,
-    readonly relayerAddress: string,
+    readonly relayerEvmAddress: EvmAddress,
+    readonly relayerSvmAddress: SvmAddress,
     readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
-    readonly hubPoolClient: HubPoolClient
+    readonly hubPoolClient: HubPoolClient,
+    readonly additionalL1Tokens: EvmAddress[] = []
   ) {
     this.profiler = new Profiler({ at: "TokenClient", logger });
   }
@@ -44,27 +60,28 @@ export class TokenClient {
     return this.tokenData;
   }
 
-  getBalance(chainId: number, token: string): BigNumber {
+  getBalance(chainId: number, token: Address): BigNumber {
     if (!this._hasTokenPairData(chainId, token)) {
       return bnZero;
     }
-    return this.tokenData[chainId][token].balance;
+    return this.tokenData[chainId][token.toNative()].balance;
   }
 
-  decrementLocalBalance(chainId: number, token: string, amount: BigNumber): void {
-    this.tokenData[chainId][token].balance = this.tokenData[chainId][token].balance.sub(amount);
+  decrementLocalBalance(chainId: number, token: Address, amount: BigNumber): void {
+    const tokenAddr = token.toNative();
+    this.tokenData[chainId][tokenAddr].balance = this.tokenData[chainId][tokenAddr].balance.sub(amount);
   }
 
-  getShortfallTotalRequirement(chainId: number, token: string): BigNumber {
-    return this.tokenShortfall?.[chainId]?.[token]?.totalRequirement ?? bnZero;
+  getShortfallTotalRequirement(chainId: number, token: Address): BigNumber {
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.totalRequirement ?? bnZero;
   }
 
-  getTokensNeededToCoverShortfall(chainId: number, token: string): BigNumber {
+  getTokensNeededToCoverShortfall(chainId: number, token: Address): BigNumber {
     return this.getShortfallTotalRequirement(chainId, token).sub(this.getBalance(chainId, token));
   }
 
-  getShortfallDeposits(chainId: number, token: string): BigNumber[] {
-    return this.tokenShortfall?.[chainId]?.[token]?.deposits || [];
+  getShortfallDeposits(chainId: number, token: Address): BigNumber[] {
+    return this.tokenShortfall?.[chainId]?.[token.toNative()]?.deposits || [];
   }
 
   hasBalanceForFill(deposit: Deposit): boolean {
@@ -73,18 +90,23 @@ export class TokenClient {
 
   // If the relayer tries to execute a relay but does not have enough tokens to fully fill it will capture the
   // shortfall by calling this method. This will track the information for logging purposes and use in other clients.
-  captureTokenShortfall(chainId: number, token: string, depositId: BigNumber, unfilledAmount: BigNumber): void {
+  captureTokenShortfall(chainId: number, token: Address, depositId: BigNumber, unfilledAmount: BigNumber): void {
     // Shortfall is the previous shortfall + the current unfilledAmount from this deposit.
     const totalRequirement = this.getShortfallTotalRequirement(chainId, token).add(unfilledAmount);
 
     // Deposits are the previous shortfall deposits, appended to this depositId.
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
-    assign(this.tokenShortfall, [chainId, token], { deposits, totalRequirement });
+    assign(this.tokenShortfall, [chainId, token.toNative()], { deposits, totalRequirement });
   }
 
   captureTokenShortfallForFill(deposit: Deposit): void {
     const { outputAmount: unfilledAmount } = deposit;
-    this.logger.debug({ at: "TokenBalanceClient", message: "Handling token shortfall", deposit, unfilledAmount });
+    this.logger.debug({
+      at: "TokenBalanceClient",
+      message: "Handling token shortfall",
+      deposit: convertRelayDataParamsToBytes32(deposit),
+      unfilledAmount,
+    });
     this.captureTokenShortfall(deposit.destinationChainId, deposit.outputToken, deposit.depositId, unfilledAmount);
   }
 
@@ -104,9 +126,9 @@ export class TokenClient {
       const chainId = Number(_chainId);
       Object.entries(tokenMap).forEach(([token, { totalRequirement, deposits }]) =>
         assign(tokenShortfall, [chainId, token], {
-          balance: this.getBalance(chainId, token),
+          balance: this.getBalance(chainId, toAddressType(token, chainId)),
           needed: totalRequirement,
-          shortfall: this.getTokensNeededToCoverShortfall(chainId, token),
+          shortfall: this.getTokensNeededToCoverShortfall(chainId, toAddressType(token, chainId)),
           deposits,
         })
       );
@@ -130,6 +152,9 @@ export class TokenClient {
     const tokensToApprove: { chainId: number; token: string }[] = [];
     Object.entries(this.tokenData).forEach(([_chainId, tokenMap]) => {
       const chainId = Number(_chainId);
+      if (chainIsSvm(chainId)) {
+        return; // Solana doesn't require token approvals
+      }
       Object.entries(tokenMap).forEach(([token, { balance, allowance }]) => {
         if (balance.gt(bnZero) && allowance.lt(MAX_SAFE_ALLOWANCE)) {
           tokensToApprove.push({ chainId, token });
@@ -142,14 +167,18 @@ export class TokenClient {
     }
 
     let mrkdwn = "*Approval transactions:* \n";
-    for (const { token, chainId } of tokensToApprove) {
-      const targetSpokePool = this.spokePoolClients[chainId].spokePool;
-      const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
-      const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
-      mrkdwn +=
-        ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
-        `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
-        `tx: ${blockExplorerLink(tx.hash, chainId)}\n`;
+    for (const { token: _token, chainId } of tokensToApprove) {
+      const targetSpokePoolClient = this.spokePoolClients[chainId];
+      if (isEVMSpokePoolClient(targetSpokePoolClient)) {
+        const targetSpokePool = targetSpokePoolClient.spokePool;
+        const token = toAddressType(_token, chainId).toEvmAddress();
+        const contract = new Contract(token, ERC20.abi, targetSpokePool.signer);
+        const tx = await runTransaction(this.logger, contract, "approve", [targetSpokePool.address, MAX_UINT_VAL]);
+        mrkdwn +=
+          ` - Approved SpokePool ${blockExplorerLink(targetSpokePool.address, chainId)} ` +
+          `to spend ${await contract.symbol()} ${blockExplorerLink(token, chainId)} on ${getNetworkName(chainId)}. ` +
+          `tx: ${blockExplorerLink(tx.hash, chainId)}\n`;
+      }
     }
     this.logger.info({ at: "TokenBalanceClient", message: "Approved whitelisted tokens! 💰", mrkdwn });
   }
@@ -175,18 +204,20 @@ export class TokenClient {
   }
 
   resolveRemoteTokens(chainId: number, hubPoolTokens: L1Token[]): Contract[] {
-    const { signer } = this.spokePoolClients[chainId].spokePool;
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    const signer = spokePoolClient.spokePool.signer;
 
     if (chainId === this.hubPoolClient.chainId) {
-      return hubPoolTokens.map(({ address }) => new Contract(address, ERC20.abi, signer));
+      return hubPoolTokens.map(({ address }) => new Contract(address.toEvmAddress(), ERC20.abi, signer));
     }
 
     const tokens = hubPoolTokens
       .map(({ symbol, address }) => {
         let tokenAddrs: string[] = [];
         try {
-          const spokePoolToken = this.hubPoolClient.getL2TokenForL1TokenAtBlock(address, chainId);
-          tokenAddrs.push(spokePoolToken);
+          const spokePoolToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
+          tokenAddrs.push(spokePoolToken.toEvmAddress());
         } catch {
           // No known deployment for this token on the SpokePool.
           // note: To be overhauled subject to https://github.com/across-protocol/sdk/pull/643
@@ -208,56 +239,85 @@ export class TokenClient {
     return tokens;
   }
 
+  resolveSolanaTokens(chainId: number, hubPoolTokens: L1Token[]): SvmAddress[] {
+    assert(chainIsSvm(chainId));
+    return hubPoolTokens
+      .map(({ address }) => {
+        try {
+          const remoteToken = getRemoteTokenForL1Token(address, chainId, this.hubPoolClient.chainId);
+          // Validate that the remote token is a valid Solana address
+          assert(remoteToken.isSVM());
+          return remoteToken;
+        } catch (error) {
+          // No known deployment for this token on the SpokePool.
+          return undefined;
+        }
+      })
+      .filter(isDefined);
+  }
+
   async updateChain(
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
-    const { spokePool } = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolClients[chainId];
 
-    const multicall3 = sdkUtils.getMulticall3(chainId, spokePool.provider);
-    if (!isDefined(multicall3)) {
-      return this.fetchTokenData(chainId, hubPoolTokens);
+    if (isEVMSpokePoolClient(spokePoolClient)) {
+      const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
+      if (!isDefined(multicall3)) {
+        return this.fetchTokenData(chainId, hubPoolTokens);
+      }
+
+      const balances: sdkUtils.Call3[] = [];
+      const allowances: sdkUtils.Call3[] = [];
+      this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
+        balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
+        allowances.push({
+          contract: token,
+          method: "allowance",
+          args: [this.relayerEvmAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
+        });
+      });
+
+      const calls = [...balances, ...allowances];
+      const results = await sdkUtils.aggregate(multicall3, calls);
+
+      const allowanceOffset = balances.length;
+      const balanceInfo = Object.fromEntries(
+        balances.map(({ contract: { address } }, idx) => {
+          return [
+            toAddressType(address, chainId).toNative(),
+            { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
+          ];
+        })
+      );
+
+      return balanceInfo;
+    } else if (isSVMSpokePoolClient(spokePoolClient)) {
+      return this.fetchSolanaTokenData(chainId, hubPoolTokens);
+    } else {
+      throw new Error(`Unknown SpokePool client type: ${chainId}`);
     }
-
-    const { relayerAddress } = this;
-    const balances: sdkUtils.Call3[] = [];
-    const allowances: sdkUtils.Call3[] = [];
-    this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-      balances.push({ contract: token, method: "balanceOf", args: [relayerAddress] });
-      allowances.push({ contract: token, method: "allowance", args: [relayerAddress, spokePool.address] });
-    });
-
-    const calls = [...balances, ...allowances];
-    const results = await sdkUtils.aggregate(multicall3, calls);
-
-    const allowanceOffset = balances.length;
-    const balanceInfo = Object.fromEntries(
-      balances.map(({ contract: { address } }, idx) => {
-        return [address, { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] }];
-      })
-    );
-
-    return balanceInfo;
   }
 
   async update(): Promise<void> {
     const mark = this.profiler.start("update");
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
-    const { hubPoolClient } = this;
 
-    const hubPoolTokens = hubPoolClient.getL1Tokens();
+    const tokenClientTokens = this._getTokenClientTokens();
     const chainIds = Object.values(this.spokePoolClients).map(({ chainId }) => chainId);
 
     const balanceInfo = await Promise.all(
       chainIds
         .filter((chainId) => isDefined(this.spokePoolClients[chainId]))
-        .map((chainId) => this.updateChain(chainId, hubPoolTokens))
+        .map((chainId) => this.updateChain(chainId, tokenClientTokens))
     );
 
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
-      for (const token of Object.keys(tokenData)) {
-        assign(this.tokenData, [chainId, token], tokenData[token]);
+      for (const _token of Object.keys(tokenData)) {
+        const tokenAddr = toAddressType(_token, chainId).toNative();
+        assign(this.tokenData, [chainId, tokenAddr], tokenData[tokenAddr]);
       }
     });
 
@@ -283,13 +343,34 @@ export class TokenClient {
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
     const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isEVMSpokePoolClient(spokePoolClient));
 
-    const { relayerAddress } = this;
     const tokenData = Object.fromEntries(
       await sdkUtils.mapAsync(this.resolveRemoteTokens(chainId, hubPoolTokens), async (token: Contract) => {
-        const balance: BigNumber = await token.balanceOf(relayerAddress);
+        const balance: BigNumber = await token.balanceOf(this.relayerEvmAddress.toNative());
         const allowance = await this._getAllowance(spokePoolClient, token);
-        return [token.address, { balance, allowance }];
+        return [toAddressType(token.address, chainId).toNative(), { balance, allowance }];
+      })
+    );
+
+    return tokenData;
+  }
+
+  async fetchSolanaTokenData(
+    chainId: number,
+    hubPoolTokens: L1Token[]
+  ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
+    const spokePoolClient = this.spokePoolClients[chainId];
+    assert(isSVMSpokePoolClient(spokePoolClient));
+
+    const provider = getSvmProvider(await getRedisCache());
+    const solanaTokens = this.resolveSolanaTokens(chainId, hubPoolTokens);
+
+    const tokenData = Object.fromEntries(
+      await sdkUtils.mapAsync(solanaTokens, async (tokenMint) => {
+        const balance = await this._getSolanaTokenBalance(provider, this.relayerSvmAddress, tokenMint);
+        // Solana doesn't require allowances like EVM chains
+        return [tokenMint.toNative(), { balance, allowance: toBN(0) }];
       })
     );
 
@@ -297,8 +378,10 @@ export class TokenClient {
   }
 
   private _getAllowanceCacheKey(spokePoolClient: SpokePoolClient, originToken: string): string {
-    const { chainId, spokePool } = spokePoolClient;
-    return `l2TokenAllowance_${chainId}_${originToken}_${this.relayerAddress}_targetContract:${spokePool.address}`;
+    const { chainId } = spokePoolClient;
+    return `l2TokenAllowance_${chainId}_${originToken}_${
+      this.relayerEvmAddress
+    }_targetContract:${spokePoolClient.spokePoolAddress.toEvmAddress()}`;
   }
 
   private async _getAllowance(spokePoolClient: SpokePoolClient, token: Contract): Promise<BigNumber> {
@@ -310,7 +393,10 @@ export class TokenClient {
         return toBN(result);
       }
     }
-    const allowance: BigNumber = await token.allowance(this.relayerAddress, spokePoolClient.spokePool.address);
+    const allowance: BigNumber = await token.allowance(
+      this.relayerEvmAddress.toNative(),
+      spokePoolClient.spokePoolAddress.toEvmAddress()
+    );
     if (allowance.gte(MAX_SAFE_ALLOWANCE) && redis) {
       // Save allowance in cache with no TTL as these should be exhausted.
       await redis.set(key, MAX_SAFE_ALLOWANCE);
@@ -339,12 +425,37 @@ export class TokenClient {
     return bondToken;
   }
 
-  private _hasTokenPairData(chainId: number, token: string) {
-    const hasData = !!this.tokenData?.[chainId]?.[token];
+  private _hasTokenPairData(chainId: number, token: Address) {
+    const hasData = !!this.tokenData?.[chainId]?.[token.toNative()];
     if (!hasData) {
-      this.logger.warn({ at: "TokenBalanceClient", message: `No data on ${getNetworkName(chainId)} -> ${token}` });
+      this.logger.warn({
+        at: "TokenBalanceClient",
+        message: `No data on ${getNetworkName(chainId)} -> ${token.toNative()}`,
+      });
     }
     return hasData;
+  }
+
+  private _getTokenClientTokens(): L1Token[] {
+    // The token client's tokens should be the hub pool tokens plus any extra configured tokens in the inventory config.
+    const hubPoolTokens = this.hubPoolClient.getL1Tokens();
+    const additionalL1Tokens = this.additionalL1Tokens.map((l1Token) => {
+      const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+      assert(l1TokenInfo.address.isEVM());
+      return {
+        ...l1TokenInfo,
+        address: l1TokenInfo.address,
+      };
+    });
+    return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
+  }
+
+  private async _getSolanaTokenBalance(
+    provider: SVMProvider,
+    walletAddress: SvmAddress,
+    tokenMint: SvmAddress
+  ): Promise<BigNumber> {
+    return getSolanaTokenBalance(provider, tokenMint, walletAddress);
   }
 
   protected async getRedis(): Promise<CachingMechanismInterface | undefined> {

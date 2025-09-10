@@ -1,5 +1,5 @@
-import { SpokePoolClient, TokenClient } from "../src/clients";
-import { MockConfigStoreClient, MockHubPoolClient } from "./mocks";
+import { EVMSpokePoolClient, SpokePoolClient } from "../src/clients";
+import { MockConfigStoreClient, MockHubPoolClient, SimpleMockTokenClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
 import {
   BigNumber,
@@ -13,14 +13,16 @@ import {
   expect,
   toBNWei,
   winston,
+  deployMulticall3,
 } from "./utils";
+import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
 describe("TokenClient: Token shortfall", async function () {
   let spokePool_1: Contract, spokePool_2: Contract;
   let erc20_2: Contract;
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let owner: SignerWithAddress, spyLogger: winston.Logger;
-  let tokenClient: TokenClient; // tested
+  let tokenClient: SimpleMockTokenClient; // tested
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
 
   const updateAllClients = async () => {
@@ -47,14 +49,14 @@ describe("TokenClient: Token shortfall", async function () {
 
     const configStoreClient = new MockConfigStoreClient(createSpyLogger().spyLogger, configStore);
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_1,
       null,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       createSpyLogger().spyLogger,
       spokePool_2,
       null,
@@ -72,7 +74,26 @@ describe("TokenClient: Token shortfall", async function () {
     });
     hubPoolClient.setTokenMapping(l1Token_1.address, destinationChainId, erc20_2.address);
 
-    tokenClient = new TokenClient(spyLogger, owner.address, spokePoolClients, hubPoolClient);
+    // Deploy Multicall3 to the hardhat test networks.
+    await deployMulticall3(owner);
+
+    let svmAddress: SvmAddress;
+    if (isSignerWallet(owner)) {
+      const svmSigner = getSvmSignerFromEvmSigner(owner);
+      svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
+    } else {
+      // For tests with VoidSigner or other non-Wallet signers, use a default SVM address
+      svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    }
+
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(owner.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
+    tokenClient.setRemoteTokens([l1Token_1, erc20_2]);
   });
 
   it("Captures and tracks token shortfall", async function () {
@@ -86,7 +107,12 @@ describe("TokenClient: Token shortfall", async function () {
     const depositId = BigNumber.from(1);
     let needed = toBNWei(420);
     let shortfall = needed.sub(balance);
-    tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId, toBNWei(420));
+    tokenClient.captureTokenShortfall(
+      destinationChainId,
+      toAddressType(erc20_2.address, destinationChainId),
+      depositId,
+      toBNWei(420)
+    );
     const tokenShortFallData = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];
     expect(tokenShortFallData.balance).to.equal(balance);
     expect(tokenShortFallData.needed).to.equal(needed);
@@ -96,7 +122,12 @@ describe("TokenClient: Token shortfall", async function () {
     // A subsequent shortfall deposit of 42 should add to the token shortfall and append the deposit id as 351+42 = 393.
     const depositId2 = BigNumber.from(2);
 
-    tokenClient.captureTokenShortfall(destinationChainId, erc20_2.address, depositId2, toBNWei(42));
+    tokenClient.captureTokenShortfall(
+      destinationChainId,
+      toAddressType(erc20_2.address, destinationChainId),
+      depositId2,
+      toBNWei(42)
+    );
     needed = needed.add(toBNWei(42));
     shortfall = needed.sub(balance);
     const tokenShortFallData2 = tokenClient.getTokenShortfall()[destinationChainId][erc20_2.address];

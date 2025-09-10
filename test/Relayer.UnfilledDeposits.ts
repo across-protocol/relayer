@@ -7,7 +7,7 @@ import {
   HubPoolClient,
   MultiCallerClient,
   SpokePoolClient,
-  TokenClient,
+  EVMSpokePoolClient,
 } from "../src/clients";
 import { DepositWithBlock, FillStatus } from "../src/interfaces";
 import {
@@ -18,7 +18,14 @@ import {
   destinationChainId,
   repaymentChainId,
 } from "./constants";
-import { MockInventoryClient, MockProfitClient, MockConfigStoreClient, MockedMultiCallerClient } from "./mocks";
+import {
+  MockInventoryClient,
+  MockProfitClient,
+  MockConfigStoreClient,
+  MockedMultiCallerClient,
+  SimpleMockHubPoolClient,
+  SimpleMockTokenClient,
+} from "./mocks";
 import {
   BigNumber,
   Contract,
@@ -33,15 +40,24 @@ import {
   ethers,
   expect,
   getLastBlockTime,
-  lastSpyLogIncludes,
   randomAddress,
   setupTokensForWallet,
+  deployMulticall3,
+  depositIntoPrimitiveTypes,
+  fillIntoPrimitiveTypes,
 } from "./utils";
-
 // Tested
 import { Relayer } from "../src/relayer/Relayer";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
-import { RelayerUnfilledDeposit, getAllUnfilledDeposits, getUnfilledDeposits, utf8ToHex } from "../src/utils";
+import {
+  EvmAddress,
+  SvmAddress,
+  RelayerUnfilledDeposit,
+  getAllUnfilledDeposits,
+  getUnfilledDeposits,
+  utf8ToHex,
+  toAddressType,
+} from "../src/utils";
 
 describe("Relayer: Unfilled Deposits", async function () {
   const { bnOne } = sdkUtils;
@@ -53,9 +69,10 @@ describe("Relayer: Unfilled Deposits", async function () {
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
   let configStoreClient: MockConfigStoreClient, hubPoolClient: HubPoolClient;
   let spokePoolClients: Record<number, SpokePoolClient>;
-  let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, tokenClient: TokenClient;
+  let multiCallerClient: MultiCallerClient, tryMulticallClient: MultiCallerClient, tokenClient: SimpleMockTokenClient;
   let profitClient: MockProfitClient;
   let spokePool1DeploymentBlock: number, spokePool2DeploymentBlock: number;
+  let inventoryClient: MockInventoryClient;
 
   let relayerInstance: Relayer;
   let unfilledDeposits: RelayerUnfilledDeposit[] = [];
@@ -93,38 +110,62 @@ describe("Relayer: Unfilled Deposits", async function () {
       { l2ChainId: 1, spokePool: spokePool_2 },
     ]));
 
+    for (const deployer of [depositor, relayer]) {
+      await deployMulticall3(deployer);
+    }
+
     ({ configStore } = await deployConfigStore(owner, [l1Token]));
 
     configStoreClient = new MockConfigStoreClient(spyLogger, configStore, undefined, undefined, CHAIN_ID_TEST_LIST);
     await configStoreClient.update();
 
-    hubPoolClient = new HubPoolClient(spyLogger, hubPool, configStoreClient);
+    hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(l1Token.address, "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, "L1Token1");
 
-    spokePoolClient_1 = new SpokePoolClient(
+    spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_1,
       hubPoolClient,
       originChainId,
       spokePool1DeploymentBlock
     );
-    spokePoolClient_2 = new SpokePoolClient(
+    spokePoolClient_2 = new EVMSpokePoolClient(
       spyLogger,
       spokePool_2,
       hubPoolClient,
       destinationChainId,
       spokePool2DeploymentBlock,
-      { fromBlock: 0, toBlock: undefined, maxBlockLookBack: 0 }
+      { from: 0, to: undefined, maxLookBack: 0 }
     );
 
     spokePoolClients = { [originChainId]: spokePoolClient_1, [destinationChainId]: spokePoolClient_2 };
     multiCallerClient = new MockedMultiCallerClient(spyLogger);
     tryMulticallClient = new MockedMultiCallerClient(spyLogger);
-    tokenClient = new TokenClient(spyLogger, relayer.address, spokePoolClients, hubPoolClient);
+
+    // Tests use non-Wallet signers, so hardcode SVM address
+    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
+    tokenClient = new SimpleMockTokenClient(
+      spyLogger,
+      EvmAddress.from(relayer.address),
+      svmAddress,
+      spokePoolClients,
+      hubPoolClient
+    );
+    tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
     profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
     await profitClient.initToken(l1Token);
 
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+    inventoryClient = new MockInventoryClient(null, null, null, null, null, hubPoolClient);
+    inventoryClient.setTokenMapping({
+      [l1Token.address]: {
+        [originChainId]: erc20_1.address,
+        [destinationChainId]: erc20_2.address,
+      },
+    });
     relayerInstance = new Relayer(
       relayer.address,
       spyLogger,
@@ -135,7 +176,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         profitClient,
         tokenClient,
         multiCallerClient,
-        inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
+        inventoryClient,
         acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         tryMulticallClient,
       },
@@ -143,6 +184,7 @@ describe("Relayer: Unfilled Deposits", async function () {
         relayerTokens: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
+        sendingMessageRelaysEnabled: {},
         tryMulticallChains: [],
       } as unknown as RelayerConfig
     );
@@ -190,14 +232,20 @@ describe("Relayer: Unfilled Deposits", async function () {
     await updateAllClients();
 
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: depositIntoPrimitiveTypes(unfilledDeposit.deposit),
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         [...deposits]
           .sort((a, b) => (a.destinationChainId > b.destinationChainId ? 1 : -1))
           .map((deposit) => ({
-            deposit,
-            unfilledAmount: deposit.outputAmount,
+            deposit: depositIntoPrimitiveTypes(deposit),
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -229,15 +277,26 @@ describe("Relayer: Unfilled Deposits", async function () {
     const { fillStatus } = relayerInstance;
     fillStatus[depositHash] = FillStatus.Filled;
 
-    unfilledDeposits = getUnfilledDeposits(destinationChainId, spokePoolClients, hubPoolClient, fillStatus);
-    expect(unfilledDeposits)
+    unfilledDeposits = getUnfilledDeposits(
+      spokePoolClients[destinationChainId],
+      spokePoolClients,
+      hubPoolClient,
+      fillStatus
+    );
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: depositIntoPrimitiveTypes(unfilledDeposit.deposit),
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal(
         deposits
           .filter(({ depositId }) => depositId !== filledDeposit!.depositId)
           .map((deposit) => ({
-            deposit,
-            unfilledAmount: deposit.outputAmount,
+            deposit: depositIntoPrimitiveTypes(deposit),
             invalidFills: [],
             version: configStoreClient.configStoreVersion,
           }))
@@ -264,18 +323,45 @@ describe("Relayer: Unfilled Deposits", async function () {
     // The deposit should show up as unfilled, since the fill was incorrectly applied to the wrong deposit.
     await updateAllClients();
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        const depositV3PrimitiveEvmArgs = depositIntoPrimitiveTypes(unfilledDeposit.deposit);
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            ...depositV3PrimitiveEvmArgs,
+          },
+          invalidFills: [
+            {
+              ...unfilledDeposit.invalidFills[0],
+              inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+              outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+              depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+              recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+              relayer: unfilledDeposit.invalidFills[0].relayer.toEvmAddress(),
+              relayExecutionInfo: {
+                ...unfilledDeposit.invalidFills[0].relayExecutionInfo,
+                updatedRecipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              },
+            },
+          ],
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
           deposit: {
             ...deposit,
+            ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
-          unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
+              ...fillIntoPrimitiveTypes(invalidFill),
               depositId: sdkUtils.toBN(invalidFill.depositId),
             },
           ],
@@ -480,7 +566,7 @@ describe("Relayer: Unfilled Deposits", async function () {
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, originChainId: destinationChainId });
     expect(relayerLpFees[lpFeeKey]).not.exist;
 
-    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: randomAddress() });
+    lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputToken: toAddressType(randomAddress(), originChainId) });
     expect(relayerLpFees[lpFeeKey]).to.not.exist;
 
     lpFeeKey = relayerInstance.getLPFeeKey({ ...deposit, inputAmount: deposit.inputAmount.add(1) });
@@ -512,25 +598,49 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     // getUnfilledDeposit still returns the deposit as unfilled but with the invalid fill.
     unfilledDeposits = _getAllUnfilledDeposits();
-    expect(unfilledDeposits)
+    expect(
+      unfilledDeposits.map((unfilledDeposit) => {
+        return {
+          ...unfilledDeposit,
+          deposit: {
+            ...unfilledDeposit.deposit,
+            ...depositIntoPrimitiveTypes(unfilledDeposit.deposit),
+          },
+          invalidFills: [
+            {
+              ...unfilledDeposit.invalidFills[0],
+              inputToken: unfilledDeposit.deposit.inputToken.toEvmAddress(),
+              outputToken: unfilledDeposit.deposit.outputToken.toEvmAddress(),
+              depositor: unfilledDeposit.deposit.depositor.toEvmAddress(),
+              recipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              exclusiveRelayer: unfilledDeposit.deposit.exclusiveRelayer.toEvmAddress(),
+              relayer: unfilledDeposit.invalidFills[0].relayer.toEvmAddress(),
+              relayExecutionInfo: {
+                ...unfilledDeposit.invalidFills[0].relayExecutionInfo,
+                updatedRecipient: unfilledDeposit.deposit.recipient.toEvmAddress(),
+              },
+            },
+          ],
+        };
+      })
+    )
       .excludingEvery(["realizedLpFeePct", "quoteBlockNumber", "fromLiteChain", "toLiteChain"])
       .to.deep.equal([
         {
           deposit: {
-            ...deposit,
+            ...depositIntoPrimitiveTypes(deposit),
             depositId: sdkUtils.toBN(deposit.depositId),
           },
-          unfilledAmount: deposit.outputAmount,
           invalidFills: [
             {
               ...invalidFill,
+              ...fillIntoPrimitiveTypes(invalidFill),
               depositId: sdkUtils.toBN(invalidFill.depositId),
             },
           ],
           version: configStoreClient.configStoreVersion,
         },
       ]);
-    expect(lastSpyLogIncludes(spy, "Invalid fills found")).to.be.true;
 
     await relayerInstance.checkForUnfilledDepositsAndFill();
     // Relayer shouldn't try to fill again because there has been one invalid fill from this same relayer.

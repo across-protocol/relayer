@@ -10,6 +10,8 @@ import {
   CHAIN_IDs,
   getRedisCache,
   bnUint256Max as uint256Max,
+  EvmAddress,
+  isDefined,
 } from "../utils";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -36,13 +38,19 @@ export class AcrossApiClient {
     readonly logger: winston.Logger,
     readonly hubPoolClient: HubPoolClient,
     chainIds: number[],
-    readonly tokensQuery: string[] = [],
+    readonly tokensQuery: EvmAddress[] = [],
     readonly timeout: number = 3000
   ) {
     const hubChainId = hubPoolClient.chainId;
     this.endpoint = `https://${getAcrossHost(hubChainId)}/api`;
     if (Object.keys(tokensQuery).length === 0) {
-      this.tokensQuery = dedupArray(Object.values(TOKEN_SYMBOLS_MAP).map(({ addresses }) => addresses[hubChainId]));
+      this.tokensQuery = dedupArray(
+        Object.values(TOKEN_SYMBOLS_MAP)
+          .map(({ addresses }) =>
+            isDefined(addresses[hubChainId]) ? EvmAddress.from(addresses[hubChainId]) : undefined
+          )
+          .filter(isDefined)
+      );
     }
 
     this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
@@ -64,12 +72,12 @@ export class AcrossApiClient {
       throw new Error("HubPoolClient must be updated before AcrossAPIClient");
     }
     const enabledTokens = hubPoolClient.getL1Tokens().map((token) => token.address);
-    const tokens = this.tokensQuery.filter((token) => enabledTokens.includes(token));
+    const tokens = this.tokensQuery.filter((token) => enabledTokens.some((enabledToken) => enabledToken.eq(token)));
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "Querying /liquid-reserves",
       timeout: this.timeout,
-      tokens,
+      tokens: tokens.map((token) => token.toEvmAddress()),
       endpoint: this.endpoint,
     });
     this.updatedLimits = false;
@@ -77,7 +85,7 @@ export class AcrossApiClient {
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(tokens);
-    tokens.forEach((token, i) => (this.limits[token] = liquidReserves[i]));
+    tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
 
     this.logger.debug({
       at: "AcrossAPIClient",
@@ -88,26 +96,26 @@ export class AcrossApiClient {
     this.updatedAt = now;
   }
 
-  getLimit(originChainId: number, l1Token: string): BigNumber {
+  getLimit(originChainId: number, l1Token: EvmAddress): BigNumber {
     // Funds can be JIT-bridged from mainnet to anywhere, so don't apply any constraint.
     if (originChainId === this.hubPoolClient.chainId) {
       return uint256Max;
     }
 
-    if (!this.limits[l1Token]) {
+    if (!this.limits[l1Token.toEvmAddress()]) {
       this.logger.warn({
         at: "AcrossApiClient::getLimit",
         message: `No limit stored for l1Token ${l1Token}, defaulting to 0.`,
       });
     }
-    return this.limits[l1Token] ?? bnZero;
+    return this.limits[l1Token.toEvmAddress()] ?? bnZero;
   }
 
-  getLimitsCacheKey(l1Tokens: string[]): string {
-    return `limits_api_${l1Tokens.join(",")}`;
+  getLimitsCacheKey(l1Tokens: EvmAddress[]): string {
+    return `limits_api_${l1Tokens.map((token) => token.toEvmAddress()).join(",")}`;
   }
 
-  private async callLimits(l1Tokens: string[], timeout = this.timeout): Promise<BigNumber[]> {
+  private async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[]> {
     const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
 
@@ -138,7 +146,7 @@ export class AcrossApiClient {
           result,
         });
       }
-      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result.data[l1Token] ?? bnZero));
+      liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result.data[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
       const msg = _.get(err, "response.data", _.get(err, "response.statusText", (err as AxiosError).message));
       this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });

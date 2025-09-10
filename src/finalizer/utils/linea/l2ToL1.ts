@@ -1,5 +1,4 @@
 import { OnChainMessageStatus } from "@consensys/linea-sdk";
-import { Wallet } from "ethers";
 import { groupBy } from "lodash";
 
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
@@ -7,7 +6,6 @@ import {
   Signer,
   winston,
   convertFromWei,
-  getL1TokenInfo,
   getProvider,
   EventSearchConfig,
   ethers,
@@ -15,6 +13,13 @@ import {
   paginatedEventQuery,
   mapAsync,
   BigNumber,
+  TOKEN_SYMBOLS_MAP,
+  getTokenInfo,
+  assert,
+  isEVMSpokePoolClient,
+  toAddressType,
+  Address,
+  createFormatFunction,
 } from "../../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../../types";
 import { TokensBridged } from "../../../interfaces";
@@ -27,9 +32,11 @@ import {
   getL1MessageServiceContractFromL1ClaimingService,
   getL2MessageServiceContractFromL1ClaimingService,
   getL2MessagingBlockAnchoredFromMessageSentEvent,
+  findMessageSentEvents,
+  findTokenBridgeEvents,
 } from "./common";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   L1ClaimingService,
   SparseMerkleTreeFactory,
@@ -71,9 +78,9 @@ async function getMessageProof(
     l2MessagingBlockAnchoredEvent.transactionHash
   );
   const l2MessageHashesInBlockRange = await getL2MessageHashesInBlockRange(l2Contract, {
-    fromBlock: finalizationInfo.l2MessagingBlocksRange.startingBlock,
-    toBlock: finalizationInfo.l2MessagingBlocksRange.endBlock,
-    maxBlockLookBack: l2SearchConfig.maxBlockLookBack,
+    from: finalizationInfo.l2MessagingBlocksRange.startingBlock,
+    to: finalizationInfo.l2MessagingBlocksRange.endBlock,
+    maxLookBack: l2SearchConfig.maxLookBack,
   });
   const l2Messages = l1ClaimingService.getMessageSiblings(
     messageHash,
@@ -121,7 +128,7 @@ async function getFinalizationMessagingInfo(
       treeDepth = BigNumber.from(parsedLog.args.treeDepth).toNumber();
       l2MerkleRoots.push(parsedLog.args.l2MerkleRoot);
     } else if (topic === L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE) {
-      blocksNumber.push(parsedLog.args.l2Block);
+      blocksNumber.push(BigNumber.from(parsedLog.args.l2Block).toNumber());
     }
   }
   if (l2MerkleRoots.length === 0) {
@@ -159,28 +166,41 @@ export async function lineaL2ToL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  _senderAddresses: Address[]
 ): Promise<FinalizerPromise> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
   // We need a longer lookback period for L1 to ensure we find all L1 events containing finalized
   // L2 block heights.
-  const { fromBlock: l1FromBlock, toBlock: l1ToBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 14, 0);
+  const { fromBlock: l1FromBlock, toBlock: l1ToBlock } = await getBlockRangeByHoursOffsets(
+    logger,
+    l1ChainId,
+    24 * 14,
+    0
+  );
   // Optimize block range for querying relevant source events on L2.
   // Linea L2->L1 messages are claimable after 6 - 32 hours
-  const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 24 * 8, 6);
+  const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(
+    logger,
+    l2ChainId,
+    24 * 8,
+    6
+  );
   const l1SearchConfig = {
-    fromBlock: l1FromBlock,
-    toBlock: l1ToBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
+    from: l1FromBlock,
+    to: l1ToBlock,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l1ChainId] || 10_000,
   };
   const l2SearchConfig = {
-    fromBlock: l2FromBlock,
-    toBlock: l2ToBlock,
-    maxBlockLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l2ChainId] || 5_000,
+    from: l2FromBlock,
+    to: l2ToBlock,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[l2ChainId] || 5_000,
   };
   const l2Provider = await getProvider(l2ChainId);
   const l1Provider = await getProvider(l1ChainId);
@@ -202,10 +222,57 @@ export async function lineaL2ToL1Finalizer(
   // Get src events
   const l2SrcEvents = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber >= l2FromBlock && blockNumber <= l2ToBlock);
+    .filter(
+      ({ blockNumber, l2TokenAddress }) =>
+        blockNumber >= l2FromBlock &&
+        blockNumber <= l2ToBlock &&
+        !l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId], l2ChainId))
+    );
+
+  // Append raw MessageSent events for custom sender addresses to TokensBridged events
+  const senderAddresses = _senderAddresses
+    .map((address) => address.toEvmAddress())
+    .filter((sender) => sender !== spokePoolClient.spokePool.address && sender !== hubPoolClient.hubPool.address);
+  const l2TokenBridge = new Contract(
+    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.address,
+    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.abi,
+    l2Provider
+  );
+  const l2MessageServiceContract = getL2MessageServiceContractFromL1ClaimingService(
+    lineaSdk.getL1ClaimingService(),
+    l2Provider
+  );
+  const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
+    findMessageSentEvents(l2MessageServiceContract, senderAddresses, l2SearchConfig),
+    findTokenBridgeEvents(l2TokenBridge, senderAddresses, l2SearchConfig),
+  ]);
+  wethAndRelayEvents.forEach((event) => {
+    l2SrcEvents.push({
+      l2TokenAddress: sdkUtils.EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[l2ChainId]),
+      txnRef: event.transactionHash,
+      blockNumber: event.blockNumber,
+      txnIndex: event.parsed.transactionIndex,
+      logIndex: event.logIndex,
+      amountToReturn: BigNumber.from(event.parsed.args._value),
+      chainId: l2ChainId,
+      leafId: 0,
+    });
+  });
+  tokenBridgeEvents.forEach((event) => {
+    l2SrcEvents.push({
+      l2TokenAddress: sdkUtils.EvmAddress.from(event.args.token),
+      txnRef: event.transactionHash,
+      blockNumber: event.blockNumber,
+      txnIndex: event.transactionIndex,
+      logIndex: event.logIndex,
+      amountToReturn: event.args.amount,
+      chainId: l2ChainId,
+      leafId: 0,
+    });
+  });
 
   // Get Linea's MessageSent events for each src event
-  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map((event) => event.transactionHash)));
+  const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map(({ txnRef }) => txnRef)));
   const relevantMessages = (
     await Promise.all(uniqueTxHashes.map((txHash) => getMessagesWithStatusByTxHash(txHash)))
   ).flat();
@@ -239,12 +306,12 @@ export async function lineaL2ToL1Finalizer(
         l2SearchConfig,
         l1SearchConfig
       );
-      return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessageWithProof({
+      return l1ClaimingService.l1Contract.contract.claimMessageWithProof({
         from: message.messageSender,
         to: message.destination,
         fee: message.fee,
         value: message.value,
-        feeRecipient: (signer as Wallet).address,
+        feeRecipient: await signer.getAddress(),
         data: message.calldata,
         messageNumber: message.messageNonce,
         proof: proof.proof,
@@ -261,12 +328,12 @@ export async function lineaL2ToL1Finalizer(
   // Populate cross chain transfers for claimed messages
   const transfers = claimable.map(({ tokensBridged }) => {
     const { l2TokenAddress, amountToReturn } = tokensBridged;
-    const { decimals, symbol: l1TokenSymbol } = getL1TokenInfo(l2TokenAddress, l2ChainId);
+    const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const transfer: CrossChainMessage = {
       originationChainId: l2ChainId,
       destinationChainId: l1ChainId,
-      l1TokenSymbol,
+      l1TokenSymbol: symbol,
       amount: amountFromWei,
       type: "withdrawal",
     };
@@ -274,12 +341,12 @@ export async function lineaL2ToL1Finalizer(
     return transfer;
   });
 
-  const averageBlockTimeSeconds = await sdkUtils.averageBlockTime(spokePoolClient.spokePool.provider);
+  const averageBlockTimeSeconds = await arch.evm.averageBlockTime(spokePoolClient.spokePool.provider);
   logger.debug({
     at: "Finalizer#LineaL2ToL1Finalizer",
     message: "Linea L2->L1 message statuses",
     averageBlockTimeSeconds,
-    latestSpokePoolBlock: spokePoolClient.latestBlockSearched,
+    latestSpokePoolBlock: spokePoolClient.latestHeightSearched,
     statuses: {
       claimed: claimed.length,
       claimable: claimable.length,
@@ -287,11 +354,16 @@ export async function lineaL2ToL1Finalizer(
     },
     notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
       const withdrawalBlock = tokensBridged.blockNumber;
+      const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
+      const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+      const amountToReturn = formatter(tokensBridged.amountToReturn);
       return {
         txnHash: message.txHash,
         withdrawalBlock,
+        token: l2TokenInfo.symbol,
+        amountToReturn,
         maturedHours:
-          (averageBlockTimeSeconds.average * (spokePoolClient.latestBlockSearched - withdrawalBlock)) / 60 / 60,
+          (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
       };
     }),
   });
@@ -301,7 +373,7 @@ export async function lineaL2ToL1Finalizer(
 
 function mergeMessagesWithTokensBridged(messages: MessageWithStatus[], allTokensBridgedEvents: TokensBridged[]) {
   const messagesByTxHash = groupBy(messages, ({ txHash }) => txHash);
-  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ transactionHash }) => transactionHash);
+  const tokensBridgedEventByTxHash = groupBy(allTokensBridgedEvents, ({ txnRef }) => txnRef);
 
   const merged: {
     message: MessageWithStatus;

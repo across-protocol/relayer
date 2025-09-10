@@ -6,7 +6,7 @@ import winston from "winston";
 import assert from "assert";
 export { winston, assert };
 
-export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES } = sdkConstants;
+export const { MAX_SAFE_ALLOWANCE, ZERO_BYTES, DEFAULT_SIMULATED_RELAYER_ADDRESS_SVM, EMPTY_MESSAGE } = sdkConstants;
 export const { AddressZero: ZERO_ADDRESS, MaxUint256: MAX_UINT_VAL } = ethersConstants;
 
 export {
@@ -25,11 +25,11 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 
 export { config } from "dotenv";
 
-export { replaceAddressCase } from "@uma/common";
 export { Logger, waitForLogger } from "@uma/logger";
 
 export {
   CHAIN_IDs,
+  PUBLIC_NETWORKS,
   TESTNET_CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   TOKEN_EQUIVALENCE_REMAPPING,
@@ -54,6 +54,7 @@ export * from "./chains";
 export * from "./fsUtils";
 export * from "./ProviderUtils";
 export * from "./SignerUtils";
+export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
@@ -76,3 +77,4 @@ export * from "./CLIUtils";
 export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
+export * from "./BinanceUtils";

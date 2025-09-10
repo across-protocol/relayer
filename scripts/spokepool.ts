@@ -1,16 +1,20 @@
+import assert from "assert";
 import axios, { isAxiosError } from "axios";
 import minimist from "minimist";
 import { groupBy } from "lodash";
 import { config } from "dotenv";
 import { Contract, ethers, Signer } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
-import { CHAIN_IDs } from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants as sdkConsts, utils as sdkUtils } from "@across-protocol/sdk";
 import { ExpandedERC20__factory as ERC20 } from "@across-protocol/contracts";
 import { RelayData } from "../src/interfaces";
 import { getAcrossHost } from "../src/clients";
 import {
   BigNumber,
+  Address,
+  disconnectRedisClients,
+  EvmAddress,
   formatFeePct,
   getDeploymentBlockNumber,
   getMessageHash,
@@ -18,9 +22,10 @@ import {
   getProvider,
   getSigner,
   isDefined,
-  resolveTokenSymbols,
+  populateV3Relay,
   toBN,
-  toBytes32,
+  toAddressType,
+  chainIsEvm,
 } from "../src/utils";
 import * as utils from "./utils";
 
@@ -40,20 +45,59 @@ type RelayerFeeQuery = {
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
 const { AddressZero } = ethers.constants;
-const { isAddress } = ethers.utils;
 
 const DEPOSIT_EVENT = "FundsDeposited";
 const FILL_EVENT = "FilledRelay";
 
-function printDeposit(originChainId: number, log: LogDescription): void {
-  const { destinationChainId, inputToken, message } = log.args;
+/**
+ * Resolves a list of token symbols for a list of token addresses and a chain ID.
+ * @dev This function is dangerous because multiple token addresses can map to the same token symbol
+ * so the output can be unexpected.
+ * @param tokenAddresses The token addresses to resolve the symbols for.
+ * @param chainId The chain ID to resolve the symbols for.
+ * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ */
+function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
+  const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
+  return tokenAddresses
+    .map((tokenAddress) => {
+      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
+        ?.symbol;
+    })
+    .filter(Boolean);
+}
+
+function decodeRelayData(originChainId: number, destinationChainId: number, log: LogDescription): RelayData {
   const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-  const relayData = Object.fromEntries(eventArgs.map((arg) => [arg, log.args[arg]])) as RelayData;
+  const relayData = Object.fromEntries(
+    eventArgs.map((key) => {
+      switch (key) {
+        case "depositor":
+        case "inputToken":
+          return [key, toAddressType(log.args[key], originChainId)];
+
+        case "recipient":
+        case "outputToken":
+        case "exclusiveRelayer":
+          return [key, toAddressType(log.args[key], destinationChainId)];
+
+        default:
+          return [key, log.args[key]];
+      }
+    })
+  ) as RelayData;
+
+  return relayData;
+}
+
+function printDeposit(originChainId: number, log: LogDescription): void {
+  const { destinationChainId, message } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
   const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([inputToken], originChainId)[0],
-    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+    tokenSymbol: resolveTokenSymbols([relayData.inputToken.toNative()], originChainId)[0],
+    ...relayData,
     messageHash: getMessageHash(message),
     relayDataHash,
   };
@@ -69,15 +113,15 @@ function printDeposit(originChainId: number, log: LogDescription): void {
 }
 
 function printFill(destinationChainId: number, log: LogDescription): void {
-  const { originChainId, outputToken } = log.args;
-  const eventArgs = Object.keys(log.args).filter((key) => isNaN(Number(key)));
-
-  const padLeft = eventArgs.reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const { originChainId } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([outputToken], destinationChainId)[0],
-    ...Object.fromEntries(eventArgs.map((key) => [key, log.args[key]])),
+    tokenSymbol: resolveTokenSymbols([relayData.outputToken.toNative()], destinationChainId)[0],
+    ...relayData,
   };
+  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+
   console.log(
     `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
       Object.entries(fields)
@@ -108,11 +152,12 @@ async function getRelayerQuote(
   toChainId: number,
   token: utils.ERC20,
   amount: BigNumber,
-  recipient?: string,
+  recipient?: Address,
   message?: string
 ): Promise<{
+  outputToken: Address;
   outputAmount: BigNumber;
-  exclusiveRelayer: string;
+  exclusiveRelayer: Address;
   exclusivityDeadline: number;
   quoteTimestamp: number;
   fillDeadline: number;
@@ -125,7 +170,7 @@ async function getRelayerQuote(
     originChainId: fromChainId,
     destinationChainId: toChainId,
     amount: amount.toString(),
-    recipientAddress: recipient,
+    recipientAddress: recipient.toNative(),
     message,
   };
   const timeout = 5000;
@@ -133,6 +178,8 @@ async function getRelayerQuote(
   const suggestedFees = async () => {
     const quoteData = await getSuggestedFees(params, timeout);
     const {
+      outputToken: { address: outputToken },
+      outputAmount,
       totalRelayFee: { total: totalRelayFee },
       exclusiveRelayer,
       exclusivityDeadline,
@@ -141,17 +188,25 @@ async function getRelayerQuote(
       fillDeadline,
     } = quoteData;
 
-    [totalRelayFee, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, estimatedFillTime, fillDeadline].forEach(
-      (field) => {
-        if (!isDefined(field)) {
-          throw new Error("Incomplete suggested-fees response");
-        }
+    [
+      totalRelayFee,
+      exclusiveRelayer,
+      exclusivityDeadline,
+      quoteTimestamp,
+      estimatedFillTime,
+      fillDeadline,
+      outputToken,
+    ].forEach((field) => {
+      if (!isDefined(field)) {
+        throw new Error("Incomplete suggested-fees response");
       }
-    );
+    });
 
     return {
+      outputToken: toAddressType(outputToken, toChainId),
+      outputAmount: toBN(outputAmount),
       totalRelayFee: toBN(totalRelayFee),
-      exclusiveRelayer,
+      exclusiveRelayer: toAddressType(exclusiveRelayer, toChainId),
       exclusivityDeadline: Number(exclusivityDeadline),
       estimatedFillTime: Number(estimatedFillTime),
       quoteTimestamp: Number(quoteTimestamp),
@@ -159,16 +214,25 @@ async function getRelayerQuote(
     };
   };
 
+  let outputToken: Address;
   let outputAmount: BigNumber;
-  let exclusiveRelayer: string;
+  let exclusiveRelayer: Address;
   let exclusivityDeadline: number;
   let quoteTimestamp: number;
   let fillDeadline: number;
   do {
     let totalRelayFee: BigNumber;
     let estimatedFillTime: number;
-    ({ totalRelayFee, exclusivityDeadline, exclusiveRelayer, quoteTimestamp, estimatedFillTime, fillDeadline } =
-      await suggestedFees());
+    ({
+      outputToken,
+      outputAmount,
+      totalRelayFee,
+      exclusivityDeadline,
+      exclusiveRelayer,
+      quoteTimestamp,
+      estimatedFillTime,
+      fillDeadline,
+    } = await suggestedFees());
 
     outputAmount = amount.sub(totalRelayFee);
     const quote =
@@ -178,58 +242,82 @@ async function getRelayerQuote(
     quoteAccepted = await utils.askYesNoQuestion(quote);
   } while (!quoteAccepted);
 
-  return { outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, fillDeadline };
+  return { outputToken, outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, fillDeadline };
 }
 
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
-  const depositor = await signer.getAddress();
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
-  const [recipient, message] = [args.recipient ?? depositor, args.message ?? sdkConsts.EMPTY_MESSAGE].map(String);
-  const exclusiveRelayer = String(args.exclusiveRelayer);
-  const exclusivityDeadline = Number(args.exclusivityDeadline);
-
   if (!utils.validateChainIds([fromChainId, toChainId])) {
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
     return false;
   }
   const network = getNetworkName(fromChainId);
 
-  if (!isAddress(recipient)) {
-    console.log(`Invalid recipient address (${recipient}).`);
+  // todo: only EVM `fromChainId`s are supported now
+  assert(chainIsEvm(fromChainId));
+  const depositor = toAddressType(await signer.getAddress(), fromChainId);
+  const recipient = toAddressType(String(args.recipient ?? depositor.toNative()), toChainId);
+
+  if (!recipient.isValidOn(toChainId)) {
+    console.log(`Invalid recipient address for chain ${toChainId}: (${recipient}).`);
     return false;
   }
 
+  const message = String(args.message ?? sdkConsts.EMPTY_MESSAGE);
+
   const token = utils.resolveToken(args.token as string, fromChainId);
+  const inputToken = toAddressType(token.address, fromChainId);
   const tokenSymbol = token.symbol.toUpperCase();
-  const amount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
+  const inputAmount = ethers.utils.parseUnits(baseAmount.toString(), args.decimals ? 0 : token.decimals);
 
   const provider = await getProvider(fromChainId);
   signer = signer.connect(provider);
   const spokePool = (await utils.getSpokePoolContract(fromChainId)).connect(signer);
 
   const erc20 = new Contract(token.address, ERC20.abi, signer);
-  const allowance = await erc20.allowance(depositor, spokePool.address);
-  if (amount.gt(allowance)) {
-    const approvalAmount = amount.mul(5);
+  const [balance, allowance] = await Promise.all([
+    erc20.balanceOf(depositor.toNative()),
+    erc20.allowance(depositor.toNative(), spokePool.address),
+  ]);
+
+  if (inputAmount.gt(balance)) {
+    const baseBalance = balance.div(toBN(10).pow(token.decimals));
+    console.log(`Insufficient balance for ${baseAmount} ${tokenSymbol} deposit (${baseBalance}).`);
+    return false;
+  }
+
+  if (inputAmount.gt(allowance)) {
+    const approvalAmount = inputAmount.mul(5);
     const approval = await erc20.approve(spokePool.address, approvalAmount);
     console.log(`Approving SpokePool for ${approvalAmount} ${tokenSymbol}: ${approval.hash}.`);
     await approval.wait();
     console.log("Approval complete...");
   }
-  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, amount, recipient, message);
+
+  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
+
+  // Use the exclusiveRelayer provided by the user if present; otherwise fall back to the
+  // value supplied by the quote (for SVM chains this will be the zero address).
+  const exclusiveRelayer = toAddressType(
+    String(args.exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative()),
+    toChainId
+  );
+  const exclusivityParameter = args.exclusivityDeadline
+    ? Number(args.exclusivityDeadline)
+    : depositQuote.exclusivityDeadline;
 
   const deposit = await spokePool.deposit(
-    toBytes32(depositor),
-    toBytes32(recipient),
-    toBytes32(token.address),
-    toBytes32(AddressZero), // outputToken
-    amount,
+    depositor.toBytes32(),
+    recipient.toBytes32(),
+    inputToken.toBytes32(),
+    depositQuote.outputToken.toBytes32(),
+    inputAmount,
     depositQuote.outputAmount,
     toChainId,
-    toBytes32(exclusiveRelayer ?? depositQuote.exclusiveRelayer),
+    exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
     depositQuote.fillDeadline,
-    exclusivityDeadline ?? depositQuote.exclusivityDeadline,
+    exclusivityParameter,
     message
   );
   const { hash: transactionHash } = deposit;
@@ -286,17 +374,23 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
 
   const { symbol } = utils.resolveToken(depositArgs.inputToken, originChainId);
   const destinationTokenInfo = utils.resolveToken(symbol, destinationChainId);
-  const outputToken = depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
+  const rawOutputToken =
+    depositArgs.outputToken === AddressZero ? destinationTokenInfo.address : depositArgs.outputToken;
   const outputAmount = toBN(depositArgs.outputAmount);
 
-  const relayer = await signer.getAddress();
+  const relayer = EvmAddress.from(await signer.getAddress());
+  assert(relayer.isEVM());
+
+  const recipient = sdkUtils.EvmAddress.from(depositArgs.recipient);
+  const outputToken = sdkUtils.EvmAddress.from(rawOutputToken);
+
   const deposit = {
     depositId: depositArgs.depositId,
     originChainId,
     destinationChainId,
-    depositor: depositArgs.depositor,
-    recipient: depositArgs.recipient,
-    inputToken: depositArgs.inputToken,
+    depositor: toAddressType(depositArgs.depositor, originChainId),
+    recipient,
+    inputToken: toAddressType(depositArgs.inputToken, originChainId),
     inputAmount: depositArgs.inputAmount,
     outputToken,
     outputAmount,
@@ -304,13 +398,11 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     quoteTimestamp: depositArgs.quoteTimestamp,
     fillDeadline: depositArgs.fillDeadline,
     exclusivityDeadline: depositArgs.exclusivityDeadline,
-    exclusiveRelayer: depositArgs.exclusiveRelayer,
-    fromLiteChain: false, // Not relevant
-    toLiteChain: false, // Not relevant
+    exclusiveRelayer: toAddressType(depositArgs.exclusiveRelayer, destinationChainId),
   };
   const fill = isDefined(slow)
     ? await destSpokePool.populateTransaction.requestSlowFill(deposit)
-    : await sdkUtils.populateV3Relay(destSpokePool, deposit, relayer);
+    : await populateV3Relay(destSpokePool, deposit, relayer);
 
   console.group("Fill Txn Info");
   console.log(`to: ${fill.to}`);
@@ -329,7 +421,7 @@ async function fillDeposit(args: Record<string, number | string | boolean>, sign
     const destProvider = await getProvider(destinationChainId);
     const destSigner = signer.connect(destProvider);
 
-    const erc20 = new Contract(outputToken, ERC20.abi, destSigner);
+    const erc20 = new Contract(outputToken.toNative(), ERC20.abi, destSigner);
     const allowance = await erc20.allowance(sender, destSpokePool.address);
     if (outputAmount.gt(allowance)) {
       const approvalAmount = outputAmount.mul(5);
@@ -545,6 +637,7 @@ async function run(argv: string[]): Promise<number> {
     default:
       return usage(cmd) ? NODE_SUCCESS : NODE_INPUT_ERR;
   }
+  await disconnectRedisClients();
 
   return result ? NODE_SUCCESS : NODE_APP_ERR;
 }

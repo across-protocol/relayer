@@ -1,7 +1,7 @@
 import { assert } from "chai";
 import { random } from "lodash";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
-import { ConfigStoreClient, FillProfit, SpokePoolClient } from "../src/clients";
+import { ConfigStoreClient, FillProfit, EVMSpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
 import {
   bnZero,
@@ -16,6 +16,10 @@ import {
   toBNWei,
   toGWei,
   TOKEN_SYMBOLS_MAP,
+  toAddressType,
+  EvmAddress,
+  SvmAddress,
+  ZERO_BYTES,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
@@ -45,17 +49,17 @@ describe("ProfitClient: Consider relay profit", () => {
     originChainId,
     depositId: BigNumber.from(1),
     destinationChainId,
-    depositor: randomAddress(),
-    recipient: randomAddress(),
-    inputToken: randomAddress(),
+    depositor: toAddressType(randomAddress(), originChainId),
+    recipient: toAddressType(randomAddress(), destinationChainId),
+    inputToken: toAddressType(randomAddress(), originChainId),
     inputAmount: outputAmount.mul(fixedPoint).div(fixedPoint.sub(lpFeePct.add(relayerFeePct).add(gasFeePct))),
-    outputToken: randomAddress(),
+    outputToken: toAddressType(randomAddress(), destinationChainId),
     outputAmount,
     quoteTimestamp: now,
     message: sdkConstants.EMPTY_MESSAGE,
     fillDeadline: now,
     exclusivityDeadline: 0,
-    exclusiveRelayer: ZERO_ADDRESS,
+    exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
     fromLiteChain: false,
     toLiteChain: false,
   };
@@ -154,7 +158,7 @@ describe("ProfitClient: Consider relay profit", () => {
           spokeChainId,
           chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
         );
-        const spokePoolClient = new SpokePoolClient(
+        const spokePoolClient = new EVMSpokePoolClient(
           spyLogger,
           spokePool.connect(owner),
           null,
@@ -172,7 +176,8 @@ describe("ProfitClient: Consider relay profit", () => {
       hubPoolClient,
       spokePoolClients,
       [],
-      randomAddress(),
+      EvmAddress.from(randomAddress()),
+      SvmAddress.from(ZERO_BYTES),
       minRelayerFeePct,
       debugProfitability
     );
@@ -270,7 +275,6 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Verify token price and gas cost lookup failures", async () => {
     const outputAmount = toBNWei(1);
     const l1Token = tokens.WETH;
-    hubPoolClient.setTokenInfoToReturn(l1Token);
 
     for (const destinationChainId of chainIds) {
       const deposit = { ...v3DepositTemplate, outputAmount, destinationChainId };
@@ -305,8 +309,8 @@ describe("ProfitClient: Consider relay profit", () => {
         const { nativeGasCost: baseNativeGasCost, gasPrice } = gasCost[destinationChainId];
 
         for (const token of Object.values(tokens)) {
-          const inputToken = randomAddress();
-          const outputToken = randomAddress();
+          const inputToken = toAddressType(randomAddress(), originChainId);
+          const outputToken = toAddressType(randomAddress(), destinationChainId);
 
           const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
           const inputAmount = outputAmount
@@ -321,8 +325,9 @@ describe("ProfitClient: Consider relay profit", () => {
             outputToken,
             outputAmount,
           };
-          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
-          hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
+          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken.toNative());
+          hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -381,8 +386,8 @@ describe("ProfitClient: Consider relay profit", () => {
         const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
         for (const token of Object.values(tokens)) {
-          const inputToken = randomAddress();
-          const outputToken = randomAddress();
+          const inputToken = toAddressType(randomAddress(), originChainId);
+          const outputToken = toAddressType(randomAddress(), destinationChainId);
 
           const outputAmount = toBN(1).mul(bn10.pow(token.decimals));
           const inputAmount = outputAmount
@@ -397,8 +402,8 @@ describe("ProfitClient: Consider relay profit", () => {
             outputToken,
             outputAmount,
           };
-          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken);
-          hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
+          hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken.toNative());
+          hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -497,8 +502,9 @@ describe("ProfitClient: Consider relay profit", () => {
   it("Considers updated deposits", async () => {
     const deposit = { ...v3DepositTemplate };
     const l1Token = tokens.WETH;
-    hubPoolClient.setTokenMapping(l1Token.address, originChainId, deposit.inputToken);
-    hubPoolClient.mapTokenInfo(deposit.outputToken, l1Token.symbol, l1Token.decimals);
+    hubPoolClient.setTokenMapping(l1Token.address, originChainId, deposit.inputToken.toEvmAddress());
+    hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), l1Token.symbol, l1Token.decimals);
+    hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), l1Token.symbol, l1Token.decimals);
     randomiseGasCost(destinationChainId);
 
     const outputTokenPriceUsd = profitClient.getPriceOfToken(l1Token.symbol);
@@ -516,8 +522,9 @@ describe("ProfitClient: Consider relay profit", () => {
     const updatedOutputAmount = v3DepositTemplate.outputAmount.add(bnOne);
     const deposit = { ...v3DepositTemplate, updatedOutputAmount };
 
-    hubPoolClient.setTokenMapping(tokens.WETH.address, originChainId, deposit.inputToken);
-    hubPoolClient.mapTokenInfo(deposit.outputToken, tokens.WETH.symbol, tokens.WETH.decimals);
+    hubPoolClient.setTokenMapping(tokens.WETH.address, originChainId, deposit.inputToken.toEvmAddress());
+    hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), tokens.WETH.symbol, tokens.WETH.decimals);
+    hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), tokens.WETH.symbol, tokens.WETH.decimals);
     const outputTokenPriceUsd = profitClient.getPriceOfToken(tokens.WETH.symbol);
 
     let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);

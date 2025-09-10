@@ -1,7 +1,7 @@
 import winston from "winston";
 import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
 import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { assert, CHAIN_IDs, ethers, isDefined } from "../utils";
+import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -11,7 +11,6 @@ export interface ProcessEnv {
 export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
-  readonly ignoredAddresses: Set<string>;
   readonly maxBlockLookBack: { [key: number]: number };
   readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
@@ -26,12 +25,13 @@ export class CommonConfig {
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
+  public fromBlockOverride: Record<number, number> = {};
+  public addressFilter: Set<string>;
 
   constructor(env: ProcessEnv) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
-      IGNORED_ADDRESSES,
       HUB_CHAIN_ID,
       POLLING_DELAY,
       MAX_BLOCK_LOOK_BACK,
@@ -70,8 +70,6 @@ export class CommonConfig {
     assert(!isNaN(this.maxConfigVersion), `Invalid maximum config version: ${this.maxConfigVersion}`);
 
     this.blockRangeEndBlockBuffer = mergeConfig(Constants.BUNDLE_END_BLOCK_BUFFERS, BLOCK_RANGE_END_BLOCK_BUFFER);
-
-    this.ignoredAddresses = new Set(JSON.parse(IGNORED_ADDRESSES ?? "[]").map(ethers.utils.getAddress));
 
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
@@ -134,6 +132,34 @@ export class CommonConfig {
         assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
         this.toBlockOverride[chainId] = toBlock;
       }
+      // Load any fromBlock overrides.
+      const fromBlock = Number(process.env[`FROM_BLOCK_OVERRIDE_${chainId}`]) || undefined;
+      if (isDefined(fromBlock)) {
+        assert(fromBlock > 0, `FROM_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
+        this.fromBlockOverride[chainId] = fromBlock;
+      }
     }
+  }
+
+  /**
+   * Perform runtime dynamic configuration update. Blocking tasks can be performed here.
+   * @param logger Logger instance.
+   */
+  async update(logger: winston.Logger): Promise<void> {
+    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
+    const noFilter = DISABLE_ADDRESS_FILTER === "true";
+    if (noFilter) {
+      logger.debug({ at: "Config::update", message: "Skipping address list update." });
+      return Promise.resolve();
+    }
+
+    const addressAggregator = new AddressAggregator(
+      [
+        new addressAdapters.fs.AddressList({ path, logger }),
+        new addressAdapters.risklabs.AddressList({ logger, throwOnError: false }),
+      ],
+      logger
+    );
+    this.addressFilter = await addressAggregator.update();
   }
 }

@@ -8,11 +8,12 @@ import {
   ERC20,
   TOKEN_SYMBOLS_MAP,
   assert,
-  getL1TokenInfo,
+  getL1TokenAddress,
   Contract,
   fromWei,
   blockExplorerLink,
   getNativeTokenSymbol,
+  getTokenInfo,
 } from "../src/utils";
 import { CONTRACT_ADDRESSES } from "../src/common";
 import { askYesNoQuestion } from "./utils";
@@ -43,34 +44,29 @@ export async function run(): Promise<void> {
   const connectedSigner = baseSigner.connect(await getProvider(chainId));
   const l2Token = TOKEN_SYMBOLS_MAP[args.token]?.addresses[chainId];
   assert(l2Token, `${args.token} not found on chain ${chainId} in TOKEN_SYMBOLS_MAP`);
-  const l1TokenInfo = getL1TokenInfo(l2Token, chainId);
-  console.log("Fetched L1 token info:", l1TokenInfo);
+  const l1TokenAddress = getL1TokenAddress(l2Token, chainId);
+  const { decimals, symbol } = getTokenInfo(l2Token, chainId);
   const amount = args.amount;
-  const amountFromWei = ethers.utils.formatUnits(amount, l1TokenInfo.decimals);
+  const amountFromWei = ethers.utils.formatUnits(amount, decimals);
   console.log(`Amount to bridge from chain ${chainId}: ${amountFromWei} ${l2Token}`);
 
   const erc20 = new Contract(l2Token, ERC20.abi, connectedSigner);
   const currentBalance = await erc20.balanceOf(signerAddr);
   const nativeTokenSymbol = getNativeTokenSymbol(chainId);
   const currentNativeBalance = await connectedSigner.getBalance();
-  console.log(
-    `Current ${l1TokenInfo.symbol} balance for account ${signerAddr}: ${fromWei(
-      currentBalance,
-      l1TokenInfo.decimals
-    )} ${l2Token}`
-  );
+  console.log(`Current ${symbol} balance for account ${signerAddr}: ${fromWei(currentBalance, decimals)} ${l2Token}`);
   console.log(
     `Current native ${nativeTokenSymbol} token balance for account ${signerAddr}: ${fromWei(currentNativeBalance, 18)}`
   );
 
   // Now, submit a withdrawal:
   let contract: Contract, functionName: string, functionArgs: any[];
-  if (l1TokenInfo.symbol !== nativeTokenSymbol) {
-    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20Gateway;
+  if (symbol !== nativeTokenSymbol) {
+    const arbErc20GatewayObj = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
     contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
     functionName = "outboundTransfer";
     functionArgs = [
-      l1TokenInfo.address, // l1Token
+      l1TokenAddress, // l1Token
       signerAddr, // to
       amount, // amount
       "0x", // data

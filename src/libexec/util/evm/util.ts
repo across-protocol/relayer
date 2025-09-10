@@ -5,7 +5,7 @@ import { Log, ScraperOpts } from "../../types";
 
 /**
  * Given an event name and contract, return the corresponding Ethers EventFilter object.
- * @param contract Ethers Constract instance.
+ * @param contract Ethers Contract instance.
  * @param eventName The name of the event to be filtered.
  * @param filterArgs Optional filter arguments to be applied.
  * @returns An Ethers EventFilter instance.
@@ -36,7 +36,7 @@ export function getEventFilterArgs(relayer?: string): { [event: string]: (null |
 /**
  * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
  * parent process (if defined).
- * @param spokePool Ethers Constract instance.
+ * @param spokePool Ethers Contract instance.
  * @param eventName The name of the event to be filtered.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
@@ -57,7 +57,7 @@ export async function scrapeEvents(
 
   const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
-  const searchConfig = { fromBlock, toBlock, maxBlockLookBack: maxBlockRange };
+  const searchConfig = { from: fromBlock, to: toBlock, maxLookBack: maxBlockRange };
 
   const mark = profiler.start("paginatedEventQuery");
   const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);

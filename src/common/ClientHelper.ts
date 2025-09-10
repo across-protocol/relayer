@@ -1,6 +1,7 @@
 import assert from "assert";
 import winston from "winston";
 import {
+  chainIsSvm,
   getProvider,
   getDeployedContract,
   getDeploymentBlockNumber,
@@ -13,11 +14,23 @@ import {
   isDefined,
   getRedisCache,
   getArweaveJWKSigner,
+  chainIsEvm,
+  forEachAsync,
+  isEVMSpokePoolClient,
+  getSvmProvider,
+  getBlockFinder,
 } from "../utils";
-import { HubPoolClient, MultiCallerClient, ConfigStoreClient, SpokePoolClient } from "../clients";
+import {
+  HubPoolClient,
+  MultiCallerClient,
+  ConfigStoreClient,
+  EVMSpokePoolClient,
+  SVMSpokePoolClient,
+  SpokePoolClient,
+} from "../clients";
 import { CommonConfig } from "./Config";
 import { SpokePoolClientsByChain } from "../interfaces";
-import { caching, clients, utils as sdkUtils } from "@across-protocol/sdk";
+import { caching, clients, arch } from "@across-protocol/sdk";
 import V3_SPOKE_POOL_ABI from "./abi/V3SpokePool.json";
 
 export interface Clients {
@@ -70,8 +83,16 @@ export async function resolveSpokePoolActivationBlock(
   const blockFinder = undefined;
   const mainnetActivationBlock = hubPoolClient.getSpokePoolActivationBlock(chainId, spokePoolAddr);
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
-  const hints = { lowBlock: getDeploymentBlockNumber("SpokePool", chainId) };
-  const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
+  const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
+  const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
+  const activationBlock = await getBlockForTimestamp(
+    hubPoolClient.logger,
+    chainId,
+    timestamp,
+    blockFinder,
+    redis,
+    hints
+  );
 
   const cacheAfter = 5 * 24 * 3600; // 5 days
   if (isDefined(redis) && getCurrentTime() - timestamp > cacheAfter) {
@@ -116,7 +137,7 @@ export async function constructSpokePoolClientsWithLookback(
   // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
-  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
+  const fromBlock_1 = await getBlockForTimestamp(logger, hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
   assert(enabledChains.length > 0, "No SpokePool chains configured");
 
@@ -127,8 +148,11 @@ export async function constructSpokePoolClientsWithLookback(
       enabledChains.map(async (chainId) => {
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
+        } else if (isDefined(config.fromBlockOverride[chainId])) {
+          return [chainId, config.fromBlockOverride[chainId]];
         } else {
-          return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
+          const blockFinder = await getBlockFinder(logger, chainId);
+          return [chainId, await getBlockForTimestamp(logger, chainId, lookback, blockFinder, redis)];
         }
       })
     )
@@ -204,33 +228,39 @@ export async function constructSpokePoolClientsWithStartBlocks(
   const spokePoolSigners = await getSpokePoolSigners(baseSigner, enabledChains);
   const spokePools = await Promise.all(
     enabledChains.map(async (chainId) => {
-      const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
-      // TODO: initialize using typechain factory after V3.5 migration.
-      // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
-      const spokePoolContract = new ethers.Contract(
-        spokePoolAddr,
-        [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
-        spokePoolSigners[chainId]
-      );
       const registrationBlock = await resolveSpokePoolActivationBlock(chainId, hubPoolClient, toBlockOverride[1]);
-      return { chainId, contract: spokePoolContract, registrationBlock };
+      if (chainIsEvm(chainId)) {
+        const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId, toBlockOverride[1]);
+        // TODO: initialize using typechain factory after V3.5 migration.
+        // const spokePoolContract = SpokePool.connect(spokePoolAddr, spokePoolSigners[chainId]);
+        const spokePoolContract = new ethers.Contract(
+          spokePoolAddr.toEvmAddress(),
+          [...SpokePool.abi, ...V3_SPOKE_POOL_ABI],
+          spokePoolSigners[chainId]
+        );
+        return { chainId, contract: spokePoolContract, registrationBlock };
+      } else {
+        // The hub pool client can only return the truncated address of the SVM spoke pool, so if the chain is non-evm, then fallback
+        // to the definitions in the contracts repository.
+        return { chainId, contract: undefined, registrationBlock };
+      }
     })
   );
 
   // Explicitly set toBlocks for all chains so we can re-use them in other clients to make sure they all query
   // state to the same "latest" block per chain.
-  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestBlockSearched);
+  const hubPoolBlock = await hubPoolClient.hubPool.provider.getBlock(hubPoolClient.latestHeightSearched);
   const latestBlocksForChain: Record<number, number> = Object.fromEntries(
     await Promise.all(
       enabledChains.map(async (chainId) => {
         // Allow caller to hardcode the spoke pool client end blocks.
-        if (isDefined(toBlockOverride[chainId])) {
-          return [chainId, toBlockOverride[chainId]];
+        if (isDefined(config.toBlockOverride[chainId])) {
+          return [chainId, config.toBlockOverride[chainId]];
         }
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
         } else {
-          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          const toBlock = await getBlockForTimestamp(logger, chainId, hubPoolBlock.timestamp, blockFinder, redis);
           return [chainId, toBlock];
         }
       })
@@ -247,14 +277,14 @@ export async function constructSpokePoolClientsWithStartBlocks(
  * @param toBlocks Mapping of chainId to toBlocks per chain to set in SpokePoolClients.
  * @returns Mapping of chainId to SpokePoolClient
  */
-export function getSpokePoolClientsForContract(
+export async function getSpokePoolClientsForContract(
   logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   config: CommonConfig,
   spokePools: { chainId: number; contract: Contract; registrationBlock: number }[],
   fromBlocks: { [chainId: number]: number },
   toBlocks: { [chainId: number]: number }
-): SpokePoolClientsByChain {
+): Promise<SpokePoolClientsByChain> {
   logger.debug({
     at: "ClientHelper#getSpokePoolClientsForContract",
     message: "Constructing SpokePoolClients",
@@ -263,7 +293,7 @@ export function getSpokePoolClientsForContract(
   });
 
   const spokePoolClients: SpokePoolClientsByChain = {};
-  spokePools.forEach(({ chainId, contract, registrationBlock }) => {
+  await forEachAsync(spokePools, async ({ chainId, contract, registrationBlock }) => {
     if (!isDefined(fromBlocks[chainId])) {
       logger.debug({
         at: "ClientHelper#getSpokePoolClientsForContract",
@@ -278,18 +308,29 @@ export function getSpokePoolClientsForContract(
       });
     }
     const spokePoolClientSearchSettings = {
-      fromBlock: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
-      toBlock: toBlocks[chainId],
-      maxBlockLookBack: config.maxBlockLookBack[chainId],
+      from: fromBlocks[chainId] ? Math.max(fromBlocks[chainId], registrationBlock) : registrationBlock,
+      to: toBlocks[chainId],
+      maxLookBack: config.maxBlockLookBack[chainId],
     };
-    spokePoolClients[chainId] = new SpokePoolClient(
-      logger,
-      contract,
-      hubPoolClient,
-      chainId,
-      registrationBlock,
-      spokePoolClientSearchSettings
-    );
+    if (chainIsEvm(chainId)) {
+      spokePoolClients[chainId] = new EVMSpokePoolClient(
+        logger,
+        contract,
+        hubPoolClient,
+        chainId,
+        registrationBlock,
+        spokePoolClientSearchSettings
+      );
+    } else {
+      spokePoolClients[chainId] = await SVMSpokePoolClient.create(
+        logger,
+        hubPoolClient,
+        chainId,
+        BigInt(registrationBlock),
+        spokePoolClientSearchSettings,
+        getSvmProvider(await getRedisCache())
+      );
+    }
   });
 
   return spokePoolClients;
@@ -299,7 +340,14 @@ export async function updateSpokePoolClients(
   spokePoolClients: { [chainId: number]: SpokePoolClient },
   eventsToQuery?: string[]
 ): Promise<void> {
-  await Promise.all(Object.values(spokePoolClients).map((client: SpokePoolClient) => client.update(eventsToQuery)));
+  await Promise.all(
+    Object.values(spokePoolClients).map((client) =>
+      // SVM does not implement RequestedSpeedUpDeposit.
+      chainIsSvm(client.chainId)
+        ? client.update(eventsToQuery.filter((event) => event !== "RequestedSpeedUpDeposit"))
+        : client.update(eventsToQuery)
+    )
+  );
 }
 
 export async function constructClients(
@@ -313,9 +361,9 @@ export async function constructClients(
   const latestMainnetBlock = await hubPoolProvider.getBlockNumber();
 
   const rateModelClientSearchSettings = {
-    fromBlock: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
-    toBlock: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
-    maxBlockLookBack: config.maxBlockLookBack[config.hubPoolChainId],
+    from: Number(getDeploymentBlockNumber("AcrossConfigStore", config.hubPoolChainId)),
+    to: config.toBlockOverride[config.hubPoolChainId] ?? latestMainnetBlock,
+    maxLookBack: config.maxBlockLookBack[config.hubPoolChainId],
   };
 
   const configStore = getDeployedContract("AcrossConfigStore", config.hubPoolChainId, hubSigner);
@@ -327,11 +375,11 @@ export async function constructClients(
   );
 
   const hubPoolDeploymentBlock = Number(getDeploymentBlockNumber("HubPool", config.hubPoolChainId));
-  const { average: avgMainnetBlockTime } = await sdkUtils.averageBlockTime(hubPoolProvider);
+  const { average: avgMainnetBlockTime } = await arch.evm.averageBlockTime(hubPoolProvider);
   const fromBlock = isDefined(hubPoolLookback)
     ? Math.max(latestMainnetBlock - hubPoolLookback / avgMainnetBlockTime, hubPoolDeploymentBlock)
     : hubPoolDeploymentBlock;
-  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, fromBlock };
+  const hubPoolClientSearchSettings = { ...rateModelClientSearchSettings, from: fromBlock };
 
   // Create contract instances for each chain for each required contract.
   const hubPool = getDeployedContract("HubPool", config.hubPoolChainId, hubSigner);
@@ -374,10 +422,12 @@ export function spokePoolClientsToProviders(spokePoolClients: { [chainId: number
 } {
   return Object.fromEntries(
     Object.entries(spokePoolClients)
-      .map(([chainId, client]): [number, ethers.providers.Provider] => [
-        Number(chainId),
-        client.spokePool.signer.provider,
-      ])
+      .map(([chainId, client]): [number, ethers.providers.Provider] => {
+        if (isEVMSpokePoolClient(client)) {
+          return [Number(chainId), client.spokePool.signer.provider];
+        }
+        return [Number(chainId), undefined];
+      })
       .filter(([, provider]) => !!provider)
   );
 }

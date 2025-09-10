@@ -11,11 +11,11 @@ import {
   UsdcTokenSplitterBridge,
 } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
-import { SpokePoolClient } from "../../src/clients";
+import { EVMSpokePoolClient } from "../../src/clients";
 
 import { ZERO_ADDRESS } from "../constants";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createSpyLogger, toBN } from "../utils";
-import { hashCCTPSourceAndNonce, getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
 
 const atomicDepositorAddress = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].atomicDepositor.address;
 const l1WethAddress = TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET];
@@ -42,7 +42,6 @@ let daiBridgeContract: Contract;
 let snxBridgeContract: Contract;
 let erc20BridgeContract: Contract;
 let cctpBridgeContract: Contract;
-let cctpMessageTransmitterContract: Contract;
 
 let wethContract: Contract;
 let spokePoolContract: Contract;
@@ -60,17 +59,20 @@ class TestBaseChainAdapter extends BaseChainAdapter {
     this.bridges[address].l2Weth = l2Weth;
   }
 
-  public setCctpBridge(address: string, cctpBridge: Contract, messageTransmitter: Contract) {
+  public setCctpBridge(address: string, cctpBridge: Contract) {
     this.bridges[address].cctpBridge.l1Bridge = cctpBridge;
-    this.bridges[address].cctpBridge.l2Bridge = messageTransmitter;
+    this.bridges[address].cctpBridge.l2Bridge = cctpBridge;
   }
 }
 
 describe("Cross Chain Adapter: OP Stack", async function () {
+  const toAddress = (address: string): EvmAddress => {
+    return EvmAddress.from(address);
+  };
   beforeEach(async function () {
     searchConfig = {
-      fromBlock: 0,
-      toBlock: 1_000_000,
+      from: 0,
+      to: 1_000_000,
     };
     const [deployer] = await ethers.getSigners();
 
@@ -83,7 +85,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     snxBridgeContract = await (await getContractFactory("OpStackSnxBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
     cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
-    cctpMessageTransmitterContract = await (await getContractFactory("CctpMessageTransmitter", deployer)).deploy();
 
     const bridges = {
       [l1WethAddress]: new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, deployer, deployer, undefined),
@@ -107,11 +108,11 @@ describe("Cross Chain Adapter: OP Stack", async function () {
 
     spokePoolContract = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
-    const l2SpokePoolClient = new SpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.OPTIMISM, 0, {
-      fromBlock: 0,
+    const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.OPTIMISM, 0, {
+      from: 0,
     });
-    const l1SpokePoolClient = new SpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.MAINNET, 0, {
-      fromBlock: 0,
+    const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePoolContract, null, CHAIN_IDs.MAINNET, 0, {
+      from: 0,
     });
 
     adapter = new TestBaseChainAdapter(
@@ -121,7 +122,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       },
       CHAIN_IDs.OPTIMISM,
       CHAIN_IDs.MAINNET,
-      [monitoredEoa],
+      [toAddress(monitoredEoa)],
       logger,
       ["WETH", "SNX", "DAI", "WBTC", "USDC"],
       bridges,
@@ -132,12 +133,12 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     adapter.setBridge(l1SnxAddress, snxBridgeContract);
     adapter.setBridge(l1DaiAddress, daiBridgeContract);
     adapter.setBridge(l1Erc20Address, erc20BridgeContract);
-    adapter.setCctpBridge(l1UsdcAddress, cctpBridgeContract, cctpMessageTransmitterContract);
+    adapter.setCctpBridge(l1UsdcAddress, cctpBridgeContract);
     adapter.setL2Weth(l1WethAddress, wethContract);
 
     // Required to pass checks in `BaseAdapter.getUpdatedSearchConfigs`
-    l2SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
-    l1SpokePoolClient.latestBlockSearched = searchConfig.toBlock;
+    l2SpokePoolClient.latestHeightSearched = searchConfig.to;
+    l1SpokePoolClient.latestHeightSearched = searchConfig.to;
   });
 
   describe("WETH", function () {
@@ -150,11 +151,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, randomAddress(), 1);
       await wethBridgeContract.emitDepositInitiated(atomicDepositorAddress, monitoredEoa, 1);
       const result = (
-        await wethBridge.queryL1BridgeInitiationEvents(l1WethAddress, monitoredEoa, undefined, searchConfig)
+        await wethBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1WethAddress),
+          toAddress(monitoredEoa),
+          undefined,
+          searchConfig
+        )
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from).to.equal(atomicDepositorAddress);
-      expect(result[0].to).to.equal(monitoredEoa);
       expect(result[0].amount).to.equal(1);
     });
     // TODO: Add unit tests when from address is contract but need to change the providers such that we can
@@ -165,18 +169,26 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       // For EOA's, weth transfer from address should be atomic depositor address
       await wethBridgeContract.emitDepositFinalized(atomicDepositorAddress, monitoredEoa, 1);
       const emptyResult = (
-        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await wethBridge.queryL2BridgeFinalizationEvents(
+          toAddress(l1WethAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2WethAddress];
       expect(emptyResult.length).to.equal(0);
 
       // Mine Deposit event now.
       await wethContract.connect(monitoredEoaAccount).deposit({ value: 0 });
       const result = (
-        await wethBridge.queryL2BridgeFinalizationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await wethBridge.queryL2BridgeFinalizationEvents(
+          toAddress(l1WethAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2WethAddress];
       expect(result.length).to.equal(1);
-      expect(result[0].from).to.equal(atomicDepositorAddress);
-      expect(result[0].to).to.equal(monitoredEoa);
     });
   });
 
@@ -187,11 +199,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await snxBridgeContract.emitDepositInitiated(notMonitoredEoa, notMonitoredEoa, 1);
 
       const events = (
-        await snxBridge.queryL1BridgeInitiationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await snxBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1SnxAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to).to.equal(monitoredEoa);
-      expect(events[0].from).to.equal(monitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -200,10 +215,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await snxBridgeContract.emitDepositFinalized(monitoredEoa, 1);
 
       const events = (
-        await snxBridge.queryL2BridgeFinalizationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await snxBridge.queryL2BridgeFinalizationEvents(
+          toAddress(l1SnxAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2SnxAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].to).to.equal(monitoredEoa);
     });
   });
 
@@ -214,11 +233,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await daiBridgeContract.emitDepositInitiated(l1DaiAddress, l2DaiAddress, notMonitoredEoa, monitoredEoa, 1);
 
       const events = (
-        await daiBridge.queryL1BridgeInitiationEvents(l1DaiAddress, monitoredEoa, undefined, searchConfig)
+        await daiBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1DaiAddress),
+          toAddress(monitoredEoa),
+          undefined,
+          searchConfig
+        )
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -227,11 +249,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await daiBridgeContract.emitDepositFinalized(l1DaiAddress, l2DaiAddress, notMonitoredEoa, monitoredEoa, 1);
 
       const events = (
-        await daiBridge.queryL2BridgeFinalizationEvents(l1DaiAddress, monitoredEoa, undefined, searchConfig)
+        await daiBridge.queryL2BridgeFinalizationEvents(
+          toAddress(l1DaiAddress),
+          toAddress(monitoredEoa),
+          undefined,
+          searchConfig
+        )
       )[l2DaiAddress];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
   });
 
@@ -242,11 +267,14 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await erc20BridgeContract.emitDepositInitiated(l1Erc20Address, l2Erc20Address, notMonitoredEoa, monitoredEoa, 1);
 
       const events = (
-        await erc20Bridge.queryL1BridgeInitiationEvents(l1Erc20Address, monitoredEoa, undefined, searchConfig)
+        await erc20Bridge.queryL1BridgeInitiationEvents(
+          toAddress(l1Erc20Address),
+          toAddress(monitoredEoa),
+          undefined,
+          searchConfig
+        )
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
 
     it("return only relevant L2 bridge finalization events", async () => {
@@ -255,17 +283,19 @@ describe("Cross Chain Adapter: OP Stack", async function () {
       await erc20BridgeContract.emitDepositFinalized(l1Erc20Address, l2Erc20Address, notMonitoredEoa, monitoredEoa, 1);
 
       const events = (
-        await erc20Bridge.queryL2BridgeFinalizationEvents(l1Erc20Address, monitoredEoa, undefined, searchConfig)
+        await erc20Bridge.queryL2BridgeFinalizationEvents(
+          toAddress(l1Erc20Address),
+          toAddress(monitoredEoa),
+          undefined,
+          searchConfig
+        )
       )[l2Erc20Address];
       expect(events.length).to.equal(1);
-      expect(events[0].from).to.equal(monitoredEoa);
-      expect(events[0].to).to.equal(notMonitoredEoa);
     });
   });
 
-  describe("USDC token splitter bridge", () => {
+  describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const usdcTokenSplitterBridge = adapter.bridges[l1UsdcAddress];
       const processedNonce = 1;
       const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
@@ -275,7 +305,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
@@ -285,24 +315,12 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
-        ethers.utils.hexZeroPad(cctpMessageTransmitterContract.address, 32),
+        ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpMessageTransmitterContract.setUsedNonce(
-        hashCCTPSourceAndNonce(getCctpDomainForChainId(CHAIN_IDs.MAINNET), processedNonce),
-        processedNonce
-      );
-
-      const events = (
-        await usdcTokenSplitterBridge.queryL1BridgeInitiationEvents(
-          l1UsdcAddress,
-          monitoredEoa,
-          undefined,
-          searchConfig
-        )
-      )[l2UsdcAddress];
-      expect(events.length).to.equal(1);
-      expect(events[0].nonce.toString()).to.equal(unprocessedNonce.toString());
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1UsdcAddress)]);
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
     });
   });
 
@@ -369,43 +387,68 @@ describe("Cross Chain Adapter: OP Stack", async function () {
 
       // Get deposit tx hashes of outstanding transfers
       const outstandingWethEvent = (
-        await wethBridge.queryL1BridgeInitiationEvents(l1WethAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await wethBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1WethAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2WethAddress].find((event) => event.amount.toNumber() === outstandingAmount);
       const outstandingSnxEvent = (
-        await snxBridge.queryL1BridgeInitiationEvents(l1SnxAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await snxBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1SnxAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2SnxAddress].find((event) => event.amount.toNumber() === outstandingAmount);
       const outstandingDaiEvent = (
-        await daiBridge.queryL1BridgeInitiationEvents(l1DaiAddress, monitoredEoa, monitoredEoa, searchConfig)
+        await daiBridge.queryL1BridgeInitiationEvents(
+          toAddress(l1DaiAddress),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2DaiAddress].find((event) => event.amount.toNumber() === outstandingAmount);
       const outstandingErc20Event = (
-        await erc20Bridge.queryL1BridgeInitiationEvents(l1Erc20Address, monitoredEoa, monitoredEoa, searchConfig)
+        await erc20Bridge.queryL1BridgeInitiationEvents(
+          toAddress(l1Erc20Address),
+          toAddress(monitoredEoa),
+          toAddress(monitoredEoa),
+          searchConfig
+        )
       )[l2Erc20Address].find((event) => event.amount.toNumber() === outstandingAmount);
 
       const outstandingOfMonitored = (
-        await adapter.getOutstandingCrossChainTransfers([l1WethAddress, l1SnxAddress, l1DaiAddress, l1Erc20Address])
+        await adapter.getOutstandingCrossChainTransfers([
+          toAddress(l1WethAddress),
+          toAddress(l1SnxAddress),
+          toAddress(l1DaiAddress),
+          toAddress(l1Erc20Address),
+        ])
       )[monitoredEoa];
       expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1WethAddress][l2WethAddress].depositTxHashes).to.deep.equal([
-        outstandingWethEvent?.transactionHash,
+        outstandingWethEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1SnxAddress][l2SnxAddress].depositTxHashes).to.deep.equal([
-        outstandingSnxEvent?.transactionHash,
+        outstandingSnxEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1DaiAddress][l2DaiAddress].depositTxHashes).to.deep.equal([
-        outstandingDaiEvent?.transactionHash,
+        outstandingDaiEvent?.txnRef,
       ]);
       expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].totalAmount).to.equal(toBN(1));
       expect(outstandingOfMonitored[l1Erc20Address][l2Erc20Address].depositTxHashes).to.deep.equal([
-        outstandingErc20Event?.transactionHash,
+        outstandingErc20Event?.txnRef,
       ]);
     });
 
     it("return simulated success tx if above threshold", async () => {
-      const tx = await adapter.wrapEthIfAboveThreshold(toBN(0), toBN(1), true);
+      const tx = await adapter.wrapNativeTokenIfAboveThreshold(toBN(0), toBN(1), true);
       expect(tx).to.not.be.null;
-      expect(tx?.hash).to.equal(ZERO_ADDRESS);
+      expect(tx?.hash).to.equal(ZERO_BYTES);
     });
   });
 });

@@ -13,7 +13,6 @@ import {
   lastSpyLogLevel,
   requestSlowFill,
   sinon,
-  toBNWei,
   utf8ToHex,
 } from "./utils";
 
@@ -89,7 +88,7 @@ describe("Dataworker: Propose root bundle", async function () {
     const expectedSlowRelayRefundRoot2 = await dataworkerInstance.buildSlowRelayRoot(blockRange2, spokePoolClients);
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     // Should have enqueued a new transaction:
-    expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot2.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot2.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot2.tree.getHexRoot());
@@ -114,7 +113,7 @@ describe("Dataworker: Propose root bundle", async function () {
         leaf.netSendAmounts,
         leaf.runningBalances,
         leaf.leafId,
-        leaf.l1Tokens,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
         expectedPoolRebalanceRoot2.tree.getHexProof(leaf)
       );
     }
@@ -148,15 +147,10 @@ describe("Dataworker: Propose root bundle", async function () {
     );
     const expectedSlowRelayRefundRoot4 = await dataworkerInstance.buildSlowRelayRoot(blockRange4, spokePoolClients);
 
-    // TEST 5:
-    // Won't submit anything if the USD threshold to propose a root is set and set too high:
-    await dataworkerInstance.proposeRootBundle(spokePoolClients, toBNWei("1000000"));
-    expect(lastSpyLogIncludes(spy, "Root bundle USD volume does not exceed threshold, exiting early")).to.be.true;
-
     // TEST 4: cont.
     await dataworkerInstance.proposeRootBundle(spokePoolClients);
     // Should have enqueued a new transaction:
-    expect(lastSpyLogIncludes(spy, "Enqueing new root bundle proposal txn")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Enqueuing new root bundle proposal txn")).to.be.true;
     expect(spy.getCall(-1).lastArg.poolRebalanceRoot).to.equal(expectedPoolRebalanceRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.relayerRefundRoot).to.equal(expectedRelayerRefundRoot4.tree.getHexRoot());
     expect(spy.getCall(-1).lastArg.slowRelayRoot).to.equal(expectedSlowRelayRefundRoot4.tree.getHexRoot());

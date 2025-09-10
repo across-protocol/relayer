@@ -1,18 +1,28 @@
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BigNumber, compareAddressesSimple, ethers, isDefined } from ".";
+import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import {
+  compareAddressesSimple,
+  ethers,
+  getRemoteTokenForL1Token,
+  isDefined,
+  Address,
+  EvmAddress,
+  toAddressType,
+} from ".";
+import {
+  AccountRole,
+  type Address as KitAddress,
+  type WritableAccount,
+  type ReadonlyAccount,
+  type AddressesByLookupTableAddress,
+  type IInstruction,
+  type TransactionSigner,
+} from "@solana/kit";
+import { getExtendLookupTableInstruction } from "@solana-program/address-lookup-table";
 
-export function compareAddresses(addressA: string, addressB: string): 1 | -1 | 0 {
-  // Convert address strings to BigNumbers and then sort numerical value of the BigNumber, which sorts the addresses
-  // effectively by their hex value.
-  const bnAddressA = BigNumber.from(addressA);
-  const bnAddressB = BigNumber.from(addressB);
-  if (bnAddressA.gt(bnAddressB)) {
-    return 1;
-  } else if (bnAddressA.lt(bnAddressB)) {
-    return -1;
-  } else {
-    return 0;
-  }
+// Solana ALT utility type.
+interface LookupTableDefinitions {
+  instructions: IInstruction[];
+  lookupTableMap: AddressesByLookupTableAddress;
 }
 
 export function includesAddressSimple(address: string | undefined, list: string[]): boolean {
@@ -50,58 +60,78 @@ export function resolveTokenDecimals(tokenSymbol: string): number {
 }
 
 /**
- * Resolves a list of token symbols for a list of token addresses and a chain ID.
- * @dev This function is dangerous because multiple token addresses can map to the same token symbol
- * so the output can be unexpected.
- * @param tokenAddresses The token addresses to resolve the symbols for.
- * @param chainId The chain ID to resolve the symbols for.
- * @returns The token symbols for the given token addresses and chain ID. Undefined symbols are filtered out.
+ * @notice Returns the token address for a given token address on a given chain ID and lets caller specify
+ * whether they want the native or bridged USDC for an L2 chain, if the l1 token is USDC.
+ * @param l1Token L1 token address
+ * @param hubChainId L1 token chain
+ * @param l2ChainId Chain on which the token address is requested
+ * @param isNativeUsdc True if caller wants native USDC on L2, false if caller wants bridged USDC on L2
+ * @returns L2 token address
  */
-export function resolveTokenSymbols(tokenAddresses: string[], chainId: number): string[] {
-  const tokenSymbols = Object.values(TOKEN_SYMBOLS_MAP);
-  return tokenAddresses
-    .map((tokenAddress) => {
-      return tokenSymbols.find(({ addresses }) => addresses[chainId]?.toLowerCase() === tokenAddress.toLowerCase())
-        ?.symbol;
-    })
-    .filter(Boolean);
-}
-
-export function getTokenAddress(tokenAddress: string, chainId: number, targetChainId: number): string {
-  const tokenSymbol = resolveTokenSymbols([tokenAddress], chainId)[0];
-  const targetAddress = TOKEN_SYMBOLS_MAP[tokenSymbol]?.addresses[targetChainId];
-  if (!targetAddress) {
-    throw new Error(`Could not resolve token address for token symbol ${tokenSymbol} on chain ${targetChainId}`);
-  }
-  return targetAddress;
-}
-
 export function getTranslatedTokenAddress(
-  l1Token: string,
+  l1Token: EvmAddress,
   hubChainId: number,
   l2ChainId: number,
   isNativeUsdc = false
-): string {
+): Address {
   // Base Case
   if (hubChainId === l2ChainId) {
     return l1Token;
   }
-  if (compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
-    const onBase = l2ChainId === CHAIN_IDs.BASE || l2ChainId === CHAIN_IDs.BASE_SEPOLIA;
-    const onZora = l2ChainId === CHAIN_IDs.ZORA;
-    return isNativeUsdc
-      ? TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]
-      : TOKEN_SYMBOLS_MAP[onBase ? "USDbC" : onZora ? "USDzC" : "USDC.e"].addresses[l2ChainId];
-  } else if (
-    l2ChainId === CHAIN_IDs.BLAST &&
-    compareAddressesSimple(l1Token, TOKEN_SYMBOLS_MAP.DAI.addresses[hubChainId])
-  ) {
-    return TOKEN_SYMBOLS_MAP.USDB.addresses[l2ChainId];
+  // Native USDC or not USDC, we can just look up in the token map directly.
+  if (isNativeUsdc || !compareAddressesSimple(l1Token.toEvmAddress(), TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId])) {
+    return getRemoteTokenForL1Token(l1Token, l2ChainId, hubChainId);
   }
-
-  return getTokenAddress(l1Token, hubChainId, l2ChainId);
+  // Handle USDC special case where there could be multiple versions of USDC on an L2: Bridged or Native
+  const bridgedUsdcMapping = Object.values(TOKEN_SYMBOLS_MAP).find(
+    ({ symbol, addresses }) =>
+      symbol !== "USDC" && compareAddressesSimple(addresses[hubChainId], l1Token.toEvmAddress()) && addresses[l2ChainId]
+  );
+  return toAddressType(bridgedUsdcMapping?.addresses[l2ChainId], l2ChainId);
 }
 
 export function checkAddressChecksum(tokenAddress: string): boolean {
   return ethers.utils.getAddress(tokenAddress) === tokenAddress;
+}
+
+export function toBuffer(address: Address): Buffer {
+  return Buffer.from(address.rawAddress);
+}
+
+export function getAccountMeta(value: KitAddress, isWritable: boolean): WritableAccount | ReadonlyAccount {
+  return Object.freeze({
+    address: value,
+    role: isWritable ? AccountRole.WRITABLE : AccountRole.READONLY,
+  });
+}
+
+export function getAddressLookupTableInstructions(
+  lookupTableAddress: KitAddress,
+  keypair: TransactionSigner,
+  lutAddresses: KitAddress[]
+): LookupTableDefinitions {
+  // @todo Fine-tune 32 to an appropriate number. For now, 32 is convenient since it divides 256, the maximum number of addresses an ALT can have.
+  const LUT_WRITE_SIZE = 32;
+  const nInstructions = Math.floor(lutAddresses.length / LUT_WRITE_SIZE) + 1;
+  // Create the instructions.
+  const instructions = [];
+  for (let idx = 0; idx < nInstructions; idx++) {
+    const offset = idx * LUT_WRITE_SIZE;
+    const offsetEnd = Math.min(offset + LUT_WRITE_SIZE, lutAddresses.length);
+    instructions.push(
+      getExtendLookupTableInstruction({
+        address: lookupTableAddress,
+        authority: keypair,
+        payer: keypair,
+        addresses: lutAddresses.slice(offset, offsetEnd),
+      })
+    );
+  }
+
+  // Define the lookupTableMap.
+  // @todo handle support for multiple lookup table addresses.
+  const lookupTableMap = {
+    [lookupTableAddress]: lutAddresses,
+  };
+  return { instructions, lookupTableMap };
 }
