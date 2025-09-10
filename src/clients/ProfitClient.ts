@@ -255,7 +255,11 @@ export class ProfitClient {
       }
 
       if (deposit.destinationChainId === CHAIN_IDs.LINEA) {
-        return { nativeGasCost: BigNumber.from("130_000"), tokenGasCost: BigNumber.from("1154931972235"), gasPrice: BigNumber.from("9077611") };
+        return {
+          nativeGasCost: BigNumber.from("130_000"),
+          tokenGasCost: BigNumber.from("1154931972235"),
+          gasPrice: BigNumber.from("9077611"),
+        };
       }
 
       this.logger.warn({
