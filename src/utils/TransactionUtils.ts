@@ -148,7 +148,7 @@ export async function runTransaction(
     // Bump the priority fee incrementally on each retry to try to successfully replace a pending transaction.
     // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
     if (bumpGas && gas.maxPriorityFeePerGas) {
-      const priorityScaler = 1.1 + (1 + DEFAULT_RETRIES - Math.min(retriesRemaining, DEFAULT_RETRIES)) / 10;
+      const priorityScaler = 1.1 + (1 + DEFAULT_RETRIES - retriesRemaining) / 10;
       const oldPriorityFee = gas.maxPriorityFeePerGas;
       const newPriorityFee = oldPriorityFee.mul(toBNWei(priorityScaler.toString()).div(fixedPointAdjustment));
       gas.maxFeePerGas = gas.maxFeePerGas.add(newPriorityFee).sub(oldPriorityFee);
