@@ -21,9 +21,9 @@ import {
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 
 export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
-  private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: EvmAddress;
@@ -63,7 +63,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     const { decimals } = getTokenInfo(l2Token, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
 
-    amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
+    amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve([
       {
         contract: this.l2Bridge,
