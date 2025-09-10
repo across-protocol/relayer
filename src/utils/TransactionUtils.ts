@@ -177,6 +177,7 @@ export async function runTransaction(
         retriesRemaining,
       });
 
+      nonceReset[chainId] = false;
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
