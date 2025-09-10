@@ -1,19 +1,10 @@
-import { BundleDataClient, HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
-import {
-  EvmAddress,
-  buildRelayerRefundTree,
-  MAX_UINT_VAL,
-  RelayerRefundLeaf,
-  toBN,
-  toBNWei,
-  toAddressType,
-} from "../src/utils";
+import { HubPoolClient, MultiCallerClient, SpokePoolClient } from "../src/clients";
+import { EvmAddress, buildRelayerRefundTree, MAX_UINT_VAL, RelayerRefundLeaf, toBNWei } from "../src/utils";
 import {
   MAX_L1_TOKENS_PER_POOL_REBALANCE_LEAF,
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   destinationChainId,
-  repaymentChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import { Contract, SignerWithAddress, depositV3, ethers, expect, fillV3Relay } from "./utils";
@@ -148,11 +139,9 @@ describe("Dataworker: Execute relayer refunds", async function () {
   });
   describe("Computing refunds for bundles", function () {
     let relayer: SignerWithAddress;
-    let bundleDataClient: BundleDataClient;
 
     beforeEach(async function () {
       relayer = depositor;
-      bundleDataClient = dataworkerInstance.clients.bundleDataClient;
       await updateAllClients();
 
       const deposit1 = await depositV3(

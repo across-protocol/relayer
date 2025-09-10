@@ -1,12 +1,11 @@
 import { BundleDataClient, ConfigStoreClient, HubPoolClient, SpokePoolClient } from "../src/clients";
-import { amountToDeposit, destinationChainId, originChainId, repaymentChainId } from "./constants";
+import { destinationChainId, originChainId, repaymentChainId } from "./constants";
 import { DataworkerConfig, setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
   Contract,
   FakeContract,
   SignerWithAddress,
   V3FillFromDeposit,
-  depositV3,
   ethers,
   expect,
   getDefaultBlockRange,
@@ -21,11 +20,11 @@ import { getCurrentTime, toBNWei, ZERO_ADDRESS, BigNumber, bnZero, toAddressType
 import { MockHubPoolClient, MockSpokePoolClient } from "./mocks";
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 
-let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
+let erc20_1: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
-let depositor: SignerWithAddress, relayer: SignerWithAddress;
+let relayer: SignerWithAddress;
 
-let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient, bundleDataClient: BundleDataClient;
+let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;
 let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
 let dataworkerInstance: Dataworker;
 let spokePoolClients: { [chainId: number]: SpokePoolClient };
@@ -38,14 +37,11 @@ let updateAllClients: () => Promise<void>;
 describe("Dataworker: Load bundle data", async function () {
   beforeEach(async function () {
     ({
-      spokePool_1,
       erc20_1,
-      spokePool_2,
       erc20_2,
       configStoreClient,
       hubPoolClient,
       l1Token_1,
-      depositor,
       relayer,
       dataworkerInstance,
       spokePoolClient_1,
@@ -54,7 +50,6 @@ describe("Dataworker: Load bundle data", async function () {
       updateAllClients,
       spy,
     } = await setupDataworker(ethers, 25, 25, 0));
-    bundleDataClient = dataworkerInstance.clients.bundleDataClient;
   });
 
   describe("Computing bundle deposits and expired deposits to refund", function () {

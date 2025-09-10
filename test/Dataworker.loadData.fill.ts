@@ -47,7 +47,6 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data", async function () {
