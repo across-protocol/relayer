@@ -155,7 +155,6 @@ export async function runTransaction(
       gas.maxPriorityFeePerGas = newPriorityFee;
     }
 
-
     logger.debug({
       at: "TxUtil",
       message: "Send tx",
