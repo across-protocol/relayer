@@ -253,15 +253,6 @@ export class ProfitClient {
               inspect(_cause, { depth: 3, breakLength: 120 });
         }
       }
-
-      if (deposit.destinationChainId === CHAIN_IDs.LINEA) {
-        return {
-          nativeGasCost: BigNumber.from("130000"),
-          tokenGasCost: BigNumber.from("1154931972235"),
-          gasPrice: BigNumber.from("9077611"),
-        };
-      }
-
       this.logger.warn({
         at: "ProfitClient#getTotalGasCost",
         message: "Failed to simulate fill for deposit.",
