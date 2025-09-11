@@ -117,22 +117,20 @@ export async function runTransaction(
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
   let scaledGas: Partial<FeeData>;
-  try {
-    const gas = await getGasPrice(
-      provider,
-      priorityFeeScaler,
-      maxFeePerGasScaler,
-      sendRawTransaction
-        ? undefined
-        : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
-    );
-    // Bump the priority fee incrementally on each retry to try to successfully replace a pending transaction.
-    // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
-    const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
-    scaledGas = scaleGasPrice(chainId, gas, gasScaler);
-  } catch (error) {
-    throw error; // Probably want to add retry in a follow-up change.
-  }
+  // Probably want to wrap getGasPRice() in a try/catch + retry in a follow-up change.
+  const gas = await getGasPrice(
+    provider,
+    priorityFeeScaler,
+    maxFeePerGasScaler,
+    sendRawTransaction
+      ? undefined
+      : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+  );
+
+  // Bump the priority fee incrementally on each retry to try to successfully replace a pending transaction.
+  // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
+  const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
+  scaledGas = scaleGasPrice(chainId, gas, gasScaler);
 
   logger.debug({
     at: "TxUtil",
