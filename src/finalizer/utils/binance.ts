@@ -1,4 +1,3 @@
-import { SUPPORTED_TOKENS } from "../../common";
 import {
   winston,
   Signer,
@@ -18,7 +17,8 @@ import {
   getBinanceDeposits,
   getBinanceWithdrawals,
   getAccountCoins,
-  DepositNetwork,
+  BINANCE_NETWORKS,
+  CHAIN_IDs,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
@@ -50,8 +50,12 @@ export async function binanceFinalizer(
   _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = Array.from(_senderAddresses.keys()).map((address) => address.toEvmAddress());
-  const chainId = l2SpokePoolClient.chainId;
+  const senderAddresses = Object.fromEntries(
+    Array.from(_senderAddresses.entries()).map(([senderAddress, tokensToFinalize]) => [
+      senderAddress.toNative(),
+      tokensToFinalize,
+    ])
+  );
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
@@ -62,7 +66,7 @@ export async function binanceFinalizer(
   const fromTimestamp = _fromTimestamp * 1_000;
 
   const [_binanceDeposits, accountCoins] = await Promise.all([
-    getBinanceDeposits(binanceApi, hubSigner.provider, l2SpokePoolClient.spokePool.provider, fromTimestamp),
+    getBinanceDeposits(binanceApi, fromTimestamp),
     getAccountCoins(binanceApi),
   ]);
 
@@ -87,45 +91,38 @@ export async function binanceFinalizer(
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
-  await mapAsync(SUPPORTED_TOKENS[chainId], async (_symbol) => {
-    // For both finalizers, we need to re-map WBNB -> BNB and re-map WETH -> ETH.
-    let symbol = _symbol === "WETH" ? "ETH" : _symbol;
-    symbol = symbol === "WBNB" ? "BNB" : symbol;
+  await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
+    for (const symbol of symbols) {
+      const coin = accountCoins.find((coin) => coin.symbol === symbol);
+      let coinBalance = coin.balance;
+      const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
+      const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
+      const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
 
-    const coin = accountCoins.find((coin) => coin.symbol === symbol);
-    let coinBalance = coin.balance;
-    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
-    const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
-    const withdrawals = await getBinanceWithdrawals(
-      binanceApi,
-      symbol,
-      l1SpokePoolClient.spokePool.provider,
-      l2SpokePoolClient.spokePool.provider,
-      fromTimestamp
-    );
-
-    for (const address of senderAddresses) {
-      // Filter our list of deposits by the withdrawal address. We will only finalize deposits when the depositor EOA is in `senderAddresses`.
-      // For deposits specifically, the `externalAddress` field will always be an EOA since it corresponds to the tx.origin of the deposit transaction.
-      const depositsInScope = binanceDeposits.filter((deposit) =>
-        compareAddressesSimple(deposit.externalAddress, address)
-      );
+      // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
+      // with symbol `symbol` should be withdrawn to `address`.
+      const depositsInScope = binanceDeposits.filter((deposit) => deposit.coin === symbol);
       if (depositsInScope.length === 0) {
         logger.debug({
           at: "BinanceFinalizer",
-          message: `No finalizable deposits found for ${address}`,
+          message: `No finalizable deposits found for ${address} and token ${symbol}.`,
         });
         continue;
       }
 
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
-      for (const depositNetwork of [DepositNetwork.Ethereum, DepositNetwork.BSC]) {
-        const withdrawNetwork =
-          depositNetwork === DepositNetwork.Ethereum ? DepositNetwork.BSC : DepositNetwork.Ethereum;
+      // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
+      // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
+      for (const withdrawNetwork of [BINANCE_NETWORKS[CHAIN_IDs.BSC], BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
+        const finalizingOnL2 = withdrawNetwork === "BSC";
         const depositAmounts = depositsInScope
-          .filter((deposit) => deposit.coin === symbol && deposit.network === depositNetwork)
+          .filter((deposit) =>
+            finalizingOnL2
+              ? deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
+              : deposit.network !== BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
+          )
           .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
 
         const withdrawalsInScope = withdrawals.filter(
@@ -144,7 +141,7 @@ export async function binanceFinalizer(
 
         logger.debug({
           at: "BinanceFinalizer",
-          message: `(${depositNetwork} -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
+          message: `(X -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
           totalDepositedAmount: formatUnits(depositAmounts, l1Decimals),
           withdrawalAmount: formatUnits(withdrawalAmounts, l1Decimals),
           amountToFinalize,
@@ -154,7 +151,7 @@ export async function binanceFinalizer(
         if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
           logger.warn({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
+            message: `(X -> ${withdrawNetwork}) Cannot withdraw total amount ${amountToFinalize} ${symbol} since it is above the network limit ${networkLimits.withdrawMax}. Withdrawing the maximum amount instead.`,
           });
           amountToFinalize = Number(networkLimits.withdrawMax);
         }
@@ -163,7 +160,7 @@ export async function binanceFinalizer(
         if (amountToFinalize > Number(coinBalance)) {
           logger.debug({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
+            message: `(X -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
             balance: coinBalance,
           });
@@ -183,14 +180,14 @@ export async function binanceFinalizer(
           });
           logger.info({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) Finalized deposit on ${withdrawNetwork} for ${amountToFinalize} ${symbol}.`,
+            message: `(X -> ${withdrawNetwork}) Finalized deposit on ${withdrawNetwork} for ${amountToFinalize} ${symbol}.`,
             amount: amountToFinalize,
             withdrawalId,
           });
         } else {
           logger.debug({
             at: "BinanceFinalizer",
-            message: `(${depositNetwork} -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
+            message: `(X -> ${withdrawNetwork}) ${amountToFinalize} is less than minimum withdrawable amount ${networkLimits.withdrawMin} for token ${symbol}.`,
           });
         }
       }
