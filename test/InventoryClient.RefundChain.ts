@@ -334,7 +334,7 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
     });
-    it("Both origin and destination chain allocations are below target", async function () {
+    it("Both origin and destination chain allocations are below target, returns destination before origin followed by mainnet", async function () {
       // Set chain allocations lower than target, resulting in a cumulative starting balance of 116.
       tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(1));
       tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(5));
@@ -670,11 +670,10 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
     it("includes hub chain and origin chain on repayment chain list", async function () {
       const possibleRepaymentChains = inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      const slowWithdrawalChain = OPTIMISM;
-      [sampleDepositData.originChainId, hubPoolClient.chainId, slowWithdrawalChain].forEach((chainId) => {
+      [sampleDepositData.originChainId, hubPoolClient.chainId].forEach((chainId) => {
         expect(possibleRepaymentChains).to.include(chainId);
       });
-      expect(possibleRepaymentChains.length).to.equal(3);
+      expect(possibleRepaymentChains.length).to.equal(2);
     });
   });
 
@@ -766,8 +765,15 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   describe("Origin chain is a fast rebalance source", function () {
     beforeEach(async function () {
+      // Modify mocks to be aware of native USDC, which is a "fast" rebalance token for certain routes
       hubPoolClient.setTokenMapping(mainnetUsdc, POLYGON, TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON]);
       hubPoolClient.setTokenMapping(mainnetUsdc, ARBITRUM, TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM]);
+      (inventoryClient as unknown as MockInventoryClient).setTokenMapping({
+        [mainnetUsdc]: {
+          [POLYGON]: TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON],
+          [ARBITRUM]: TOKEN_SYMBOLS_MAP.USDC.addresses[ARBITRUM],
+        },
+      });
       sampleDepositData = {
         depositId: bnZero,
         fromLiteChain: false,
@@ -788,12 +794,16 @@ describe("InventoryClient: Refund chain selection", async function () {
         exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
       };
     });
-    it("no forced origin chain repayment returns origin chain as a repayment chain", async function () {
+    it("returns origin chain before destination chain", async function () {
       // Make sure that deposit doesn't force origin chain repayment otherwise this test would succeed and return
       // the origin chain for the wrong reason (i.e. this would be a false positive).
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([sampleDepositData.originChainId, MAINNET]);
+      expect(refundChains).to.deep.equal([
+        sampleDepositData.originChainId,
+        sampleDepositData.destinationChainId,
+        MAINNET,
+      ]);
     });
     it("forced origin chain repayment returns origin chain as only repayment chain", async function () {
       sampleDepositData.fromLiteChain = true;
