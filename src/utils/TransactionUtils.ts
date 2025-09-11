@@ -360,7 +360,7 @@ function scaleGasPrice(
     return { gasPrice };
   }
 
-  // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
+  // If the priority fee was increased, the max fee must be scaled up as well.
   const maxPriorityFeePerGas = sdkUtils
     .bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas)
     .mul(retryScaler)
