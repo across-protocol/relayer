@@ -49,7 +49,7 @@ export class MockInventoryClient extends InventoryClient {
   }
 
   async getExcessRunningBalancePcts(l1Token: Address): Promise<{ [chainId: number]: BigNumber }> {
-    return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()]);
+    return Promise.resolve(this.excessRunningBalancePcts[l1Token.toEvmAddress()] ?? {});
   }
 
   override getUpcomingRefunds(chainId: number, l1Token: EvmAddress): BigNumber {
