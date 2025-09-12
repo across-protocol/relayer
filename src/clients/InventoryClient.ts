@@ -35,6 +35,7 @@ import {
   Address,
   toAddressType,
   repaymentChainCanBeQuicklyRebalanced,
+  forEachAsync,
 } from "../utils";
 import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -67,6 +68,7 @@ export class InventoryClient {
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
   private bundleDataApproxClient: BundleDataApproxClient;
+  private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(
     readonly relayer: EvmAddress,
@@ -148,14 +150,28 @@ export class InventoryClient {
     ignoreL1ToL2PendingAmount = false
   ): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
-    let balance: BigNumber;
+    let balance = bnZero;
 
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+
+    // If chain is L1, add all pending L2->L1 withdrawals.
+    if (chainId === this.hubPoolClient.chainId) {
+      const pendingL2WithdrawalsForL1Token = this.pendingL2Withdrawals[l1Token.toNative()];
+      if (isDefined(pendingL2WithdrawalsForL1Token)) {
+        const pendingWithdrawalVolume = Object.values(pendingL2WithdrawalsForL1Token).reduce(
+          (acc, curr) => acc.add(curr),
+          bnZero
+        );
+        balance = pendingWithdrawalVolume;
+      }
+    }
 
     // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-      balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
+      balance = balance.add(
+        sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token))
+      );
       return balance.add(
         ignoreL1ToL2PendingAmount
           ? bnZero
@@ -164,12 +180,14 @@ export class InventoryClient {
     }
 
     const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-    balance = l2Tokens
-      .map((l2Token) => {
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-        return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
-      })
-      .reduce((acc, curr) => acc.add(curr), bnZero);
+    balance = balance.add(
+      l2Tokens
+        .map((l2Token) => {
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+          return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
+        })
+        .reduce((acc, curr) => acc.add(curr), bnZero)
+    );
 
     return balance.add(
       ignoreL1ToL2PendingAmount
@@ -473,8 +491,8 @@ export class InventoryClient {
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
-      return [deposit.originChainId];
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+      return [originChainId];
     }
 
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
@@ -532,8 +550,9 @@ export class InventoryClient {
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
+    // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      deposit.toLiteChain &&
+      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -676,7 +695,7 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
+    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
@@ -1532,12 +1551,31 @@ export class InventoryClient {
     await this.adapterManager.wrapNativeTokenIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  update(chainIds?: number[]): Promise<void> {
+  async update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
 
-    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+
+    await forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      this.pendingL2Withdrawals[l1Token.toNative()] = {};
+      const pendingWithdrawalBalances =
+        await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
+          7200,
+          this.getEnabledChains().filter((chainId) => chainId !== this.hubPoolClient.chainId),
+          this.relayer,
+          l1Token
+        );
+      Object.keys(pendingWithdrawalBalances).forEach((chainId) => {
+        this.pendingL2Withdrawals[l1Token.toNative()][Number(chainId)] = pendingWithdrawalBalances[Number(chainId)];
+      });
+    });
+    this.logger.debug({
+      at: "InventoryClient#update",
+      message: "Updated pending L2->L1 withdrawals",
+      pendingL2Withdrawals: this.pendingL2Withdrawals,
+    });
   }
 
   isInventoryManagementEnabled(): boolean {
