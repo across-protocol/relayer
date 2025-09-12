@@ -36,6 +36,7 @@ export function castSpokePoolName(networkId: number): string {
     case CHAIN_IDs.ARBITRUM:
       return "Arbitrum_SpokePool";
     case CHAIN_IDs.BSC:
+    case CHAIN_IDs.HYPEREVM:
       return "Universal_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";
