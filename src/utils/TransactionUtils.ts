@@ -162,8 +162,7 @@ export async function runTransaction(
       case errors.SERVER_ERROR: // fallthrough
       case errors.TIMEOUT: {
         --retries;
-        const message = `Hit transient error on ${chain}.`;
-        logger.debug({ at, message, ...commonArgs });
+        logger.debug({ at, message: `Hit transient error on ${chain}.`, ...commonArgs });
         break;
       }
 
