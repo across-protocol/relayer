@@ -8,6 +8,7 @@ import {
   BigNumber,
   bnZero,
   Contract,
+  delay,
   isDefined,
   fixedPointAdjustment,
   TransactionResponse,
@@ -159,11 +160,13 @@ export async function runTransaction(
         break;
       }
 
-      // Transient provider issue; retry.
+      // Transient provider issue; retry. Unclear whether this will be seen in practice because
+      // of fallback/rotation implemented at the provider layer. Back off 0.5s just in case.
       case errors.SERVER_ERROR: // fallthrough
       case errors.TIMEOUT:
         --retries;
         logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonArgs });
+        await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
 
       // Bad errors - likely something wrong in the codebase.
