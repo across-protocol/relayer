@@ -178,6 +178,10 @@ export async function runTransaction(
         logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonArgs });
     }
 
+    if (retries < 0) {
+      throw error;
+    }
+
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, bumpGas);
   }
 }
