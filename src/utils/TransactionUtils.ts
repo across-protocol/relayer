@@ -107,7 +107,7 @@ export async function runTransaction(
     const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
     scaledGas = scaleGasPrice(chainId, gas, gasScaler);
   } catch (error) {
-    logger.debug({ at, message: `Failed to query ${chain} gas price.` });
+    logger.warn({ at, message: `Failed to query ${chain} gas price.` });
     throw error;
   }
 
