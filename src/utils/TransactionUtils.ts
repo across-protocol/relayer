@@ -154,14 +154,11 @@ export async function runTransaction(
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
-      case errors.UNEXPECTED_ARGUMENT:
-        logger.warn({
-          at,
-          message: "Attempted to submit invalid transaction ethers error on transaction submission.",
-          code,
-          ...commonArgs,
-        });
+      case errors.UNEXPECTED_ARGUMENT: {
+        const message = "Attempted to submit invalid transaction ethers error on transaction submission.";
+        logger.warn({ at, code, message, ...commonArgs });
         throw error;
+      }
 
       default:
         logger.warn({ at, message: `Unhandled error on transaction submission: ${code}.`, ...commonArgs });
