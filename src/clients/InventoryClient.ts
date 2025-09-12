@@ -491,8 +491,8 @@ export class InventoryClient {
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
     const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
-      return [deposit.originChainId];
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+      return [originChainId];
     }
 
     // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
@@ -550,8 +550,9 @@ export class InventoryClient {
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
+    // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      deposit.toLiteChain &&
+      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -694,7 +695,7 @@ export class InventoryClient {
 
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
     // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
+    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;

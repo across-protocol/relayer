@@ -177,6 +177,7 @@ export async function runTransaction(
         retriesRemaining,
       });
 
+      nonceReset[chainId] = false;
       return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
@@ -264,6 +265,15 @@ export async function getGasPrice(
   priorityScaler = Math.max(1, priorityScaler);
   const { chainId } = await provider.getNetwork();
   // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
+  if (
+    isDefined(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`]) &&
+    isDefined(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`])
+  ) {
+    return {
+      maxFeePerGas: parseUnits(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
+      maxPriorityFeePerGas: parseUnits(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
+    };
+  }
   const feeData = (await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
