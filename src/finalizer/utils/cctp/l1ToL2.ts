@@ -14,7 +14,6 @@ import {
   isEVMSpokePoolClient,
   ethers,
   isSVMSpokePoolClient,
-  Address,
   getKitKeypairFromEvmSigner,
 } from "../../../utils";
 import {
@@ -24,7 +23,7 @@ import {
   getCctpMessageTransmitter,
   isDepositForBurnEvent,
 } from "../../../utils/CCTPUtils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 import { KeyPairSigner } from "@solana/kit";
 import { finalizeCCTPV1MessagesSVM } from "./svm/l1Tol2";
 
@@ -34,7 +33,7 @@ export async function cctpL1toL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: Address[]
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient));
   const searchConfig: EventSearchConfig = {
@@ -47,7 +46,7 @@ export async function cctpL1toL2Finalizer(
     signer = await getKitKeypairFromEvmSigner(_signer);
   }
   const outstandingMessages = await getAttestedCCTPMessages(
-    senderAddresses,
+    Array.from(senderAddresses.keys()),
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,

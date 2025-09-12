@@ -15,14 +15,13 @@ import {
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
-  Address,
   getBinanceDeposits,
   getBinanceWithdrawals,
   getAccountCoins,
   DepositNetwork,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { FinalizerPromise } from "../types";
+import { FinalizerPromise, AddressesToFinalize } from "../types";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -48,10 +47,10 @@ export async function binanceFinalizer(
   _hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  _senderAddresses: Address[]
+  _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
+  const senderAddresses = Array.from(_senderAddresses.keys()).map((address) => address.toEvmAddress());
   const chainId = l2SpokePoolClient.chainId;
   const hubChainId = l1SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;

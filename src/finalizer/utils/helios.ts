@@ -10,7 +10,6 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
-  Address,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -61,9 +60,7 @@ export async function heliosL1toL2Finalizer(
   _signer: Signer,
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
-  l1SpokePoolClient: SpokePoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _senderAddresses: Address[]
+  l1SpokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   assert(
     isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),

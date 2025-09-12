@@ -28,12 +28,11 @@ import {
   assert,
   isEVMSpokePoolClient,
   EvmAddress,
-  Address,
 } from "../../utils";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES } from "../../common";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
 
@@ -83,11 +82,11 @@ export async function arbStackFinalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  _recipientAddresses: Address[]
+  _recipientAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   // Recipient addresses are just used to query events.
-  const recipientAddresses = _recipientAddresses.map((address) => address.toEvmAddress());
+  const recipientAddresses = Array.from(_recipientAddresses.keys()).map((address) => address.toNative());
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;
