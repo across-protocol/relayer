@@ -104,8 +104,8 @@ export async function runTransaction(
   const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
   const scaledGas = scaleGasPrice(chainId, gas, gasScaler);
 
-  const target = getTarget(contract.address);
-  const commonArgs = { chainId, target, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
+  const to = contract.address;
+  const commonArgs = { chainId, to, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
   logger.debug({ at, message: "Submitting transaction", ...commonArgs });
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
@@ -118,7 +118,7 @@ export async function runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to: contract.address, value, ...scaledGas })
+      ? await signer.sendTransaction({ to, value, ...scaledGas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error: unknown) {
     // Narrow type. All errors caught here should be Ethers errors.
