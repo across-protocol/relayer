@@ -2,7 +2,7 @@
 // calldata on HyperEVM.
 
 import minimist from "minimist";
-import { assert, BigNumber, Contract, ERC20, ethers, fromWei, getProvider, toBN, toBNWei, toWei } from "../src/utils";
+import { assert, BigNumber, Contract, ERC20, ethers, fromWei, getProvider, toBN, toBNWei } from "../src/utils";
 import { retrieveSignerFromCLIArgs } from "../src/utils/CLIUtils";
 import { askYesNoQuestion } from "./utils";
 
