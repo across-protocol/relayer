@@ -13,6 +13,7 @@ import {
   TransactionResponse,
   ethers,
   getContractInfoFromAddress,
+  getNetworkName,
   Signer,
   toBNWei,
   winston,
@@ -85,6 +86,7 @@ export async function runTransaction(
     nonce = await provider.getTransactionCount(await signer.getAddress());
     nonceReset[chainId] = true;
   }
+  const chain = getNetworkName(chainId);
 
   const sendRawTxn = method === "";
   const priorityFeeScaler =
@@ -94,15 +96,20 @@ export async function runTransaction(
     Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
-  // Probably want to wrap getGasPRice() in a try/catch + retry in a follow-up change.
-  const gas = await getGasPrice(
-    provider,
-    priorityFeeScaler,
-    maxFeePerGasScaler,
-    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
-  );
-  const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
-  const scaledGas = scaleGasPrice(chainId, gas, gasScaler);
+  let scaledGas: Partial<FeeData>;
+  try {
+    const gas = await getGasPrice(
+      provider,
+      priorityFeeScaler,
+      maxFeePerGasScaler,
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    );
+    const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
+    scaledGas = scaleGasPrice(chainId, gas, gasScaler);
+  } catch (error) {
+    logger.debug({ at, message: `Failed to query ${chain} gas price.` });
+    throw error;
+  }
 
   const to = contract.address;
   const commonArgs = { chainId, to, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
@@ -135,34 +142,45 @@ export async function runTransaction(
 
       // Nonce collisions, likely due to concurrent bot instances running. Re-sync nonce and retry.
       case errors.NONCE_EXPIRED: // fallthrough
-      case errors.TRANSACTION_REPLACED:
+      case errors.TRANSACTION_REPLACED: {
         nonce = null;
+        const message = `Re-syncing nonce for transaction submission on ${chain}`;
+        logger.debug({ at, message, retries, ...commonArgs });
         break;
+      }
 
       // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
-      case errors.REPLACEMENT_UNDERPRICED:
-        bumpGas = true;
+      case errors.REPLACEMENT_UNDERPRICED: {
         --retries;
+        bumpGas = true;
+        const message = `Increasing gas to replace ${chain} transaction at nonce ${nonce}`;
+        logger.debug({ at, message, retries, ...commonArgs });
         break;
+      }
 
       // Transient provider issue; retry.
       case errors.SERVER_ERROR: // fallthrough
-      case errors.TIMEOUT:
+      case errors.TIMEOUT: {
         --retries;
+        const message = `Hit transient error on ${chain}.`;
+        logger.debug({ at, message, ...commonArgs });
         break;
+      }
 
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
       case errors.UNEXPECTED_ARGUMENT: {
-        const message = "Attempted to submit invalid transaction ethers error on transaction submission.";
-        logger.warn({ at, code, message, ...commonArgs });
+        const message = `Attempted to submit invalid transaction ${chain}.`;
+        logger.warn({ at, code, message, reason: error.reason, ...commonArgs });
         throw error;
       }
 
-      default:
-        logger.warn({ at, message: `Unhandled error on transaction submission: ${code}.`, ...commonArgs });
+      default: {
         --retries;
+        const message = `Unhandled error on transaction submission: ${code}.`;
+        logger.warn({ at, message, retries, ...commonArgs });
+      }
     }
 
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, bumpGas);
