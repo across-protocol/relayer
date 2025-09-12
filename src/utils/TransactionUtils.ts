@@ -35,6 +35,9 @@ dotenv.config();
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
+// Maximum multiplier applied on transaction retries due to REPLACEMENT_UNDERPRICED.
+const MAX_GAS_RETRY_SCALER = 2;
+
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
@@ -77,7 +80,7 @@ export async function runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retries = 2,
-  bumpGas = false
+  gasScaler = 1.0
 ): Promise<TransactionResponse> {
   const at = "TxUtil#runTransaction";
   const { provider, signer } = contract;
@@ -105,8 +108,7 @@ export async function runTransaction(
       maxFeePerGasScaler,
       sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
-    const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
-    scaledGas = scaleGasPrice(chainId, gas, gasScaler);
+    scaledGas = scaleGasPrice(chainId, gas, toBNWei(gasScaler));
   } catch (error) {
     // Linea gas price requires full transaction simulation. fillRelay simulation will revert often, so
     // drop them to debug severity. It'd be nice to avoid this here, but it's hard given current structure.
@@ -137,6 +139,8 @@ export async function runTransaction(
       throw error;
     }
 
+    --retries;
+
     const { errors } = ethers;
     const { code, reason } = error;
     switch (code) {
@@ -148,13 +152,16 @@ export async function runTransaction(
       case errors.NONCE_EXPIRED: // fallthrough
       case errors.TRANSACTION_REPLACED:
         nonce = null;
-        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, ...commonArgs });
+        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, retries, ...commonArgs });
         break;
 
       // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
       case errors.REPLACEMENT_UNDERPRICED: {
-        --retries;
-        bumpGas = true;
+        // Increase the gas scaler for subsequent retries.
+        gasScaler = Math.min(
+          Math.pow(Math.max(gasScaler, priorityFeeScaler), 2), // priorityFeeScaler set via environment.
+          MAX_GAS_RETRY_SCALER
+        );
         const message = `Increasing gas on ${chain} transaction replacement at nonce ${nonce}.`;
         logger.debug({ at, message, retries, ...commonArgs });
         break;
@@ -164,7 +171,6 @@ export async function runTransaction(
       // of fallback/rotation implemented at the provider layer. Back off 0.5s just in case.
       case errors.SERVER_ERROR: // fallthrough
       case errors.TIMEOUT:
-        --retries;
         logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonArgs });
         await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
@@ -177,7 +183,6 @@ export async function runTransaction(
         throw error;
 
       default:
-        --retries;
         logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonArgs });
     }
 
@@ -185,7 +190,7 @@ export async function runTransaction(
       throw error;
     }
 
-    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, bumpGas);
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gasScaler);
   }
 }
 
