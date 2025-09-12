@@ -141,7 +141,7 @@ export async function runTransaction(
 
       // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
       case errors.REPLACEMENT_UNDERPRICED:
-        bumpGas = true; // Don't decrement retries.
+        bumpGas = true;
         --retries;
         break;
 
