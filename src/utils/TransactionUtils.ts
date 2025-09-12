@@ -134,7 +134,7 @@ export async function runTransaction(
     }
 
     const { errors } = ethers;
-    const { code } = error;
+    const { code, reason } = error;
     switch (code) {
       // Transaction fails on simulation; escalate this to the upper layers for context-appropriate handling.
       case errors.UNPREDICTABLE_GAS_LIMIT:
@@ -142,44 +142,37 @@ export async function runTransaction(
 
       // Nonce collisions, likely due to concurrent bot instances running. Re-sync nonce and retry.
       case errors.NONCE_EXPIRED: // fallthrough
-      case errors.TRANSACTION_REPLACED: {
+      case errors.TRANSACTION_REPLACED:
         nonce = null;
-        const message = `Re-syncing nonce for transaction submission on ${chain}.`;
-        logger.debug({ at, message, retries, ...commonArgs });
+        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, ...commonArgs });
         break;
-      }
 
       // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
       case errors.REPLACEMENT_UNDERPRICED: {
         --retries;
         bumpGas = true;
-        const message = `Increasing gas to replace ${chain} transaction at nonce ${nonce}.`;
+        const message = `Increasing gas on ${chain} transaction replacement at nonce ${nonce}.`;
         logger.debug({ at, message, retries, ...commonArgs });
         break;
       }
 
       // Transient provider issue; retry.
       case errors.SERVER_ERROR: // fallthrough
-      case errors.TIMEOUT: {
+      case errors.TIMEOUT:
         --retries;
-        logger.debug({ at, message: `Hit transient error on ${chain}.`, ...commonArgs });
+        logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonArgs });
         break;
-      }
 
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
-      case errors.UNEXPECTED_ARGUMENT: {
-        const message = `Attempted to submit invalid transaction ${chain}.`;
-        logger.warn({ at, code, message, reason: error.reason, ...commonArgs });
+      case errors.UNEXPECTED_ARGUMENT:
+        logger.warn({ at, code, message: `Attempted invalid ${chain} transaction.`, reason, ...commonArgs });
         throw error;
-      }
 
-      default: {
+      default:
         --retries;
-        const message = `Unhandled error on transaction submission: ${code}.`;
-        logger.warn({ at, message, retries, ...commonArgs });
-      }
+        logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonArgs });
     }
 
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, bumpGas);
