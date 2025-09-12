@@ -16,7 +16,6 @@ import {
   Signer,
   toBNWei,
   winston,
-  stringifyThrownValue,
   CHAIN_IDs,
   SVMProvider,
   parseUnits,
@@ -55,28 +54,6 @@ export type Multicall2Call = {
 
 const nonceReset: { [chainId: number]: boolean } = {};
 
-const txnRetryErrors = new Set(["INSUFFICIENT_FUNDS", "NONCE_EXPIRED", "REPLACEMENT_UNDERPRICED"]);
-const expectedRpcErrorMessages = new Set(["nonce has already been used", "intrinsic gas too low"]);
-const txnRetryable = (error?: unknown): boolean => {
-  if (isEthersError(error)) {
-    return txnRetryErrors.has(error.code);
-  }
-
-  return expectedRpcErrorMessages.has((error as Error)?.message);
-};
-
-const isFillRelayError = (error: unknown): boolean => {
-  const fillRelaySelector = "0xdeff4b24"; // keccak256("fillRelay()")[:4]
-  const multicallSelector = "0xac9650d8"; // keccak256("multicall()")[:4]
-
-  const errorStack = (error as Error).stack;
-  const isFillRelayError = errorStack?.includes(fillRelaySelector);
-  const isMulticallError = errorStack?.includes(multicallSelector);
-  const isFillRelayInMulticallError = isMulticallError && errorStack?.includes(fillRelaySelector.replace("0x", ""));
-
-  return isFillRelayError || isFillRelayInMulticallError;
-};
-
 export function getNetworkError(err: unknown): string {
   return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
 }
@@ -97,18 +74,19 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 2,
+  retries = 2,
   bumpGas = false
 ): Promise<TransactionResponse> {
-  const { provider } = contract;
+  const at = "TxUtil#runTransaction";
+  const { provider, signer } = contract;
   const { chainId } = await provider.getNetwork();
 
-  if (!nonceReset[chainId]) {
-    nonce = await provider.getTransactionCount(await contract.signer.getAddress());
+  if (!nonce || !nonceReset[chainId]) {
+    nonce = await provider.getTransactionCount(await signer.getAddress());
     nonceReset[chainId] = true;
   }
 
-  const sendRawTransaction = method === "";
+  const sendRawTxn = method === "";
   const priorityFeeScaler =
     Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
@@ -121,26 +99,14 @@ export async function runTransaction(
     provider,
     priorityFeeScaler,
     maxFeePerGasScaler,
-    sendRawTransaction ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+    sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
   );
-
-  // Bump the priority fee incrementally on each retry to try to successfully replace a pending transaction.
-  // Success is not guaranteed since the bot does not know the gas price of the transaction it is trying to replace.
   const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
   const scaledGas = scaleGasPrice(chainId, gas, gasScaler);
 
-  logger.debug({
-    at: "TxUtil",
-    message: "Send tx",
-    target: getTarget(contract.address),
-    method,
-    args,
-    value,
-    nonce,
-    gas: scaledGas,
-    gasLimit,
-    sendRawTxn: sendRawTransaction,
-  });
+  const target = getTarget(contract.address);
+  const commonArgs = { chainId, target, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
+  logger.debug({ at, message: "Submitting transaction", ...commonArgs });
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -151,62 +117,58 @@ export async function runTransaction(
   );
 
   try {
-    return sendRawTransaction
-      ? contract.signer.sendTransaction({ to: contract.address, value, ...scaledGas })
-      : contract[method](...(args as Array<unknown>), txConfig);
-  } catch (error) {
-    if (retriesRemaining > 0 && txnRetryable(error)) {
-      // If error is due to a nonce collision or gas underpricing then re-submit to fetch latest params.
-      retriesRemaining -= 1;
-      logger.debug({
-        at: "TxUtil#runTransaction",
-        message: "Retrying txn due to expected error",
-        error: stringifyThrownValue(error),
-        retriesRemaining,
-      });
-
-      nonceReset[chainId] = false;
-      const bumpGas = isEthersError(error) && error.message.toLowerCase().includes("underpriced");
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining, bumpGas);
-    } else {
-      // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
-      // and log them as clearly as possible. For example:
-      // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
-      // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
-      // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
-      const commonFields = {
-        at: "TxUtil#runTransaction",
-        message: "Error executing tx",
-        retriesRemaining,
-        target: getTarget(contract.address),
-        method,
-        args,
-        value,
-        nonce,
-        sendRawTxn: sendRawTransaction,
-        notificationPath: "across-error",
-      };
-      if (isEthersError(error)) {
-        const ethersErrors: { reason: string; err: EthersError }[] = [];
-        let topError = error;
-        while (isEthersError(topError)) {
-          ethersErrors.push({ reason: topError.reason, err: topError.error as EthersError });
-          topError = topError.error as EthersError;
-        }
-        logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
-          ...commonFields,
-          errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
-        });
-      } else {
-        const isWarning = txnRetryable(error) || isFillRelayError(error);
-        logger[isWarning ? "warn" : "error"]({
-          ...commonFields,
-          notificationPath: isWarning ? "across-warn" : "across-error",
-          error: stringifyThrownValue(error),
-        });
-      }
+    return sendRawTxn
+      ? await signer.sendTransaction({ to: contract.address, value, ...scaledGas })
+      : await contract[method](...(args as Array<unknown>), txConfig);
+  } catch (error: unknown) {
+    // Narrow type. All errors caught here should be Ethers errors.
+    if (!typeguards.isEthersError(error)) {
       throw error;
     }
+
+    const { errors } = ethers;
+    const { code } = error;
+    switch (code) {
+      // Transaction fails on simulation; escalate this to the upper layers for context-appropriate handling.
+      case errors.UNPREDICTABLE_GAS_LIMIT:
+        throw error;
+
+      // Nonce collisions, likely due to concurrent bot instances running. Re-sync nonce and retry.
+      case errors.NONCE_EXPIRED: // fallthrough
+      case errors.TRANSACTION_REPLACED:
+        nonce = null;
+        break;
+
+      // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
+      case errors.REPLACEMENT_UNDERPRICED:
+        bumpGas = true; // Don't decrement retries.
+        --retries;
+        break;
+
+      // Transient provider issue; retry.
+      case errors.SERVER_ERROR: // fallthrough
+      case errors.TIMEOUT:
+        --retries;
+        break;
+
+      // Bad errors - likely something wrong in the codebase.
+      case errors.INVALID_ARGUMENT: // fallthrough
+      case errors.MISSING_ARGUMENT: // fallthrough
+      case errors.UNEXPECTED_ARGUMENT:
+        logger.warn({
+          at,
+          message: "Attempted to submit invalid transaction ethers error on transaction submission.",
+          code,
+          ...commonArgs,
+        });
+        throw error;
+
+      default:
+        logger.warn({ at, message: `Unhandled error on transaction submission: ${code}.`, ...commonArgs });
+        --retries;
+    }
+
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, bumpGas);
   }
 }
 
