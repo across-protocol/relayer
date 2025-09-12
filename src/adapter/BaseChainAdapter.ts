@@ -424,7 +424,7 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB";
+      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB" || nativeTokenSymbol === "HYPE";
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
