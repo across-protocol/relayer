@@ -107,7 +107,10 @@ export async function runTransaction(
     const gasScaler = toBNWei(bumpGas ? maxFeePerGasScaler : 1);
     scaledGas = scaleGasPrice(chainId, gas, gasScaler);
   } catch (error) {
-    logger.warn({ at, message: `Failed to query ${chain} gas price.` });
+    // Linea gas price requires full transaction simulation. fillRelay simulation will revert often, so
+    // drop them to debug severity. It'd be nice to avoid this here, but it's hard given current structure.
+    const log = chainId === CHAIN_IDs.LINEA && method === "fillRelay" ? logger.debug : logger.warn;
+    log({ at, message: `Failed to query ${chain} gas price.` });
     throw error;
   }
 
