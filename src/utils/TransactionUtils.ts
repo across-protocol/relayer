@@ -144,7 +144,7 @@ export async function runTransaction(
       case errors.NONCE_EXPIRED: // fallthrough
       case errors.TRANSACTION_REPLACED: {
         nonce = null;
-        const message = `Re-syncing nonce for transaction submission on ${chain}`;
+        const message = `Re-syncing nonce for transaction submission on ${chain}.`;
         logger.debug({ at, message, retries, ...commonArgs });
         break;
       }
@@ -153,7 +153,7 @@ export async function runTransaction(
       case errors.REPLACEMENT_UNDERPRICED: {
         --retries;
         bumpGas = true;
-        const message = `Increasing gas to replace ${chain} transaction at nonce ${nonce}`;
+        const message = `Increasing gas to replace ${chain} transaction at nonce ${nonce}.`;
         logger.debug({ at, message, retries, ...commonArgs });
         break;
       }
