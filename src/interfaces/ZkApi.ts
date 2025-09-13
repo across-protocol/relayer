@@ -23,6 +23,10 @@ export interface ProofStateResponse {
   error_message?: string; // Present only if status is "errored"
 }
 
+export interface VkeyResponse {
+  vkey: string;
+}
+
 // ABI for `public_values` returned from ZK API as part of `SP1HeliosProofData`
 export const PROOF_OUTPUTS_ABI_TUPLE = `tuple(
       bytes32 executionStateRoot,
