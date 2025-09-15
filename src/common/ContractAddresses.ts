@@ -445,7 +445,7 @@ export const CONTRACT_ADDRESSES: {
     },
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
-      abi: CCTP_TOKEN_MESSENGER_ABI,
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM]: {
