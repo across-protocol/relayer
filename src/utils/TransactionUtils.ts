@@ -139,8 +139,6 @@ export async function runTransaction(
       throw error;
     }
 
-    --retries;
-
     const { errors } = ethers;
     const { code, reason } = error;
     switch (code) {
@@ -186,7 +184,7 @@ export async function runTransaction(
         logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonArgs });
     }
 
-    if (retries < 0) {
+    if (--retries < 0) {
       throw error;
     }
 
