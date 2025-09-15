@@ -980,6 +980,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all supported chains that have non-eth for gas token should go here.
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
+  [CHAIN_IDs.HYPEREVM]: toWei("8"),
 };
 
 // Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
@@ -1006,6 +1007,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all supported chains that have non-eth for gas token should go here.
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
+  [CHAIN_IDs.HYPEREVM]: toWei("8"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
