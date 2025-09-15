@@ -439,7 +439,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.HYPEREVM_TESTNET]: {
-    cctpMessageTransmitter: {
+    cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
     },
