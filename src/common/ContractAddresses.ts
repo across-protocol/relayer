@@ -443,7 +443,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       abi: CCTP_MESSAGE_TRANSMITTER_ABI,
     },
-    cctpTokenMessenger: {
+    cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_TOKEN_MESSENGER_ABI,
     },
