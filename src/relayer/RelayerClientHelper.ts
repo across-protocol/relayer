@@ -2,7 +2,6 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
-  BundleDataClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -192,14 +191,6 @@ export async function constructRelayerClients(
   const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, monitoredAddresses);
 
-  const bundleDataClient = new BundleDataClient(
-    logger,
-    commonClients,
-    spokePoolClients,
-    configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
-  );
-
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
     logger,
@@ -214,7 +205,6 @@ export async function constructRelayerClients(
     tokenClient,
     enabledChainIds,
     hubPoolClient,
-    bundleDataClient,
     adapterManager,
     crossChainTransferClient,
     !config.sendingTransactionsEnabled
