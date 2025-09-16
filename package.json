@@ -10,9 +10,9 @@
     "node": ">=20.19.2"
   },
   "dependencies": {
-    "@across-protocol/constants": "^3.1.73",
-    "@across-protocol/contracts": "^4.1.5",
-    "@across-protocol/sdk": "4.3.59",
+    "@across-protocol/constants": "^3.1.75",
+    "@across-protocol/contracts": "^4.1.6",
+    "@across-protocol/sdk": "4.3.60",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
