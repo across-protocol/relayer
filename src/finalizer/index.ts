@@ -138,6 +138,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
+  [CHAIN_IDs.HYPEREVM]: {
+    finalizeOnL1: [],
+    finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
+  },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
@@ -516,7 +520,7 @@ export async function constructFinalizerClients(
 }
 
 // @dev The HubPoolClient is dependent on the state of the ConfigStoreClient,
-//      so update the ConfigStoreClient first. @todo: Use common/ClientHelpter.ts.
+//      so update the ConfigStoreClient first. @todo: Use common/ClientHelper.ts.
 async function updateFinalizerClients(clients: Clients) {
   await clients.configStoreClient.update();
   await clients.hubPoolClient.update();

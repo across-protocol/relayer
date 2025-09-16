@@ -671,8 +671,6 @@ export class ProfitClient {
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
       [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
-      [CHAIN_IDs.LENS_SEPOLIA]: "WETH", // No USD token on Lens Sepolia
-      [CHAIN_IDs.TATARA]: "WETH",
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, _relayer] =
@@ -767,7 +765,12 @@ export class ProfitClient {
   }
 
   private _getNativeTokenNetwork(symbol: string): number {
-    return symbol === "SOL" ? CHAIN_IDs.SOLANA : CHAIN_IDs.MAINNET;
+    const symbols = {
+      HYPE: CHAIN_IDs.HYPEREVM,
+      SOL: CHAIN_IDs.SOLANA,
+    };
+
+    return symbols[symbol] ?? CHAIN_IDs.MAINNET;
   }
 
   private constructRelayerFeeQuery(

@@ -81,15 +81,17 @@ const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
   "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
 );
 
-const CCTP_V2_L2_CHAINS = [CHAIN_IDs.LINEA, CHAIN_IDs.WORLD_CHAIN];
-
 /**
  * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
  * @param chainId
  * @returns True if the chainId is a CCTP V2 chain
  */
 export function isCctpV2L2ChainId(chainId: number): boolean {
-  return CCTP_V2_L2_CHAINS.includes(chainId);
+  return (
+    chainId !== CHAIN_IDs.MAINNET &&
+    CONTRACT_ADDRESSES[chainId].cctpV2TokenMessenger !== undefined &&
+    CONTRACT_ADDRESSES[chainId].cctpV2MessageTransmitter !== undefined
+  );
 }
 
 /**
@@ -448,9 +450,9 @@ function getRelevantCCTPEventsFromReceipt(
     the logs array, not necessarily consecutively)
   */
 
-  // Indicies of individual `MessageSent` events in `receipt.logs`
+  // Indices of individual `MessageSent` events in `receipt.logs`
   const messageSentIndices = [];
-  // Pairs of indicies representing a single CCTP token transfer
+  // Pairs of indices representing a single CCTP token transfer
   const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
