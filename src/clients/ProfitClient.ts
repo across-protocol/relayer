@@ -766,7 +766,12 @@ export class ProfitClient {
   }
 
   private _getNativeTokenNetwork(symbol: string): number {
-    return symbol === "SOL" ? CHAIN_IDs.SOLANA : CHAIN_IDs.MAINNET;
+    const symbols = {
+      HYPE: CHAIN_IDs.HYPEREVM,
+      SOL: CHAIN_IDs.SOLANA,
+    };
+
+    return symbols[symbol] ?? CHAIN_IDs.MAINNET;
   }
 
   private constructRelayerFeeQuery(
