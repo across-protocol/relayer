@@ -149,14 +149,14 @@ async function identifyRequiredActions(
   l1ChainId: number,
   l2ChainId: number
 ): Promise<HeliosAction[]> {
-  // --- Substep 1: Query and Filter L1 Events (similar to getRelevantL1Events) ---
+  // --- Substep 1: Query and Filter L1 Events ---
   const relevantStoredCallDataEvents = await getRelevantL1Events(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
+    l2SpokePoolClient,
     l1ChainId,
-    l2ChainId,
-    l2SpokePoolClient.spokePool.address
+    l2ChainId
   );
 
   // --- Substep 2: Query L2 Verification Events (StorageSlotVerified) ---
@@ -408,9 +408,9 @@ async function getRelevantL1Events(
   _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
-  _l2ChainId: number,
-  l2SpokePoolAddress: string
+  l2ChainId: number
 ): Promise<StoredCallDataEvent[]> {
   const l1Provider = hubPoolClient.hubPool.provider;
   const hubPoolStoreContract = getHubPoolStoreContract(l1ChainId, l1Provider);
@@ -433,10 +433,18 @@ async function getRelevantL1Events(
 
   const events: StoredCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as StoredCallDataEvent);
 
+  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, l2SpokePoolClient.spokePoolAddress);
+  assert(
+    spokeActivationBlock !== undefined,
+    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${l2SpokePoolClient.spokePoolAddress.toNative()}
+    \nIs this address correct?`
+  );
+  const spokePoolAddressStr = l2SpokePoolClient.spokePoolAddress.toEvmAddress();
   const relevantStoredCallDataEvents = events.filter(
     (event) =>
-      compareAddressesSimple(event.target, l2SpokePoolAddress) ||
-      compareAddressesSimple(event.target, ethers.constants.AddressZero)
+      event.blockNumber >= spokeActivationBlock &&
+      (compareAddressesSimple(event.target, spokePoolAddressStr) ||
+        compareAddressesSimple(event.target, ethers.constants.AddressZero))
   );
 
   return relevantStoredCallDataEvents;
