@@ -114,8 +114,8 @@ export async function runTransaction(
   }
 
   const to = contract.address;
-  const commonArgs = { chainId, to, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
-  logger.debug({ at, message: "Submitting transaction", ...commonArgs });
+  const commonFields = { chainId, to, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
+  logger.debug({ at, message: "Submitting transaction", ...commonFields });
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -146,7 +146,7 @@ export async function runTransaction(
       case errors.NONCE_EXPIRED: // fallthrough
       case errors.TRANSACTION_REPLACED:
         nonce = null;
-        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, retries, ...commonArgs });
+        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, retries, ...commonFields });
         break;
 
       // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
@@ -157,7 +157,7 @@ export async function runTransaction(
           MAX_GAS_RETRY_SCALER
         );
         const message = `Increasing gas on ${chain} transaction replacement at nonce ${nonce}.`;
-        logger.debug({ at, message, retries, ...commonArgs });
+        logger.debug({ at, message, retries, ...commonFields });
         break;
       }
 
@@ -165,7 +165,7 @@ export async function runTransaction(
       // of fallback/rotation implemented at the provider layer. Back off 0.5s just in case.
       case errors.SERVER_ERROR: // fallthrough
       case errors.TIMEOUT:
-        logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonArgs });
+        logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonFields });
         await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
 
@@ -173,11 +173,11 @@ export async function runTransaction(
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
       case errors.UNEXPECTED_ARGUMENT:
-        logger.warn({ at, code, message: `Attempted invalid ${chain} transaction.`, reason, ...commonArgs });
+        logger.warn({ at, code, message: `Attempted invalid ${chain} transaction.`, reason, ...commonFields });
         throw error;
 
       default:
-        logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonArgs });
+        logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonFields });
     }
 
     if (--retries < 0) {
