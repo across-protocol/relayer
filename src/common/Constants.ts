@@ -136,10 +136,11 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
 // Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
+  [CHAIN_IDs.ALEPH_ZERO]: 0, // Disabled
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
-  [CHAIN_IDs.BOBA]: 4990,
+  [CHAIN_IDs.BOBA]: 0, // Disabled
   [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.HYPEREVM]: 1000,
   [CHAIN_IDs.INK]: 10000,
