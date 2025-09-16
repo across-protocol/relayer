@@ -114,8 +114,8 @@ export async function runTransaction(
   }
 
   const to = contract.address;
-  const commonFields = { chainId, to, method, args, nonce, gas: scaledGas, gasLimit, sendRawTxn };
-  logger.debug({ at, message: "Submitting transaction", ...commonFields });
+  const commonFields = { chainId, to, method, args, value, nonce, gas: scaledGas, gasLimit, sendRawTxn };
+  logger.debug({ at, message: "Submitting transaction.", ...commonFields });
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
