@@ -2,7 +2,7 @@ import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageW
 import { updateOrAppendSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
-import { mapAsync, winston, SvmAddress, isDefined } from "../../../../utils";
+import { winston, SvmAddress, isDefined } from "../../../../utils";
 import { arch } from "@across-protocol/sdk";
 
 /**
@@ -24,7 +24,8 @@ export async function finalizeCCTPV1MessagesSVM(
   hubChainId = 1
 ): Promise<string[]> {
   const svmProvider = solanaClient.svmEventsClient.getRpc();
-  return mapAsync(attestedMessages, async (message) => {
+  const finalizedTxns = [];
+  for (const message of attestedMessages) {
     const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
     const _receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
       svmProvider,
@@ -50,15 +51,17 @@ export async function finalizeCCTPV1MessagesSVM(
       if (result.value.err) {
         throw new Error(result.value.err.toString());
       }
-      return "";
+      finalizedTxns.push("");
     }
 
     try {
       const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-      return await svmProvider
-        .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
-        .send();
+      finalizedTxns.push(
+        await svmProvider
+          .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
+          .send()
+      );
     } catch (err) {
       logger.error({
         at: `Finalizer#finalizeSvmMessages:${solanaClient.chainId}`,
@@ -67,7 +70,8 @@ export async function finalizeCCTPV1MessagesSVM(
       });
       throw err;
     }
-  });
+  }
+  return finalizedTxns;
 }
 
 export function attestedCCTPMessageToSvmAttestedCCTPMessage(
