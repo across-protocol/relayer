@@ -57,8 +57,6 @@ export type Multicall2Call = {
   target: string;
 };
 
-const nonceReset: { [chainId: number]: boolean } = {};
-
 export function getNetworkError(err: unknown): string {
   return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
 }
