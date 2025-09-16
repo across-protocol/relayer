@@ -106,6 +106,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
+    [CHAIN_IDs.HYPEREVM]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
@@ -142,7 +143,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.BSC]: 10000,
-  [CHAIN_IDs.UNICHAIN]: 10000,
+  [CHAIN_IDs.HYPEREVM]: 1000,
   [CHAIN_IDs.INK]: 10000,
   [CHAIN_IDs.LENS]: 10000,
   [CHAIN_IDs.LINEA]: 5000,
@@ -155,6 +156,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.SCROLL]: 10000,
   [CHAIN_IDs.SONEIUM]: 10000,
   [CHAIN_IDs.SOLANA]: 1000,
+  [CHAIN_IDs.UNICHAIN]: 10000,
   [CHAIN_IDs.WORLD_CHAIN]: 10000,
   [CHAIN_IDs.ZK_SYNC]: 10000,
   [CHAIN_IDs.ZORA]: 10000,
@@ -163,6 +165,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BASE_SEPOLIA]: 10000,
   [CHAIN_IDs.BLAST_SEPOLIA]: 10000,
   [CHAIN_IDs.INK_SEPOLIA]: 10000,
+  [CHAIN_IDs.HYPEREVM_TESTNET]: 10000,
   [CHAIN_IDs.LENS_SEPOLIA]: 10000,
   [CHAIN_IDs.LISK_SEPOLIA]: 10000,
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
@@ -185,7 +188,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.BLAST]: 60,
   [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
   [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
-  [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
+  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
   [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
   [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
   [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
@@ -198,6 +201,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
   [CHAIN_IDs.SOLANA]: 150, // ~400ms/block
   [CHAIN_IDs.SONEIUM]: 60, // 2s/block
+  [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
   [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
   [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
   [CHAIN_IDs.ZORA]: 60, // 2s/block
@@ -206,6 +210,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
   [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   [CHAIN_IDs.INK_SEPOLIA]: 0,
+  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
   [CHAIN_IDs.LENS_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
@@ -242,7 +247,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BLAST]: 120,
   [CHAIN_IDs.BOBA]: 0,
   [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
-  [CHAIN_IDs.UNICHAIN]: 120,
+  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
   [CHAIN_IDs.INK]: 120, // Follows Optimism
   [CHAIN_IDs.LENS]: 512,
   [CHAIN_IDs.LISK]: 120,
@@ -255,6 +260,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.SOLANA]: 512,
   [CHAIN_IDs.SONEIUM]: 120,
+  [CHAIN_IDs.UNICHAIN]: 120,
   [CHAIN_IDs.WORLD_CHAIN]: 120,
   [CHAIN_IDs.ZK_SYNC]: 512,
   [CHAIN_IDs.ZORA]: 120,
@@ -263,6 +269,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE_SEPOLIA]: 0,
   [CHAIN_IDs.BLAST_SEPOLIA]: 0,
   [CHAIN_IDs.INK_SEPOLIA]: 0,
+  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.LENS_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
@@ -283,7 +290,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
-  [CHAIN_IDs.UNICHAIN]: 86400,
+  [CHAIN_IDs.HYPEREVM]: 86400,
   [CHAIN_IDs.INK]: 86400,
   [CHAIN_IDs.LENS]: 172800,
   [CHAIN_IDs.LINEA]: 57600,
@@ -296,6 +303,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
+  [CHAIN_IDs.UNICHAIN]: 86400,
   [CHAIN_IDs.WORLD_CHAIN]: 86400,
   [CHAIN_IDs.ZK_SYNC]: 172800,
   [CHAIN_IDs.ZORA]: 86400,
@@ -327,7 +335,6 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 export const spokesThatHoldNativeTokens = [
   CHAIN_IDs.BASE,
   CHAIN_IDs.BLAST,
-  CHAIN_IDs.UNICHAIN,
   CHAIN_IDs.INK,
   CHAIN_IDs.LENS,
   CHAIN_IDs.LINEA,
@@ -337,6 +344,7 @@ export const spokesThatHoldNativeTokens = [
   CHAIN_IDs.REDSTONE,
   CHAIN_IDs.SCROLL,
   CHAIN_IDs.SONEIUM,
+  CHAIN_IDs.UNICHAIN,
   CHAIN_IDs.WORLD_CHAIN,
   CHAIN_IDs.ZK_SYNC,
   CHAIN_IDs.ZORA,
@@ -349,7 +357,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR", "ezETH"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
   [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
-  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "ezETH"],
+  [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
@@ -375,6 +383,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
+  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "ezETH"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
@@ -497,10 +506,9 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: BinanceCEXNativeBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
-  [CHAIN_IDs.UNICHAIN]: {
+  [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.INK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -541,6 +549,11 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
+  [CHAIN_IDs.UNICHAIN]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -564,6 +577,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.BLAST_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.SEPOLIA]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.HYPEREVM_TESTNET]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
@@ -617,6 +634,10 @@ export const CUSTOM_L2_BRIDGE: {
   },
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+  },
+  [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
@@ -900,12 +921,13 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 1.5,
   [CHAIN_IDs.BASE]: 1.5,
   [CHAIN_IDs.BSC]: 1.5,
-  [CHAIN_IDs.UNICHAIN]: 1.5,
+  [CHAIN_IDs.HYPEREVM]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
+  [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.WORLD_CHAIN]: 1.5,
   [CHAIN_IDs.ZORA]: 1.5,
 };
@@ -980,6 +1002,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all supported chains that have non-eth for gas token should go here.
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
+  [CHAIN_IDs.HYPEREVM]: toWei("8"),
 };
 
 // Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
@@ -992,6 +1015,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
+      [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
       [CHAIN_IDs.OPTIMISM, EvmAddress.from("0xF03b4d9AC1D5d1E7c4cEf54C2A313b9fe051A0aD")],
       [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
@@ -1006,6 +1030,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // all supported chains that have non-eth for gas token should go here.
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
+  [CHAIN_IDs.HYPEREVM]: toWei("8"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };

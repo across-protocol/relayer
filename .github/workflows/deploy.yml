@@ -10,3 +10,6 @@ jobs:
       - name: Curl build and deploy webhook for GCP for UMA protocol repo
         run: ${{ secrets.PROTOCOL_BUILD_DEPLOY_WEBHOOK }}
         shell: bash
+      - name: Curl build and deploy webhook for GCP for UMA across repo
+        run: ${{ secrets.ACROSS_BUILD_DEPLOY_WEBHOOK }}
+        shell: bash

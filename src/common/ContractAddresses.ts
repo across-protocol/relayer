@@ -286,6 +286,16 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000001010",
     },
   },
+  [CHAIN_IDs.HYPEREVM]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
       address: "0x0000000000000000000000000000000000010004",
@@ -426,6 +436,16 @@ export const CONTRACT_ADDRESSES: {
     blastBridge: {
       address: "0x4300000000000000000000000000000000000005",
       abi: BLAST_BRIDGE_ABI,
+    },
+  },
+  [CHAIN_IDs.HYPEREVM_TESTNET]: {
+    cctpV2MessageTransmitter: {
+      address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM]: {

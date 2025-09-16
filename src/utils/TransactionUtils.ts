@@ -86,10 +86,7 @@ export async function runTransaction(
   const { provider, signer } = contract;
   const { chainId } = await provider.getNetwork();
 
-  if (!nonce || !nonceReset[chainId]) {
-    nonce = await provider.getTransactionCount(await signer.getAddress());
-    nonceReset[chainId] = true;
-  }
+  nonce ??= await provider.getTransactionCount(await signer.getAddress());
   const chain = getNetworkName(chainId);
 
   const sendRawTxn = method === "";
@@ -110,11 +107,12 @@ export async function runTransaction(
     );
     scaledGas = scaleGasPrice(chainId, gas, toBNWei(gasScaler));
   } catch (error) {
-    // Linea gas price requires full transaction simulation. fillRelay simulation will revert often, so
-    // drop them to debug severity. It'd be nice to avoid this here, but it's hard given current structure.
-    const log = chainId === CHAIN_IDs.LINEA && method === "fillRelay" ? logger.debug : logger.warn;
-    log({ at, message: `Failed to query ${chain} gas price.` });
-    throw error;
+    // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
+    // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
+    if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
+      throw error;
+    }
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
   }
 
   const to = contract.address;
@@ -133,7 +131,7 @@ export async function runTransaction(
     return sendRawTxn
       ? await signer.sendTransaction({ to, value, ...scaledGas })
       : await contract[method](...(args as Array<unknown>), txConfig);
-  } catch (error: unknown) {
+  } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
       throw error;
