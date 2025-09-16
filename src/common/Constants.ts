@@ -106,6 +106,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
+    [CHAIN_IDs.HYPEREVM]: 1,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
@@ -142,7 +143,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.BLAST]: 10000,
   [CHAIN_IDs.BOBA]: 4990,
   [CHAIN_IDs.BSC]: 10000,
-  [CHAIN_IDs.HYPEREVM]: 10000,
+  [CHAIN_IDs.HYPEREVM]: 1000,
   [CHAIN_IDs.INK]: 10000,
   [CHAIN_IDs.LENS]: 10000,
   [CHAIN_IDs.LINEA]: 5000,
