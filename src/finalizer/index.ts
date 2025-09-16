@@ -144,7 +144,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   },
   [CHAIN_IDs.HYPEREVM]: {
     finalizeOnL1: [],
-    finalizeOnL2: [heliosL1toL2Finalizer],
+    finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
