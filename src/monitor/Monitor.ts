@@ -218,12 +218,22 @@ export class Monitor {
 
     invalidFills.forEach((invalidFill) => {
       // Log the fill data
+      const deposit = invalidFill.deposit
+        ? {
+            txnRef: invalidFill.deposit.txnRef,
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
+          }
+        : undefined;
       this.logger.warn({
         at: "Monitor::reportInvalidFills",
         message: `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit`,
-        fill: invalidFill.fill,
+        destinationChainId: invalidFill.fill.destinationChainId,
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
+        blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, invalidFill.fill.destinationChainId),
         reason: invalidFill.reason,
-        deposit: invalidFill.deposit ?? undefined,
+        deposit,
         notificationPath: "across-invalid-fills",
       });
     });
