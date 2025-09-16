@@ -17,7 +17,6 @@ import {
   winston,
   stringifyThrownValue,
   CHAIN_IDs,
-  EvmGasPriceEstimate,
   SVMProvider,
   parseUnits,
 } from "../utils";
