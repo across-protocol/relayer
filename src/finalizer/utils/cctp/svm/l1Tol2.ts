@@ -52,6 +52,7 @@ export async function finalizeCCTPV1MessagesSVM(
         throw new Error(result.value.err.toString());
       }
       finalizedTxns.push("");
+      continue;
     }
 
     try {
