@@ -826,12 +826,12 @@ export class Monitor {
                 });
                 return;
               }
-              const arbitrumSpokePoolClient = this.clients.spokePoolClients[CHAIN_IDs.ARBITRUM];
+              const originSpokePoolClient = this.clients.spokePoolClients[swapRoute.originChainId];
               assert(
-                isEVMSpokePoolClient(arbitrumSpokePoolClient),
-                "Missing Arbitrum spoke pool client, cannot swap ETH on Arbitrum to MATIC on Polygon"
+                isEVMSpokePoolClient(originSpokePoolClient),
+                `Missing origin spoke pool client for chain ${swapRoute.originChainId}`
               );
-              const arbitrumSigner = arbitrumSpokePoolClient.spokePool.signer;
+              const arbitrumSigner = originSpokePoolClient.spokePool.signer;
               const swapData = await this.acrossSwapApiClient.swapExactOutput(
                 swapRoute,
                 deficit,
@@ -860,7 +860,9 @@ export class Monitor {
                 });
                 this.logger.info({
                   at: "Monitor#refillBalances",
-                  message: `Swapped ETH on Arbitrum to MATIC on Polygon for ${account} 🎁!`,
+                  message: `Swapped ETH on ${getNetworkName(
+                    swapRoute.originChainId
+                  )} to MATIC on Polygon for ${account} 🎁!`,
                   transactionHash: blockExplorerLink(txn.transactionHash, chainId),
                 });
               } else {
@@ -869,7 +871,9 @@ export class Monitor {
                 // miscellaneous reasons.
                 this.logger.warn({
                   at: "Monitor#refillBalances",
-                  message: `Failed to swap ETH on Arbitrum to MATIC on Polygon for ${account}`,
+                  message: `Failed to swap ETH on ${getNetworkName(
+                    swapRoute.originChainId
+                  )} to MATIC on Polygon for ${account}`,
                   swapRoute,
                   deficit,
                   swapper: EvmAddress.from(signerAddress).toNative(),
