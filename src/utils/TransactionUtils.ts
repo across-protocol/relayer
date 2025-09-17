@@ -254,7 +254,6 @@ export async function getGasPrice(
 ): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
   const { chainId } = await provider.getNetwork();
 
-  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
   const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
   const priorityFee = process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
   if (isDefined(maxFee) && isDefined(priorityFee)) {
@@ -269,6 +268,7 @@ export async function getGasPrice(
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   priorityScaler = Math.max(1, priorityScaler);
 
+  // Linea gas price estimation requires transaction simulation so supply the unsigned transaction.
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
