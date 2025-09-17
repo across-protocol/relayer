@@ -263,6 +263,7 @@ export class Monitor {
       at: "Monitor::invalidFillsByChain",
       message: "Invalid fills by chain",
       invalidFillsByChainId,
+      notificationPath: "across-invalid-fills",
     });
   }
 
