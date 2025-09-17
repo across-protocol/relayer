@@ -50,16 +50,10 @@ export type LatestBlockhash = {
   lastValidBlockHeight: bigint;
 };
 
-const { isError, isEthersError } = typeguards;
-
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
   target: string;
 };
-
-export function getNetworkError(err: unknown): string {
-  return isEthersError(err) ? err.reason : isError(err) ? err.message : "unknown error";
-}
 
 export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
   return sdkUtils.getMulticall3(chainId, baseSigner);
