@@ -17,7 +17,6 @@ import {
   winston,
   stringifyThrownValue,
   CHAIN_IDs,
-  EvmGasPriceEstimate,
   SVMProvider,
   parseUnits,
 } from "../utils";
@@ -252,28 +251,30 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
-): Promise<Partial<FeeData>> {
+): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
+  const { chainId } = await provider.getNetwork();
+
+  const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
+  const priorityFee = process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
+  if (isDefined(maxFee) && isDefined(priorityFee)) {
+    return {
+      maxFeePerGas: parseUnits(maxFee, 9),
+      maxPriorityFeePerGas: parseUnits(priorityFee, 9),
+    };
+  }
+
   // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
   // just want to submit with as close to prevailing fees as possible.
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   priorityScaler = Math.max(1, priorityScaler);
-  const { chainId } = await provider.getNetwork();
-  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  if (
-    isDefined(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`]) &&
-    isDefined(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`])
-  ) {
-    return {
-      maxFeePerGas: parseUnits(process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
-      maxPriorityFeePerGas: parseUnits(process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`], 9),
-    };
-  }
-  const feeData = (await gasPriceOracle.getGasPriceEstimate(provider, {
+
+  // Linea gas price estimation requires transaction simulation so supply the unsigned transaction.
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
-  })) as EvmGasPriceEstimate;
+  });
 
   // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
   // the priority fee will be 0.
