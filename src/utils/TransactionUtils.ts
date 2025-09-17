@@ -92,6 +92,7 @@ export async function runTransaction(
   const maxFeePerGasScaler =
     Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
 
   let scaledGas: Partial<FeeData>;
   try {
@@ -111,7 +112,6 @@ export async function runTransaction(
     }
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
   }
-  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
 
   // Check if the chain requires legacy transactions
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
