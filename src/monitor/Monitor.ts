@@ -766,8 +766,9 @@ export class Monitor {
                 deficit
               );
           const spokePoolClient = this.clients.spokePoolClients[chainId];
-          // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
           if (!canRefill && token.eq(getNativeTokenAddressForChain(chainId)) && isEVMSpokePoolClient(spokePoolClient)) {
+            // If token is the native token and the native token is ETH, try unwrapping some WETH into ETH first before
+            // transferring ETH to the account.
             if (getNativeTokenSymbol(chainId) === "ETH") {
               const weth = new Contract(
                 TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
