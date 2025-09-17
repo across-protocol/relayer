@@ -751,7 +751,6 @@ export class Monitor {
             toAddressType(signerAddress, chainId),
             deficit
           );
-          canRefill = false;
           const spokePoolClient = this.clients.spokePoolClients[chainId];
           // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
           if (!canRefill && token.eq(getNativeTokenAddressForChain(chainId)) && isEVMSpokePoolClient(spokePoolClient)) {
