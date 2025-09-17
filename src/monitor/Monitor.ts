@@ -112,9 +112,7 @@ export class Monitor {
     readonly clients: MonitorClients
   ) {
     this.crossChainAdapterSupportedChains = clients.crossChainTransferClient.adapterManager.supportedChains();
-    this.monitorChains = Object.values(clients.spokePoolClients)
-      .map(({ chainId }) => chainId)
-      .filter((chainId) => ![CHAIN_IDs.SOLANA, CHAIN_IDs.BSC].includes(chainId));
+    this.monitorChains = Object.values(clients.spokePoolClients).map(({ chainId }) => chainId);
     for (const chainId of this.monitorChains) {
       this.spokePoolsBlocks[chainId] = { startingBlock: undefined, endingBlock: undefined };
     }
@@ -755,12 +753,18 @@ export class Monitor {
           // Fill balance back to target, not trigger.
           const balanceTarget = parseUnits(target.toString(), decimals);
           const deficit = balanceTarget.sub(currentBalance);
-          let canRefill = await this.balanceAllocator.requestBalanceAllocation(
-            chainId,
-            [token],
-            toAddressType(signerAddress, chainId),
-            deficit
-          );
+          const selfRefill = account.eq(toAddressType(signerAddress, chainId));
+          // If the account and the signer are the same, we can't transfer to ourselves so we need to try to go through
+          // one of the `canRefill` paths below, which tries to source the `token` from other means, like unwrapping
+          // WETH or sending a cross chain swap.
+          let canRefill = selfRefill
+            ? false
+            : await this.balanceAllocator.requestBalanceAllocation(
+                chainId,
+                [token],
+                toAddressType(signerAddress, chainId),
+                deficit
+              );
           const spokePoolClient = this.clients.spokePoolClients[chainId];
           // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
           if (!canRefill && token.eq(getNativeTokenAddressForChain(chainId)) && isEVMSpokePoolClient(spokePoolClient)) {
@@ -857,7 +861,22 @@ export class Monitor {
                   message: `Swapped ETH on Arbitrum to MATIC on Polygon for ${account} 🎁!`,
                   transactionHash: blockExplorerLink(txn.transactionHash, chainId),
                 });
+              } else {
+                // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
+                // can happen if the swapper doesn't have enough swap input token balance in addition to other
+                // miscellaneous reasons.
+                this.logger.warn({
+                  at: "Monitor#refillBalances",
+                  message: `Failed to swap ETH on Arbitrum to MATIC on Polygon for ${account}`,
+                  swapRoute,
+                  deficit,
+                  swapper: EvmAddress.from(signerAddress).toNative(),
+                  recipient: EvmAddress.from(account.toEvmAddress()).toNative(),
+                });
               }
+              // Return early now because the cross chain swap, successful or not, is async and we won't be able to
+              // refill balances via a transfer() until the next bot iteration.
+              return;
             }
           }
           if (canRefill && isEVMSpokePoolClient(spokePoolClient)) {

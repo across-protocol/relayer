@@ -81,7 +81,7 @@ export class AcrossSwapApiClient {
         params,
       });
       if (!response?.data) {
-        this.logger.error({
+        this.logger.warn({
           at: "AcrossAPIClient",
           message: `Invalid response from ${this.urlBase}`,
           url: this.urlBase,
@@ -91,7 +91,7 @@ export class AcrossSwapApiClient {
         return;
       }
       if (!response.data.swapTx.simulationSuccess) {
-        this.logger.error({
+        this.logger.warn({
           at: "AcrossSwapApiClient",
           message: "Swap simulation failed in API",
           url: this.urlBase,
@@ -106,7 +106,7 @@ export class AcrossSwapApiClient {
         value: BigNumber.from(response.data.swapTx.value),
       };
     } catch (err) {
-      this.logger.error({
+      this.logger.warn({
         at: "AcrossSwapApiClient",
         message: `Failed to post to ${this.urlBase}`,
         url: this.urlBase,
