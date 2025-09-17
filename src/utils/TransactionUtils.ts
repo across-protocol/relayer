@@ -116,7 +116,9 @@ export async function runTransaction(
 
   // Check if the chain requires legacy transactions
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    scaledGas = { gasPrice: scaledGas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : scaledGas.maxFeePerGas };
+    scaledGas = {
+      gasPrice: scaledGas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : scaledGas.maxFeePerGas,
+    };
   } else {
     // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
     const maxPriorityFeePerGas = sdkUtils.bnMax(scaledGas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
