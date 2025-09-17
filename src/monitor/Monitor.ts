@@ -1315,6 +1315,10 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
+          if (chainId === CHAIN_IDs.MAINNET && l1Token.symbol === "USDC.e") {
+            // We don't want to double count USDC/USDC.e repayments on Mainnet.
+            continue;
+          }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
             const l2TokenAddress = getRemoteTokenForL1Token(
