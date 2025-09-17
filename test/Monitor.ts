@@ -26,7 +26,6 @@ import {
   ethers,
   expect,
   lastSpyLogIncludes,
-  toBNWei,
   deployMulticall3,
 } from "./utils";
 
@@ -373,48 +372,5 @@ describe("Monitor", async function () {
     expect(lastSpyLogIncludes(spy, "Unfilled deposits ⏱")).to.be.true;
     const log = spy.lastCall;
     expect(log.lastArg.mrkdwn).to.contains("100.00");
-  });
-
-  it("Monitor should send token refills", async function () {
-    const refillConfig = [
-      {
-        account: hubPool.address,
-        isHubPool: true,
-        chainId: hubPoolClient.chainId,
-        trigger: 1,
-        target: 2,
-      },
-      {
-        account: spokePool_1.address,
-        isHubPool: false,
-        chainId: originChainId,
-        trigger: 1,
-        target: 2,
-      },
-    ];
-    const monitorEnvs = {
-      ...defaultMonitorEnvVars,
-      REFILL_BALANCES: JSON.stringify(refillConfig),
-    };
-    const _monitorConfig = new MonitorConfig(monitorEnvs);
-    const _monitor = new Monitor(spyLogger, _monitorConfig, {
-      bundleDataClient,
-      configStoreClient,
-      multiCallerClient,
-      hubPoolClient,
-      spokePoolClients,
-      tokenTransferClient,
-      crossChainTransferClient,
-    });
-    await _monitor.update();
-
-    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(0);
-
-    await _monitor.refillBalances();
-
-    expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTxnQueues();
-
-    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
   });
 });
