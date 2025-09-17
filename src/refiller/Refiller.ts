@@ -135,6 +135,9 @@ export class Refiller {
               at: "Refiller#refillNativeTokenBalances",
               message: `Balance of ETH below trigger on chain ${chainId} and account has insufficient ETH to transfer on chain, now trying to unwrap WETH to refill ETH`,
               chainId,
+              currentBalance: currentBalance.toString(),
+              trigger: balanceTrigger.toString(),
+              balanceTarget: balanceTarget.toString(),
               deficit,
               account: this.baseSignerAddress,
             });
@@ -146,6 +149,8 @@ export class Refiller {
                 chainId,
                 requiredUnwrapAmount: deficit.toString(),
                 ethBalance: currentBalance.toString(),
+                trigger: balanceTrigger.toString(),
+                balanceTarget: balanceTarget.toString(),
                 transactionHash: blockExplorerLink(txn.transactionHash, chainId),
               });
               // Don't return early and flip canRefill to true because we now have enough ETH to transfer to the account
@@ -172,6 +177,9 @@ export class Refiller {
                 swapRoute.originChainId
               )} to MATIC`,
               swapRoute,
+              currentBalance: currentBalance.toString(),
+              trigger: balanceTrigger.toString(),
+              balanceTarget: balanceTarget.toString(),
               deficit,
               account: this.baseSignerAddress,
             });
@@ -183,6 +191,10 @@ export class Refiller {
                   swapRoute.originChainId
                 )} to MATIC on Polygon for ${account} 🎁!`,
                 transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
+                currentBalance: currentBalance.toString(),
+                trigger: balanceTrigger.toString(),
+                balanceTarget: balanceTarget.toString(),
+                amount: deficit.toString(),
               });
             }
             // Return early now because the cross chain swap, successful or not, is async and we won't be able to
