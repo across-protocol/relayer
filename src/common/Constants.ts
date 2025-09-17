@@ -41,7 +41,6 @@ import {
   BaseL2BridgeAdapter,
   OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
-  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
   OpStackBridge as L2OpStackBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
@@ -137,11 +136,11 @@ export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 // if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
 // Quicknode for example.
 export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  [CHAIN_IDs.ALEPH_ZERO]: 10000,
+  [CHAIN_IDs.ALEPH_ZERO]: 0, // Disabled
   [CHAIN_IDs.ARBITRUM]: 10000,
   [CHAIN_IDs.BASE]: 10000,
   [CHAIN_IDs.BLAST]: 10000,
-  [CHAIN_IDs.BOBA]: 4990,
+  [CHAIN_IDs.BOBA]: 0, // Disabled
   [CHAIN_IDs.BSC]: 10000,
   [CHAIN_IDs.HYPEREVM]: 1000,
   [CHAIN_IDs.INK]: 10000,
@@ -182,7 +181,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
 export const BUNDLE_END_BLOCK_BUFFERS = {
-  [CHAIN_IDs.ALEPH_ZERO]: 240, // Same as Arbitrum
+  [CHAIN_IDs.ALEPH_ZERO]: 0, // Chain is disabled.
   [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
   [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.BLAST]: 60,
@@ -241,7 +240,6 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
 export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
-  [CHAIN_IDs.ALEPH_ZERO]: 60,
   [CHAIN_IDs.ARBITRUM]: 32,
   [CHAIN_IDs.BASE]: 120,
   [CHAIN_IDs.BLAST]: 120,
@@ -285,7 +283,6 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
 // These are all intended to be roughly 2 days of blocks for each chain.
 // blocks = 172800 / avg_block_time
 export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
-  [CHAIN_IDs.ALEPH_ZERO]: 691200,
   [CHAIN_IDs.ARBITRUM]: 691200,
   [CHAIN_IDs.BASE]: 86400,
   [CHAIN_IDs.BLAST]: 86400,
@@ -352,7 +349,6 @@ export const spokesThatHoldNativeTokens = [
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  [CHAIN_IDs.ALEPH_ZERO]: ["USDT", "WETH"],
   [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL", "ezETH"],
   [CHAIN_IDs.BASE]: ["BAL", "DAI", "ETH", "WETH", "USDC", "USDT", "POOL", "VLR", "ezETH"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
@@ -431,7 +427,6 @@ type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
 export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdapter>> = {
-  [CHAIN_IDs.ALEPH_ZERO]: ArbitrumOrbitBridge,
   [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
   [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
   [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
@@ -477,7 +472,6 @@ export const CANONICAL_L2_BRIDGE: {
     ): BaseL2BridgeAdapter;
   };
 } = {
-  [CHAIN_IDs.ALEPH_ZERO]: L2ArbitrumOrbitBridge,
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
@@ -719,10 +713,6 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
 
 // The default ERC20 gateway is the generic gateway used by Arbitrum Orbit chains to mint tokens which do not have a custom gateway set.
 export const DEFAULT_ARBITRUM_GATEWAY: { [chainId: number]: { l1: string; l2: string } } = {
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    l1: "0xccaF21F002EAF230c9Fa810B34837a3739B70F7B",
-    l2: "0x2A5a79061b723BBF453ef7E07c583C750AFb9BD6",
-  },
   [CHAIN_IDs.ARBITRUM]: {
     l1: "0xa3A7B6F88361F48403514059F1F16C8E78d60EeC",
     l2: "0x09e9222E96E7B4AE2a407B98d48e330053351EEe",
@@ -749,7 +739,6 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 
 // Expected worst-case time for message from L1 to propagate to L2 in seconds
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
-  [CHAIN_IDs.ALEPH_ZERO]: 20 * 60,
   [CHAIN_IDs.ARBITRUM]: 20 * 60,
   [CHAIN_IDs.BASE]: 20 * 60,
   [CHAIN_IDs.BLAST]: 20 * 60,
@@ -953,12 +942,6 @@ export const ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA: {
   [CHAIN_IDs.ARBITRUM]: {
     amountWei: 0.02,
     amountMultipleToFund: 1,
-  },
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    amountWei: 0.49,
-    amountMultipleToFund: 50,
-    feePayer: "0x0d57392895Db5aF3280e9223323e20F3951E81B1", // DonationBox
-    feeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
   },
 };
 

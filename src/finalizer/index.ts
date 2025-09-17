@@ -1,7 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
-import { Contract, ethers } from "ethers";
-import { getAddress } from "ethers/lib/utils";
+import { Contract } from "ethers";
 import { groupBy, uniq } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import {
@@ -85,10 +84,6 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   [CHAIN_IDs.BASE]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
-  },
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    finalizeOnL1: [arbStackFinalizer],
-    finalizeOnL2: [],
   },
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
@@ -251,12 +246,10 @@ export async function finalize(
     // or the recipient so its important to track for both, even if that means more RPC requests.
     // Always track HubPool, SpokePool, AtomicDepositor. HubPool sends messages and
     // tokens to the SpokePool, while the relayer rebalances ETH via the AtomicDepositor.
-    const addressesToFinalize: Address[] = [
-      hubPoolClient.hubPool.address,
-      CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address,
-      ...config.userAddresses,
-    ].map((address) => EvmAddress.from(getAddress(address)));
-    addressesToFinalize.push(spokePoolClients[chainId].spokePoolAddress);
+    const addressesToFinalize = new Map(config.userAddresses);
+    addressesToFinalize.set(EvmAddress.from(hubPoolClient.hubPool.address), []);
+    addressesToFinalize.set(EvmAddress.from(CONTRACT_ADDRESSES[hubChainId]?.atomicDepositor?.address), []);
+    addressesToFinalize.set(spokePoolClients[chainId].spokePoolAddress, []);
 
     // We can subloop through the finalizers for each chain, and then execute the finalizer. For now, the
     // main reason for this is related to CCTP finalizations. We want to run the CCTP finalizer AND the
@@ -533,7 +526,7 @@ async function updateFinalizerClients(clients: Clients) {
 export class FinalizerConfig extends CommonConfig {
   public readonly finalizationStrategy: FinalizationType;
   public readonly maxFinalizerLookback: number;
-  public readonly userAddresses: string[];
+  public readonly userAddresses: Map<Address, string[]>;
   public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
@@ -545,9 +538,11 @@ export class FinalizerConfig extends CommonConfig {
     } = env;
     super(env);
 
-    const userAddresses = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
-    assert(Array.isArray(userAddresses), "FINALIZER_WITHDRAWAL_TO_ADDRESSES must be a JSON string array");
-    this.userAddresses = userAddresses.map(ethers.utils.getAddress);
+    const userAddresses: { [address: string]: string[] } = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
+    this.userAddresses = new Map();
+    Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
+      this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
+    });
 
     this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
 

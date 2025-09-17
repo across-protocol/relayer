@@ -10,6 +10,7 @@ import {
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
+  TokenInfo,
 } from "../interfaces";
 import {
   BigNumber,
@@ -216,16 +217,53 @@ export class Monitor {
   async reportInvalidFills(): Promise<void> {
     const invalidFills = await sdkUtils.findInvalidFills(this.clients.spokePoolClients);
 
+    const invalidFillsByChainId: Record<string, number> = {};
     invalidFills.forEach((invalidFill) => {
-      // Log the fill data
+      const destinationChainName = getNetworkName(invalidFill.fill.destinationChainId);
+      invalidFillsByChainId[destinationChainName] = (invalidFillsByChainId[destinationChainName] ?? 0) + 1;
+      const destinationChainId = invalidFill.fill.destinationChainId;
+      const outputToken = invalidFill.fill.outputToken;
+      let tokenInfo: TokenInfo;
+
+      try {
+        tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+      } catch {
+        tokenInfo = { symbol: "UNKNOWN TOKEN", decimals: 18, address: outputToken };
+      }
+
+      const formatterFunction = createFormatFunction(2, 4, false, tokenInfo.decimals);
+      const formattedOutputAmount = formatterFunction(invalidFill.fill.outputAmount.toString());
+
+      const message =
+        `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit. ` +
+        `Output amount: ${formattedOutputAmount} ${tokenInfo.symbol}`;
+
+      const deposit = invalidFill.deposit
+        ? {
+            txnRef: invalidFill.deposit.txnRef,
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
+          }
+        : undefined;
+
       this.logger.warn({
         at: "Monitor::reportInvalidFills",
-        message: `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit`,
-        fill: invalidFill.fill,
+        message,
+        destinationChainId,
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
+        blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
-        deposit: invalidFill.deposit ?? undefined,
+        deposit,
         notificationPath: "across-invalid-fills",
       });
+    });
+
+    this.logger.info({
+      at: "Monitor::invalidFillsByChain",
+      message: "Invalid fills by chain",
+      invalidFillsByChainId,
+      notificationPath: "across-invalid-fills",
     });
   }
 
@@ -1277,6 +1315,10 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
+          if (chainId === CHAIN_IDs.MAINNET && l1Token.symbol === "USDC.e") {
+            // We don't want to double count USDC/USDC.e repayments on Mainnet.
+            continue;
+          }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
             const l2TokenAddress = getRemoteTokenForL1Token(
