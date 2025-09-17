@@ -1,9 +1,8 @@
-import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
+import { gasPriceOracle, providers as sdkProviders, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import { FeeData } from "@ethersproject/abstract-provider";
 import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
-import { EthersError } from "../interfaces";
 import {
   BigNumber,
   bnZero,
@@ -59,10 +58,9 @@ export async function getMultisender(chainId: number, baseSigner: Signer): Promi
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
-// Note that this function will throw if the call to the contract on method for given args reverts. Implementers
-// of this method should be considerate of this and catch the response to deal with the error accordingly.
-// @dev: If the method value is an empty string (e.g. ""), then this function
-// will submit a raw transaction to the contract address.
+// This function will throw if the call to the transaction reverts.
+// Callers should catch this response to deal with the error accordingly.
+// @dev: If the method value is an empty string (i.e. ""), then this function will submit a raw transaction.
 export async function runTransaction(
   logger: winston.Logger,
   contract: Contract,
@@ -109,7 +107,7 @@ export async function runTransaction(
 
   // Check if the chain requires legacy transactions
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    scaledGas = { gasPrice: sdkUtils.bnMax(scaledGas.maxFeePerGas, (flooredPriorityFeePerGas)) };
+    scaledGas = { gasPrice: sdkUtils.bnMax(scaledGas.maxFeePerGas, flooredPriorityFeePerGas) };
   } else {
     // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
     const maxPriorityFeePerGas = sdkUtils.bnMax(scaledGas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
@@ -142,53 +140,73 @@ export async function runTransaction(
       throw error;
     }
 
+    const getCause = (error: unknown): string => {
+      const rpcError = sdkProviders.parseJsonRpcError(error);
+      return rpcError?.message.toLowerCase() ?? "unknown error";
+    };
+
     const { errors } = ethers;
-    const { code, reason } = error;
+    const { code, reason, error: rawError } = error;
+    const cause = getCause(rawError);
+    let scaleGas = false;
+    let message = `Unhandled ${chain} transaction error (${cause})`;
     switch (code) {
-      // Transaction fails on simulation; escalate this to the upper layers for context-appropriate handling.
+      // Transaction fails on simulation. May be due to an actual revert, or due to a gas pricing issue.
       case errors.UNPREDICTABLE_GAS_LIMIT:
-        throw error;
+        message = `Unable to simulate transaction (${cause}).`;
+        if ([cause, reason].some((err) => err.includes("revert"))) {
+          logger.warn({ at, message, retries, reason, ...commonFields });
+          throw error;
+        }
+        scaleGas = ["gas", "fee"].some((cause) => cause.includes(reason));
+        break;
+
+      case errors.REPLACEMENT_UNDERPRICED:
+        message = `Transaction replacement on ${chain} failed at nonce ${nonce} (${cause}).`;
+        scaleGas = true;
+        break;
+
+      // Undiagnosed issue. Can be a nonce issue, so try to re-sync, and otherwise
+      // pull out the underlying error to support manual diagnosis if necessary.
+      case errors.SERVER_ERROR:
+        message = `Encountered error on ${chain} (${cause}).`;
+        nonce = null;
+        break;
 
       // Nonce collisions, likely due to concurrent bot instances running. Re-sync nonce and retry.
       case errors.NONCE_EXPIRED: // fallthrough
-      case errors.TRANSACTION_REPLACED:
         nonce = null;
-        logger.debug({ at, message: `Re-syncing ${chain} nonce.`, retries, ...commonFields });
+        message = `Nonce collision detected on ${chain}.`;
         break;
 
-      // Pending transactions in the mempool (likely underpriced). Bump gas and try to replace.
-      case errors.REPLACEMENT_UNDERPRICED: {
-        // Increase the gas scaler for subsequent retries.
-        gasScaler = Math.min(
-          Math.pow(Math.max(gasScaler, priorityFeeScaler), 2), // priorityFeeScaler set via environment.
-          MAX_GAS_RETRY_SCALER
-        );
-        const message = `Increasing gas on ${chain} transaction replacement at nonce ${nonce}.`;
-        logger.debug({ at, message, retries, ...commonFields });
-        break;
-      }
-
-      // Transient provider issue; retry. Unclear whether this will be seen in practice because
-      // of fallback/rotation implemented at the provider layer. Back off 0.5s just in case.
-      case errors.SERVER_ERROR: // fallthrough
       case errors.TIMEOUT:
-        logger.debug({ at, message: `Hit transient error on ${chain}.`, reason, ...commonFields });
+        message = `Timed out error on ${chain}.`;
         await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
 
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
-      case errors.UNEXPECTED_ARGUMENT:
-        logger.warn({ at, code, message: `Attempted invalid ${chain} transaction.`, reason, ...commonFields });
+      case errors.UNEXPECTED_ARGUMENT: {
+        message = `Attempted invalid ${chain} transaction (${cause}).`;
+        logger.warn({ at, message, code, reason, ...commonFields });
         throw error;
+      }
 
       default:
-        logger.warn({ at, message: `Unhandled ${chain} transaction error`, code, retries, ...commonFields });
+        logger.warn({ at, message, code, retries, ...commonFields });
     }
 
+    logger.debug({ at, message, code, reason, ...commonFields });
     if (--retries < 0) {
       throw error;
+    }
+
+    if (scaleGas) {
+      gasScaler = Math.min(
+        Math.pow(Math.max(gasScaler, Math.max(priorityFeeScaler, 1.1)), 2), // priorityFeeScaler set via environment.
+        MAX_GAS_RETRY_SCALER
+      );
     }
 
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gasScaler);
@@ -294,9 +312,9 @@ export async function willSucceed(transaction: AugmentedTransaction): Promise<Tr
   try {
     const gasLimit = await contract.estimateGas[method](...args);
     return { transaction: { ...transaction, gasLimit }, succeed: true, data };
-  } catch (_error) {
-    const error = _error as EthersError;
-    return { transaction, succeed: false, reason: error.reason };
+  } catch (error) {
+    const reason = typeguards.isEthersError(error) ? error.reason : "unknown error";
+    return { transaction, succeed: false, reason };
   }
 }
 
