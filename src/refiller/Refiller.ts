@@ -15,7 +15,6 @@ import {
   getNativeTokenAddressForChain,
   getNativeTokenSymbol,
   getNetworkName,
-  getProvider,
   getRedisCache,
   getSolanaTokenBalance,
   getSvmProvider,
@@ -60,14 +59,13 @@ export class Refiller {
   private redisCache: RedisCache;
   private baseSigner: Signer;
   private baseSignerAddress: EvmAddress;
-  private enabledChainIds: number[];
+  private initialized = false;
 
   public constructor(
     readonly logger: winston.Logger,
     readonly config: RefillerConfig,
     readonly clients: RefillerClients
   ) {
-    this.enabledChainIds = Object.keys(clients.balanceAllocator.providers).map(Number);
     this.acrossSwapApiClient = new AcrossSwapApiClient(this.logger);
     this.baseSigner = this.clients.hubPoolClient.hubPool.signer;
   }
@@ -78,17 +76,12 @@ export class Refiller {
   async initialize(): Promise<void> {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
+    this.initialized = true;
   }
 
   async refillNativeTokenBalances(): Promise<void> {
+    assert(this.initialized, "not initialized, call initialize() first");
     const { refillEnabledBalances } = this.config;
-    if (refillEnabledBalances.some(({ chainId }) => !this.enabledChainIds.includes(chainId))) {
-      throw new Error(
-        `Refiller#refillNativeTokenBalances: Some chain IDs are not enabled but requested in refillEnabledBalances: (enabledChains: ${
-          this.enabledChainIds
-        }, refillEnabledBalancesChains: ${refillEnabledBalances.map(({ chainId }) => chainId)})`
-      );
-    }
 
     // Check for current balances.
     const currentBalances = await this._getBalances(refillEnabledBalances);
@@ -110,6 +103,9 @@ export class Refiller {
     // Compare current balances with triggers and send tokens if signer has enough balance.
     await mapAsync(refillEnabledBalances, async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
       assert(token.eq(getNativeTokenAddressForChain(chainId)), "Token must be the native token");
+      const l2Provider = this.clients.balanceAllocator.providers[chainId];
+      assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
+
       const currentBalance = currentBalances[i];
       const decimals = decimalValues[i];
       const balanceTrigger = parseUnits(trigger.toString(), decimals);
@@ -229,7 +225,7 @@ export class Refiller {
             const sendRawTransactionContract = new Contract(
               account.toEvmAddress(),
               [],
-              this.baseSigner.connect(await getProvider(chainId))
+              this.baseSigner.connect(l2Provider)
             );
             const txn = await (await sendRawTransaction(this.logger, sendRawTransactionContract, deficit)).wait();
             this.logger.info({
@@ -272,7 +268,7 @@ export class Refiller {
     const weth = new Contract(
       TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
       WETH9.abi,
-      this.baseSigner.connect(await getProvider(chainId))
+      this.baseSigner.connect(this.clients.balanceAllocator.providers[chainId])
     );
     const hasSufficientWethBalance = await this.clients.balanceAllocator.requestBalanceAllocation(
       chainId,
@@ -313,7 +309,11 @@ export class Refiller {
       });
       return;
     }
-    const originSigner = this.baseSigner.connect(await getProvider(swapRoute.originChainId));
+    assert(
+      this.clients.balanceAllocator.providers[swapRoute.originChainId],
+      `No L2 provider found for chain ${swapRoute.originChainId}, have you overridden the spoke pool chains?`
+    );
+    const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
     const swapData = await this.acrossSwapApiClient.swapExactOutput(
       swapRoute,
       amount,
@@ -363,7 +363,7 @@ export class Refiller {
         }
         if (chainIsEvm(chainId)) {
           const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
-          const provider = await getProvider(chainId);
+          const provider = this.clients.balanceAllocator.providers[chainId];
           const balance = token.eq(gasTokenAddressForChain)
             ? await provider.getBalance(account.toEvmAddress())
             : await new Contract(token.toEvmAddress(), ERC20.abi, provider).balanceOf(account.toEvmAddress());
@@ -399,7 +399,7 @@ export class Refiller {
         }
         let decimals: number;
         if (chainIsEvm(chainId)) {
-          const provider = this.baseSigner.connect(await getProvider(chainId));
+          const provider = this.baseSigner.connect(this.clients.balanceAllocator.providers[chainId]);
           decimals = await new Contract(token.toEvmAddress(), ERC20.abi, provider).decimals();
         } else {
           decimals = getTokenInfo(token, chainId).decimals;
