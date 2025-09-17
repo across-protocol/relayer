@@ -83,11 +83,9 @@ export async function runTransaction(
   const at = "TxUtil#runTransaction";
   const { provider, signer } = contract;
   const { chainId } = await provider.getNetwork();
-
-  nonce ??= await provider.getTransactionCount(await signer.getAddress());
   const chain = getNetworkName(chainId);
-
   const sendRawTxn = method === "";
+
   const priorityFeeScaler =
     Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
@@ -97,6 +95,7 @@ export async function runTransaction(
 
   let scaledGas: Partial<FeeData>;
   try {
+    nonce ??= await provider.getTransactionCount(await signer.getAddress());
     const gas = await getGasPrice(
       provider,
       priorityFeeScaler,
