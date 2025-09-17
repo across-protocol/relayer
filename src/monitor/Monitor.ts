@@ -10,6 +10,7 @@ import {
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
+  TokenInfo,
 } from "../interfaces";
 import {
   BigNumber,
@@ -217,13 +218,40 @@ export class Monitor {
     const invalidFills = await sdkUtils.findInvalidFills(this.clients.spokePoolClients);
 
     invalidFills.forEach((invalidFill) => {
-      // Log the fill data
+      const destinationChainId = invalidFill.fill.destinationChainId;
+      const outputToken = invalidFill.fill.outputToken;
+      let tokenInfo: TokenInfo;
+
+      try {
+        tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+      } catch {
+        tokenInfo = { symbol: "UNKNOWN TOKEN", decimals: 18, address: outputToken };
+      }
+
+      const formatterFunction = createFormatFunction(2, 4, false, tokenInfo.decimals);
+      const formattedOutputAmount = formatterFunction(invalidFill.fill.outputAmount.toString());
+
+      const message =
+        `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit. ` +
+        `Output amount: ${formattedOutputAmount} ${tokenInfo.symbol}`;
+
+      const deposit = invalidFill.deposit
+        ? {
+            txnRef: invalidFill.deposit.txnRef,
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
+          }
+        : undefined;
+
       this.logger.warn({
         at: "Monitor::reportInvalidFills",
-        message: `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit`,
-        fill: invalidFill.fill,
+        message,
+        destinationChainId,
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
+        blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
-        deposit: invalidFill.deposit ?? undefined,
+        deposit,
         notificationPath: "across-invalid-fills",
       });
     });
