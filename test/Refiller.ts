@@ -15,7 +15,6 @@ describe("Refiller", function () {
     await configStoreClient.update();
 
     const hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient) as unknown as HubPoolClient;
-    await hubPoolClient.update();
     const refillConfig = [
       {
         account: hubPool.address,

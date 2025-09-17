@@ -10,15 +10,14 @@ export async function constructRefillerClients(
   logger: winston.Logger,
   baseSigner: Signer
 ): Promise<RefillerClients> {
-  // Set hubPoolLookback conservatively to be equal to one month of blocks. If the config.maxRelayerLookBack
-  // exceeds half a month, then we'll just use the gensis block since in that case, this monitor is being used
-  // for non-production circumstances.
-  const hubPoolLookback = config.maxRelayerLookBack > 3600 * 24 * 15 ? undefined : 3600 * 24 * 30;
+  // hubPoolLookback can be very short since its not used for anything in the Refiller.
+  const hubPoolLookback = 7200;
   const commonClients = await constructClients(logger, config, baseSigner, hubPoolLookback);
-  const { hubPoolClient, configStoreClient } = commonClients;
+  const { configStoreClient } = commonClients;
 
+  // @dev No need to update the hub pool client since we don't call any functions on it. We only need the hubPool
+  // Contract instance, signer, and chain ID.
   await updateClients(commonClients, config, logger);
-  await hubPoolClient.update();
 
   const enabledChains = getEnabledChainsInBlockRange(
     configStoreClient,

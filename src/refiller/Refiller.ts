@@ -32,12 +32,13 @@ import {
   ZERO_ADDRESS,
 } from "../utils";
 import { arch } from "@across-protocol/sdk";
-import { AcrossSwapApiClient, BalanceAllocator, HubPoolClient, MultiCallerClient } from "../clients";
+import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
 
 export interface RefillerClients {
   balanceAllocator: BalanceAllocator;
-  hubPoolClient: HubPoolClient;
+  // We can further constrain the HubPoolClient type since we don't call any functions on it.
+  hubPoolClient: { hubPool: Contract; chainId: number };
   multiCallerClient: MultiCallerClient;
 }
 
