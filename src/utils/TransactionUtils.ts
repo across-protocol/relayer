@@ -17,7 +17,6 @@ import {
   winston,
   stringifyThrownValue,
   CHAIN_IDs,
-  EvmGasPriceEstimate,
   SVMProvider,
   parseUnits,
 } from "../utils";
@@ -97,103 +96,98 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retriesRemaining = 1
+  retries = 1
 ): Promise<TransactionResponse> {
-  const { provider } = contract;
+  const at = "TxUtil#runTransaction";
+  const { provider, signer } = contract;
   const { chainId } = await provider.getNetwork();
 
   if (!nonceReset[chainId]) {
-    nonce = await provider.getTransactionCount(await contract.signer.getAddress());
+    nonce = await provider.getTransactionCount(await signer.getAddress());
     nonceReset[chainId] = true;
   }
 
-  const sendRawTransaction = method === "";
+  const sendRawTxn = method === "";
 
+  const priorityFeeScaler =
+    Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
+  const maxFeePerGasScaler =
+    Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
+    DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
+
+  let gas: Partial<FeeData>;
   try {
-    const priorityFeeScaler =
-      Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
-      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxPriorityFeePerGasScaler;
-    const maxFeePerGasScaler =
-      Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
-      DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
-
-    let gas = await getGasPrice(
+    gas = await getGasPrice(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
-      sendRawTransaction
-        ? undefined
-        : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
-
-    const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
-
-    // Check if the chain requires legacy transactions
-    if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-      gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
-    } else {
-      // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
-      const maxPriorityFeePerGas = sdkUtils.bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
-      const baseFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
-      gas = {
-        maxFeePerGas: gas.maxFeePerGas.add(baseFeeDelta),
-        maxPriorityFeePerGas,
-      };
-    }
-
-    logger.debug({
-      at: "TxUtil",
-      message: "Send tx",
-      target: getTarget(contract.address),
-      method,
-      args,
-      value,
-      nonce,
-      gas,
-      flooredPriorityFeePerGas,
-      gasLimit,
-      sendRawTxn: sendRawTransaction,
-    });
-    // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
-    // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
-    // ethers will determine the correct values to use.
-    const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
-      (a, [k, v]) => (v ? ((a[k] = v), a) : a),
-      {}
-    );
-    if (sendRawTransaction) {
-      return await (await contract.signer).sendTransaction({ to: contract.address, value, ...gas });
-    } else {
-      return await contract[method](...(args as Array<unknown>), txConfig);
-    }
   } catch (error) {
-    if (retriesRemaining > 0 && txnRetryable(error)) {
+    // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
+    // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
+    if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
+      throw error;
+    }
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
+  }
+  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+
+  // Check if the chain requires legacy transactions
+  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+    gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
+  } else {
+    // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
+    const maxPriorityFeePerGas = sdkUtils.bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
+    const baseFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
+    gas = {
+      maxFeePerGas: gas.maxFeePerGas.add(baseFeeDelta),
+      maxPriorityFeePerGas,
+    };
+  }
+
+  const to = contract.address;
+  const commonFields = { chainId, to, method, args, value, nonce, gas, gasLimit, sendRawTxn };
+  logger.debug({ at, message: "Submitting transaction.", ...commonFields });
+
+  // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
+  // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
+  // ethers will determine the correct values to use.
+  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
+    (a, [k, v]) => (v ? ((a[k] = v), a) : a),
+    {}
+  );
+
+  try {
+    return sendRawTxn
+      ? await signer.sendTransaction({ to, value, ...gas })
+      : await contract[method](...(args as Array<unknown>), txConfig);
+  } catch (error) {
+    if (retries > 0 && txnRetryable(error)) {
       // If error is due to a nonce collision or gas underpricing then re-submit to fetch latest params.
-      retriesRemaining -= 1;
+      --retries;
       logger.debug({
-        at: "TxUtil#runTransaction",
+        at,
         message: "Retrying txn due to expected error",
+        ...commonFields,
         error: stringifyThrownValue(error),
-        retriesRemaining,
+        retries,
       });
 
-      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retriesRemaining);
+      nonceReset[chainId] = false;
+      return await runTransaction(logger, contract, method, args, value, gasLimit, null, retries);
     } else {
       // Empirically we have observed that Ethers can produce nested errors, so we try to recurse down them
       // and log them as clearly as possible. For example:
       // - Top-level (Contract method call): "reason":"cannot estimate gas; transaction may fail or may require manual gas limit" (UNPREDICTABLE_GAS_LIMIT)
       // - Mid-level (eth_estimateGas): "reason":"execution reverted: delegatecall failed" (UNPREDICTABLE_GAS_LIMIT)
       // - Bottom-level (JSON-RPC/HTTP): "reason":"processing response error" (SERVER_ERROR)
-      const commonFields = {
-        at: "TxUtil#runTransaction",
+      const errorFields = {
+        at,
         message: "Error executing tx",
-        retriesRemaining,
-        target: getTarget(contract.address),
-        method,
-        args,
-        value,
-        nonce,
-        sendRawTxn: sendRawTransaction,
+        ...commonFields,
+        retries,
         notificationPath: "across-error",
       };
       if (isEthersError(error)) {
@@ -204,13 +198,13 @@ export async function runTransaction(
           topError = topError.error as EthersError;
         }
         logger[ethersErrors.some((e) => txnRetryable(e.err)) ? "warn" : "error"]({
-          ...commonFields,
+          ...errorFields,
           errorReasons: ethersErrors.map((e, i) => `\t ${i}: ${e.reason}`).join("\n"),
         });
       } else {
         const isWarning = txnRetryable(error) || isFillRelayError(error);
         logger[isWarning ? "warn" : "error"]({
-          ...commonFields,
+          ...errorFields,
           notificationPath: isWarning ? "across-warn" : "across-error",
           error: stringifyThrownValue(error),
         });
@@ -257,19 +251,30 @@ export async function getGasPrice(
   priorityScaler = 1.2,
   maxFeePerGasScaler = 3,
   transactionObject?: ethers.PopulatedTransaction
-): Promise<Partial<FeeData>> {
+): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
+  const { chainId } = await provider.getNetwork();
+
+  const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
+  const priorityFee = process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
+  if (isDefined(maxFee) && isDefined(priorityFee)) {
+    return {
+      maxFeePerGas: parseUnits(maxFee, 9),
+      maxPriorityFeePerGas: parseUnits(priorityFee, 9),
+    };
+  }
+
   // Floor scalers at 1.0 as we'll rarely want to submit too low of a gas price. We mostly
   // just want to submit with as close to prevailing fees as possible.
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   priorityScaler = Math.max(1, priorityScaler);
-  const { chainId } = await provider.getNetwork();
-  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
-  const feeData = (await gasPriceOracle.getGasPriceEstimate(provider, {
+
+  // Linea gas price estimation requires transaction simulation so supply the unsigned transaction.
+  const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),
     priorityFeeMultiplier: toBNWei(priorityScaler),
     unsignedTx: transactionObject,
-  })) as EvmGasPriceEstimate;
+  });
 
   // Default to EIP-1559 (type 2) pricing. If gasPriceOracle is using a legacy adapter for this chain then
   // the priority fee will be 0.

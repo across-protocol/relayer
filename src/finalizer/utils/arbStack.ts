@@ -44,30 +44,8 @@ type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
   registered: boolean;
 };
 // These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
-// We should export this out of a common file but we don't use this SDK elsewhere currently.
-const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [
-  {
-    // Addresses are available here:
-    // https://raas.gelato.network/rollups/details/public/aleph-zero-evm
-    chainId: CHAIN_IDs.ALEPH_ZERO,
-    name: "Aleph Zero",
-    parentChainId: CHAIN_IDs.MAINNET,
-    ethBridge: {
-      bridge: "0x41Ec9456AB918f2aBA81F38c03Eb0B93b78E84d9",
-      inbox: "0x56D8EC76a421063e1907503aDd3794c395256AEb ",
-      sequencerInbox: "0xF75206c49c1694594E3e69252E519434f1579876",
-      outbox: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${CHAIN_IDs.ALEPH_ZERO}`].address,
-      rollup: "0x1CA12290D954CFe022323b6A6Df92113ed6b1C98",
-    },
-    challengePeriodSeconds: 6 * 60 * 60, // ~ 6 hours
-    retryableLifetimeSeconds: 7 * 24 * 60 * 60,
-    nativeToken: TOKEN_SYMBOLS_MAP.AZERO.addresses[CHAIN_IDs.MAINNET],
-    isTestnet: false,
-    registered: false,
-    // Must be set to true for L3's
-    isCustom: true,
-  },
-];
+// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
+const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [];
 
 function getOrbitNetwork(chainId: number): PartialArbitrumNetwork | undefined {
   return ARB_ORBIT_NETWORK_CONFIGS.find((network) => network.chainId === chainId);
