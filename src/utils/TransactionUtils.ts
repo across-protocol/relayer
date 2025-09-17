@@ -112,6 +112,20 @@ export async function runTransaction(
     }
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
   }
+  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+
+  // Check if the chain requires legacy transactions
+  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+    scaledGas = { gasPrice: scaledGas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : scaledGas.maxFeePerGas };
+  } else {
+    // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
+    const maxPriorityFeePerGas = sdkUtils.bnMax(scaledGas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
+    const baseFeeDelta = maxPriorityFeePerGas.sub(scaledGas.maxPriorityFeePerGas);
+    scaledGas = {
+      maxFeePerGas: scaledGas.maxFeePerGas.add(baseFeeDelta),
+      maxPriorityFeePerGas,
+    };
+  }
 
   const to = contract.address;
   const commonFields = { chainId, to, method, args, value, nonce, gas: scaledGas, gasLimit, sendRawTxn };
@@ -228,7 +242,6 @@ export async function getGasPrice(
 ): Promise<Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">> {
   const { chainId } = await provider.getNetwork();
 
-  // Pass in unsignedTx here for better Linea gas price estimations via the Linea Viem provider.
   const maxFee = process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
   const priorityFee = process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
   if (isDefined(maxFee) && isDefined(priorityFee)) {
@@ -243,6 +256,7 @@ export async function getGasPrice(
   maxFeePerGasScaler = Math.max(1, maxFeePerGasScaler);
   priorityScaler = Math.max(1, priorityScaler);
 
+  // Linea gas price estimation requires transaction simulation so supply the unsigned transaction.
   const feeData = await gasPriceOracle.getGasPriceEstimate(provider, {
     chainId,
     baseFeeMultiplier: toBNWei(maxFeePerGasScaler),

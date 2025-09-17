@@ -1003,7 +1003,7 @@ export class Relayer {
     this.fillStatus[depositHash] = status;
   }
 
-  requestSlowFill(deposit: Deposit): void {
+  requestSlowFill(deposit: DepositWithBlock): void {
     // don't request slow fill if origin/destination chain is a lite chain
     if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient) || deposit.toLiteChain) {
       this.logger.debug({
@@ -1017,10 +1017,16 @@ export class Relayer {
     // Verify that the _original_ message was empty, since that's what would be used in a slow fill. If a non-empty
     // message was nullified by an update, it can be full-filled but preferably not automatically zero-filled.
     if (!isMessageEmpty(deposit.message)) {
+      const { originChainId, depositId, txnRef } = deposit;
+      const origin = getNetworkName(originChainId);
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
         at: "Relayer::requestSlowFill",
-        message: "Suppressing slow fill request for deposit with message.",
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        message: `Suppressing slow fill request for ${origin} deposit with message.`,
+        deposit: {
+          originChainId,
+          depositId,
+          txnRef: blockExplorerLink(txnRef, originChainId),
+        },
       });
       return;
     }
