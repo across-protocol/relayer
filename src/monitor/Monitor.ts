@@ -720,6 +720,7 @@ export class Monitor {
    * listed in `monitorBalances`. These accounts might also be listed in `refillBalances` with a higher target than
    * the `monitorBalances` target. This function will ensure that `checkBalances` will rarely alert for those
    * balances.
+   * @dev @todo This entirefunction should be moved to a new bot that runs independently of the monitor.
    */
   async refillBalances(): Promise<void> {
     const { refillEnabledBalances } = this.monitorConfig;
