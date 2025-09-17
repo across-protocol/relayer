@@ -10,7 +10,6 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
-  Address,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -61,9 +60,7 @@ export async function heliosL1toL2Finalizer(
   _signer: Signer,
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
-  l1SpokePoolClient: SpokePoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _senderAddresses: Address[]
+  l1SpokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   assert(
     isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
@@ -709,8 +706,8 @@ function addUpdateAndExecuteTxns(
     unpermissioned: true,
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
-    // todo? this hardcoded gas limit of 2 mil could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: BigNumber.from(2000000),
+    // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
+    gasLimit: BigNumber.from(500000),
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);
