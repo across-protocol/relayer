@@ -863,7 +863,7 @@ export class Monitor {
                   message: `Swapped ETH on ${getNetworkName(
                     swapRoute.originChainId
                   )} to MATIC on Polygon for ${account} 🎁!`,
-                  transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+                  transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
                 });
               } else {
                 // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
