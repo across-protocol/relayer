@@ -104,7 +104,7 @@ export class CommonConfig {
       const missing = chainIds.find((chainId) => !lookbackKeys.includes(chainId));
       if (missing) {
         const message = `Missing MAX_BLOCK_LOOK_BACK configuration for chainId ${missing}`;
-        logger.warn({ at: "RelayerConfig::validate", message });
+        logger.warn({ at: "Config::validate", message });
         this.maxBlockLookBack[missing] = 5000; // Revert to a safe default.
       }
     }

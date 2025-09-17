@@ -26,7 +26,7 @@ import {
   getAttestedCCTPDeposits,
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
@@ -34,7 +34,7 @@ export async function cctpL2toL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  senderAddresses: Address[]
+  _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   const searchConfig: EventSearchConfig = {
     from: spokePoolClient.eventSearchConfig.from,
@@ -43,6 +43,7 @@ export async function cctpL2toL1Finalizer(
   };
 
   const finalizingFromSolana = chainIsSvm(spokePoolClient.chainId);
+  const senderAddresses = Array.from(_senderAddresses.keys());
   const augmentedSenderAddresses = finalizingFromSolana
     ? await augmentSendersListForSolana(senderAddresses, spokePoolClient)
     : senderAddresses;

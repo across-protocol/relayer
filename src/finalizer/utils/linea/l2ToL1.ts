@@ -18,10 +18,9 @@ import {
   assert,
   isEVMSpokePoolClient,
   toAddressType,
-  Address,
   createFormatFunction,
 } from "../../../utils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 import { TokensBridged } from "../../../interfaces";
 import {
   initLineaSdk,
@@ -168,7 +167,7 @@ export async function lineaL2ToL1Finalizer(
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
-  _senderAddresses: Address[]
+  _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
@@ -230,7 +229,7 @@ export async function lineaL2ToL1Finalizer(
     );
 
   // Append raw MessageSent events for custom sender addresses to TokensBridged events
-  const senderAddresses = _senderAddresses
+  const senderAddresses = Array.from(_senderAddresses.keys())
     .map((address) => address.toEvmAddress())
     .filter((sender) => sender !== spokePoolClient.spokePool.address && sender !== hubPoolClient.hubPool.address);
   const l2TokenBridge = new Contract(

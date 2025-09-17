@@ -226,7 +226,10 @@ export class Monitor {
   async reportInvalidFills(): Promise<void> {
     const invalidFills = await sdkUtils.findInvalidFills(this.clients.spokePoolClients);
 
+    const invalidFillsByChainId: Record<string, number> = {};
     invalidFills.forEach((invalidFill) => {
+      const destinationChainName = getNetworkName(invalidFill.fill.destinationChainId);
+      invalidFillsByChainId[destinationChainName] = (invalidFillsByChainId[destinationChainName] ?? 0) + 1;
       const destinationChainId = invalidFill.fill.destinationChainId;
       const outputToken = invalidFill.fill.outputToken;
       let tokenInfo: TokenInfo;
@@ -263,6 +266,13 @@ export class Monitor {
         deposit,
         notificationPath: "across-invalid-fills",
       });
+    });
+
+    this.logger.info({
+      at: "Monitor::invalidFillsByChain",
+      message: "Invalid fills by chain",
+      invalidFillsByChainId,
+      notificationPath: "across-invalid-fills",
     });
   }
 
