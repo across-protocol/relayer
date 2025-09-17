@@ -85,10 +85,6 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    finalizeOnL1: [arbStackFinalizer],
-    finalizeOnL2: [],
-  },
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
@@ -140,6 +136,10 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   [CHAIN_IDs.WORLD_CHAIN]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+  },
+  [CHAIN_IDs.HYPEREVM]: {
+    finalizeOnL1: [],
+    finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
