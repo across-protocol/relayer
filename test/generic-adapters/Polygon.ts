@@ -226,7 +226,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Weth].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolManager.get).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
