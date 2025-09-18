@@ -36,6 +36,7 @@ export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 // Maximum multiplier applied on transaction retries due to REPLACEMENT_UNDERPRICED.
 const MAX_GAS_RETRY_SCALER = 3;
+const MIN_GAS_RETRY_SCALER = 1.1;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -191,7 +192,7 @@ export async function runTransaction(
     if (scaleGas) {
       // Ratchet the gasScaler incrementally on each retry, up to MAX_GAS_RETRY_SCALER;
       const maxGasScaler = Number(process.env[`MAX_GAS_RETRY_SCALER_${chainId}`] ?? MAX_GAS_RETRY_SCALER);
-      gasScaler = Math.max(gasScaler, Math.max(priorityFeeScaler, 1.1));
+      gasScaler = Math.max(gasScaler, Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER));
       gasScaler = Math.pow(gasScaler, 2);
       gasScaler = Math.min(gasScaler, maxGasScaler);
     }
