@@ -88,11 +88,17 @@ export class InventoryClient {
       logger: this.logger,
       at: "InventoryClient",
     });
+    // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
+    const allL1Tokens = new Set<string>(
+      this.getL1TokensFromInventoryConfig()
+        .concat(this.getL1TokensEnabledInHubPool())
+        .map((l1Token) => l1Token.toNative())
+    );
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.tokenClient?.spokePoolClients ?? {},
       this.hubPoolClient,
       this.chainIdList,
-      this.getL1TokensFromInventoryConfig().concat(this.getL1TokensEnabledInHubPool()),
+      Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
       this.logger
     );
   }
