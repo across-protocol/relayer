@@ -35,7 +35,7 @@ dotenv.config();
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 // Maximum multiplier applied on transaction retries due to REPLACEMENT_UNDERPRICED.
-const MAX_GAS_RETRY_SCALER = 2;
+const MAX_GAS_RETRY_SCALER = 3;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -189,10 +189,11 @@ export async function runTransaction(
     }
 
     if (scaleGas) {
-      gasScaler = Math.min(
-        Math.pow(Math.max(gasScaler, Math.max(priorityFeeScaler, 1.1)), 2), // priorityFeeScaler set via environment.
-        MAX_GAS_RETRY_SCALER
-      );
+      // Ratchet the gasScaler incrementally on each retry, up to MAX_GAS_RETRY_SCALER;
+      const maxGasScaler = Number(process.env[`MAX_GAS_RETRY_SCALER_${chainId}`] ?? MAX_GAS_RETRY_SCALER);
+      gasScaler = Math.max(gasScaler, Math.max(priorityFeeScaler, 1.1));
+      gasScaler = Math.pow(gasScaler, 2);
+      gasScaler = Math.min(gasScaler, maxGasScaler);
     }
 
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gasScaler);
