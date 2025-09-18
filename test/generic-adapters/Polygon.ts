@@ -174,7 +174,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
     it("Matches L1 and L2 events: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -224,7 +226,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Weth].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(Object.values(adapter.spokePoolManager.get).map((spokePoolClient) => spokePoolClient.update()));
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -265,7 +267,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Weth].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -332,7 +336,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
     it("Matches L1 and L2 events: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -382,7 +388,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Weth].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -423,7 +431,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Weth].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -517,7 +527,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
     it("Matches l1 deposits and l2 receipts: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -567,7 +579,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -608,7 +622,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -707,7 +723,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
     it("Matches l1 deposits and l2 receipts: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -757,7 +775,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -798,7 +818,9 @@ describe("Cross Chain Adapter: Polygon", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
