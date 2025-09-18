@@ -84,18 +84,17 @@ export async function runTransaction(
   const maxFeePerGasScaler =
     Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
-  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
 
-  let scaledGas: Partial<FeeData>;
+  let gas: Partial<FeeData>;
   try {
     nonce ??= await provider.getTransactionCount(await signer.getAddress());
-    const gas = await getGasPrice(
+    const preGas = await getGasPrice(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
       sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
-    scaledGas = scaleGasPrice(chainId, gas, toBNWei(gasScaler));
+    gas = scaleGasPrice(chainId, preGas, gasScaler);
   } catch (error) {
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
@@ -105,34 +104,21 @@ export async function runTransaction(
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
   }
 
-  // Check if the chain requires legacy transactions
-  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    scaledGas = { gasPrice: sdkUtils.bnMax(scaledGas.maxFeePerGas, flooredPriorityFeePerGas) };
-  } else {
-    // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
-    const maxPriorityFeePerGas = sdkUtils.bnMax(scaledGas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
-    const baseFeeDelta = maxPriorityFeePerGas.sub(scaledGas.maxPriorityFeePerGas);
-    scaledGas = {
-      maxFeePerGas: scaledGas.maxFeePerGas.add(baseFeeDelta),
-      maxPriorityFeePerGas,
-    };
-  }
-
   const to = contract.address;
-  const commonFields = { chainId, to, method, args, value, nonce, gas: scaledGas, gasLimit, sendRawTxn };
+  const commonFields = { chainId, to, method, args, value, nonce, gas, gasLimit, sendRawTxn };
   logger.debug({ at, message: "Submitting transaction.", ...commonFields });
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
   // ethers will determine the correct values to use.
-  const txConfig = Object.entries({ ...scaledGas, value, nonce, gasLimit }).reduce(
+  const txConfig = Object.entries({ ...gas, value, nonce, gasLimit }).reduce(
     (a, [k, v]) => (v ? ((a[k] = v), a) : a),
     {}
   );
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, ...scaledGas })
+      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
@@ -345,23 +331,21 @@ export function getTarget(targetAddress: string):
 function scaleGasPrice(
   chainId: number,
   gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
-  retryScaler: BigNumber
+  retryScaler = 1.0
 ): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
+  const scaler = toBNWei(retryScaler);
   const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
 
   // Check if the chain requires legacy transactions
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    const gasPrice = sdkUtils
-      .bnMax(gas.maxFeePerGas, flooredPriorityFeePerGas)
-      .mul(retryScaler)
-      .div(fixedPointAdjustment);
+    const gasPrice = sdkUtils.bnMax(gas.maxFeePerGas, flooredPriorityFeePerGas).mul(scaler).div(fixedPointAdjustment);
     return { gasPrice };
   }
 
   // If the priority fee was increased, the max fee must be scaled up as well.
   const maxPriorityFeePerGas = sdkUtils
     .bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas)
-    .mul(retryScaler)
+    .mul(scaler)
     .div(fixedPointAdjustment);
   const maxFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
 
