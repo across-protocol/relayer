@@ -89,7 +89,7 @@ export class InventoryClient {
       at: "InventoryClient",
     });
     this.bundleDataApproxClient = new BundleDataApproxClient(
-      this.tokenClient?.spokePoolClients ?? {},
+      this.tokenClient?.spokePoolManager.getSpokePoolClients() ?? {},
       this.hubPoolClient,
       this.chainIdList,
       this.getL1Tokens(),
@@ -1149,7 +1149,8 @@ export class InventoryClient {
           .filter(isDefined)
           // This map adds the ETH balance to the object.
           .map(async (chainInfo) => {
-            const spokePoolClient = this.tokenClient.spokePoolClients[chainInfo.chainId];
+            const spokePoolClient = this.tokenClient.spokePoolManager.getClient(chainInfo.chainId);
+            assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainInfo.chainId}`);
             assert(isEVMSpokePoolClient(spokePoolClient));
             return {
               ...chainInfo,
@@ -1523,7 +1524,8 @@ export class InventoryClient {
   }
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {
-    const spokePoolClient = this.tokenClient.spokePoolClients[chainId];
+    const spokePoolClient = this.tokenClient.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     const l2Signer = spokePoolClient.spokePool.signer;
     const l2Weth = new Contract(_l2Weth, WETH_ABI, l2Signer);

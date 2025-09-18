@@ -165,6 +165,16 @@ describe("Cross Chain Adapter: zkSync", async function () {
       1
     );
 
+    // Ensure SpokePoolClients are properly initialized
+    await l1SpokePoolClient.update();
+    await l2SpokePoolClient.update();
+
+    // Verify that the SpokePoolManager has the correct clients
+    const clients = adapter.spokePoolManager.getSpokePoolClients();
+    if (!clients[MAINNET] || !clients[ZK_SYNC]) {
+      throw new Error(`SpokePoolManager missing required clients. Available: ${Object.keys(clients)}`);
+    }
+
     // Point the adapter to the proper bridges.
     l1Bridge = await (await getContractFactory("zkSync_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("zkSync_L2Bridge", depositor)).deploy();
@@ -227,7 +237,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
     // See https://github.com/across-protocol/relayer/blob/f42853e28747010111941073e54d3d9d8a3f3a09/src/clients/bridges/ZKSyncAdapter.ts#L72
     it("Matches L1 and L2 events: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -269,7 +281,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Weth.address].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -303,7 +317,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Weth.address].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -363,7 +379,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Matches L1 and L2 events: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -405,7 +423,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Weth.address].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -438,7 +458,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Weth.address].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -462,7 +484,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Correctly makes l1 deposits", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -500,7 +524,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(deposits[l2Weth.address].length).to.equal(1);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Weth)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -599,7 +625,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Matches l1 deposits and l2 receipts: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -649,7 +677,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -690,7 +720,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -801,7 +833,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Matches l1 deposits and l2 receipts: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -858,7 +892,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -899,7 +935,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -931,7 +969,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Correctly makes l1 deposits", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -978,7 +1018,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(deposits[l2Token].length).to.equal(1);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1036,12 +1078,18 @@ describe("Cross Chain Adapter: zkSync", async function () {
       const lensSpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, LENS, deploymentBlock, {
         from: deploymentBlock,
       });
+      const l1SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, hubPoolClient, MAINNET, deploymentBlock, {
+        from: deploymentBlock,
+      });
 
-      const l1Signer = adapter.spokePoolClients[MAINNET].spokePool.signer;
+      const l1Signer = adapter.spokePoolManager.getClient(MAINNET)?.spokePool.signer;
       const l2Signer = lensSpokePoolClient.spokePool.signer;
 
       adapter = new TestBaseChainAdapter(
-        { ...adapter.spokePoolClients, [LENS]: lensSpokePoolClient },
+        {
+          [MAINNET]: l1SpokePoolClient,
+          [LENS]: lensSpokePoolClient,
+        },
         LENS,
         MAINNET,
         [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
@@ -1055,6 +1103,10 @@ describe("Cross Chain Adapter: zkSync", async function () {
       adapter.setSharedBridge(l1Token, l1Bridge);
       adapter.setL1USDCBridge(l1Token, l1Bridge);
       adapter.setL2Bridge(l1Token, l2Bridge);
+
+      // Ensure SpokePoolClients are properly initialized
+      await l1SpokePoolClient.update();
+      await lensSpokePoolClient.update();
     });
 
     it("Get L1 deposits: EOA", async function () {
@@ -1124,7 +1176,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Matches l1 deposits and l2 receipts: EOA", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1174,7 +1228,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1215,7 +1271,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1317,7 +1375,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Matches l1 deposits and l2 receipts: HubPool", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1367,7 +1427,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(0);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1408,7 +1470,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(receipts[l2Token].length).to.equal(1);
 
       // There should be no outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1440,7 +1504,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
 
     it("Correctly makes l1 deposits", async function () {
       // There should be no pre-existing outstanding transfers.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       let transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
@@ -1487,7 +1553,9 @@ describe("Cross Chain Adapter: zkSync", async function () {
       expect(deposits[l2Token].length).to.equal(1);
 
       // There should be 1 outstanding transfer.
-      await Promise.all(Object.values(adapter.spokePoolClients).map((spokePoolClient) => spokePoolClient.update()));
+      await Promise.all(
+        Object.values(adapter.spokePoolManager.getSpokePoolClients()).map((spokePoolClient) => spokePoolClient.update())
+      );
       transfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Token)]);
       expect(transfers).to.deep.equal({
         [monitoredEoa]: {
