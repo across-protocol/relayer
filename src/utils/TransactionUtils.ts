@@ -161,7 +161,7 @@ export async function runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, ...gas })
+      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     if (retries > 0 && txnRetryable(error)) {

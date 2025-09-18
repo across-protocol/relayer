@@ -179,7 +179,7 @@ export class BundleDataApproxClient {
     );
     assert(
       this.upcomingRefunds[l1Token.toNative()],
-      `"BundleDataApproxClient#getUpcomingRefunds: L1 token ${l1Token.toNative()} not found`
+      `BundleDataApproxClient#getUpcomingRefunds: L1 token ${l1Token.toNative()} not found`
     );
     if (isDefined(relayer)) {
       return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
