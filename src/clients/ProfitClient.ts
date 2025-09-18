@@ -71,13 +71,16 @@ export type FillProfit = {
   outputAmountUsd: BigNumber;
   grossRelayerFeePct: BigNumber; // Max of relayerFeePct and newRelayerFeePct from Deposit.
   grossRelayerFeeUsd: BigNumber; // USD value of the relay fee paid by the user.
+  auxiliaryNativeTokenCost: BigNumber; // Amount of native tokens forwarded to the user in the units of native token.
+  auxiliaryNativeTokenCostUsd: BigNumber; // Same as above, but in USD
   nativeGasCost: BigNumber; // Cost of completing the fill in the units of gas.
   tokenGasCost: BigNumber; // Cost of completing the fill in the relevant gas token.
   gasPrice: BigNumber; // Gas price in wei.
   gasPadding: BigNumber; // Positive padding applied to nativeGasCost and tokenGasCost before profitability.
   gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
-  gasCostUsd: BigNumber; // Estimated cost of completing the fill in USD.
+  gasCostUsd: BigNumber; // Estimated gas cost of completing the fill in USD.
+  nativeTokenFillCostUsd: BigNumber; // Estimated native token cost of completing the fill in USD: gas + auxiliary
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
   totalFeePct: BigNumber; // Total fee as a portion of the fill amount.
@@ -168,17 +171,22 @@ export class ProfitClient {
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
-  resolveGasToken(chainId: number): L1Token {
+  resolveNativeToken(chainId: number): L1Token {
     const symbol = getNativeTokenSymbol(chainId);
     const token = TOKEN_SYMBOLS_MAP[symbol];
     if (!isDefined(symbol) || !isDefined(token)) {
-      throw new Error(`Unable to resolve gas token for chain ID ${chainId}`);
+      throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
     }
 
     const { decimals, addresses } = token;
     const address = addresses[1]; // Mainnet tokens are always used for price lookups.
 
     return { symbol, address, decimals };
+  }
+
+  resolveGasToken(chainId: number): L1Token {
+    // todo: gas token and native token may not always be the same
+    return this.resolveNativeToken(chainId);
   }
 
   getAllPrices(): { [address: string]: BigNumber } {
@@ -265,6 +273,10 @@ export class ProfitClient {
     }
   }
 
+  getAuxiliaryNativeTokenCost(deposit: Deposit): BigNumber {
+    return this.relayerFeeQueries[deposit.destinationChainId].getAuxiliaryNativeTokenCost(deposit);
+  }
+
   async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
     const { destinationChainId: chainId } = deposit;
 
@@ -289,7 +301,19 @@ export class ProfitClient {
   // Estimate the gas cost of filling this relay.
   async estimateFillCost(
     deposit: Deposit
-  ): Promise<Pick<FillProfit, "nativeGasCost" | "tokenGasCost" | "gasTokenPriceUsd" | "gasCostUsd" | "gasPrice">> {
+  ): Promise<
+    Pick<
+      FillProfit,
+      | "nativeGasCost"
+      | "tokenGasCost"
+      | "gasTokenPriceUsd"
+      | "gasCostUsd"
+      | "gasPrice"
+      | "auxiliaryNativeTokenCost"
+      | "auxiliaryNativeTokenCostUsd"
+      | "nativeTokenFillCostUsd"
+    >
+  > {
     const { destinationChainId: chainId } = deposit;
 
     const gasToken = this.resolveGasToken(chainId);
@@ -321,12 +345,23 @@ export class ProfitClient {
 
     const gasCostUsd = tokenGasCost.mul(gasTokenPriceUsd).div(bn10.pow(gasToken.decimals));
 
+    const auxiliaryNativeTokenCost = this.getAuxiliaryNativeTokenCost(deposit);
+    const nativeToken = this.resolveNativeToken(chainId);
+    const nativeTokenPriceUsd = this.getPriceOfToken(nativeToken.symbol);
+    const auxiliaryNativeTokenCostUsd = auxiliaryNativeTokenCost
+      .mul(nativeTokenPriceUsd)
+      .div(bn10.pow(nativeToken.decimals));
+
+    const nativeTokenFillCostUsd = gasCostUsd.add(auxiliaryNativeTokenCostUsd);
     return {
       nativeGasCost,
       tokenGasCost,
       gasPrice,
       gasTokenPriceUsd,
       gasCostUsd,
+      auxiliaryNativeTokenCost,
+      auxiliaryNativeTokenCostUsd,
+      nativeTokenFillCostUsd,
     };
   }
 
@@ -409,14 +444,23 @@ export class ProfitClient {
       ? grossRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd)
       : bnZero;
 
-    // Estimate the gas cost of filling this relay.
-    const { nativeGasCost, tokenGasCost, gasTokenPriceUsd, gasCostUsd, gasPrice } = await this.estimateFillCost(
-      deposit
-    );
+    const {
+      // Estimated gas cost of filling this relay
+      nativeGasCost,
+      tokenGasCost,
+      gasTokenPriceUsd,
+      gasCostUsd,
+      gasPrice,
+      // Estimated auxiliary native token cost
+      auxiliaryNativeTokenCost,
+      auxiliaryNativeTokenCostUsd,
+      // Estimated total native token cost in USD
+      nativeTokenFillCostUsd,
+    } = await this.estimateFillCost(deposit);
 
     // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
     // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
-    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
+    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(nativeTokenFillCostUsd);
     const netRelayerFeePct = outputAmountUsd.gt(bnZero)
       ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
       : bnZero;
@@ -433,6 +477,8 @@ export class ProfitClient {
       outputAmountUsd,
       grossRelayerFeePct,
       grossRelayerFeeUsd,
+      auxiliaryNativeTokenCost,
+      auxiliaryNativeTokenCostUsd,
       nativeGasCost,
       tokenGasCost,
       gasPrice,
@@ -440,6 +486,7 @@ export class ProfitClient {
       gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
+      nativeTokenFillCostUsd,
       netRelayerFeePct,
       netRelayerFeeUsd,
       profitable,
@@ -493,6 +540,8 @@ export class ProfitClient {
         totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
         lpFeePct: `${formatFeePct(lpFeePct)}%`,
         grossRelayerFeePct: `${formatFeePct(fill.grossRelayerFeePct)}%`,
+        auxiliaryNativeTokenCost: fill.auxiliaryNativeTokenCost,
+        auxiliaryNativeTokenCostUsd: formatEther(fill.auxiliaryNativeTokenCostUsd),
         nativeGasCost: fill.nativeGasCost,
         tokenGasCost: formatEther(fill.tokenGasCost),
         gasPrice: formatGwei(fill.gasPrice.toString()),
@@ -501,6 +550,7 @@ export class ProfitClient {
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
         grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
         gasCostUsd: formatEther(fill.gasCostUsd),
+        nativeTokenFillCostUsd: formatEther(fill.nativeTokenFillCostUsd),
         netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
         minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
