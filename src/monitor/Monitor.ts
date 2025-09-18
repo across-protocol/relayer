@@ -266,7 +266,7 @@ export class Monitor {
       });
     });
 
-    if (invalidFillsByChainId.length > 0) {
+    if (Object.keys(invalidFillsByChainId).length > 0) {
       this.logger.info({
         at: "Monitor::invalidFillsByChain",
         message: "Invalid fills by chain",
