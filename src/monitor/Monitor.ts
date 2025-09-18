@@ -266,12 +266,14 @@ export class Monitor {
       });
     });
 
-    this.logger.info({
-      at: "Monitor::invalidFillsByChain",
-      message: "Invalid fills by chain",
-      invalidFillsByChainId,
-      notificationPath: "across-invalid-fills",
-    });
+    if (invalidFillsByChainId.length > 0) {
+      this.logger.info({
+        at: "Monitor::invalidFillsByChain",
+        message: "Invalid fills by chain",
+        invalidFillsByChainId,
+        notificationPath: "across-invalid-fills",
+      });
+    }
   }
 
   async reportUnfilledDeposits(): Promise<void> {
