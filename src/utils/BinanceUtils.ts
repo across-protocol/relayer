@@ -187,7 +187,7 @@ export async function getBinanceWithdrawals(
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
+      return getBinanceWithdrawals(binanceApi, coin, l1Provider, l2Provider, startTime, ++nRetries, maxRetries);
     }
     throw err;
   }
