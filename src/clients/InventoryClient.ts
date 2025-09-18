@@ -92,7 +92,7 @@ export class InventoryClient {
       this.tokenClient?.spokePoolClients ?? {},
       this.hubPoolClient,
       this.chainIdList,
-      this.getL1Tokens(),
+      this.getAllL1Tokens(),
       this.logger
     );
   }
@@ -232,7 +232,7 @@ export class InventoryClient {
    */
   getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
     const distributionPerL1Token: TokenDistributionPerL1Token = {};
-    this.getL1Tokens().forEach(
+    this.getL1TokensFromInventoryConfig().forEach(
       (l1Token) => (distributionPerL1Token[l1Token.toNative()] = this.getChainDistribution(l1Token))
     );
     return distributionPerL1Token;
@@ -310,11 +310,21 @@ export class InventoryClient {
     return this.getEnabledChains().filter((chainId) => chainId !== hubPoolChainId);
   }
 
-  getL1Tokens(): EvmAddress[] {
-    return (
-      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
-      this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
-    );
+  /**
+   * @notice Returns all L1 tokens enabled in HubPool plus any additional ones configured in the inventory config.
+   */
+  getAllL1Tokens(): EvmAddress[] {
+    return this.hubPoolClient
+      .getL1Tokens()
+      .map((l1Token) => l1Token.address)
+      .concat(this.getL1TokensFromInventoryConfig());
+  }
+
+  /**
+   * @notice Returns all L1 tokens configured in the inventory config.
+   */
+  getL1TokensFromInventoryConfig(): EvmAddress[] {
+    return Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token));
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
@@ -871,7 +881,7 @@ export class InventoryClient {
     const chainIds = this.getEnabledL2Chains();
     const rebalancesRequired: Rebalance[] = [];
 
-    for (const l1Token of this.getL1Tokens()) {
+    for (const l1Token of this.getL1TokensFromInventoryConfig()) {
       const cumulativeBalance = this.getCumulativeBalance(l1Token);
       if (cumulativeBalance.eq(bnZero)) {
         continue;
@@ -1243,7 +1253,7 @@ export class InventoryClient {
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
     const chainMrkdwns: { [chainId: number]: string } = {};
 
-    await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
+    await sdkUtils.forEachAsync(this.getL1TokensFromInventoryConfig(), async (l1Token) => {
       const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
       const formatter = createFormatFunction(2, 4, false, l1TokenInfo.decimals);
 
@@ -1535,7 +1545,7 @@ export class InventoryClient {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
-    const l1Tokens = this.getL1Tokens();
+    const l1Tokens = this.getL1TokensFromInventoryConfig();
     this.log("Checking token approvals", { l1Tokens: l1Tokens.map((token) => token.toEvmAddress()) });
 
     await this.adapterManager.setL1TokenApprovals(l1Tokens);
@@ -1556,9 +1566,9 @@ export class InventoryClient {
       return;
     }
 
-    await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    await this.crossChainTransferClient.update(this.getL1TokensFromInventoryConfig(), chainIds);
 
-    await forEachAsync(this.getL1Tokens(), async (l1Token) => {
+    await forEachAsync(this.getL1TokensFromInventoryConfig(), async (l1Token) => {
       this.pendingL2Withdrawals[l1Token.toNative()] = {};
       const pendingWithdrawalBalances =
         await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
