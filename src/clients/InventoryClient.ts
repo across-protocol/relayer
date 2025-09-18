@@ -1538,6 +1538,7 @@ export class InventoryClient {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
+    const l1Tokens = this.getL1Tokens();
     this.log("Checking token approvals", { l1Tokens: l1Tokens.map((token) => token.toEvmAddress()) });
 
     await this.adapterManager.setL1TokenApprovals(l1Tokens);
