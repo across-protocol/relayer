@@ -92,7 +92,7 @@ export class InventoryClient {
       this.tokenClient?.spokePoolClients ?? {},
       this.hubPoolClient,
       this.chainIdList,
-      this.getL1TokensFromInventoryConfig().concat(this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)),
+      this.getL1TokensFromInventoryConfig().concat(this.getL1TokensEnabledInHubPool()),
       this.logger
     );
   }
@@ -312,12 +312,16 @@ export class InventoryClient {
 
   getL1Tokens(): EvmAddress[] {
     return this.inventoryConfig?.tokenConfig
-      ? Object.keys(this.inventoryConfig?.tokenConfig).map((token) => EvmAddress.from(token))
-      : this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
+      ? this.getL1TokensFromInventoryConfig()
+      : this.getL1TokensEnabledInHubPool();
   }
 
   getL1TokensFromInventoryConfig(): EvmAddress[] {
     return Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token));
+  }
+
+  getL1TokensEnabledInHubPool(): EvmAddress[] {
+    return this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
