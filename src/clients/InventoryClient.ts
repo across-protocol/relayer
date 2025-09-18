@@ -693,16 +693,17 @@ export class InventoryClient {
       return [];
     }
 
-    // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
-    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
-      eligibleRefundChains.push(hubChainId);
-    }
     // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
     if (
       !eligibleRefundChains.includes(originChainId) &&
       repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
     ) {
       eligibleRefundChains.push(originChainId);
+    }
+
+    // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
+    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
+      eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
   }
