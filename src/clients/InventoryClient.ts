@@ -232,7 +232,7 @@ export class InventoryClient {
    */
   getTokenDistributionPerL1Token(): TokenDistributionPerL1Token {
     const distributionPerL1Token: TokenDistributionPerL1Token = {};
-    this.getL1TokensFromInventoryConfig().forEach(
+    this.getL1Tokens().forEach(
       (l1Token) => (distributionPerL1Token[l1Token.toNative()] = this.getChainDistribution(l1Token))
     );
     return distributionPerL1Token;
