@@ -152,7 +152,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const withdrawalHistory = _withdrawalHistory.filter(
       (withdrawal) =>
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
-        compareAddressesSimple(withdrawal.externalAddress, toAddress.toNative())
+        compareAddressesSimple(withdrawal.recipient, toAddress.toNative())
     );
     const { decimals: l1Decimals } = getTokenInfo(l1Token, this.hubChainId);
 

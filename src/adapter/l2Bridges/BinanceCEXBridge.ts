@@ -113,7 +113,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       _withdrawHistory.filter(
         (withdrawal) =>
           withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
-          compareAddressesSimple(withdrawal.externalAddress, fromAddress.toNative())
+          compareAddressesSimple(withdrawal.recipient, fromAddress.toNative())
       ),
     ];
 

@@ -48,12 +48,10 @@ type Network = {
   contractAddress: string;
 };
 
-// A BinanceInteraction is either a deposit or withdrawal into/from a Binance hot wallet.
-type BinanceInteraction = {
+// A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
+type BinanceDeposit = {
   // The amount of `coin` transferred in this interaction.
   amount: number;
-  // The external (non binance-wallet) EOA involved with this interaction.
-  externalAddress?: string;
   // The coin used in this interaction (i.e. the token symbol).
   coin: string;
   // The network on which this interaction took place.
@@ -62,6 +60,12 @@ type BinanceInteraction = {
   txId: string;
   // The status of the deposit/withdrawal.
   status?: number;
+};
+
+// A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
+type BinanceWithdrawal = BinanceDeposit & {
+  // The recipient of `coin` on the destination network.
+  recipient: string;
 };
 
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
@@ -134,7 +138,7 @@ export async function getBinanceDeposits(
   startTime: number,
   nRetries = 0,
   maxRetries = 3
-): Promise<BinanceInteraction[]> {
+): Promise<BinanceDeposit[]> {
   let depositHistory: DepositHistoryResponse;
   try {
     depositHistory = await binanceApi.depositHistory({ startTime });
@@ -150,12 +154,11 @@ export async function getBinanceDeposits(
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      externalAddress: undefined,
       coin: deposit.coin,
       network: deposit.network,
       txId: deposit.txId,
       status: deposit.status,
-    } satisfies BinanceInteraction;
+    } satisfies BinanceDeposit;
   });
 }
 
@@ -169,7 +172,7 @@ export async function getBinanceWithdrawals(
   startTime: number,
   nRetries = 0,
   maxRetries = 3
-): Promise<BinanceInteraction[]> {
+): Promise<BinanceWithdrawal[]> {
   let withdrawHistory: WithdrawHistoryResponse;
   try {
     withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
@@ -178,19 +181,19 @@ export async function getBinanceWithdrawals(
     if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
       const delaySeconds = 2 ** nRetries + Math.random();
       await delay(delaySeconds);
-      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
+      return getBinanceWithdrawals(binanceApi, coin, startTime, ++nRetries, maxRetries);
     }
     throw err;
   }
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
-      externalAddress: withdrawal.address,
+      recipient: withdrawal.address,
       coin,
       txId: withdrawal.txId,
       network: withdrawal.network,
       status: withdrawal.status,
-    } satisfies BinanceInteraction;
+    } satisfies BinanceWithdrawal;
   });
 }
 

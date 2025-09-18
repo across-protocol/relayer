@@ -94,6 +94,13 @@ export async function binanceFinalizer(
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
     for (const symbol of symbols) {
       const coin = accountCoins.find((coin) => coin.symbol === symbol);
+      if (!isDefined(coin)) {
+        logger.warn({
+          at: "BinanceFinalizer",
+          message: `Coin ${symbol} is not a Binance supported token.`,
+        });
+        continue;
+      }
       let coinBalance = coin.balance;
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
@@ -116,7 +123,7 @@ export async function binanceFinalizer(
       for (const withdrawNetwork of [BINANCE_NETWORKS[CHAIN_IDs.BSC], BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
-        const finalizingOnL2 = withdrawNetwork === "BSC";
+        const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[CHAIN_IDs.BSC];
         const depositAmounts = depositsInScope
           .filter((deposit) =>
             finalizingOnL2
@@ -127,7 +134,7 @@ export async function binanceFinalizer(
 
         const withdrawalsInScope = withdrawals.filter(
           (withdrawal) =>
-            compareAddressesSimple(withdrawal.externalAddress, address) && withdrawal.network === withdrawNetwork
+            compareAddressesSimple(withdrawal.recipient, address) && withdrawal.network === withdrawNetwork
         );
         const withdrawalAmounts = withdrawalsInScope.reduce(
           (sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)),
