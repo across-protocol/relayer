@@ -72,7 +72,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       // If there is another active relayer, allow up to maxStartupDelay seconds for this instance to be ready.
       // If one or more chains are still not updated by this point, proceed anyway.
-      if (!ready && activeRelayer !== botIdentifier) {
+      if (!ready && activeRelayer && !activeRelayerUpdated) {
         if (run * pollingDelay < maxStartupDelay) {
           const runTime = Math.round((performance.now() - tLoopStart.startTime) / 1000);
           const delta = pollingDelay - runTime;
