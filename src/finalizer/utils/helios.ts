@@ -794,8 +794,8 @@ async function ensureVkeysMatch(apiBaseUrl: string, sp1Helios: ethers.Contract):
   ]);
 
   const apiVkeyRaw = apiResp?.data?.vkey;
-  const apiVkey = apiVkeyRaw !== undefined ? apiVkeyRaw.toLowerCase() : undefined;
-  const contractVkey = contractVkeyRaw !== undefined ? contractVkeyRaw.toLowerCase() : undefined;
+  const apiVkey = apiVkeyRaw?.toLowerCase();
+  const contractVkey = contractVkeyRaw?.toLowerCase();
 
   if (apiVkey === undefined || contractVkey === undefined || apiVkey !== contractVkey) {
     throw new Error(
