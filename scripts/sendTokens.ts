@@ -1,4 +1,5 @@
 import {
+  bnZero,
   ethers,
   retrieveSignerFromCLIArgs,
   getProvider,
@@ -8,7 +9,6 @@ import {
   getGasPrice,
   toGWei,
   getNativeTokenSymbol,
-  LEGACY_TRANSACTION_CHAINS,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
@@ -68,7 +68,7 @@ export async function run(): Promise<void> {
   console.log(
     `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
   );
-  const gasParams = LEGACY_TRANSACTION_CHAINS.includes(Number(args.chainId))
+  const gasParams = gas.maxPriorityFeePerGas.eq(bnZero)
     ? { gasPrice: gas.maxFeePerGas.add(gas.maxPriorityFeePerGas) }
     : { ...gas };
 
