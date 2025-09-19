@@ -18,7 +18,6 @@ import {
   getBinanceWithdrawals,
   getAccountCoins,
   BINANCE_NETWORKS,
-  CHAIN_IDs,
   isDefined,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -58,6 +57,7 @@ export async function binanceFinalizer(
     ])
   );
   const hubChainId = l1SpokePoolClient.chainId;
+  const l2ChainId = l2SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
 
   const [binanceApi, _fromTimestamp] = await Promise.all([
@@ -121,15 +121,15 @@ export async function binanceFinalizer(
       // Start by finalizing L1 -> L2, then go to L2 -> L1.
       // @dev There are only two possible withdraw networks for the finalizer, Ethereum L1 or Binance Smart Chain "L2." Withdrawals to Ethereum can originate from any L2 but
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
-      for (const withdrawNetwork of [BINANCE_NETWORKS[CHAIN_IDs.BSC], BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]) {
+      for (const withdrawNetwork of [BINANCE_NETWORKS[l2ChainId], BINANCE_NETWORKS[hubChainId]]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
-        const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[CHAIN_IDs.BSC];
+        const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
           .filter((deposit) =>
             finalizingOnL2
-              ? deposit.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
-              : deposit.network !== BINANCE_NETWORKS[CHAIN_IDs.MAINNET]
+              ? deposit.network === BINANCE_NETWORKS[hubChainId]
+              : deposit.network !== BINANCE_NETWORKS[hubChainId]
           )
           .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
 

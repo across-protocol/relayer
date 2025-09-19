@@ -19,8 +19,9 @@ import {
   getBinanceWithdrawals,
   mapAsync,
   BINANCE_NETWORKS,
+  ethers,
 } from "../../utils";
-import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 export class BinanceCEXBridge extends BaseBridgeAdapter {
@@ -113,15 +114,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       if (!compareAddressesSimple(txnReceipt.from, fromAddress.toNative())) {
         return undefined;
       }
-      return {
-        amount: floatToBN(deposit.amount, l1Decimals),
-        txnRef: txnReceipt.transactionHash,
-        txnIndex: txnReceipt.transactionIndex,
-        // @dev Since a binance deposit/withdrawal is just an ERC20 transfer, it will be the first log in the transaction. This log may not exist
-        // if the transfer is with the native token.
-        logIndex: txnReceipt.logs[0]?.logIndex ?? 0,
-        blockNumber: txnReceipt.blockNumber,
-      };
+      return this.toBridgeEvent(floatToBN(deposit.amount, l1Decimals), txnReceipt);
     });
 
     return {
@@ -159,15 +152,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(l1Token)]: await mapAsync(withdrawalHistory, async (withdrawal) => {
         const txnReceipt = await this.l2Provider.getTransactionReceipt(withdrawal.txId);
-        return {
-          amount: floatToBN(withdrawal.amount, l1Decimals),
-          txnRef: txnReceipt.transactionHash,
-          txnIndex: txnReceipt.transactionIndex,
-          // @dev Since a binance deposit/withdrawal is just an ERC20 transfer, it will be the first log in the transaction. This log may not exist
-          // if the transfer is with the native token.
-          logIndex: txnReceipt.logs[0]?.logIndex ?? 0,
-          blockNumber: txnReceipt.blockNumber,
-        };
+        return this.toBridgeEvent(floatToBN(withdrawal.amount, l1Decimals), txnReceipt);
       }),
     };
   }
@@ -178,6 +163,18 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       isContractDeployedToAddress(address.toNative(), this.l2Provider),
     ]);
     return isL1Contract || isL2Contract;
+  }
+
+  private toBridgeEvent(amount: BigNumber, receipt: ethers.providers.TransactionReceipt): BridgeEvent {
+    return {
+      amount,
+      txnRef: receipt.transactionHash,
+      txnIndex: receipt.transactionIndex,
+      // @dev Since a binance deposit/withdrawal is just an ERC20 transfer, it will be the first log in the transaction. This log may not exist
+      // if the transfer is with the native token.
+      logIndex: receipt.logs[0]?.logIndex ?? 0,
+      blockNumber: receipt.blockNumber,
+    };
   }
 
   protected async getBinanceClient() {
