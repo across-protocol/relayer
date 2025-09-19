@@ -310,7 +310,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
 export const DEFAULT_GAS_FEE_SCALERS: {
   [chainId: number]: { maxFeePerGasScaler: number; maxPriorityFeePerGasScaler: number };
 } = {
-  [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 1, maxPriorityFeePerGasScaler: 1 },
+  [CHAIN_IDs.MAINNET]: { maxFeePerGasScaler: 3, maxPriorityFeePerGasScaler: 1.2 },
 };
 
 // Auto-populate OP stack defaults.

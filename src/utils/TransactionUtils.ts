@@ -4,7 +4,6 @@ import dotenv from "dotenv";
 import { AugmentedTransaction } from "../clients";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import {
-  toBN,
   BigNumber,
   bnZero,
   Contract,
@@ -36,8 +35,8 @@ dotenv.config();
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 // Maximum multiplier applied on transaction retries due to REPLACEMENT_UNDERPRICED.
-const MAX_GAS_RETRY_SCALER = 5;
-const MIN_GAS_RETRY_SCALER = 2;
+const MAX_GAS_RETRY_SCALER = 3;
+const MIN_GAS_RETRY_SCALER = 1.1;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -71,8 +70,8 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retries = 3,
-  gas?: Partial<FeeData>
+  retries = 2,
+  gasScaler = 1.0
 ): Promise<TransactionResponse> {
   const at = "TxUtil#runTransaction";
   const { provider, signer } = contract;
@@ -87,6 +86,7 @@ export async function runTransaction(
     Number(process.env[`MAX_FEE_PER_GAS_SCALER_${chainId}`] || process.env.MAX_FEE_PER_GAS_SCALER) ||
     DEFAULT_GAS_FEE_SCALERS[chainId]?.maxFeePerGasScaler;
 
+  let gas: Partial<FeeData>;
   try {
     nonce ??= await provider.getTransactionCount(await signer.getAddress());
     const preGas = await getGasPrice(
@@ -108,11 +108,6 @@ export async function runTransaction(
   const to = contract.address;
   const commonFields = { chainId, to, method, args, value, nonce, gas, gasLimit, sendRawTxn };
   logger.debug({ at, message: "Submitting transaction.", ...commonFields });
-
-  // xxx test code
-//  gas = retries > 1
-//    ? { maxFeePerGas: gas.maxFeePerGas.div(3), maxPriorityFeePerGas: toBN(1) }
-//    : gas;
 
   // TX config has gas (from gasPrice function), value (how much eth to send) and an optional gasLimit. The reduce
   // operation below deletes any null/undefined elements from this object. If gasLimit or nonce are not specified,
@@ -196,13 +191,13 @@ export async function runTransaction(
 
     if (scaleGas) {
       // Ratchet the gasScaler incrementally on each retry, up to MAX_GAS_RETRY_SCALER;
-      const maxFeeDelta = gas.maxFeePerGas.mul(toBNWei("0.1")).div(fixedPointAdjustment);
-      const priorityFeeDelta = maxFeeDelta.sub(gas.maxPriorityFeePerGas);
-      gasScaler = priorityFeeDelta.div(gas.maxPriorityFeePerGas).toNumber();
-      console.log(`xxx gasScaler: ${gasScaler}`);
+      const maxGasScaler = Number(process.env[`MAX_GAS_RETRY_SCALER_${chainId}`] ?? MAX_GAS_RETRY_SCALER);
+      gasScaler = Math.max(gasScaler, Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER));
+      gasScaler = Math.pow(gasScaler, 2);
+      gasScaler = Math.min(gasScaler, maxGasScaler);
     }
 
-    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gas);
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gasScaler);
   }
 }
 
