@@ -34,9 +34,10 @@ dotenv.config();
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
-// Maximum multiplier applied on transaction retries due to REPLACEMENT_UNDERPRICED.
-const MAX_GAS_RETRY_SCALER = 3;
+// Empirically, a max fee scaler of ~5% can result in successful transaction replacement.
+// Stuck transactions are very disruptive, so go for 10% to avoid the hassle.
 const MIN_GAS_RETRY_SCALER = 1.1;
+const MAX_GAS_RETRY_SCALER = 3;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -70,8 +71,8 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retries = 2,
-  gasScaler = 1.0
+  retries = 3,
+  retryScaler = 1.0
 ): Promise<TransactionResponse> {
   const at = "TxUtil#runTransaction";
   const { provider, signer } = contract;
@@ -95,7 +96,7 @@ export async function runTransaction(
       maxFeePerGasScaler,
       sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
-    gas = scaleGasPrice(chainId, preGas, gasScaler);
+    gas = scaleGasPrice(chainId, preGas, retryScaler);
   } catch (error) {
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
@@ -190,14 +191,12 @@ export async function runTransaction(
     }
 
     if (scaleGas) {
-      // Ratchet the gasScaler incrementally on each retry, up to MAX_GAS_RETRY_SCALER;
       const maxGasScaler = Number(process.env[`MAX_GAS_RETRY_SCALER_${chainId}`] ?? MAX_GAS_RETRY_SCALER);
-      gasScaler = Math.max(gasScaler, Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER));
-      gasScaler = Math.pow(gasScaler, 2);
-      gasScaler = Math.min(gasScaler, maxGasScaler);
+      retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER);
+      retryScaler = Math.min(retryScaler, maxGasScaler);
     }
 
-    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, gasScaler);
+    return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
   }
 }
 
@@ -335,24 +334,34 @@ function scaleGasPrice(
   gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
   retryScaler = 1.0
 ): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
-  const scaler = toBNWei(retryScaler);
-  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+  let { maxFeePerGas, maxPriorityFeePerGas } = gas;
 
-  // Check if the chain requires legacy transactions
+  const feeDeltaPct = toBNWei(Math.max(retryScaler - 1.0, 0));
+  const computeFeeDelta = (maxFeePerGas: BigNumber): BigNumber =>
+    maxFeePerGas.mul(feeDeltaPct).div(fixedPointAdjustment);
+
+  // Legacy/type0 transactions.
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    const gasPrice = sdkUtils.bnMax(gas.maxFeePerGas, flooredPriorityFeePerGas).mul(scaler).div(fixedPointAdjustment);
+    const gasPrice = maxFeePerGas.add(computeFeeDelta(maxFeePerGas));
     return { gasPrice };
   }
 
-  // If the priority fee was increased, the max fee must be scaled up as well.
-  const maxPriorityFeePerGas = sdkUtils
-    .bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas)
-    .mul(scaler)
-    .div(fixedPointAdjustment);
-  const maxFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
+  // For non-legacy (type2), round the priority fee up to the floor.
+  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+  maxPriorityFeePerGas = sdkUtils.bnMax(maxPriorityFeePerGas, flooredPriorityFeePerGas);
+
+  // Update the max fee with the delta applied to the priority fee.
+  let maxFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
+  maxFeePerGas = maxFeePerGas.add(maxFeeDelta);
+
+  // For retryScaler > 1, transaction replacement is being attempted. Scale up the
+  // max fee by retryScaler and allocate the entire delta to the priority fee.
+  maxFeeDelta = computeFeeDelta(maxFeePerGas);
+  maxFeePerGas = maxFeePerGas.add(maxFeeDelta);
+  maxPriorityFeePerGas = maxPriorityFeePerGas.add(maxFeeDelta);
 
   return {
-    maxFeePerGas: gas.maxFeePerGas.add(maxFeeDelta),
+    maxFeePerGas,
     maxPriorityFeePerGas,
   };
 }
