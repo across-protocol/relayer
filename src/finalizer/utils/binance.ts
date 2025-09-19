@@ -19,6 +19,7 @@ import {
   getAccountCoins,
   BINANCE_NETWORKS,
   CHAIN_IDs,
+  isDefined,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
