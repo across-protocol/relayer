@@ -138,7 +138,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
     finalizeOnL2: [cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.HYPEREVM]: {
-    finalizeOnL1: [],
+    finalizeOnL1: [cctpL2toL1Finalizer],
     finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
   },
   [CHAIN_IDs.INK]: {
