@@ -1,4 +1,4 @@
-import { BalanceAllocator, BundleDataApproxClient } from "../clients";
+import { BalanceAllocator, BundleDataApproxClient, AcrossSwapApiClient } from "../clients";
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME, spokePoolClientsToProviders } from "../common";
 import {
   BalanceType,
@@ -10,6 +10,7 @@ import {
   RelayerBalanceReport,
   RelayerBalanceTable,
   TokenTransfer,
+  TokenInfo,
 } from "../interfaces";
 import {
   BigNumber,
@@ -60,6 +61,8 @@ import {
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
+  ZERO_ADDRESS,
+  getRedisCache,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -72,6 +75,7 @@ import {
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
+import { RedisCache } from "../caching/RedisCache";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -98,6 +102,8 @@ export class Monitor {
   // have an inventory manager adapter.
   public crossChainAdapterSupportedChains: number[];
   private bundleDataApproxClient: BundleDataApproxClient;
+  private acrossSwapApiClient: AcrossSwapApiClient;
+  private redisCache: RedisCache;
   private l1Tokens: L1Token[];
 
   public constructor(
@@ -133,6 +139,7 @@ export class Monitor {
       [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
       this.logger
     );
+    this.acrossSwapApiClient = new AcrossSwapApiClient(this.logger);
   }
 
   public async update(): Promise<void> {
@@ -145,6 +152,7 @@ export class Monitor {
     // We should initialize the bundle data approx client here because it depends on the spoke pool clients, and we
     // should do it every time the spoke pool clients are updated.
     this.bundleDataApproxClient.initialize();
+    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
 
     const searchConfigs = Object.fromEntries(
       Object.entries(this.spokePoolsBlocks).map(([chainId, config]) => [
@@ -216,17 +224,56 @@ export class Monitor {
   async reportInvalidFills(): Promise<void> {
     const invalidFills = await sdkUtils.findInvalidFills(this.clients.spokePoolClients);
 
+    const invalidFillsByChainId: Record<string, number> = {};
     invalidFills.forEach((invalidFill) => {
-      // Log the fill data
+      const destinationChainName = getNetworkName(invalidFill.fill.destinationChainId);
+      invalidFillsByChainId[destinationChainName] = (invalidFillsByChainId[destinationChainName] ?? 0) + 1;
+      const destinationChainId = invalidFill.fill.destinationChainId;
+      const outputToken = invalidFill.fill.outputToken;
+      let tokenInfo: TokenInfo;
+
+      try {
+        tokenInfo = this.clients.hubPoolClient.getTokenInfoForAddress(outputToken, destinationChainId);
+      } catch {
+        tokenInfo = { symbol: "UNKNOWN TOKEN", decimals: 18, address: outputToken };
+      }
+
+      const formatterFunction = createFormatFunction(2, 4, false, tokenInfo.decimals);
+      const formattedOutputAmount = formatterFunction(invalidFill.fill.outputAmount.toString());
+
+      const message =
+        `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit. ` +
+        `Output amount: ${formattedOutputAmount} ${tokenInfo.symbol}`;
+
+      const deposit = invalidFill.deposit
+        ? {
+            txnRef: invalidFill.deposit.txnRef,
+            inputToken: invalidFill.deposit.inputToken,
+            depositor: invalidFill.deposit.depositor,
+          }
+        : undefined;
+
       this.logger.warn({
         at: "Monitor::reportInvalidFills",
-        message: `Invalid fill detected for ${getNetworkName(invalidFill.fill.originChainId)} deposit`,
-        fill: invalidFill.fill,
+        message,
+        destinationChainId,
+        outputToken: invalidFill.fill.outputToken,
+        relayer: invalidFill.fill.relayer,
+        blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
-        deposit: invalidFill.deposit ?? undefined,
+        deposit,
         notificationPath: "across-invalid-fills",
       });
     });
+
+    if (Object.keys(invalidFillsByChainId).length > 0) {
+      this.logger.info({
+        at: "Monitor::invalidFillsByChain",
+        message: "Invalid fills by chain",
+        invalidFillsByChainId,
+        notificationPath: "across-invalid-fills",
+      });
+    }
   }
 
   async reportUnfilledDeposits(): Promise<void> {
@@ -675,6 +722,7 @@ export class Monitor {
    * listed in `monitorBalances`. These accounts might also be listed in `refillBalances` with a higher target than
    * the `monitorBalances` target. This function will ensure that `checkBalances` will rarely alert for those
    * balances.
+   * @dev @todo This entirefunction should be moved to a new bot that runs independently of the monitor.
    */
   async refillBalances(): Promise<void> {
     const { refillEnabledBalances } = this.monitorConfig;
@@ -708,49 +756,134 @@ export class Monitor {
           // Fill balance back to target, not trigger.
           const balanceTarget = parseUnits(target.toString(), decimals);
           const deficit = balanceTarget.sub(currentBalance);
-          let canRefill = await this.balanceAllocator.requestBalanceAllocation(
-            chainId,
-            [token],
-            toAddressType(signerAddress, chainId),
-            deficit
-          );
+          const selfRefill = account.eq(toAddressType(signerAddress, chainId));
+          // If the account and the signer are the same, we can't transfer to ourselves so we need to try to go through
+          // one of the `canRefill` paths below, which tries to source the `token` from other means, like unwrapping
+          // WETH or sending a cross chain swap.
+          let canRefill = selfRefill
+            ? false
+            : await this.balanceAllocator.requestBalanceAllocation(
+                chainId,
+                [token],
+                toAddressType(signerAddress, chainId),
+                deficit
+              );
           const spokePoolClient = this.clients.spokePoolClients[chainId];
-          // If token is gas token, try unwrapping deficit amount of WETH into ETH to have available for refill.
-          if (
-            !canRefill &&
-            token.eq(getNativeTokenAddressForChain(chainId)) &&
-            getNativeTokenSymbol(chainId) === "ETH" &&
-            isEVMSpokePoolClient(spokePoolClient)
-          ) {
-            const weth = new Contract(
-              TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
-              WETH9.abi,
-              spokePoolClient.spokePool.signer
-            );
-            const wethBalance = await weth.balanceOf(signerAddress);
-            if (wethBalance.gte(deficit)) {
-              const txn = await (await runTransaction(this.logger, weth, "withdraw", [deficit])).wait();
-              this.logger.info({
-                at: "Monitor#refillBalances",
-                message: `Unwrapped WETH from ${signerAddress} to refill ETH in ${account} 🎁!`,
-                chainId,
-                requiredUnwrapAmount: deficit.toString(),
-                wethBalance,
-                wethAddress: weth.address,
-                ethBalance: currentBalance.toString(),
-                transactionHash: blockExplorerLink(txn.transactionHash, chainId),
-              });
-              canRefill = true;
-            } else {
-              this.logger.warn({
-                at: "Monitor#refillBalances",
-                message: `Trying to unwrap WETH balance from ${signerAddress} to use for refilling ETH in ${account} but not enough WETH to unwrap`,
-                chainId,
-                requiredUnwrapAmount: deficit.toString(),
-                wethBalance,
-                wethAddress: weth.address,
-                ethBalance: currentBalance.toString(),
-              });
+          if (!canRefill && token.eq(getNativeTokenAddressForChain(chainId)) && isEVMSpokePoolClient(spokePoolClient)) {
+            // If token is the native token and the native token is ETH, try unwrapping some WETH into ETH first before
+            // transferring ETH to the account.
+            if (getNativeTokenSymbol(chainId) === "ETH") {
+              const weth = new Contract(
+                TOKEN_SYMBOLS_MAP.WETH.addresses[chainId],
+                WETH9.abi,
+                spokePoolClient.spokePool.signer
+              );
+              const wethBalance = await weth.balanceOf(signerAddress);
+              if (wethBalance.gte(deficit)) {
+                const txn = await (await runTransaction(this.logger, weth, "withdraw", [deficit])).wait();
+                this.logger.info({
+                  at: "Monitor#refillBalances",
+                  message: `Unwrapped WETH from ${signerAddress} to refill ETH in ${account} 🎁!`,
+                  chainId,
+                  requiredUnwrapAmount: deficit.toString(),
+                  wethBalance,
+                  wethAddress: weth.address,
+                  ethBalance: currentBalance.toString(),
+                  transactionHash: blockExplorerLink(txn.transactionHash, chainId),
+                });
+                canRefill = true;
+              } else {
+                this.logger.warn({
+                  at: "Monitor#refillBalances",
+                  message: `Trying to unwrap WETH balance from ${signerAddress} to use for refilling ETH in ${account} but not enough WETH to unwrap`,
+                  chainId,
+                  requiredUnwrapAmount: deficit.toString(),
+                  wethBalance,
+                  wethAddress: weth.address,
+                  ethBalance: currentBalance.toString(),
+                });
+                return;
+              }
+            } else if (getNativeTokenSymbol(chainId) === "MATIC") {
+              // To refill MATIC, we will first submit an async cross chain swap to receive MATIC, and then on the next monitor
+              // run, the refill should be successful. By default we will swap ETH on Arbitrum to MATIC on Polygon because
+              // bridging from Arbitrum is fast, and we tend to accumulate ETH on Arbitrum because its refunded for
+              // each L1->Arbitrum message we initiate.
+              const swapRoute = {
+                inputToken: EvmAddress.from(ZERO_ADDRESS),
+                outputToken: EvmAddress.from(ZERO_ADDRESS),
+                originChainId: CHAIN_IDs.ARBITRUM,
+                destinationChainId: chainId,
+              };
+              const redisKey = `acrossSwap:${swapRoute.originChainId}-${swapRoute.inputToken.toNative()}->${
+                swapRoute.destinationChainId
+              }-${swapRoute.outputToken.toNative()}`;
+              const pendingSwap = await this.redisCache.get(redisKey);
+              if (pendingSwap) {
+                const ttl = await this.redisCache.ttl(redisKey);
+                this.logger.debug({
+                  at: "Monitor#refillBalances",
+                  message: `Found pending swap in cache with key ${redisKey}, avoiding new swap`,
+                  ttl,
+                });
+                return;
+              }
+              const originSpokePoolClient = this.clients.spokePoolClients[swapRoute.originChainId];
+              assert(
+                isEVMSpokePoolClient(originSpokePoolClient),
+                `Missing origin spoke pool client for chain ${swapRoute.originChainId}`
+              );
+              const arbitrumSigner = originSpokePoolClient.spokePool.signer;
+              const swapData = await this.acrossSwapApiClient.swapExactOutput(
+                swapRoute,
+                deficit,
+                EvmAddress.from(signerAddress),
+                EvmAddress.from(account.toEvmAddress())
+              );
+              if (swapData) {
+                const txn = await (
+                  await runTransaction(
+                    this.logger,
+                    new Contract(swapData.target.toNative(), [], arbitrumSigner),
+                    "", // leave method empty to send a raw transaction
+                    swapData.calldata,
+                    swapData.value
+                  )
+                ).wait();
+                // Cache the swap for 10 minutes
+                // @todo Consider caching for some time relative to the estimated fill time returned by API, but
+                // 10 minutes is a reasonable conservative value to avoid duplicate swaps.
+                const ttl = 10 * 60;
+                await this.redisCache.set(redisKey, "true", ttl);
+                this.logger.debug({
+                  at: "Monitor#refillBalances",
+                  message: `Cached swap for ${redisKey}`,
+                  ttl,
+                });
+                this.logger.info({
+                  at: "Monitor#refillBalances",
+                  message: `Swapped ETH on ${getNetworkName(
+                    swapRoute.originChainId
+                  )} to MATIC on Polygon for ${account} 🎁!`,
+                  transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
+                });
+              } else {
+                // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
+                // can happen if the swapper doesn't have enough swap input token balance in addition to other
+                // miscellaneous reasons.
+                this.logger.warn({
+                  at: "Monitor#refillBalances",
+                  message: `Failed to swap ETH on ${getNetworkName(
+                    swapRoute.originChainId
+                  )} to MATIC on Polygon for ${account}`,
+                  swapRoute,
+                  deficit,
+                  swapper: EvmAddress.from(signerAddress).toNative(),
+                  recipient: EvmAddress.from(account.toEvmAddress()).toNative(),
+                });
+              }
+              // Return early now because the cross chain swap, successful or not, is async and we won't be able to
+              // refill balances via a transfer() until the next bot iteration.
               return;
             }
           }
@@ -806,6 +939,7 @@ export class Monitor {
               message: "Cannot refill balance to target",
               from: signerAddress,
               to: account,
+              currentBalance: currentBalance.toString(),
               balanceTrigger,
               balanceTarget,
               deficit,
@@ -1277,6 +1411,10 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
+          if (chainId === CHAIN_IDs.MAINNET && l1Token.symbol === "USDC.e") {
+            // We don't want to double count USDC/USDC.e repayments on Mainnet.
+            continue;
+          }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
           if (upcomingRefunds.gt(0)) {
             const l2TokenAddress = getRemoteTokenForL1Token(

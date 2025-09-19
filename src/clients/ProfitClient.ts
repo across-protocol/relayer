@@ -664,7 +664,6 @@ export class ProfitClient {
     // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
     // the main RL address because it has all supported tokens and approvals in place on all chains.
     const testSymbols = {
-      [CHAIN_IDs.ALEPH_ZERO]: "USDT", // USDC is not yet supported on AlephZero, so revert to USDT. @todo: Update.
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
       [CHAIN_IDs.LENS]: "WETH", // USDC not yet supported.
@@ -766,7 +765,12 @@ export class ProfitClient {
   }
 
   private _getNativeTokenNetwork(symbol: string): number {
-    return symbol === "SOL" ? CHAIN_IDs.SOLANA : CHAIN_IDs.MAINNET;
+    const symbols = {
+      HYPE: CHAIN_IDs.HYPEREVM,
+      SOL: CHAIN_IDs.SOLANA,
+    };
+
+    return symbols[symbol] ?? CHAIN_IDs.MAINNET;
   }
 
   private constructRelayerFeeQuery(
