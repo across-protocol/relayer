@@ -172,7 +172,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   logger.debug({ at, message: `${personality} started 🏃‍♂️`, loggedConfig });
   const clients = await constructRelayerClients(logger, config, baseSigner);
 
-  const { inventoryClient, tokenClient } = clients;
+  const { inventoryClient } = clients;
   const inventoryManagement = clients.inventoryClient.isInventoryManagementEnabled();
   if (!inventoryManagement) {
     logger.debug({ at, message: "Inventory management disabled, nothing to do." });
@@ -188,9 +188,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await rebalancer.checkForUnfilledDepositsAndFill(false, true);
     await rebalancer.runMaintenance();
 
-    // It's necessary to update token balances in case WETH was wrapped.
-    tokenClient.clearTokenData();
-    await tokenClient.update();
     if (config.sendingTransactionsEnabled) {
       await inventoryClient.setTokenApprovals();
     }
