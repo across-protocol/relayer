@@ -15,3 +15,12 @@ export function retryAsync<T, U extends unknown[]>(
   }
   return ret;
 }
+
+// Exponential backoff with jitter and a cap
+export function backoffWithJitter(retry: number, baseDelayMs = 50, backoffExponentBase = 2, maxDelayMs = 5000) {
+  const baseDelay = baseDelayMs * backoffExponentBase ** retry;
+  const jitter = (0.5 - Math.random()) * baseDelay;
+  const delay = baseDelay + jitter;
+  const base = Math.min(delay, maxDelayMs);
+  return base + jitter;
+}

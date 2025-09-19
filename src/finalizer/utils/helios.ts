@@ -16,15 +16,14 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
-import {
-  ApiProofRequest,
-  ProofOutputs,
-  ProofStateResponse,
-  SP1HeliosProofData,
-  VkeyResponse,
-} from "../../interfaces/ZkApi";
+import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
 import { StorageSlotVerifiedEvent, HeadUpdateEvent } from "../../interfaces/Helios";
-import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
+import {
+  calculateProofId,
+  decodeProofOutputs,
+  getProofStateWithRetries,
+  getVkeyWithRetries,
+} from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
 import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
@@ -349,8 +348,7 @@ async function enrichHeliosActions(
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
     let getError: any = null;
     try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
+      proofState = await getProofStateWithRetries(getProofUrl);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
     } catch (error: any) {
       getError = error;
@@ -789,7 +787,7 @@ function addUpdateOnlyTxn(
  */
 async function ensureVkeysMatch(apiBaseUrl: string, sp1Helios: ethers.Contract): Promise<void> {
   const [apiResp, contractVkeyRaw] = await Promise.all([
-    axios.get<VkeyResponse>(`${apiBaseUrl}/v1/api/vkey`),
+    getVkeyWithRetries(`${apiBaseUrl}/v1/api/vkey`),
     sp1Helios.heliosProgramVkey(),
   ]);
 

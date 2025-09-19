@@ -1,5 +1,13 @@
-import { BigNumber, ethers } from ".";
-import { ApiProofRequest, PROOF_OUTPUTS_ABI_TUPLE, ProofOutputs } from "../interfaces/ZkApi";
+import axios, { AxiosResponse } from "axios";
+import { backoffWithJitter, BigNumber, ethers } from ".";
+import {
+  ApiProofRequest,
+  PROOF_OUTPUTS_ABI_TUPLE,
+  ProofOutputs,
+  ProofStateResponse,
+  VkeyResponse,
+} from "../interfaces/ZkApi";
+import axiosRetry, { isNetworkOrIdempotentRequestError } from "axios-retry";
 
 /**
  * Calculates the deterministic Proof ID based on the request parameters.
@@ -51,4 +59,25 @@ export function decodeProofOutputs(publicValuesBytes: string): ProofOutputs {
       contractAddress: slot[2],
     })),
   };
+}
+
+export async function getVkeyWithRetries(url: string): Promise<AxiosResponse<VkeyResponse>> {
+  const apiClient = axios.create();
+  axiosRetry(apiClient, {
+    retries: 3,
+    retryDelay: (retry) => backoffWithJitter(retry),
+    retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
+  });
+  return apiClient.get<VkeyResponse>(url);
+}
+
+export async function getProofStateWithRetries(url: string): Promise<ProofStateResponse> {
+  const apiClient = axios.create();
+  axiosRetry(apiClient, {
+    retries: 3,
+    retryDelay: (retry) => backoffWithJitter(retry),
+    retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
+  });
+  const response = await apiClient.get<ProofStateResponse>(url);
+  return response.data;
 }
