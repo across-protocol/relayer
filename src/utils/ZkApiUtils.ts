@@ -67,6 +67,7 @@ export async function getVkeyWithRetries(url: string): Promise<AxiosResponse<Vke
     retries: 3,
     retryDelay: (retry) => backoffWithJitter(retry),
     retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
+    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
   });
   return apiClient.get<VkeyResponse>(url);
 }
@@ -77,6 +78,7 @@ export async function getProofStateWithRetries(url: string): Promise<ProofStateR
     retries: 3,
     retryDelay: (retry) => backoffWithJitter(retry),
     retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
+    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
   });
   const response = await apiClient.get<ProofStateResponse>(url);
   return response.data;
