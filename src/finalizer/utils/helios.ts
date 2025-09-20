@@ -18,7 +18,13 @@ import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
 import { StorageSlotVerifiedEvent, HeadUpdateEvent } from "../../interfaces/Helios";
-import { calculateProofId, decodeProofOutputs } from "../../utils/ZkApiUtils";
+import {
+  calculateProofId,
+  decodeProofOutputs,
+  getProofStateWithRetries,
+  getVkeyWithRetries,
+  requestProofWithRetries,
+} from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
 import { getSp1HeliosContractEVM } from "../../utils/HeliosUtils";
@@ -69,6 +75,15 @@ export async function heliosL1toL2Finalizer(
   const l1ChainId = hubPoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
+
+  const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
+  if (!apiBaseUrl) {
+    throw new Error("[heliosL1toL2Finalizer] HELIOS_PROOF_API_URL environment variable not set.");
+  }
+
+  // Early vkey mismatch check to avoid requesting wrong proofs
+  await ensureVkeysMatch(apiBaseUrl, sp1HeliosL2);
+
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
@@ -95,6 +110,7 @@ export async function heliosL1toL2Finalizer(
   // --- Step 2: Enrich actions with ZK proofs. Return messages that are ready to submit on-chain ---
   const readyActions = await enrichHeliosActions(
     logger,
+    apiBaseUrl,
     actions,
     l2SpokePoolClient,
     l1SpokePoolClient,
@@ -267,6 +283,7 @@ async function shouldGenerateKeepAliveAction(
 // returns helios messages ready for on-chain execution enriched with proof data
 async function enrichHeliosActions(
   logger: winston.Logger,
+  apiBaseUrl: string,
   actions: HeliosAction[],
   l2SpokePoolClient: EVMSpokePoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
@@ -274,10 +291,6 @@ async function enrichHeliosActions(
   currentL2HeliosHeader: string
 ): Promise<HeliosAction[]> {
   const l2ChainId = l2SpokePoolClient.chainId;
-  const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
-  if (!apiBaseUrl) {
-    throw new Error("[enrichHeliosActions] HELIOS_PROOF_API_URL environment variable not set.");
-  }
   const hubPoolStoreAddress = getHubPoolStoreContract(
     l1SpokePoolClient.chainId,
     l1SpokePoolClient.spokePool.provider
@@ -327,17 +340,14 @@ async function enrichHeliosActions(
     }
 
     const proofId = calculateProofId(apiRequest);
-    const getProofUrl = `${apiBaseUrl}/v1/api/proofs/${proofId}`;
-
-    logger.debug({ ...logContext, message: "Attempting to get proof", proofId, getProofUrl });
+    logger.debug({ ...logContext, message: "Attempting to get proof", proofId });
 
     let proofState: ProofStateResponse | null = null;
 
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
     let getError: any = null;
     try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
+      proofState = await getProofStateWithRetries(apiBaseUrl, proofId);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
     } catch (error: any) {
       getError = error;
@@ -349,7 +359,7 @@ async function enrichHeliosActions(
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await requestProofWithRetries(apiBaseUrl, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -761,4 +771,29 @@ function addUpdateOnlyTxn(
     originationChainId: l1ChainId,
     destinationChainId: l2ChainId,
   });
+}
+
+/**
+ *
+ * @notice This function ensures that there's a match between `ZK API.vkey` _and_ `SP1Helios.vkey`. If these two don't
+ * match, the generated proof cannot be used to confirm messages on the destination chain.
+ *
+ * When upgrading the ZK Helios setup, ZK API will always have to be upgraded _after_ we send an upgrade message to all
+ * the V4 chains, because ZK API has to _first_ generate all the proofs for "upgrade message" to get confirmed on the
+ * destination chain. This means that ELF vkey might become stale in the ZK API (say some contract already upgraded but
+ * we didn't yet re-deploy the ZK API with the new ELF). This check eases the operational overhead to the upgrade by not
+ * allowing to request a proof with an incorrect(stale) ELF vkey.
+ */
+async function ensureVkeysMatch(apiBaseUrl: string, sp1Helios: ethers.Contract): Promise<void> {
+  const [apiResp, contractVkeyRaw] = await Promise.all([getVkeyWithRetries(apiBaseUrl), sp1Helios.heliosProgramVkey()]);
+
+  const apiVkeyRaw = apiResp?.data?.vkey;
+  const apiVkey = apiVkeyRaw?.toLowerCase();
+  const contractVkey = contractVkeyRaw?.toLowerCase();
+
+  if (apiVkey === undefined || contractVkey === undefined || apiVkey !== contractVkey) {
+    throw new Error(
+      `SP1Helios vkey check failed: api=${apiVkey} contract=${contractVkey} address=${sp1Helios.address}`
+    );
+  }
 }

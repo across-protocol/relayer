@@ -1,5 +1,13 @@
-import { BigNumber, ethers } from ".";
-import { ApiProofRequest, PROOF_OUTPUTS_ABI_TUPLE, ProofOutputs } from "../interfaces/ZkApi";
+import axios, { AxiosResponse } from "axios";
+import { backoffWithJitter, BigNumber, ethers } from ".";
+import {
+  ApiProofRequest,
+  PROOF_OUTPUTS_ABI_TUPLE,
+  ProofOutputs,
+  ProofStateResponse,
+  VkeyResponse,
+} from "../interfaces/ZkApi";
+import axiosRetry, { isNetworkOrIdempotentRequestError } from "axios-retry";
 
 /**
  * Calculates the deterministic Proof ID based on the request parameters.
@@ -51,4 +59,39 @@ export function decodeProofOutputs(publicValuesBytes: string): ProofOutputs {
       contractAddress: slot[2],
     })),
   };
+}
+
+export async function getVkeyWithRetries(apiBaseUrl: string): Promise<AxiosResponse<VkeyResponse>> {
+  const apiClient = axios.create();
+  axiosRetry(apiClient, {
+    retries: 3,
+    retryDelay: (retry) => backoffWithJitter(retry),
+    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+  });
+  return apiClient.get<VkeyResponse>(`${apiBaseUrl}/v1/api/vkey`);
+}
+
+export async function getProofStateWithRetries(apiBaseUrl: string, proofId: string): Promise<ProofStateResponse> {
+  const apiClient = axios.create();
+  axiosRetry(apiClient, {
+    retries: 3,
+    retryDelay: (retry) => backoffWithJitter(retry),
+    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+  });
+  const response = await apiClient.get<ProofStateResponse>(`${apiBaseUrl}/v1/api/proofs/${proofId}`);
+  return response.data;
+}
+
+export async function requestProofWithRetries(apiBaseUrl: string, request: ApiProofRequest) {
+  const apiClient = axios.create();
+  axiosRetry(apiClient, {
+    retries: 3,
+    retryDelay: (retry) => backoffWithJitter(retry),
+    // Notice: sometimes, the API returns status 409: conflict. This means that 2 different post requests raced to
+    // request a ZK proof with the same args and it's unclear whether the request was created successfully yet. The easy
+    // thing to do is to retry and receive a 200 response most likely
+    retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
+    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+  });
+  await axios.post(`${apiBaseUrl}/v1/api/proofs`, request);
 }

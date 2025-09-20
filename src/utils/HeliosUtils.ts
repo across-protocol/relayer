@@ -21,5 +21,5 @@ export async function getSp1HeliosContractEVM(
     evmSpokePool.provider
   );
   const heliosAddress = await universalSpokePoolContract.helios();
-  return new ethers.Contract(heliosAddress, SP1_HELIOS_ABI as any, signerOrProvider);
+  return new ethers.Contract(heliosAddress, SP1_HELIOS_ABI, signerOrProvider);
 }
