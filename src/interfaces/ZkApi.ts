@@ -1,4 +1,5 @@
 import { BigNumber } from "../utils";
+import { enums, Infer, object, optional, string } from "superstruct";
 
 // --- API Interaction Types ---
 export interface ApiProofRequest {
@@ -9,23 +10,27 @@ export interface ApiProofRequest {
   dst_chain_contract_from_header: string;
 }
 
-export type ProofStatus = "pending" | "success" | "errored";
+export const ProofStatusSS = enums(["pending", "success", "errored"]);
+export type ProofStatus = Infer<typeof ProofStatusSS>;
 
-export interface SP1HeliosProofData {
-  proof: string;
-  public_values: string;
-}
+export const VkeyResponseSS = object({
+  vkey: string(),
+});
+export type VkeyResponse = Infer<typeof VkeyResponseSS>;
 
-export interface ProofStateResponse {
-  proof_id: string;
-  status: ProofStatus;
-  update_calldata?: SP1HeliosProofData; // Present only if status is "success"
-  error_message?: string; // Present only if status is "errored"
-}
+export const SP1HeliosProofDataSS = object({
+  proof: string(),
+  public_values: string(),
+});
+export type SP1HeliosProofData = Infer<typeof SP1HeliosProofDataSS>;
 
-export interface VkeyResponse {
-  vkey: string;
-}
+export const ProofStateResponseSS = object({
+  proof_id: string(),
+  status: ProofStatusSS,
+  update_calldata: optional(SP1HeliosProofDataSS),
+  error_message: optional(string()),
+});
+export type ProofStateResponse = Infer<typeof ProofStateResponseSS>;
 
 // ABI for `public_values` returned from ZK API as part of `SP1HeliosProofData`
 export const PROOF_OUTPUTS_ABI_TUPLE = `tuple(

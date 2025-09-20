@@ -1,13 +1,15 @@
-import axios, { AxiosResponse } from "axios";
+import axios from "axios";
 import { backoffWithJitter, BigNumber, ethers } from ".";
 import {
   ApiProofRequest,
   PROOF_OUTPUTS_ABI_TUPLE,
   ProofOutputs,
   ProofStateResponse,
+  ProofStateResponseSS,
   VkeyResponse,
+  VkeyResponseSS,
 } from "../interfaces/ZkApi";
-import axiosRetry, { isNetworkOrIdempotentRequestError } from "axios-retry";
+import { create } from "superstruct";
 
 /**
  * Calculates the deterministic Proof ID based on the request parameters.
@@ -61,37 +63,68 @@ export function decodeProofOutputs(publicValuesBytes: string): ProofOutputs {
   };
 }
 
-export async function getVkeyWithRetries(apiBaseUrl: string): Promise<AxiosResponse<VkeyResponse>> {
-  const apiClient = axios.create();
-  axiosRetry(apiClient, {
-    retries: 3,
-    retryDelay: (retry) => backoffWithJitter(retry),
-    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
-  });
-  return apiClient.get<VkeyResponse>(`${apiBaseUrl}/v1/api/vkey`);
+export async function getProofStateWithRetries(
+  apiBaseUrl: string,
+  proofId: string,
+  maxAttempts = 3
+): Promise<ProofStateResponse | 404> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const response = await axios.get(`${apiBaseUrl}/v1/api/proofs/${proofId}`);
+      const proofState: ProofStateResponse = create(response.data, ProofStateResponseSS);
+      return proofState;
+    } catch (e: any) {
+      // 404 is a valid/expected response: proof not yet created
+      if (axios.isAxiosError(e) && e.response?.status === 404) {
+        return 404;
+      }
+
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
 }
 
-export async function getProofStateWithRetries(apiBaseUrl: string, proofId: string): Promise<ProofStateResponse> {
-  const apiClient = axios.create();
-  axiosRetry(apiClient, {
-    retries: 3,
-    retryDelay: (retry) => backoffWithJitter(retry),
-    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
-  });
-  const response = await apiClient.get<ProofStateResponse>(`${apiBaseUrl}/v1/api/proofs/${proofId}`);
-  return response.data;
+export async function requestProofWithRetries(
+  apiBaseUrl: string,
+  request: ApiProofRequest,
+  maxAttempts = 3
+): Promise<void> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await axios.post(`${apiBaseUrl}/v1/api/proofs`, request);
+      return;
+    } catch (e: any) {
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
 }
 
-export async function requestProofWithRetries(apiBaseUrl: string, request: ApiProofRequest) {
-  const apiClient = axios.create();
-  axiosRetry(apiClient, {
-    retries: 3,
-    retryDelay: (retry) => backoffWithJitter(retry),
-    // Notice: sometimes, the API returns status 409: conflict. This means that 2 different post requests raced to
-    // request a ZK proof with the same args and it's unclear whether the request was created successfully yet. The easy
-    // thing to do is to retry and receive a 200 response most likely
-    retryCondition: (err) => isNetworkOrIdempotentRequestError(err) || err.response?.status === 409,
-    // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
-  });
-  await axios.post(`${apiBaseUrl}/v1/api/proofs`, request);
+export async function getVkeyWithRetries(apiBaseUrl: string, maxAttempts = 3): Promise<VkeyResponse> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const response = await axios.get(`${apiBaseUrl}/v1/api/vkey`);
+      const vkeyResponse: VkeyResponse = create(response.data, VkeyResponseSS);
+      return vkeyResponse;
+    } catch (e) {
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
 }

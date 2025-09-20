@@ -13,7 +13,6 @@ import {
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
@@ -342,33 +341,22 @@ async function enrichHeliosActions(
     const proofId = calculateProofId(apiRequest);
     logger.debug({ ...logContext, message: "Attempting to get proof", proofId });
 
-    let proofState: ProofStateResponse | null = null;
-
-    // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
-    let getError: any = null;
+    let proofStateOr404: ProofStateResponse | 404;
     try {
-      proofState = await getProofStateWithRetries(apiBaseUrl, proofId);
-      logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
-    } catch (error: any) {
-      getError = error;
+      proofStateOr404 = await getProofStateWithRetries(apiBaseUrl, proofId);
+    } catch (error) {
+      // add context to error
+      throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(error)}`);
     }
 
-    // Axios error. Handle based on whether was a NOTFOUND or another error
-    if (getError) {
-      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
-      if (isNotFoundError) {
-        // NOTFOUND error -> Request proof
-        logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await requestProofWithRetries(apiBaseUrl, apiRequest);
-        logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
-        continue;
-      } else {
-        // If other error is returned -- throw and alert PD; this shouldn't happen
-        throw new Error(`Failed to get proof state for proofId ${proofId}: ${stringifyThrownValue(getError)}`);
-      }
+    if (proofStateOr404 === 404) {
+      logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
+      await requestProofWithRetries(apiBaseUrl, apiRequest);
+      logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
+      continue;
     }
 
-    // No axios error, process `proofState`
+    const proofState: ProofStateResponse = proofStateOr404;
     switch (proofState.status) {
       case "pending":
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
@@ -388,7 +376,7 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await requestProofWithRetries(apiBaseUrl, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       }
@@ -787,8 +775,7 @@ function addUpdateOnlyTxn(
 async function ensureVkeysMatch(apiBaseUrl: string, sp1Helios: ethers.Contract): Promise<void> {
   const [apiResp, contractVkeyRaw] = await Promise.all([getVkeyWithRetries(apiBaseUrl), sp1Helios.heliosProgramVkey()]);
 
-  const apiVkeyRaw = apiResp?.data?.vkey;
-  const apiVkey = apiVkeyRaw?.toLowerCase();
+  const apiVkey = apiResp.vkey.toLowerCase();
   const contractVkey = contractVkeyRaw?.toLowerCase();
 
   if (apiVkey === undefined || contractVkey === undefined || apiVkey !== contractVkey) {
