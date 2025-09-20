@@ -23,6 +23,7 @@ import {
   decodeProofOutputs,
   getProofStateWithRetries,
   getVkeyWithRetries,
+  requestProofWithRetries,
 } from "../../utils/ZkApiUtils";
 import { calculateHubPoolStoreStorageSlot, getHubPoolStoreContract } from "../../utils/UniversalUtils";
 import { stringifyThrownValue } from "../../utils/LogUtils";
@@ -339,16 +340,14 @@ async function enrichHeliosActions(
     }
 
     const proofId = calculateProofId(apiRequest);
-    const getProofUrl = `${apiBaseUrl}/v1/api/proofs/${proofId}`;
-
-    logger.debug({ ...logContext, message: "Attempting to get proof", proofId, getProofUrl });
+    logger.debug({ ...logContext, message: "Attempting to get proof", proofId });
 
     let proofState: ProofStateResponse | null = null;
 
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
     let getError: any = null;
     try {
-      proofState = await getProofStateWithRetries(getProofUrl);
+      proofState = await getProofStateWithRetries(apiBaseUrl, proofId);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
     } catch (error: any) {
       getError = error;
@@ -360,7 +359,7 @@ async function enrichHeliosActions(
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await requestProofWithRetries(apiBaseUrl, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -786,10 +785,7 @@ function addUpdateOnlyTxn(
  * allowing to request a proof with an incorrect(stale) ELF vkey.
  */
 async function ensureVkeysMatch(apiBaseUrl: string, sp1Helios: ethers.Contract): Promise<void> {
-  const [apiResp, contractVkeyRaw] = await Promise.all([
-    getVkeyWithRetries(`${apiBaseUrl}/v1/api/vkey`),
-    sp1Helios.heliosProgramVkey(),
-  ]);
+  const [apiResp, contractVkeyRaw] = await Promise.all([getVkeyWithRetries(apiBaseUrl), sp1Helios.heliosProgramVkey()]);
 
   const apiVkeyRaw = apiResp?.data?.vkey;
   const apiVkey = apiVkeyRaw?.toLowerCase();
