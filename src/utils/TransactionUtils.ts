@@ -234,6 +234,15 @@ export async function sendAndConfirmSolanaTransaction(
   return txSignature;
 }
 
+export async function simulateSolanaTransaction(
+  unsignedTransaction: CompilableTransactionMessage,
+  provider: SVMProvider
+) {
+  const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
+  const serializedTx = getBase64EncodedWireTransaction(signedTx);
+  return provider.simulateTransaction(serializedTx, { sigVerify: false, encoding: "base64" }).send();
+}
+
 export async function getGasPrice(
   provider: ethers.providers.Provider,
   priorityScaler = 1.2,
