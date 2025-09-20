@@ -409,7 +409,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
           profitClient,
           multiCallerClient,
           tryMulticallClient,
-          inventoryClient: new MockInventoryClient(),
+          inventoryClient: new MockInventoryClient(null, null, null, null, null, hubPoolClient),
           acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
         },
         {

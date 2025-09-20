@@ -88,11 +88,17 @@ export class InventoryClient {
       logger: this.logger,
       at: "InventoryClient",
     });
+    // Load all L1 tokens from inventory config and hub pool into a Set to deduplicate.
+    const allL1Tokens = new Set<string>(
+      this.getL1TokensFromInventoryConfig()
+        .concat(this.getL1TokensEnabledInHubPool())
+        .map((l1Token) => l1Token.toNative())
+    );
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.tokenClient?.spokePoolClients ?? {},
       this.hubPoolClient,
       this.chainIdList,
-      this.getL1Tokens(),
+      Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
       this.logger
     );
   }
@@ -311,10 +317,17 @@ export class InventoryClient {
   }
 
   getL1Tokens(): EvmAddress[] {
-    return (
-      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
-      this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
-    );
+    return this.inventoryConfig?.tokenConfig
+      ? this.getL1TokensFromInventoryConfig()
+      : this.getL1TokensEnabledInHubPool();
+  }
+
+  getL1TokensFromInventoryConfig(): EvmAddress[] {
+    return Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token));
+  }
+
+  getL1TokensEnabledInHubPool(): EvmAddress[] {
+    return this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address);
   }
 
   // Decrement Tokens Balance And Increment Cross Chain Transfer
