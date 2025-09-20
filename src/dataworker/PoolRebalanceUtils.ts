@@ -145,7 +145,7 @@ export function generateMarkdownForRootBundle(
     }
 
     const l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
-    const refundAddresses = shortenHexStrings(leaf.refundAddresses.map((addr) => addr.toBytes32()));
+    const refundAddresses = shortenHexStrings(leaf.refundAddresses.map((addr) => addr.toNative()));
     const refundAmounts = convertTokenListFromWei(
       chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
@@ -185,8 +185,8 @@ export function generateMarkdownForRootBundle(
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.
     const slowFill = {
       // Shorten select keys for ease of reading from Slack.
-      depositor: shortenHexString(leaf.relayData.depositor.toBytes32()),
-      recipient: shortenHexString(leaf.relayData.recipient.toBytes32()),
+      depositor: shortenHexString(leaf.relayData.depositor.toNative()),
+      recipient: shortenHexString(leaf.relayData.recipient.toNative()),
       originChainId: leaf.relayData.originChainId.toString(),
       destinationChainId: destinationChainId.toString(),
       depositId: leaf.relayData.depositId.toString(),
