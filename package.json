@@ -74,6 +74,7 @@
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
     "run-rebalancer": "node ./dist/index.js --rebalancer",
     "run-monitor": "node ./dist/index.js --monitor",
+    "run-refiller": "node ./dist/index.js --refiller",
     "run-finalizer": "node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
