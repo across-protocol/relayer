@@ -35,13 +35,13 @@ import {
   Address,
   toAddressType,
   repaymentChainCanBeQuicklyRebalanced,
+  forEachAsync,
 } from "../utils";
-import { HubPoolClient, TokenClient, BundleDataClient } from ".";
+import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
-import { CombinedRefunds } from "../dataworker/DataworkerUtils";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
@@ -65,9 +65,10 @@ export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
   private readonly formatWei: ReturnType<typeof createFormatFunction>;
-  private bundleRefundsPromise: Promise<CombinedRefunds[]> = undefined;
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
+  private bundleDataApproxClient: BundleDataApproxClient;
+  private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(
     readonly relayer: EvmAddress,
@@ -76,7 +77,6 @@ export class InventoryClient {
     readonly tokenClient: TokenClient,
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
-    readonly bundleDataClient: BundleDataClient,
     readonly adapterManager: AdapterManager,
     readonly crossChainTransferClient: CrossChainTransferClient,
     readonly simMode = false,
@@ -88,6 +88,13 @@ export class InventoryClient {
       logger: this.logger,
       at: "InventoryClient",
     });
+    this.bundleDataApproxClient = new BundleDataApproxClient(
+      this.tokenClient?.spokePoolClients ?? {},
+      this.hubPoolClient,
+      this.chainIdList,
+      this.getL1Tokens(),
+      this.logger
+    );
   }
 
   /**
@@ -143,14 +150,28 @@ export class InventoryClient {
     ignoreL1ToL2PendingAmount = false
   ): BigNumber {
     const { crossChainTransferClient, relayer, tokenClient } = this;
-    let balance: BigNumber;
+    let balance = bnZero;
 
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+
+    // If chain is L1, add all pending L2->L1 withdrawals.
+    if (chainId === this.hubPoolClient.chainId) {
+      const pendingL2WithdrawalsForL1Token = this.pendingL2Withdrawals[l1Token.toNative()];
+      if (isDefined(pendingL2WithdrawalsForL1Token)) {
+        const pendingWithdrawalVolume = Object.values(pendingL2WithdrawalsForL1Token).reduce(
+          (acc, curr) => acc.add(curr),
+          bnZero
+        );
+        balance = pendingWithdrawalVolume;
+      }
+    }
 
     // Return the balance for a specific l2 token on the remote chain.
     if (isDefined(l2Token)) {
       const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-      balance = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
+      balance = balance.add(
+        sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token))
+      );
       return balance.add(
         ignoreL1ToL2PendingAmount
           ? bnZero
@@ -159,12 +180,14 @@ export class InventoryClient {
     }
 
     const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-    balance = l2Tokens
-      .map((l2Token) => {
-        const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
-        return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
-      })
-      .reduce((acc, curr) => acc.add(curr), bnZero);
+    balance = balance.add(
+      l2Tokens
+        .map((l2Token) => {
+          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(l2Token, chainId);
+          return sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(tokenClient.getBalance(chainId, l2Token));
+        })
+        .reduce((acc, curr) => acc.add(curr), bnZero)
+    );
 
     return balance.add(
       ignoreL1ToL2PendingAmount
@@ -289,7 +312,7 @@ export class InventoryClient {
 
   getL1Tokens(): EvmAddress[] {
     return (
-      Object.keys(this.inventoryConfig.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
+      Object.keys(this.inventoryConfig?.tokenConfig ?? {}).map((token) => EvmAddress.from(token)) ||
       this.hubPoolClient.getL1Tokens().map((l1Token) => l1Token.address)
     );
   }
@@ -300,80 +323,16 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
-  async getAllBundleRefunds(): Promise<CombinedRefunds[]> {
-    const mark = this.profiler.start("bundleRefunds");
-    const refunds: CombinedRefunds[] = [];
-    const [pendingRefunds, nextBundleRefunds] = await Promise.all([
-      this.bundleDataClient.getPendingRefundsFromValidBundles(),
-      this.bundleDataClient.getNextBundleRefunds(),
-    ]);
-    refunds.push(...pendingRefunds, ...nextBundleRefunds);
-    this.logger.debug({
-      at: "InventoryClient#getAllBundleRefunds",
-      message: "Remaining refunds from last validated bundle (excludes already executed refunds)",
-      refunds: pendingRefunds[0],
-    });
-    if (nextBundleRefunds.length === 2) {
-      this.logger.debug({
-        at: "InventoryClient#getAllBundleRefunds",
-        message: "Refunds from pending bundle",
-        refunds: nextBundleRefunds[0],
-      });
-      this.logger.debug({
-        at: "InventoryClient#getAllBundleRefunds",
-        message: "Refunds from upcoming bundle",
-        refunds: nextBundleRefunds[1],
-      });
-    } else {
-      this.logger.debug({
-        at: "InventoryClient#getAllBundleRefunds",
-        message: "Refunds from upcoming bundle",
-        refunds: nextBundleRefunds[0],
-      });
-    }
-
-    mark.stop({
-      message: "Time to calculate total refunds per chain",
-    });
-    return refunds;
+  setBundleData(): void {
+    this.bundleDataApproxClient.initialize();
   }
 
-  async executeBundleRefundsPromise(): Promise<CombinedRefunds[]> {
-    if (!isDefined(this.bundleRefundsPromise)) {
-      this.bundleRefundsPromise = this.getAllBundleRefunds();
-    }
-    return this.bundleRefundsPromise;
+  getUpcomingRefunds(chainId: number, l1Token: EvmAddress, relayer?: EvmAddress): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingRefunds(chainId, l1Token, relayer);
   }
 
-  // Return the upcoming refunds (in pending and next bundles) on each chain.
-  // @notice Returns refunds using decimals of the l1Token.
-  private async getBundleRefunds(l1Token: EvmAddress): Promise<{ [chainId: string]: BigNumber }> {
-    let refundsToConsider: CombinedRefunds[] = [];
-    const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
-
-    // Increase virtual balance by pending relayer refunds from the latest valid bundle and the
-    // upcoming bundle. We can assume that all refunds from the second latest valid bundle have already
-    // been executed.
-    refundsToConsider = lodash.cloneDeep(await this.executeBundleRefundsPromise());
-    const totalRefundsPerChain = this.getEnabledChains().reduce(
-      (refunds: { [chainId: string]: BigNumber }, chainId) => {
-        const destinationToken = this.getRemoteTokenForL1Token(l1Token, chainId);
-        if (!destinationToken) {
-          refunds[chainId] = bnZero;
-        } else {
-          const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(destinationToken, chainId);
-          refunds[chainId] = sdkUtils.ConvertDecimals(
-            l2TokenDecimals,
-            l1TokenDecimals
-          )(this.bundleDataClient.getTotalRefund(refundsToConsider, this.relayer, chainId, destinationToken));
-          return refunds;
-        }
-        return refunds;
-      },
-      {}
-    );
-
-    return totalRefundsPerChain;
+  getUpcomingDeposits(chainId: number, l1Token: EvmAddress): BigNumber {
+    return this.bundleDataApproxClient.getUpcomingDeposits(chainId, l1Token);
   }
 
   /**
@@ -398,7 +357,13 @@ export class InventoryClient {
     }
 
     if (this.isInventoryManagementEnabled()) {
+      // @dev Because the `deposit` is a for an input token that have already filtered then we shouldn't expect
+      // to see any undefined return values from `getL1TokenAddress()`.
       const l1Token = this.getL1TokenAddress(inputToken, originChainId);
+      assert(
+        isDefined(l1Token),
+        `InventoryClient#getPossibleRepaymentChainIds: No L1 token found for input token ${inputToken.toNative()} on origin chain ${originChainId}`
+      );
       this.getSlowWithdrawalRepaymentChains(l1Token).forEach((chainId) => {
         if (this.hubPoolClient.l2TokenEnabledForL1Token(l1Token, chainId)) {
           chainIds.add(chainId);
@@ -409,8 +374,19 @@ export class InventoryClient {
     return [...chainIds];
   }
 
-  getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress {
-    return getL1TokenAddress(l2Token, chainId);
+  /**
+   * Returns the L1 token address for a given L2 token address on a given chain. Returns undefined
+   *  if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   * @param l2Token L2 token address
+   * @param chainId Chain ID
+   * @returns L1 token address from TokenSymbolsMap or undefined if the l2 token and chain ID do not not have a corresponding L1 token mapping.
+   */
+  getL1TokenAddress(l2Token: Address, chainId: number): EvmAddress | undefined {
+    try {
+      return getL1TokenAddress(l2Token, chainId);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -436,14 +412,12 @@ export class InventoryClient {
     // Return true if the input and output token are defined as equivalent according to a hardcoded mapping
     // of equivalent tokens. This should allow relayer to define which tokens it should be able to fill despite them
     // not being linked via a PoolRebalanceRoute.
-    try {
-      const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
-      const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
-      return l1TokenMappedToInputToken.eq(l1TokenMappedToOutputToken);
-    } catch (e) {
-      // @dev getL1TokenAddress will throw if a token is not found in the TOKEN_SYMBOLS_MAP.
+    const l1TokenMappedToInputToken = this.getL1TokenAddress(inputToken, originChainId);
+    const l1TokenMappedToOutputToken = this.getL1TokenAddress(outputToken, destinationChainId);
+    if (!isDefined(l1TokenMappedToInputToken) || !isDefined(l1TokenMappedToOutputToken)) {
       return false;
     }
+    return l1TokenMappedToInputToken.eq(l1TokenMappedToOutputToken);
   }
 
   /**
@@ -496,7 +470,6 @@ export class InventoryClient {
       return [];
     }
 
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (!this.isInventoryManagementEnabled()) {
       return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
@@ -517,18 +490,35 @@ export class InventoryClient {
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(deposit, this.hubPoolClient)) {
-      return [deposit.originChainId];
+    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
+      return [originChainId];
     }
 
+    // @dev This getL1TokenAddress() should never return undefined because we call `validateOutputToken()` first, which would return
+    // false if the input token and origin chain weren't mapped to an L1 token.
     l1Token ??= this.getL1TokenAddress(inputToken, originChainId);
+    if (!isDefined(l1Token)) {
+      throw new Error(
+        `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
+      );
+    }
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
 
-    // Consider any refunds from executed and to-be executed bundles. If bundle data client doesn't return in
-    // time, return an object with zero refunds for all chains.
-    const totalRefundsPerChain: { [chainId: string]: BigNumber } = await this.getBundleRefunds(l1Token);
+    // Consider any upcoming refunds. Convert all refunds to same precision as L1 token.
+    const totalRefundsPerChain: { [chainId: number]: BigNumber } = {};
+    for (const chainId of this.chainIdList) {
+      const repaymentToken = this.getRemoteTokenForL1Token(l1Token, chainId);
+      if (!repaymentToken) {
+        continue;
+      }
+      const { decimals: l2TokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(repaymentToken, chainId);
+      const refundAmount = this.getUpcomingRefunds(chainId, l1Token, this.relayer);
+      const convertedRefundAmount = sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(refundAmount);
+      totalRefundsPerChain[chainId] = convertedRefundAmount;
+    }
     const cumulativeRefunds = Object.values(totalRefundsPerChain).reduce((acc, curr) => acc.add(curr), bnZero);
     const cumulativeVirtualBalance = this.getCumulativeBalance(l1Token);
 
@@ -560,8 +550,9 @@ export class InventoryClient {
     // is a lite chain, which should allow the relayer to take more repayments away from the lite chain. Because
     // lite chain deposits force repayment on origin, we end up taking lots of repayment on the lite chain so
     // we should take repayment away from the lite chain where possible.
+    // We also want to prioritize taking repayment on the origin chain if it is a quick rebalance source.
     if (
-      deposit.toLiteChain &&
+      (deposit.toLiteChain || repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) &&
       !chainsToEvaluate.includes(originChainId) &&
       this._l1TokenEnabledForChain(l1Token, Number(originChainId))
     ) {
@@ -702,9 +693,16 @@ export class InventoryClient {
       return [];
     }
 
+    // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
+    if (
+      !eligibleRefundChains.includes(originChainId) &&
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
+    ) {
+      eligibleRefundChains.push(originChainId);
+    }
+
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
-    // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
-    if (!depositForcesOriginChainRepayment(deposit, this.hubPoolClient) && !eligibleRefundChains.includes(hubChainId)) {
+    if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }
     return eligibleRefundChains;
@@ -769,19 +767,8 @@ export class InventoryClient {
             lastValidatedBundleEndBlock = proposedRootBundle.bundleEvaluationBlockNumbers[chainIdIndex].toNumber();
           }
         }
-        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(
-          this.bundleDataClient.getUpcomingDepositAmount(chainId, l2Token, lastValidatedBundleEndBlock)
-        );
-
-        // Grab refunds that are not included in any bundle proposed on-chain. These are refunds that have not
-        // been accounted for in the latest running balance set in `runningBalanceForToken`.
-        const allBundleRefunds = lodash.cloneDeep(await this.bundleRefundsPromise);
-        // @dev upcoming refunds are always pushed last into this list, that's why we can pop() it.
-        // If a chain didn't exist in the last bundle or a spoke pool client isn't defined, then
-        // one of the refund entries for a chain can be undefined.
-        const upcomingRefundsAfterLastValidatedBundle = Object.values(
-          allBundleRefunds.pop()?.[chainId]?.[l2Token.toNative()] ?? {}
-        ).reduce((acc, curr) => acc.add(l2AmountToL1Amount(curr)), bnZero);
+        const upcomingDepositsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingDeposits(chainId, l1Token));
+        const upcomingRefundsAfterLastValidatedBundle = l2AmountToL1Amount(this.getUpcomingRefunds(chainId, l1Token));
 
         // Updated running balance is last known running balance minus deposits plus upcoming refunds.
         const latestRunningBalance = lastValidatedRunningBalance
@@ -1571,12 +1558,31 @@ export class InventoryClient {
     await this.adapterManager.wrapNativeTokenIfAboveThreshold(this.inventoryConfig, this.simMode);
   }
 
-  update(chainIds?: number[]): Promise<void> {
+  async update(chainIds?: number[]): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
     }
 
-    return this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+
+    await forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      this.pendingL2Withdrawals[l1Token.toNative()] = {};
+      const pendingWithdrawalBalances =
+        await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
+          7200,
+          this.getEnabledChains().filter((chainId) => chainId !== this.hubPoolClient.chainId),
+          this.relayer,
+          l1Token
+        );
+      Object.keys(pendingWithdrawalBalances).forEach((chainId) => {
+        this.pendingL2Withdrawals[l1Token.toNative()][Number(chainId)] = pendingWithdrawalBalances[Number(chainId)];
+      });
+    });
+    this.logger.debug({
+      at: "InventoryClient#update",
+      message: "Updated pending L2->L1 withdrawals",
+      pendingL2Withdrawals: this.pendingL2Withdrawals,
+    });
   }
 
   isInventoryManagementEnabled(): boolean {

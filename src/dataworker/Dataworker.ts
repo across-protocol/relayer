@@ -52,6 +52,7 @@ import {
   waitForNewSolanaBlock,
   toKitAddress,
   createDefaultTransaction,
+  getNativeTokenAddressForChain,
 } from "../utils";
 import {
   ProposedRootBundle,
@@ -2439,7 +2440,7 @@ export class Dataworker {
             const signer = await client.spokePool.signer.getAddress();
             balanceRequestsToQuery.push({
               chainId: leaf.chainId,
-              tokens: [toAddressType(ZERO_ADDRESS, leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
+              tokens: [getNativeTokenAddressForChain(leaf.chainId)], // ZERO_ADDRESS is used to represent ETH.
               holder: toAddressType(signer, leaf.chainId), // The signer's address is what will be sending the ETH.
               amount: valueToPassViaPayable,
             });
@@ -2658,29 +2659,13 @@ export class Dataworker {
     token: EvmAddress;
     holder: EvmAddress;
   }> {
-    // TODO: Make this code more dynamic in the future. For now, hard code custom gas token fees.
-    let relayMessageFee: BigNumber;
-    let token: string;
-    let holder: string;
-    if (leaf.chainId === CHAIN_IDs.ALEPH_ZERO) {
-      // Unlike when handling native ETH, the monitor bot does NOT support sending arbitrary ERC20 tokens to any other
-      // EOA, so if we're short a custom gas token like AZERO, then we're going to have to keep sending over token
-      // amounts to the DonationBox contract. Therefore, we'll multiply the final amount by 10 to ensure we don't incur
-      // a transfer() gas cost on every single pool rebalance leaf execution involving this arbitrum orbit chain.
-      const { amountWei, feePayer, feeToken, amountMultipleToFund } =
-        ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ALEPH_ZERO];
-      relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
-      token = feeToken;
-      holder = feePayer;
-    } else {
-      // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
-      // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
-      // parameters than for Arbitrum mainnet.
-      const { amountWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[CHAIN_IDs.ARBITRUM];
-      relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
-      token = ZERO_ADDRESS;
-      holder = this.clients.hubPoolClient.hubPool.address;
-    }
+    // For now, assume arbitrum message fees are the same for all non-custom gas token chains. This obviously needs
+    // to be changed if we add support for an orbit chains where we pay message fees in ETH but they are different
+    // parameters than for Arbitrum mainnet.
+    const { amountWei, amountMultipleToFund } = ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA[leaf.chainId];
+    const relayMessageFee = toBNWei(amountWei).mul(amountMultipleToFund);
+    const token = ZERO_ADDRESS;
+    const holder = this.clients.hubPoolClient.hubPool.address;
 
     // For orbit chains, the bot needs enough ETH to pay for each L1 -> L2 message.
     // The following executions trigger an L1 -> L2 message:
@@ -2750,7 +2735,7 @@ export class Dataworker {
     // If the SpokePool supports withdrawing tokens to Hub via OFT, estimate msg.value needed to cover OFT fee
     const oftMsgValuePortion = await this._getOftMsgValueForRelayerRefundLeaf(client, leaf);
 
-    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't hanlde msg.value being used for
+    // Currently, msg.value behavior in OFT-supporting Spokes is such that they can't handle msg.value being used for
     // different cases. If both msg value contributions are above 0, we have a bug. Throw
     if (lineaMsgValuePortion.gt(0) && oftMsgValuePortion.gt(0)) {
       throw new Error("Invalid configuration: OFT messenger set on Linea chain for relayer refund leaf execution");
@@ -2769,7 +2754,11 @@ export class Dataworker {
     // (no refund) so we don't attach that. After Arbitrum_Spoke (and possibly Universal_Spoke) are upgraded to handle
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
-    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([CHAIN_IDs.POLYGON, CHAIN_IDs.BSC]);
+    const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([
+      CHAIN_IDs.POLYGON,
+      CHAIN_IDs.BSC,
+      CHAIN_IDs.HYPEREVM,
+    ]);
 
     if (!CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL.has(client.chainId)) {
       return bnZero;
@@ -2782,7 +2771,7 @@ export class Dataworker {
     }
 
     // Construct a message that SpokePool will be using to withdraw via OFT to mainnet. Use `.quoteSend` to estimate
-    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee chainging
+    // required native fee, and send that X 2 as msg.value to cover the transfer fees even in the face of fee changing
     // slightly. Excess fee will get refunded to executor
     const IOFTContract = new Contract(associatedOftMessenger, IOFT_ABI_FULL, client.spokePool.provider);
     const dstEid = OFT.getEndpointId(this.clients.hubPoolClient.chainId);

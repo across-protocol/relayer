@@ -162,22 +162,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: ARBITRUM_OUTBOX_ABI,
     },
-    orbitOutbox_41455: {
-      address: "0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e",
-      abi: ARBITRUM_OUTBOX_ABI,
-    },
     orbitErc20GatewayRouter_42161: {
       address: "0x72Ce9c846789fdB6fC1f34aC4AD25Dd9ef7031ef",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
     orbitErc20Gateway_42161: {
-      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
-    },
-    orbitErc20GatewayRouter_41455: {
-      address: "0xeBb17f398ed30d02F2e8733e7c1e5cf566e17812",
-      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
-    },
-    orbitErc20Gateway_41455: {
       abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
     },
     VotingV2: {
@@ -284,6 +273,16 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
+    },
+  },
+  [CHAIN_IDs.HYPEREVM]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -428,6 +427,16 @@ export const CONTRACT_ADDRESSES: {
       abi: BLAST_BRIDGE_ABI,
     },
   },
+  [CHAIN_IDs.HYPEREVM_TESTNET]: {
+    cctpV2MessageTransmitter: {
+      address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
   [CHAIN_IDs.ARBITRUM]: {
     cctpMessageTransmitter: {
       address: "0xC30362313FBBA5cf9163F0bb16a0e01f01A896ca",
@@ -444,16 +453,6 @@ export const CONTRACT_ADDRESSES: {
     erc20GatewayRouter: {
       address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
-    },
-  },
-  [CHAIN_IDs.ALEPH_ZERO]: {
-    erc20GatewayRouter: {
-      address: "0xD296d45171B97720D3aBdb68B0232be01F1A9216",
-      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
-    },
-    arbSys: {
-      address: "0x0000000000000000000000000000000000000064",
-      abi: ARBSYS_L2_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {

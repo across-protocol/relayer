@@ -47,7 +47,6 @@ import {
 } from "./mocks";
 import { interfaces, constants as sdkConstants, utils as sdkUtils, providers } from "@across-protocol/sdk";
 import { cloneDeep } from "lodash";
-import { CombinedRefunds } from "../src/dataworker/DataworkerUtils";
 import { INFINITE_FILL_DEADLINE } from "../src/common";
 
 describe("Dataworker: Load bundle data", async function () {
@@ -1178,92 +1177,6 @@ describe("Dataworker: Load bundle data", async function () {
             .mul(refundAmountPct)
             .div(fixedPointAdjustment),
         });
-      });
-    });
-  });
-
-  describe("Miscellaneous functions", function () {
-    it("getApproximateRefundsForBlockRange", async function () {
-      // Send two deposits on different chains
-      // Fill both deposits and request repayment on same chain
-      await depositV3(
-        spokePool_1,
-        destinationChainId,
-        depositor,
-        erc20_1.address,
-        amountToDeposit,
-        ZERO_ADDRESS,
-        amountToDeposit
-      );
-      await depositV3(
-        spokePool_2,
-        originChainId,
-        depositor,
-        erc20_2.address,
-        amountToDeposit,
-        ZERO_ADDRESS,
-        amountToDeposit
-      );
-      await updateAllClients();
-      const deposit1 = spokePoolClient_1.getDeposits()[0];
-      const deposit2 = spokePoolClient_2.getDeposits()[0];
-
-      await fillV3Relay(spokePool_2, deposit1, relayer, repaymentChainId);
-      await fillV3Relay(spokePool_1, deposit2, relayer, repaymentChainId);
-
-      // Approximate refunds should count both fills
-      await updateAllClients();
-      const refunds = await bundleDataClient.getApproximateRefundsForBlockRange(
-        [originChainId, destinationChainId],
-        getDefaultBlockRange(5)
-      );
-      const expectedRefunds = {
-        [repaymentChainId]: {
-          [toBytes32(l1Token_1.address)]: {
-            [toBytes32(relayer.address)]: BigNumber.from(amountToDeposit.mul(2)).toString(),
-          },
-        },
-      };
-
-      // Convert refunds to have a nested string instead of BigNumber. It's three levels deep
-      // which is a bit ugly but it's the easiest way to compare the two objects that are having
-      // these BN issues.
-      const convertToNumericStrings = (data: CombinedRefunds) =>
-        Object.entries(data).reduce(
-          (acc, [chainId, refunds]) => ({
-            ...acc,
-            [chainId]: Object.entries(refunds).reduce(
-              (acc, [token, refunds]) => ({
-                ...acc,
-                [toBytes32(token)]: Object.entries(refunds).reduce(
-                  (acc, [address, amount]) => ({ ...acc, [address]: amount.toString() }),
-                  {}
-                ),
-              }),
-              {}
-            ),
-          }),
-          {}
-        );
-
-      expect(convertToNumericStrings(refunds)).to.deep.equal(expectedRefunds);
-
-      // Send an invalid fill and check it is not included.
-      await fillV3Relay(spokePool_2, { ...deposit1, depositId: deposit1.depositId.add(1) }, relayer, repaymentChainId);
-      await updateAllClients();
-      expect(
-        convertToNumericStrings(
-          await bundleDataClient.getApproximateRefundsForBlockRange(
-            [originChainId, destinationChainId],
-            getDefaultBlockRange(5)
-          )
-        )
-      ).to.deep.equal({
-        [repaymentChainId]: {
-          [toBytes32(l1Token_1.address)]: {
-            [toBytes32(relayer.address)]: amountToDeposit.mul(2).toString(),
-          },
-        },
       });
     });
   });
