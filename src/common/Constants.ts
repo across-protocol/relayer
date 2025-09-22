@@ -629,6 +629,7 @@ export const CUSTOM_L2_BRIDGE: {
   [CHAIN_IDs.OPTIMISM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,

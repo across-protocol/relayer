@@ -693,8 +693,15 @@ export class InventoryClient {
       return [];
     }
 
+    // Conditionally add the origin chain as a fallback option if the relayer has a fast rebalance route.
+    if (
+      !eligibleRefundChains.includes(originChainId) &&
+      repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)
+    ) {
+      eligibleRefundChains.push(originChainId);
+    }
+
     // Always add hubChain as a fallback option if inventory management is enabled and origin chain is not a lite chain.
-    // If none of the chainsToEvaluate were selected, then this function will return just the hub chain as a fallback option.
     if (!forceOriginRepayment && !eligibleRefundChains.includes(hubChainId)) {
       eligibleRefundChains.push(hubChainId);
     }

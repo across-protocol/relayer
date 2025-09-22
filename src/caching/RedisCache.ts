@@ -28,6 +28,10 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     return this.redisClient.get(key) as T;
   }
 
+  public async ttl(key: string): Promise<number | undefined> {
+    return this.redisClient.ttl(key);
+  }
+
   public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
     // Call the setRedisKey function to set the value in redis.
     await setRedisKey(key, String(value), this.redisClient, ttl);
