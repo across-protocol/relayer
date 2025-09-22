@@ -172,6 +172,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.LISK_SEPOLIA]: 10000,
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
+  [CHAIN_IDs.PLASMA_TESTNET]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
   [CHAIN_IDs.TATARA]: 10000,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
@@ -218,6 +219,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.PLASMA_TESTNET]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
@@ -277,6 +279,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LENS_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.PLASMA_TESTNET]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
@@ -596,6 +599,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.PLASMA_TESTNET]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
@@ -1004,6 +1011,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.PLASMA]: toWei("8"),
 };
 
 // Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
@@ -1019,9 +1027,14 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
       [CHAIN_IDs.OPTIMISM, EvmAddress.from("0xF03b4d9AC1D5d1E7c4cEf54C2A313b9fe051A0aD")],
+      [CHAIN_IDs.PLASMA, EvmAddress.from("0x02ca37966753bDdDf11216B73B16C1dE756A7CF9")],
       [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
       [CHAIN_IDs.UNICHAIN, EvmAddress.from("0xc07bE8994D035631c36fb4a89C918CeFB2f03EC3")],
     ]),
+  ],
+  [
+    TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([[CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")]]),
   ],
 ]);
 
@@ -1032,7 +1045,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
-  [CHAIN_IDs.PLASMA]: toWei("1600"), // @todo Placeholder....Check pending XPL price?
+  [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };

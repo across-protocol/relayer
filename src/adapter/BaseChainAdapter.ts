@@ -47,6 +47,7 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/contracts";
+import { PUBLIC_NETWORKS, CHAIN_IDs } from "@across-protocol/constants";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
@@ -424,7 +425,11 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB" || nativeTokenSymbol === "HYPE";
+      const prependW =
+        nativeTokenSymbol === PUBLIC_NETWORKS[CHAIN_IDs.MAINNET].nativeToken ||
+        nativeTokenSymbol === PUBLIC_NETWORKS[CHAIN_IDs.BSC].nativeToken ||
+        nativeTokenSymbol === PUBLIC_NETWORKS[CHAIN_IDs.HYPEREVM].nativeToken ||
+        nativeTokenSymbol === PUBLIC_NETWORKS[CHAIN_IDs.PLASMA].nativeToken;
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
