@@ -1,4 +1,4 @@
-import { KeyPairSigner, appendTransactionMessageInstructions, pipe, address } from "@solana/kit";
+import { KeyPairSigner, appendTransactionMessageInstructions, pipe, address, generateKeyPairSigner } from "@solana/kit";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../../../../common";
 import {
@@ -44,7 +44,7 @@ export async function bridgeTokensToHubPool(
   const { address: tokenMessengerAddress } = CONTRACT_ADDRESSES[l2ChainId].cctpTokenMessenger;
   const { address: messageTransmitterAddress } = CONTRACT_ADDRESSES[l2ChainId].cctpMessageTransmitter;
   const l2Usdc = SvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]);
-  const sourceDomain = PUBLIC_NETWORKS[l2ChainId].cctpDomain;
+  const destinationDomain = PUBLIC_NETWORKS[hubChainId].cctpDomain;
 
   // Before we get all the information necessary to initiate a CCTP withdrawal, we need to check whether
   // the transfer liability PDA has any pending withdraw amounts.
@@ -61,15 +61,16 @@ export async function bridgeTokensToHubPool(
   }
 
   // If there is an amount to withdraw, then fetch all accounts and send the transaction.
-  const [state, eventAuthority, cctpDepositAccounts] = await Promise.all([
+  const [state, eventAuthority, cctpDepositAccounts, messageSentEventData] = await Promise.all([
     getStatePda(svmSpokeProgramId),
     getEventAuthority(svmSpokeProgramId),
     getCCTPDepositAccounts(
       hubChainId,
-      sourceDomain,
+      destinationDomain,
       address(tokenMessengerAddress),
       address(messageTransmitterAddress)
     ),
+    generateKeyPairSigner(),
   ]);
   const {
     tokenMessengerMinterSenderAuthority,
@@ -95,7 +96,7 @@ export async function bridgeTokensToHubPool(
     tokenMinter,
     localToken,
     cctpEventAuthority,
-    messageSentEventData: signer,
+    messageSentEventData,
     eventAuthority,
     program: svmSpokeProgramId,
     amount: pendingWithdrawAmount,
