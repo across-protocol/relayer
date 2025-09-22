@@ -28,6 +28,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   toAddressType,
   depositForcesOriginChainRepayment,
+  EvmAddress,
 } from "../src/utils";
 import { MockAdapterManager, MockHubPoolClient, MockInventoryClient, MockTokenClient } from "./mocks";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -91,8 +92,8 @@ describe("InventoryClient: Refund chain selection", async function () {
   };
 
   const seedMocks = (seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) => {
-    hubPoolClient.addL1Token({ address: mainnetWeth, decimals: 18, symbol: "WETH" });
-    hubPoolClient.addL1Token({ address: mainnetUsdc, decimals: 6, symbol: "USDC" });
+    hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetWeth), decimals: 18, symbol: "WETH" });
+    hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetUsdc), decimals: 6, symbol: "USDC" });
     Object.keys(seedBalances).forEach((_chainId) => {
       const chainId = Number(_chainId);
       adapterManager.setMockedOutstandingCrossChainTransfers(
