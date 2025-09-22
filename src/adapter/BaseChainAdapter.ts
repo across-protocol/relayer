@@ -88,7 +88,11 @@ export class BaseChainAdapter {
 
   protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "to"> {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
-    return spokePoolClient ? { ...spokePoolClient.eventSearchConfig } : undefined;
+    if (!spokePoolClient) {
+      throw new Error("spokePoolClient is undefined - cannot read eventSearchConfig");
+    }
+
+    return { ...spokePoolClient.eventSearchConfig };
   }
 
   protected getSigner(chainId: number): Signer {

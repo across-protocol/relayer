@@ -119,8 +119,8 @@ export class BundleDataApproxClient {
   ): { [chainId: number]: BigNumber } {
     const depositsForChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
-      const spokePoolClient = this.spokePoolManager.getClient(chainId);
       depositsForChain[chainId] ??= bnZero;
+      const spokePoolClient = this.spokePoolManager.getClient(chainId);
       if (!isDefined(spokePoolClient)) {
         continue;
       }
