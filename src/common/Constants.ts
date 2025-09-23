@@ -1036,7 +1036,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
-      [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")]
+      [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
     ]),
   ],
 ]);
