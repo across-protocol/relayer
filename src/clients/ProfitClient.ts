@@ -666,7 +666,7 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
-      [CHAIN_IDs.PLASMA]: "WETH",
+      [CHAIN_IDs.PLASMA]: "USDT",
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
     };
