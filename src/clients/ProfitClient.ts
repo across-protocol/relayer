@@ -765,6 +765,7 @@ export class ProfitClient {
   private _getNativeTokenNetwork(symbol: string): number {
     const symbols = {
       HYPE: CHAIN_IDs.HYPEREVM,
+      XPL: CHAIN_IDs.PLASMA,
       SOL: CHAIN_IDs.SOLANA,
     };
 
