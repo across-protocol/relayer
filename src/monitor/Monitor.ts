@@ -516,7 +516,7 @@ export class Monitor {
           throw new Error(`No decimals found for ${tokenSymbol}`);
         }
         Object.entries(columns).forEach(([chainName, cell]) => {
-          if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
+          if (this._tokenEnabledForNetwork(tokenSymbol, chainName) || chainName === ALL_CHAINS_NAME) {
             Object.entries(cell).forEach(([balanceType, balance]) => {
               // Don't log zero balances.
               if (balance.isZero()) {
