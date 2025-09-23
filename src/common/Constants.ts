@@ -673,7 +673,6 @@ export const CUSTOM_L2_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.PLASMA]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.POLYGON]: {
@@ -1031,14 +1030,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
       [CHAIN_IDs.UNICHAIN, EvmAddress.from("0xc07bE8994D035631c36fb4a89C918CeFB2f03EC3")],
     ]),
-  ],
-  [
-    TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
-    new Map<number, EvmAddress>([
-      [CHAIN_IDs.MAINNET, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
-      [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
-    ]),
-  ],
+  ]
 ]);
 
 // 0.1 ETH is a default cap for chains that use ETH as their gas token
