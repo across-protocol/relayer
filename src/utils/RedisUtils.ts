@@ -39,6 +39,10 @@ export class RedisClient {
     return this.client.get(this.getNamespacedKey(key));
   }
 
+  async ttl(key: string): Promise<number | undefined> {
+    return this.client.ttl(this.getNamespacedKey(key));
+  }
+
   async set(key: string, val: string, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<void> {
     // Apply namespace to key.
     key = this.getNamespacedKey(key);

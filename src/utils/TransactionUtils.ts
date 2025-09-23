@@ -9,6 +9,7 @@ import {
   bnZero,
   Contract,
   isDefined,
+  fixedPointAdjustment,
   TransactionResponse,
   ethers,
   getContractInfoFromAddress,
@@ -118,12 +119,13 @@ export async function runTransaction(
 
   let gas: Partial<FeeData>;
   try {
-    gas = await getGasPrice(
+    const preGas = await getGasPrice(
       provider,
       priorityFeeScaler,
       maxFeePerGasScaler,
       sendRawTxn ? undefined : await contract.populateTransaction[method](...(args as Array<unknown>), { value })
     );
+    gas = scaleGasPrice(chainId, preGas);
   } catch (error) {
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
@@ -131,20 +133,6 @@ export async function runTransaction(
       throw error;
     }
     return await runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
-  }
-  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
-
-  // Check if the chain requires legacy transactions
-  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    gas = { gasPrice: gas.maxFeePerGas.lt(flooredPriorityFeePerGas) ? flooredPriorityFeePerGas : gas.maxFeePerGas };
-  } else {
-    // If the priority fee was overridden by the min/floor value, the base fee must be scaled up as well.
-    const maxPriorityFeePerGas = sdkUtils.bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas);
-    const baseFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
-    gas = {
-      maxFeePerGas: gas.maxFeePerGas.add(baseFeeDelta),
-      maxPriorityFeePerGas,
-    };
   }
 
   const to = contract.address;
@@ -161,7 +149,7 @@ export async function runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, ...gas })
+      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     if (retries > 0 && txnRetryable(error)) {
@@ -333,4 +321,39 @@ export function getTarget(targetAddress: string):
   } catch (error) {
     return { targetAddress };
   }
+}
+
+/**
+ * Apply local scaling to a gas price. The gas price can be scaled up in case it falls beneath an env-defined
+ * price floor, or in case of a retry (i.e. due to replacement underpriced RPC rejection).
+ * @param chainId Chain ID for transaction submission.
+ * @param gas Input gas price (Legacy/type 0 or eip1559/type 2).
+ * @param scaler Multiplier to apply to the gas price.
+ * @returns A scaled type 0 or type 2 gas price, dependent on chainId.
+ */
+function scaleGasPrice(
+  chainId: number,
+  gas: Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas">,
+  retryScaler = 1.0
+): Pick<FeeData, "maxFeePerGas" | "maxPriorityFeePerGas"> | Pick<FeeData, "gasPrice"> {
+  const scaler = toBNWei(retryScaler);
+  const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
+
+  // Check if the chain requires legacy transactions
+  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+    const gasPrice = sdkUtils.bnMax(gas.maxFeePerGas, flooredPriorityFeePerGas).mul(scaler).div(fixedPointAdjustment);
+    return { gasPrice };
+  }
+
+  // If the priority fee was increased, the max fee must be scaled up as well.
+  const maxPriorityFeePerGas = sdkUtils
+    .bnMax(gas.maxPriorityFeePerGas, flooredPriorityFeePerGas)
+    .mul(scaler)
+    .div(fixedPointAdjustment);
+  const maxFeeDelta = maxPriorityFeePerGas.sub(gas.maxPriorityFeePerGas);
+
+  return {
+    maxFeePerGas: gas.maxFeePerGas.add(maxFeeDelta),
+    maxPriorityFeePerGas,
+  };
 }
