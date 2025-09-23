@@ -3,10 +3,12 @@ import {
   AnyObject,
   BigNumber,
   Contract,
+  CHAIN_IDs,
   DefaultLogLevels,
   ERC20,
   EventSearchConfig,
   MakeOptional,
+  PUBLIC_NETWORKS,
   Signer,
   TransactionResponse,
   assert,
@@ -424,11 +426,13 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const prependW = nativeTokenSymbol === "ETH" || nativeTokenSymbol === "BNB" || nativeTokenSymbol === "HYPE";
+      const { BSC, HYPEREVM, MAINNET, PLASMA } = CHAIN_IDs;
+      const nativeTokenChains = [BSC, HYPEREVM, MAINNET, PLASMA];
+      const prependW = nativeTokenChains.some((chainId) => PUBLIC_NETWORKS[chainId].nativeToken === nativeTokenSymbol);
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
         symbol === expectedTokenSymbol,
-        `Critical (may delete ${nativeTokenSymbol}): Unable to verify ${this.adapterName} ${nativeTokenSymbol} address (${contract.address})`
+        `Critical (may delete ${nativeTokenSymbol}): ${this.adapterName} token symbol mismatch (${contract.address})`
       );
     }
 

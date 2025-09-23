@@ -104,6 +104,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
+    [CHAIN_IDs.PLASMA]: 10,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
     [CHAIN_IDs.SCROLL]: 8,
@@ -113,6 +114,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
+    [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
     [CHAIN_IDs.BSC]: 0,
@@ -154,6 +156,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.MAINNET]: 10000,
   [CHAIN_IDs.MODE]: 10000,
   [CHAIN_IDs.OPTIMISM]: 10000, // Quick
+  [CHAIN_IDs.PLASMA]: 10000, // tbc - test this
   [CHAIN_IDs.POLYGON]: 10000,
   [CHAIN_IDs.REDSTONE]: 10000,
   [CHAIN_IDs.SCROLL]: 10000,
@@ -173,6 +176,7 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = {
   [CHAIN_IDs.LISK_SEPOLIA]: 10000,
   [CHAIN_IDs.MODE_SEPOLIA]: 10000,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
+  [CHAIN_IDs.PLASMA_TESTNET]: 10000,
   [CHAIN_IDs.POLYGON_AMOY]: 10000,
   [CHAIN_IDs.TATARA]: 10000,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
@@ -199,6 +203,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.MAINNET]: 5, // 12s/block
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
   [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
+  [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
   [CHAIN_IDs.REDSTONE]: 60, // 2s/block
   [CHAIN_IDs.SCROLL]: 40, // ~3s/block
@@ -218,6 +223,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.PLASMA_TESTNET]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
@@ -257,6 +263,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MAINNET]: 128,
   [CHAIN_IDs.MODE]: 120,
   [CHAIN_IDs.OPTIMISM]: 120,
+  [CHAIN_IDs.PLASMA]: 300,
   [CHAIN_IDs.POLYGON]: 256,
   [CHAIN_IDs.REDSTONE]: 120,
   [CHAIN_IDs.SCROLL]: 100,
@@ -276,6 +283,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LENS_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
+  [CHAIN_IDs.PLASMA_TESTNET]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
   [CHAIN_IDs.TATARA]: 0,
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
@@ -299,6 +307,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.MAINNET]: 14400,
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.OPTIMISM]: 86400,
+  [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
   [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
@@ -378,6 +387,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
     "VLR",
     "ezETH",
   ],
+  [CHAIN_IDs.PLASMA]: ["USDT"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
@@ -535,6 +545,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
+  [CHAIN_IDs.PLASMA]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+  },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
@@ -589,6 +603,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
+  },
+  [CHAIN_IDs.PLASMA_TESTNET]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
@@ -657,6 +675,9 @@ export const CUSTOM_L2_BRIDGE: {
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+  },
+  [CHAIN_IDs.PLASMA]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -754,6 +775,7 @@ export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
   [CHAIN_IDs.LISK]: 20 * 60,
   [CHAIN_IDs.MODE]: 20 * 60,
   [CHAIN_IDs.OPTIMISM]: 20 * 60,
+  [CHAIN_IDs.PLASMA]: 60 * 60,
   [CHAIN_IDs.POLYGON]: 60 * 60,
   [CHAIN_IDs.REDSTONE]: 20 * 60,
   [CHAIN_IDs.SCROLL]: 60 * 60,
@@ -919,6 +941,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
+  [CHAIN_IDs.PLASMA]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
@@ -991,6 +1014,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.PLASMA]: toWei("8"),
 };
 
 // Source for USDT0: https://docs.usdt0.to/technical-documentation/developer
@@ -1006,6 +1030,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
       [CHAIN_IDs.OPTIMISM, EvmAddress.from("0xF03b4d9AC1D5d1E7c4cEf54C2A313b9fe051A0aD")],
+      [CHAIN_IDs.PLASMA, EvmAddress.from("0x02ca37966753bDdDf11216B73B16C1dE756A7CF9")],
       [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
       [CHAIN_IDs.UNICHAIN, EvmAddress.from("0xc07bE8994D035631c36fb4a89C918CeFB2f03EC3")],
     ]),
@@ -1019,6 +1044,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
