@@ -383,7 +383,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
     "VLR",
     "ezETH",
   ],
-  [CHAIN_IDs.PLASMA]: ["WETH", "USDT"],
+  [CHAIN_IDs.PLASMA]: ["USDT"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
