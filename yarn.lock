@@ -21,6 +21,11 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.78.tgz#421c3692388f14bf9432cf4b947234d83a34d699"
   integrity sha512-0+dTcSV/afBcO0HmIXC24DEBNEqVzNbg7sLePEO40/Q0i5ERw9QPTOEDWdkaYN4rv+yISLqjt5hYN7mmX1Smpw==
 
+"@across-protocol/constants@^3.1.79":
+  version "3.1.79"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.79.tgz#674363af1e5ee177ad8962c7dec075b21c14e222"
+  integrity sha512-7CnAkskCXCcEWNJrOC6xDzO6bfJXdNrzVfNsBsVvUGMPBn144yuBYwnLb0uIaYdZB6fX1O8bHqWsLxPxVTMx8A==
+
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -30,10 +35,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^4.1.8":
-  version "4.1.8"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.8.tgz#afc388168d1dff06b3f3a8292258d747dd4a66d8"
-  integrity sha512-g1TC1iSaIRhsDn/sD4E7GFm0ep0ns6FZqrWYtaMig0k3rimn4+G7d1YYte8+HJr6SAy7RBH/9QAllZqeZr72Zg==
+"@across-protocol/contracts@^4.1.9":
+  version "4.1.9"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.9.tgz#2f8a6680e899d1b26b96dda599463ba3292977a5"
+  integrity sha512-R0DASCEhxW2MnhXxs7abrSavFJByaVlEjA5gO5e6i58EGJmZcxZbi0EIR2WH+WRniGIYFNlAZNbRxMN16bmKhQ==
   dependencies:
     "@across-protocol/constants" "^3.1.77"
     "@coral-xyz/anchor" "^0.31.1"
@@ -62,14 +67,14 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.66":
-  version "4.3.66"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.66.tgz#602ebe8f2d4e3649723d0993a3cf15821ce69135"
-  integrity sha512-5YbGL8YOe9qQG1M2DsPHWNBNlg4Dsky78foGNsIpxla/WBcTwGTVTr4edPzL9QadYZ46lsZTs/O49ZuPiuQnsw==
+"@across-protocol/sdk@4.3.67":
+  version "4.3.67"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.67.tgz#a3b39ecd3334d16ea27bb5340baf391883a46bd6"
+  integrity sha512-XTDbi7Qm7mbxVAhTns8fZujsEJ2gzT0HQwXbKofbsJKwGXSW9z8MqsjghjagvvB4HqanY7EHrW0cWfSvu73hjA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.78"
-    "@across-protocol/contracts" "^4.1.8"
+    "@across-protocol/contracts" "^4.1.9"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
