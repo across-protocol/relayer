@@ -3,10 +3,12 @@ import {
   AnyObject,
   BigNumber,
   Contract,
+  CHAIN_IDs,
   DefaultLogLevels,
   ERC20,
   EventSearchConfig,
   MakeOptional,
+  PUBLIC_NETWORKS,
   Signer,
   TransactionResponse,
   assert,
@@ -47,7 +49,6 @@ import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
 import { ExpandedERC20 } from "@across-protocol/contracts";
-import { PUBLIC_NETWORKS, CHAIN_IDs } from "@across-protocol/constants";
 
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
