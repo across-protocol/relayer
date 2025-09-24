@@ -185,7 +185,7 @@ export class ProfitClient {
   }
 
   resolveGasToken(chainId: number): L1Token {
-    // todo: gas token and native token may not always be the same
+    // Note for future: gas token and native token may not always be the same
     return this.resolveNativeToken(chainId);
   }
 

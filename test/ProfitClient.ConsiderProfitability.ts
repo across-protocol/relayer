@@ -188,6 +188,7 @@ describe("ProfitClient: Consider relay profit", () => {
   });
 
   // Verify gas cost calculation first, so we can leverage it in all subsequent tests.
+  // todo: this test
   it("Verify gas cost estimation", async () => {
     for (const destinationChainId of chainIds) {
       spyLogger.debug({ message: `Verifying USD fill cost calculation for chain ${destinationChainId}.` });
