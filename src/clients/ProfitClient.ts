@@ -622,10 +622,14 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[this._getNativeTokenNetwork(symbol)];
+      const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+
+      // If the gas token isn't available on the hub chain, default to the destination itself.
+      let nativeTokenAddress = addresses[this.hubPoolClient.chainId] ?? addresses[chainId];
+
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
-        nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
+        nativeTokenAddress = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
       }
       tokens[symbol] ??= nativeTokenAddress;
     });
