@@ -672,10 +672,14 @@ export class ProfitClient {
     // Also ensure all gas tokens are included in the lookup.
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
-      let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[this._getNativeTokenNetwork(symbol)];
+      const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
+
+      // If the gas token isn't available on the hub chain, default to the destination itself.
+      let nativeTokenAddress = addresses[this.hubPoolClient.chainId] ?? addresses[chainId];
+
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
-        nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
+        nativeTokenAddress = TOKEN_SYMBOLS_MAP.ETH.addresses[CHAIN_IDs.MAINNET];
       }
       tokens[symbol] ??= nativeTokenAddress;
     });
@@ -810,16 +814,6 @@ export class ProfitClient {
       };
     });
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
-  }
-
-  private _getNativeTokenNetwork(symbol: string): number {
-    const symbols = {
-      HYPE: CHAIN_IDs.HYPEREVM,
-      XPL: CHAIN_IDs.PLASMA,
-      SOL: CHAIN_IDs.SOLANA,
-    };
-
-    return symbols[symbol] ?? CHAIN_IDs.MAINNET;
   }
 
   private constructRelayerFeeQuery(
