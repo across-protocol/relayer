@@ -31,9 +31,6 @@ import {
 
 dotenv.config();
 
-// Define chains that require legacy (type 0) transactions
-export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
-
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
   succeed: boolean;
@@ -348,8 +345,8 @@ function scaleGasPrice(
   const scaler = toBNWei(retryScaler);
   const flooredPriorityFeePerGas = parseUnits(process.env[`MIN_PRIORITY_FEE_PER_GAS_${chainId}`] || "0", 9);
 
-  // Check if the chain requires legacy transactions
-  if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
+  // Legacy/type0 transactions are supplied as a type2 transaction with priority fee 0. Convert to type0 here.
+  if (gas.maxPriorityFeePerGas.eq(bnZero)) {
     const gasPrice = sdkUtils.bnMax(gas.maxFeePerGas, flooredPriorityFeePerGas).mul(scaler).div(fixedPointAdjustment);
     return { gasPrice };
   }
