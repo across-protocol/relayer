@@ -1,0 +1,66 @@
+import {
+  BigNumber,
+  createFormatFunction,
+  getNetworkName,
+  Provider,
+  Signer,
+  Contract,
+  EvmAddress,
+  getTokenInfo,
+} from "../../utils";
+import { AugmentedTransaction } from "../../clients/TransactionClient";
+import WETH_ABI from "../../common/abi/Weth.json";
+import { BinanceCEXBridge } from "./";
+
+export class BinanceCEXNativeBridge extends BinanceCEXBridge {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Provider: Provider | Signer,
+    l1Token: EvmAddress
+  ) {
+    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  }
+
+  async constructWithdrawToL1Txns(
+    _toAddress: EvmAddress,
+    l2Token: EvmAddress,
+    _l1Token: EvmAddress,
+    amount: BigNumber
+  ): Promise<AugmentedTransaction[]> {
+    const weth = new Contract(l2Token.toNative(), WETH_ABI, this.l2Signer);
+    const binanceApiClient = await this.getBinanceClient();
+    const l2TokenInfo = getTokenInfo(l2Token, this.l2chainId);
+    const depositAddress = await binanceApiClient.depositAddress({
+      coin: this.l1TokenInfo.symbol,
+      network: this.depositNetwork,
+    });
+    const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+    const unwrapTxn: AugmentedTransaction = {
+      contract: weth,
+      chainId: this.l2chainId,
+      method: "withdraw",
+      args: [amount],
+      nonMulticall: true,
+      message: `🎰 Unwrapped WETH on ${this.depositNetwork} before withdrawing to L1`,
+      mrkdwn: `Unwrapped ${formatter(amount.toString())} WETH before withdrawing from ${getNetworkName(
+        this.l2chainId
+      )} to L1`,
+    };
+    const transferValueTxn: AugmentedTransaction = {
+      contract: depositAddress,
+      chainId: this.l2chainId,
+      method: "",
+      args: [],
+      nonMulticall: true,
+      canFailInSimulation: false,
+      value: amount,
+      message: `🎰 Withdrew ${this.depositNetwork} ${l2TokenInfo.symbol} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${getNetworkName(
+        this.l2chainId
+      )} to L1`,
+    };
+    return [unwrapTxn, transferValueTxn];
+  }
+}
