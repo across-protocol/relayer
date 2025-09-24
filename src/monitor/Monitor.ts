@@ -527,7 +527,7 @@ export class Monitor {
           throw new Error(`No decimals found for ${tokenSymbol}`);
         }
         Object.entries(columns).forEach(([chainName, cell]) => {
-          if (this._tokenEnabledForNetwork(tokenSymbol, chainName)) {
+          if (this._tokenEnabledForNetwork(tokenSymbol, chainName) || chainName === ALL_CHAINS_NAME) {
             Object.entries(cell).forEach(([balanceType, balance]) => {
               // Don't log zero balances.
               if (balance.isZero()) {
@@ -1411,8 +1411,11 @@ export class Monitor {
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const l1Token of allL1Tokens) {
         for (const chainId of this.monitorChains) {
-          if (chainId === CHAIN_IDs.MAINNET && l1Token.symbol === "USDC.e") {
-            // We don't want to double count USDC/USDC.e repayments on Mainnet.
+          if (l1Token.symbol === "USDC.e") {
+            // We don't want to double count USDC/USDC.e repayments. When this.getUpcomingRefunds() is queried for a
+            // specific L1 token address, it will return either USDC.e and USDC repayments--depending on the 'native' USDC
+            // for the L2 chain in question. USDC.e is a special token injected into
+            // this.getL1TokensForRelayerBalancesReport() so we can skip it here.
             continue;
           }
           const upcomingRefunds = this.getUpcomingRefunds(chainId, l1Token.address, relayer);
