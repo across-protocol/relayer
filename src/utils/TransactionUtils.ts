@@ -169,7 +169,7 @@ export async function runTransaction(
         break;
 
       // Nonce collisions, likely due to concurrent bot instances running. Re-sync nonce and retry.
-      case errors.NONCE_EXPIRED: // fallthrough
+      case errors.NONCE_EXPIRED:
         nonce = null;
         message = `Nonce collision detected on ${chain}.`;
         break;
