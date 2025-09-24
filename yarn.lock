@@ -4176,25 +4176,6 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/logger@^1.3.1":
-  version "1.3.1"
-  resolved "https://registry.yarnpkg.com/@uma/logger/-/logger-1.3.1.tgz#1ce8bcb07749e91a3597502fb05f598f7d1de5a5"
-  integrity sha512-YUjnoAlrTYOf+1mf73l3iGN6Bz5WcVWUrpYJ+MWhgWDglvQaddKr82uz7AVimpxGZZyTNIUVSgpnYYJ9zB70jA==
-  dependencies:
-    "@google-cloud/logging-winston" "^4.1.1"
-    "@google-cloud/trace-agent" "^5.1.6"
-    "@pagerduty/pdjs" "^2.2.4"
-    bn.js "^4.11.9"
-    discord.js "^14.11.0"
-    dotenv "^9.0.0"
-    minimist "^1.2.0"
-    node-pagerduty "^1.2.0"
-    redis "^4.6.13"
-    superstruct "^1.0.3"
-    web3 "^1.6.0"
-    winston "^3.2.1"
-    winston-transport "^4.3.0"
-
 "@uma/logger@^1.3.3":
   version "1.3.3"
   resolved "https://registry.yarnpkg.com/@uma/logger/-/logger-1.3.3.tgz#93a6139629fdb92001dfcc4b2ab651f8934ee8ca"
