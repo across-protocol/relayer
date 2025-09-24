@@ -36,8 +36,9 @@ export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
 // Empirically, a max fee scaler of ~5% can result in successful transaction replacement.
 // Stuck transactions are very disruptive, so go for 10% to avoid the hassle.
-const MIN_GAS_RETRY_SCALER = 1.1;
-const MAX_GAS_RETRY_SCALER = 3;
+const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
+const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
+const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -71,7 +72,7 @@ export async function runTransaction(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
-  retries = 3,
+  retries?: number,
   retryScaler = 1.0
 ): Promise<TransactionResponse> {
   const at = "TxUtil#runTransaction";
@@ -79,6 +80,12 @@ export async function runTransaction(
   const { chainId } = await provider.getNetwork();
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
+
+  retries ??= Number(
+    process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
+      process.env.TRANSACTION_SUBMISSION_RETRIES ??
+      TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
 
   const priorityFeeScaler =
     Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
@@ -191,8 +198,10 @@ export async function runTransaction(
     }
 
     if (scaleGas) {
-      const maxGasScaler = Number(process.env[`MAX_GAS_RETRY_SCALER_${chainId}`] ?? MAX_GAS_RETRY_SCALER);
-      retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER);
+      const maxGasScaler = Number(
+        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ?? MAX_GAS_RETRY_SCALER_DEFAULT
+      );
+      retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT);
       retryScaler = Math.min(retryScaler, maxGasScaler);
     }
 
