@@ -766,16 +766,6 @@ export class ProfitClient {
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
-  private _getNativeTokenNetwork(symbol: string): number {
-    const symbols = {
-      HYPE: CHAIN_IDs.HYPEREVM,
-      XPL: CHAIN_IDs.PLASMA,
-      SOL: CHAIN_IDs.SOLANA,
-    };
-
-    return symbols[symbol] ?? CHAIN_IDs.MAINNET;
-  }
-
   private constructRelayerFeeQuery(
     chainId: number,
     provider: Provider | SVMProvider
