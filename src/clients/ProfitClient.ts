@@ -716,12 +716,9 @@ export class ProfitClient {
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
-      [CHAIN_IDs.LENS]: "WETH", // USDC not yet supported.
-      [CHAIN_IDs.LISK]: "USDT", // USDC is not yet supported on Lisk, so revert to USDT. @todo: Update.
-      [CHAIN_IDs.PLASMA]: "WETH",
+      [CHAIN_IDs.PLASMA]: "USDT",
       [CHAIN_IDs.REDSTONE]: "WETH", // Redstone only supports WETH.
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
-      [CHAIN_IDs.WORLD_CHAIN]: "WETH", // USDC deferred on World Chain.
     };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const [defaultTestSymbol, _relayer] =
@@ -818,6 +815,7 @@ export class ProfitClient {
   private _getNativeTokenNetwork(symbol: string): number {
     const symbols = {
       HYPE: CHAIN_IDs.HYPEREVM,
+      XPL: CHAIN_IDs.PLASMA,
       SOL: CHAIN_IDs.SOLANA,
     };
 
