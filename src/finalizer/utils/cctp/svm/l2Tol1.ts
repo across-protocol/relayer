@@ -111,13 +111,12 @@ export async function bridgeTokensToHubPool(
       message: `Withdrew ${formatUsdc(pendingWithdrawAmount.toString())} USDC from Solana to the hub pool.`,
       signature: withdrawSignature,
     };
-  } else {
-    const withdrawSimulation = await simulateSolanaTransaction(bridgeTokensToHubPoolTx, svmProvider);
-    return {
-      message: `Simulated withdrawal of ${formatUsdc(pendingWithdrawAmount.toString())} USDC with result ${
-        withdrawSimulation?.value?.logs
-      }`,
-      signature: "",
-    };
   }
+  const withdrawSimulation = await simulateSolanaTransaction(bridgeTokensToHubPoolTx, svmProvider);
+  return {
+    message: `Simulated withdrawal of ${formatUsdc(pendingWithdrawAmount.toString())} USDC with result ${
+      withdrawSimulation?.value?.logs
+    }`,
+    signature: "",
+  };
 }
