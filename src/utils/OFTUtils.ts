@@ -14,7 +14,7 @@ export type SendParamStruct = {
 };
 
 export type MessagingFeeStruct = {
-  nativeFee: BigNumberish;
+  nativeFee: BigNumber;
   lzTokenFee: BigNumberish;
 };
 
