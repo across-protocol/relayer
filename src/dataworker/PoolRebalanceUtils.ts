@@ -106,32 +106,23 @@ export function generateMarkdownForRootBundle(
   };
   let poolRebalanceLeavesPretty = "";
   poolRebalanceLeaves.forEach((leaf, index) => {
-    const { chainId, refundAmounts, refundAddresses, groupIndex: groupId } = leaf;
-    const l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
-    const bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
-    const runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
-    const netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
-
-    // Explicitly set leaf ordering for ease of reability in logs.
-    const orderedLeaf = {
-      chainId,
-      l1Tokens,
-      netSendAmounts,
-      runningBalances,
-      refundAddresses,
-      refundAmounts,
-      bundleLpFees,
-      groupId,
-    };
-    poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(orderedLeaf)}`;
+    // Shorten keys for ease of reading from Slack.
+    delete leaf.leafId;
+    leaf.groupId = leaf.groupIndex;
+    delete leaf.groupIndex;
+    leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+    leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+    leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+    leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+    poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
   let relayerRefundLeavesPretty = "";
   relayerRefundLeaves.forEach((leaf, index) => {
-    const { chainId } = leaf;
-    let amountToReturn = "";
+    // Shorten keys for ease of reading from Slack.
+    delete leaf.leafId;
     try {
-      amountToReturn = convertFromWei(
+      leaf.amountToReturn = convertFromWei(
         leaf.amountToReturn,
         hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
       );
@@ -141,26 +132,17 @@ export function generateMarkdownForRootBundle(
         message: `Error getting token info for address ${leaf.l2TokenAddress} on chain ${leaf.chainId}`,
         error,
       });
-      amountToReturn = leaf.amountToReturn.toString();
+      leaf.amountToReturn = leaf.amountToReturn.toString();
     }
-
-    const l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
-    const refundAddresses = shortenHexStrings(leaf.refundAddresses.map((addr) => addr.toBytes32()));
-    const refundAmounts = convertTokenListFromWei(
-      chainId,
+    leaf.refundAmounts = convertTokenListFromWei(
+      leaf.chainId,
       Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
       leaf.refundAmounts
     );
-
-    // Explicitly set leaf ordering for ease of reability in logs.
-    const orderedLeaf = {
-      chainId,
-      l2Token,
-      amountToReturn,
-      refundAddresses,
-      refundAmounts,
-    };
-    relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(orderedLeaf)}`;
+    leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
+    delete leaf.l2TokenAddress;
+    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
+    relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
   });
 
   let slowRelayLeavesPretty = "";
