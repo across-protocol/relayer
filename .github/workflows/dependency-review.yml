@@ -13,5 +13,5 @@ jobs:
       - name: "Dependency Review"
         uses: actions/dependency-review-action@v4.3.4
         with:
-          allow-dependencies: |
-            protobufjs
+          allow-ghsas: |
+            GHSA-h755-8qp9-cq85
