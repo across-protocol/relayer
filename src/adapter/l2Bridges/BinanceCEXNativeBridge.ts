@@ -48,13 +48,15 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
         this.l2chainId
       )} to L1`,
     };
+    // Convert the deposit address into an ethers contract.
+    const depositAddressContract = new Contract(depositAddress.address, [], this.l2Signer);
     const transferValueTxn: AugmentedTransaction = {
-      contract: depositAddress,
+      contract: depositAddressContract,
       chainId: this.l2chainId,
       method: "",
-      args: [],
+      args: undefined,
       nonMulticall: true,
-      canFailInSimulation: false,
+      canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
       message: `🎰 Withdrew ${this.depositNetwork} ${l2TokenInfo.symbol} to L1`,
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${getNetworkName(
