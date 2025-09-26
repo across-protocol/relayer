@@ -18,6 +18,12 @@ import * as OFT from "../../utils/OFTUtils";
 import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 
+type OFTBridgeArguments = {
+  sendParamStruct: OFT.SendParamStruct;
+  feeStruct: OFT.MessagingFeeStruct;
+  refundAddress: string;
+};
+
 export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
   private readonly l1ChainEid: number;
@@ -62,6 +68,36 @@ export class OFTBridge extends BaseBridgeAdapter {
     _l2Token: Address,
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
+    const { sendParamStruct, feeStruct, refundAddress } = await this.buildOftTransactionArgs(
+      toAddress,
+      l1Token,
+      amount
+    );
+    return {
+      contract: this.l1Bridge,
+      method: "send",
+      args: [sendParamStruct, feeStruct, refundAddress],
+      value: BigNumber.from(feeStruct.nativeFee),
+    };
+  }
+
+  /**
+   * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
+   * @param amount amount to round
+   * @returns amount rounded down
+   */
+  async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
+    // Fetch `sharedDecimals` if not already fetched
+    this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
+
+    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, this.sharedDecimals);
+  }
+
+  async buildOftTransactionArgs(
+    toAddress: Address,
+    l1Token: EvmAddress,
+    amount: BigNumber
+  ): Promise<OFTBridgeArguments> {
     // Verify the token matches the one this bridge was constructed for
     assert(
       l1Token.eq(this.l1TokenAddress),
@@ -96,24 +132,12 @@ export class OFTBridge extends BaseBridgeAdapter {
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
     const refundAddress = await this.l1Bridge.signer.getAddress();
+
     return {
-      contract: this.l1Bridge,
-      method: "send",
-      args: [sendParamStruct, feeStruct, refundAddress],
-      value: BigNumber.from(feeStruct.nativeFee),
-    };
-  }
-
-  /**
-   * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
-   * @param amount amount to round
-   * @returns amount rounded down
-   */
-  private async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
-    // Fetch `sharedDecimals` if not already fetched
-    this.sharedDecimals ??= await this.l1Bridge.sharedDecimals();
-
-    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, this.sharedDecimals);
+      sendParamStruct,
+      feeStruct,
+      refundAddress,
+    } satisfies OFTBridgeArguments;
   }
 
   async queryL1BridgeInitiationEvents(
