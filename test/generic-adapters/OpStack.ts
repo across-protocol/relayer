@@ -84,7 +84,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     daiBridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
     snxBridgeContract = await (await getContractFactory("OpStackSnxBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
-    cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
+    cctpBridgeContract = await (await getContractFactory("CctpV2TokenMessenger", deployer)).deploy();
 
     const bridges = {
       [l1WethAddress]: new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, deployer, deployer, undefined),
@@ -296,10 +296,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
 
   describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const processedNonce = 1;
-      const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
-        processedNonce,
         l1UsdcAddress,
         1,
         monitoredEoa,
@@ -309,7 +306,6 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
-        unprocessedNonce,
         l1UsdcAddress,
         1,
         monitoredEoa,

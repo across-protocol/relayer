@@ -15,7 +15,7 @@ import {
   winston,
 } from "../../utils";
 import { processEvent } from "../utils";
-import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
+import { getCctpTokenMessenger, getV2DepositForBurnMaxFee, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 
@@ -65,22 +65,36 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
+    // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
+    // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
-    return Promise.resolve({
-      contract: this.getL1Bridge(),
-      method: "depositForBurn",
-      args: this.IS_CCTP_V2
-        ? [
-            amount,
-            this.l2DestinationDomain,
-            toAddress.toBytes32(),
-            this.l1UsdcTokenAddress.toNative(),
-            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-            0, // maxFee set to 0 so this will be a "standard" speed transfer
-            2000, // Hardcoded minFinalityThreshold value for standard transfer
-          ]
-        : [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
-    });
+    if (this.IS_CCTP_V2) {
+      const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
+        this.l1UsdcTokenAddress,
+        this.hubChainId,
+        this.l2chainId,
+        amount
+      );
+      return Promise.resolve({
+        contract: this.getL1Bridge(),
+        method: "depositForBurn",
+        args: [
+          amount,
+          this.l2DestinationDomain,
+          toAddress.toBytes32(),
+          this.l1UsdcTokenAddress.toNative(),
+          ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+          maxFee,
+          finalityThreshold,
+        ],
+      });
+    } else {
+      return Promise.resolve({
+        contract: this.getL1Bridge(),
+        method: "depositForBurn",
+        args: [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
+      });
+    }
   }
 
   async queryL1BridgeInitiationEvents(
