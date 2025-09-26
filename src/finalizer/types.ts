@@ -35,8 +35,6 @@ export type FinalizerPromise = {
 
 export type AddressesToFinalize = Map<Address, string[]>;
 
-// A ChainFinalizer is a function that finalizes messages between two known chains, one is the source
-// chain and the other is the destination chain.
 export interface ChainFinalizer {
   (
     logger: winston.Logger,
@@ -45,16 +43,6 @@ export interface ChainFinalizer {
     l2SpokePoolClient: SpokePoolClient,
     l1SpokePoolClient: SpokePoolClient,
     l1ToL2AddressesToFinalize: AddressesToFinalize // Map from token address to associated token symbols to finalize for that address.
-  ): Promise<FinalizerPromise>;
-}
-
-// A Finalizer is a function that finalizes messages sent from a single chain to any other.
-export interface Finalizer {
-  (
-    logger: winston.Logger,
-    signer: Signer,
-    l2SpokePoolClient: SpokePoolClient,
-    l2AddressesToFinalize: AddressesToFinalize
   ): Promise<FinalizerPromise>;
 }
 
