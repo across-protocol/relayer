@@ -12,7 +12,6 @@ import {
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
   balancesEnabled: boolean;
-  refillBalancesEnabled: boolean;
   reportEnabled: boolean;
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
@@ -37,14 +36,6 @@ export class MonitorConfig extends CommonConfig {
   readonly knownV1Addresses: Address[];
   readonly bundlesCount: number;
   readonly botModes: BotModes;
-  readonly refillEnabledBalances: {
-    chainId: number;
-    isHubPool: boolean;
-    account: Address;
-    token: Address;
-    target: number;
-    trigger: number;
-  }[] = [];
   readonly monitoredBalances: {
     chainId: number;
     warnThreshold: number | null;
@@ -71,8 +62,6 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
-      REFILL_BALANCES,
-      REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
@@ -87,7 +76,6 @@ export class MonitorConfig extends CommonConfig {
 
     this.botModes = {
       balancesEnabled: BALANCES_ENABLED === "true",
-      refillBalancesEnabled: REFILL_BALANCES_ENABLED === "true",
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
@@ -117,38 +105,6 @@ export class MonitorConfig extends CommonConfig {
     });
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
-    // Used to send tokens if available in wallet to balances under target balances.
-    if (REFILL_BALANCES) {
-      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger }) => {
-          if (Number.isNaN(target) || target <= 0) {
-            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
-          }
-          if (Number.isNaN(trigger) || trigger <= 0) {
-            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
-          }
-          if (trigger >= target) {
-            throw new Error("trigger must be < target");
-          }
-          return {
-            // Required fields:
-            chainId,
-            account: toAddressType(account, chainId),
-            target,
-            trigger,
-            // Optional fields that will set to defaults:
-            isHubPool: Boolean(isHubPool),
-            // Fields that are always set to defaults:
-            token: getNativeTokenAddressForChain(chainId),
-          };
-        }
-      );
-    }
-
-    // Should only have 1 HubPool.
-    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {
-      throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
-    }
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
