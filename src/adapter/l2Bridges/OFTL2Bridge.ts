@@ -13,6 +13,7 @@ import {
   bnZero,
   EventSearchConfig,
   getTokenInfo,
+  fixedPointAdjustment,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -75,12 +76,16 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
+    const appliedFee = OFT.isStargateBridge(this.l2chainId)
+      ? roundedAmount.mul(5 * 10 ** 15).div(fixedPointAdjustment)
+      : bnZero; // Set a max slippage of 0.5%.
+    const expectedOutputAmount = roundedAmount.sub(appliedFee);
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l1ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: roundedAmount,
+      minAmountLD: expectedOutputAmount,
       extraOptions: "0x",
       composeMsg: "0x",
       oftCmd: "0x",

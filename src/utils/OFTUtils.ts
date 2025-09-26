@@ -1,5 +1,5 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined } from ".";
+import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined, CHAIN_IDs } from ".";
 import { BytesLike } from "ethers";
 import { EVM_OFT_MESSENGERS } from "../common/Constants";
 
@@ -38,6 +38,14 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
   const messenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
   return messenger;
+}
+
+/**
+ * @param chainId The chain Id of the network to check
+ * @returns If the input chain ID's OFT adapter requires payment in the input token.
+ */
+export function isStargateBridge(chainId: number): boolean {
+  return [CHAIN_IDs.PLASMA].includes(chainId);
 }
 
 /**
