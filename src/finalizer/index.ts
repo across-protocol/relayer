@@ -35,7 +35,7 @@ import {
   EvmAddress,
   Address,
 } from "../utils";
-import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
+import { Finalizer, ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,
   binanceFinalizer,
@@ -58,7 +58,7 @@ let logger: winston.Logger;
 /**
  * The finalization type is used to determine the direction of the finalization.
  */
-type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
+type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2" | "any->any";
 
 /**
  * A list of finalizers that can be used to finalize messages on a chain. These are
@@ -67,7 +67,13 @@ type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
  * @note: finalizeOnL1 is used to finalize L2 -> L1 messages (from the spoke chain to mainnet)
  * @note: finalizeOnL2 is used to finalize L1 -> L2 messages (from mainnet to the spoke chain)
  */
-const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[] } } = {
+const chainFinalizers: {
+  [chainId: number]: {
+    finalizeOnL2: ChainFinalizer[];
+    finalizeOnL1: ChainFinalizer[];
+    finalizeAnyToAny?: Finalizer[];
+  };
+} = {
   // Mainnets
   [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
@@ -92,6 +98,7 @@ const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; fi
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeAnyToAny: [],
   },
   [CHAIN_IDs.LENS]: {
     finalizeOnL1: [zkSyncFinalizer],
@@ -226,6 +233,7 @@ export async function finalize(
     // We should only finalize the direction that has been specified in
     // the finalization strategy.
     const chainSpecificFinalizers: ChainFinalizer[] = [];
+    const genericFinalizers: Finalizer[] = [];
     switch (finalizationStrategy) {
       case "l1->l2":
         chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL2);
@@ -238,6 +246,9 @@ export async function finalize(
           ...chainFinalizers[chainId].finalizeOnL1,
           ...chainFinalizers[chainId].finalizeOnL2
         );
+        break;
+      case "any->any":
+        genericFinalizers.push(...(chainFinalizers[chainId]?.finalizeAnyToAny ?? []));
         break;
     }
     assert(chainSpecificFinalizers?.length > 0, `No finalizer available for chain ${chainId}`);
@@ -263,32 +274,53 @@ export async function finalize(
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
-    await sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
-      try {
-        const { callData, crossChainMessages } = await finalizer(
-          logger,
-          hubSigner,
-          hubPoolClient,
-          client,
-          spokePoolClients[hubChainId],
-          addressesToFinalize
-        );
+    await Promise.all([
+      sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
+        try {
+          const { callData, crossChainMessages } = await finalizer(
+            logger,
+            hubSigner,
+            hubPoolClient,
+            client,
+            spokePoolClients[hubChainId],
+            addressesToFinalize
+          );
 
-        callData.forEach((txn, idx) => {
-          finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
-        });
+          callData.forEach((txn, idx) => {
+            finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          });
 
-        totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
-        totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
-        totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
-      } catch (_e) {
-        logger.error({
-          at: "finalizer",
-          message: `Something errored in a finalizer for chain ${client.chainId}`,
-          error: stringifyThrownValue(_e),
-        });
-      }
-    });
+          totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
+          totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
+          totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
+        } catch (_e) {
+          logger.error({
+            at: "finalizer",
+            message: `Something errored in a chain-specific finalizer for chain ${client.chainId}`,
+            error: stringifyThrownValue(_e),
+          });
+        }
+      }),
+      sdkUtils.mapAsync(genericFinalizers, async (finalizer) => {
+        try {
+          const { callData, crossChainMessages } = await finalizer(logger, hubSigner, client, addressesToFinalize);
+
+          callData.forEach((txn, idx) => {
+            finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          });
+
+          totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
+          totalDepositsForChain += crossChainMessages.filter(({ type }) => type === "deposit").length;
+          totalMiscTxnsForChain += crossChainMessages.filter(({ type }) => type === "misc").length;
+        } catch (_e) {
+          logger.error({
+            at: "finalizer",
+            message: `Something errored in a generic finalizer for chain ${client.chainId}`,
+            error: stringifyThrownValue(_e),
+          });
+        }
+      }),
+    ]);
     const totalTransfers = totalWithdrawalsForChain + totalDepositsForChain + totalMiscTxnsForChain;
     logger.debug({
       at: "finalize",
