@@ -1,6 +1,9 @@
 export type DefaultLogLevels = "debug" | "info" | "warn" | "error";
 
 export function stringifyThrownValue(value: unknown): string {
+  if (value == null) {
+    return `ThrownValue: ${String(value)}`;
+  }
   if (value instanceof Error) {
     const errToString = value.toString();
     return value.stack
