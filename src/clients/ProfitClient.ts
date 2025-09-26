@@ -623,6 +623,7 @@ export class ProfitClient {
     this.enabledChainIds.forEach((chainId) => {
       const symbol = getNativeTokenSymbol(chainId);
       let nativeTokenAddress = TOKEN_SYMBOLS_MAP[symbol]?.addresses[this._getNativeTokenNetwork(symbol)];
+      console.log(`native token address for chain ${chainId} is ${nativeTokenAddress}, native token symbol is ${symbol}`);
       // For testnet only, if the custom gas token has no mainnet address, use ETH.
       if (this.hubPoolClient.chainId === CHAIN_IDs.SEPOLIA && !isDefined(nativeTokenAddress)) {
         nativeTokenAddress = TOKEN_SYMBOLS_MAP["ETH"].addresses[CHAIN_IDs.MAINNET];
@@ -640,6 +641,7 @@ export class ProfitClient {
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
+      console.log("tokenAddrs", tokenAddrs);
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
       tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });

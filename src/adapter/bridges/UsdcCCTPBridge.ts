@@ -66,6 +66,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BridgeTransactionDetails> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
+    // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
+    // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),

@@ -185,14 +185,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   try {
     await rebalancer.init();
     await rebalancer.update();
-    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+    // await rebalancer.checkForUnfilledDepositsAndFill(false, true);
 
     if (config.sendingTransactionsEnabled) {
-      await inventoryClient.setTokenApprovals();
+      // await inventoryClient.setTokenApprovals();
     }
 
     await inventoryClient.rebalanceInventoryIfNeeded();
-    await inventoryClient.withdrawExcessBalances();
+    // await inventoryClient.withdrawExcessBalances();
   } finally {
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
