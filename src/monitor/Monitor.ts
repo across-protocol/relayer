@@ -257,7 +257,7 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken,
+        outputToken: invalidFill.fill.outputToken.toNative(),
         relayer: invalidFill.fill.relayer,
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
