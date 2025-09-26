@@ -24,7 +24,6 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
     l1Token: EvmAddress,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     logger: winston.Logger
   ) {
     const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](

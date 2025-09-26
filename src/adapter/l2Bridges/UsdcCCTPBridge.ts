@@ -18,6 +18,8 @@ import {
   assert,
   createFormatFunction,
   getTokenInfo,
+  toBNWei,
+  getV2DepositForBurnMaxFee,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
@@ -52,7 +54,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     return getCctpDomainForChainId(this.hubChainId);
   }
 
-  constructWithdrawToL1Txns(
+  async constructWithdrawToL1Txns(
     toAddress: EvmAddress,
     l2Token: EvmAddress,
     l1Token: EvmAddress,
@@ -64,6 +66,33 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
+    if (this.IS_CCTP_V2) {
+      const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
+        this.l2UsdcTokenAddress,
+        this.l2chainId,
+        this.hubChainId,
+        amount
+      );
+      return Promise.resolve([
+        {
+          contract: this.l2Bridge,
+          chainId: this.l2chainId,
+          method: "depositForBurn",
+          nonMulticall: true,
+          message: "🎰 Withdrew CCTP USDC to L1",
+          mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP`,
+          args: [
+            amount,
+            this.l1DestinationDomain,
+            toAddress.toBytes32(),
+            this.l2UsdcTokenAddress.toNative(),
+            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+            maxFee,
+            finalityThreshold,
+          ]
+        },
+      ]);
+    }
     return Promise.resolve([
       {
         contract: this.l2Bridge,
@@ -72,17 +101,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
         nonMulticall: true,
         message: "🎰 Withdrew CCTP USDC to L1",
         mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP`,
-        args: this.IS_CCTP_V2
-          ? [
-              amount,
-              this.l1DestinationDomain,
-              toAddress.toBytes32(),
-              this.l2UsdcTokenAddress.toNative(),
-              ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-              0, // maxFee set to 0 so this will be a "standard" speed transfer
-              2000, // Hardcoded minFinalityThreshold value for standard transfer
-            ]
-          : [amount, this.l1DestinationDomain, toAddress.toBytes32(), this.l2UsdcTokenAddress.toNative()],
+        args: [amount, this.l1DestinationDomain, toAddress.toBytes32(), this.l2UsdcTokenAddress.toNative()],
       },
     ]);
   }
