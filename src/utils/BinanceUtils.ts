@@ -24,11 +24,12 @@ type WithdrawalQuota = {
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
-  [CHAIN_IDs.MAINNET]: "ETH",
-  [CHAIN_IDs.BSC]: "BSC",
   [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
-  [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
   [CHAIN_IDs.BASE]: "BASE",
+  [CHAIN_IDs.BSC]: "BSC",
+  [CHAIN_IDs.MAINNET]: "ETH",
+  [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
+  [CHAIN_IDs.ZK_SYNC]: "ZKSYNCERA",
 };
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
