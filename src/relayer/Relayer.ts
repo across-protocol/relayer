@@ -349,6 +349,7 @@ export class Relayer {
         recipient: recipient.toString(),
         outputToken: deposit.outputToken.toString(),
         exclusiveRelayer: deposit.exclusiveRelayer.toString(),
+        txnRef: deposit.txnRef,
       });
 
       return ignoreDeposit();

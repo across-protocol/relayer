@@ -16,5 +16,5 @@ export function addrsMatchDstChain(deposit: Deposit): boolean {
       : true,
   ];
 
-  return addrValidityChecks.some((check) => !check);
+  return addrValidityChecks.every((check) => check);
 }
