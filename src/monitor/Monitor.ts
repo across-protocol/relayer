@@ -923,7 +923,9 @@ export class Monitor {
                 [],
                 spokePoolClient.spokePool.signer
               );
-              const txn = await (await runTransaction(this.logger, sendRawTransactionContract, "", undefined, deficit)).wait();
+              const txn = await (
+                await runTransaction(this.logger, sendRawTransactionContract, "", undefined, deficit)
+              ).wait();
               this.logger.info({
                 at: "Monitor#refillBalances",
                 message: `Reloaded ${formatUnits(
