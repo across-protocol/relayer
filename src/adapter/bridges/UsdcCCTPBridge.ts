@@ -7,7 +7,6 @@ import {
   TOKEN_SYMBOLS_MAP,
   compareAddressesSimple,
   assert,
-  toBN,
   getCctpDomainForChainId,
   Address,
   EvmAddress,
@@ -18,9 +17,9 @@ import {
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
-  private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
 
@@ -68,7 +67,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
     // construct a fast transfer, otherwise default to a standard transfer.
-    amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
+    amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
