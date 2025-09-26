@@ -112,7 +112,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
     // Point the adapter to the proper bridges.
     l1Bridge = await (await getContractFactory("Polygon_L1Bridge", depositor)).deploy();
     l2Bridge = await (await getContractFactory("Polygon_L2Bridge", depositor)).deploy();
-    l1TokenMessenger = await (await getContractFactory("CctpTokenMessenger", depositor)).deploy();
+    l1TokenMessenger = await (await getContractFactory("CctpV2TokenMessenger", depositor)).deploy();
     // WBTC
     adapter.setL1Bridge(l1Token, l1Bridge);
     adapter.setL2Bridge(l1Token, l2Bridge);
@@ -831,10 +831,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
 
   describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const processedNonce = 1;
-      const unprocessedNonce = 2;
       await l1TokenMessenger.emitDepositForBurn(
-        processedNonce,
         l1Usdc,
         1,
         monitoredEoa,
@@ -844,7 +841,6 @@ describe("Cross Chain Adapter: Polygon", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await l1TokenMessenger.emitDepositForBurn(
-        unprocessedNonce,
         l1Usdc,
         1,
         monitoredEoa,

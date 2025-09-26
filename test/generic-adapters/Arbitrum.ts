@@ -51,7 +51,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
-    cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
+    cctpBridgeContract = await (await getContractFactory("CctpV2TokenMessenger", deployer)).deploy();
 
     const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
       from: 0,
@@ -161,10 +161,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
   describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const processedNonce = 1;
-      const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
-        processedNonce,
         l1UsdcAddress,
         1,
         monitoredEoa,
@@ -174,7 +171,6 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
-        unprocessedNonce,
         l1UsdcAddress,
         1,
         monitoredEoa,
