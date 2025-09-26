@@ -1127,9 +1127,10 @@ function cmpAPIToEventMessageBytesV2(apiResponseMessage: string, eventMessageByt
 
   // Skip `finalityThresholdExecuted`: Bytes [144 .. 148)
 
-  // Segment 3: Bytes [148..end)
-  const seg3Api = normApiMsg.substring(296);
-  const seg3Local = normLocalMsg.substring(296);
+  // Segment 3: `messageBody` Bytes [148..312), stopping at parameters that we don't know about until the
+  // destination chain transaction is executed like feeExecuted.
+  const seg3Api = normApiMsg.substring(296, 624);
+  const seg3Local = normLocalMsg.substring(296, 624);
   if (seg3Api !== seg3Local) {
     return false;
   }
