@@ -77,8 +77,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
     const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? roundedAmount.mul(5 * 10 ** 15).div(fixedPointAdjustment)
-      : bnZero; // Set a max slippage of 0.5%.
+      ? roundedAmount.mul(5 * 10 ** 15).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
     const expectedOutputAmount = roundedAmount.sub(appliedFee);
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l1ChainEid,
