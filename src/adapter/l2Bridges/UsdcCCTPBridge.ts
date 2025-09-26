@@ -18,7 +18,6 @@ import {
   assert,
   createFormatFunction,
   getTokenInfo,
-  toBNWei,
   getV2DepositForBurnMaxFee,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -89,7 +88,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
             ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
             maxFee,
             finalityThreshold,
-          ]
+          ],
         },
       ]);
     }

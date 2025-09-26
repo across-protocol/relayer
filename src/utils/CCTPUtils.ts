@@ -1035,7 +1035,7 @@ export async function getV2DepositForBurnMaxFee(
   return {
     maxFee,
     finalityThreshold,
-  }
+  };
 }
 
 /**

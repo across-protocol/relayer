@@ -13,8 +13,6 @@ import {
   paginatedEventQuery,
   ethers,
   winston,
-  getTokenInfo,
-  toBNWei,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, getV2DepositForBurnMaxFee, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
