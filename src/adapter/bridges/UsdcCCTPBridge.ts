@@ -32,7 +32,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     l2SignerOrProvider: Signer | Provider,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _l1Token: EvmAddress,
-    readonly logger: winston.Logger
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
     assert(

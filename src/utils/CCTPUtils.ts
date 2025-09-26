@@ -1018,12 +1018,7 @@ export async function getV2DepositForBurnMaxFee(
     _getV2FastBurnAllowance(chainIsProd(destinationChainId)),
     _getV2MinTransferFees(originChainId, destinationChainId),
   ]);
-  console.log(
-    `Fetched transfer fees for USDC: standard ${transferFees.standard.toString()} and fast ${transferFees.fast.toString()}`
-  );
   const expectedMaxFastTransferFee = getV2MaxExpectedTransferFee(originChainId);
-  console.log(`Expected max fast transfer fee for USDC: ${expectedMaxFastTransferFee.toString()}`);
-  
   // If we are using CCTP V2 then try to use the fast transfer if the amount is under the
   // fast burn allowance and the transfer fee is under the expected max fast transfer fee.
   // Fees are taken out of the received amount on the destination chain.
@@ -1031,13 +1026,11 @@ export async function getV2DepositForBurnMaxFee(
   let maxFee = bnZero;
   const { decimals } = getTokenInfo(originUsdcToken, originChainId);
   const fastBurnAllowance = toBNWei(_fastBurnAllowance, decimals);
-  console.log(`Fetched fast burn allowance for USDC: ${fastBurnAllowance.toString()}`);
   if (amount.lte(fastBurnAllowance) && transferFees.fast.lte(expectedMaxFastTransferFee)) {
     finalityThreshold = CCTPV2_FINALITY_THRESHOLD_FAST;
     // Set maxFee to the expected max fast transfer fee, which is larger and provides a buffer
     // in case the transfer fee moves. maxFee must be set higher than the minFee.
     maxFee = amount.mul(expectedMaxFastTransferFee).div(10000);
-    console.log(amount.toString(), maxFee.toString());
   }
   return {
     maxFee,
