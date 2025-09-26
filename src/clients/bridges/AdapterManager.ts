@@ -25,7 +25,7 @@ import {
   isSVMSpokePoolClient,
   bnZero,
 } from "../../utils";
-import { SpokePoolClient, HubPoolClient } from "../";
+import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
 
@@ -37,17 +37,20 @@ export class AdapterManager {
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
   private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
-
+  readonly spokePoolManager: SpokePoolManager;
   constructor(
     readonly logger: winston.Logger,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly monitoredAddresses: Address[]
   ) {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
+    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+    const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
+      (client) => client.spokePoolAddress
+    );
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -55,7 +58,7 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
+          this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -69,7 +72,7 @@ export class AdapterManager {
 
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const spokePoolClient = spokePoolClients[chainId];
+          const spokePoolClient = this.spokePoolManager.getClient(chainId);
           let l2SignerOrProvider;
           if (isEVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
@@ -94,7 +97,7 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       }
-      const spokePoolClient = spokePoolClients[chainId];
+      const spokePoolClient = this.spokePoolManager.getClient(chainId);
       let l2Signer;
       if (isEVMSpokePoolClient(spokePoolClient)) {
         l2Signer = spokePoolClient.spokePool.signer;
@@ -113,10 +116,10 @@ export class AdapterManager {
           .filter(isDefined) ?? []
       );
     };
-    Object.values(this.spokePoolClients).map(({ chainId }) => {
+    Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
-        spokePoolClients,
+        this.spokePoolManager.getSpokePoolClients(),
         chainId,
         hubChainId,
         filterMonitoredAddresses(chainId),
@@ -251,7 +254,7 @@ export class AdapterManager {
   // inventory from L1 to ZkSync via the AtomicDepositor.
   async wrapNativeTokenIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
-      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
+      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolManager.getClient(chainId))),
       async (chainId) => {
         const wrapThreshold =
           inventoryConfig?.wrapEtherThresholdPerChain?.[chainId] ?? inventoryConfig.wrapEtherThreshold;
@@ -266,7 +269,8 @@ export class AdapterManager {
   }
 
   getSigner(chainId: number): Signer {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
