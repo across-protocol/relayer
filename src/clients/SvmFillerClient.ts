@@ -20,6 +20,8 @@ import {
 import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
 
+export const SOLANA_TX_SIZE_LIMIT = 1232; // bytes
+
 type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   destinationChainId: number;
   recipient: SvmAddress;
@@ -215,6 +217,26 @@ export class SvmFillerClient {
   getTxnQueueLen(): number {
     return this.queuedFills.length;
   }
+
+  // @throws if unable to construct fill tx
+  async calculateFillSizeBytes(
+    spokePool: SvmAddress,
+    relayData: ProtoFill,
+    repaymentChainId: number,
+    repaymentAddress: SDKAddress
+  ): Promise<number> {
+    const fillTx = await arch.svm.getFillRelayTx(
+      spokePool,
+      this.provider,
+      relayData,
+      this.signer,
+      repaymentChainId,
+      repaymentAddress
+    );
+    const signedTransaction = await signTransactionMessageWithSigners(fillTx);
+    const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
+    return base64StrToByteSize(serializedTx);
+  }
 }
 
 const signAndSendTransaction = async (
@@ -247,3 +269,10 @@ const signAndSimulateTransaction = async (
     )
     .send();
 };
+
+function base64StrToByteSize(base64TxString: string): number {
+  // base64 string has 6 bits per character, so every 4 symbols represent 3 bytes
+  // However, we also need to account for padding: https://en.wikipedia.org/wiki/Base64#Padding
+  const paddingLen = base64TxString.endsWith("==") ? 2 : base64TxString.endsWith("=") ? 1 : 0;
+  return (base64TxString.length * 3) / 4 - paddingLen;
+}
