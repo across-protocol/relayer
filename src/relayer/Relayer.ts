@@ -751,7 +751,7 @@ export class Relayer {
 
     // Skip a fill if the message would be too big to fit into a single SVM-side TX
     try {
-      const fillTooLarge = await this.isSVMFillTooLarge(deposit);
+      const fillTooLarge = chainIsSvm(deposit.destinationChainId) && (await this.isSVMFillTooLarge(deposit));
       if (fillTooLarge.tooLarge) {
         this.logger.debug({
           at: "Relayer::evaluateFill",
