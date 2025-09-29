@@ -10,3 +10,4 @@ export * from "./MockInventoryClient";
 export * from "./MockSpokePoolClient";
 export * from "./MockArweaveClient";
 export * from "./MockBundleDataApproxClient";
+export * from "./MockQuery";

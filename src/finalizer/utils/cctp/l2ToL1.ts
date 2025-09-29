@@ -19,6 +19,8 @@ import {
   getStatePda,
   toAddressType,
   createFormatFunction,
+  getKitKeypairFromEvmSigner,
+  isSVMSpokePoolClient,
 } from "../../../utils";
 import {
   AttestedCCTPDeposit,
@@ -26,11 +28,12 @@ import {
   getAttestedCCTPDeposits,
   getCctpMessageTransmitter,
 } from "../../../utils/CCTPUtils";
+import { bridgeTokensToHubPool } from "./svm";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 
 export async function cctpL2toL1Finalizer(
   logger: winston.Logger,
-  _signer: Signer,
+  signer: Signer,
   hubPoolClient: HubPoolClient,
   spokePoolClient: SpokePoolClient,
   _l1SpokePoolClient: SpokePoolClient,
@@ -48,6 +51,18 @@ export async function cctpL2toL1Finalizer(
     ? await augmentSendersListForSolana(senderAddresses, spokePoolClient)
     : senderAddresses;
 
+  // Solana has a two step withdrawal process, where the funds in the spoke pool's transfer liability PDA must be manually withdrawn after
+  // a refund leaf has been executed.
+  if (finalizingFromSolana) {
+    assert(isSVMSpokePoolClient(spokePoolClient));
+    const svmSigner = await getKitKeypairFromEvmSigner(signer);
+    const bridgeTokens = await bridgeTokensToHubPool(spokePoolClient, svmSigner, logger, hubPoolClient.chainId);
+    logger[isDefined(bridgeTokens.signature) ? "info" : "debug"]({
+      at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
+      message: bridgeTokens.message,
+      signature: bridgeTokens.signature,
+    });
+  }
   const outstandingDeposits = await getAttestedCCTPDeposits(
     augmentedSenderAddresses,
     spokePoolClient.chainId,

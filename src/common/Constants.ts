@@ -12,6 +12,7 @@ import {
   toWei,
   BigNumber,
   winston,
+  toBN,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -60,6 +61,9 @@ import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
 export const CONFIG_STORE_VERSION = 6;
 
 export const RELAYER_MIN_FEE_PCT = 0.0001;
+
+// The maximum amount of USDC permitted to be sent over CCTP in a single transaction.
+export const CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
 
 // max(uint256) - 1
 export const INFINITE_FILL_DEADLINE = bnUint32Max;
@@ -649,6 +653,7 @@ export const CUSTOM_L2_BRIDGE: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
   [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -685,6 +690,9 @@ export const CUSTOM_L2_BRIDGE: {
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+  },
+  [CHAIN_IDs.ZK_SYNC]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
 };
 

@@ -24,6 +24,7 @@ import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils"
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 
 type MintAndWithdrawData = {
   mintRecipient: string;
@@ -31,7 +32,6 @@ type MintAndWithdrawData = {
 };
 
 export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
-  private CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: SvmAddress;
@@ -92,7 +92,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     const signer = await this.l1Signer.getAddress();
     assert(compareAddressesSimple(signer, toAddress.toEvmAddress()), "Cannot rebalance to a non-signer address");
     const associatedTokenAddress = await this._getAssociatedTokenAddress();
-    amount = amount.gt(this.CCTP_MAX_SEND_AMOUNT) ? this.CCTP_MAX_SEND_AMOUNT : amount;
+    amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",

@@ -2,9 +2,10 @@ import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
 import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
+import { bnOne, bnZero, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
+import { MockQuery } from "./MockQuery";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 
@@ -12,6 +13,7 @@ const defaultFillCost = toBN(100_000); // gas
 const defaultGasPrice = bnOne; // wei per gas
 
 export class MockProfitClient extends ProfitClient {
+  private mockQueries: { [chainId: number]: MockQuery } = {};
   constructor(
     logger: winston.Logger,
     hubPoolClient: HubPoolClient | MockHubPoolClient,
@@ -121,4 +123,15 @@ export class MockProfitClient extends ProfitClient {
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   async update(): Promise<void> {}
+
+  setAuxiliaryNativeTokenCost(chainId: number, cost: BigNumber): void {
+    this.mockQueries[chainId] ??= new MockQuery();
+    this.mockQueries[chainId].setAuxiliaryNativeTokenCost(chainId, cost);
+  }
+
+  // Override to avoid accessing undefined relayerFeeQueries in tests.
+  getAuxiliaryNativeTokenCost(deposit: { destinationChainId: number }): BigNumber {
+    const query = this.mockQueries[deposit.destinationChainId];
+    return query ? query.getAuxiliaryNativeTokenCost(deposit) : bnZero;
+  }
 }
