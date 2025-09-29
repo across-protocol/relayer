@@ -57,7 +57,6 @@ export * from "./SignerUtils";
 export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
-export * from "./DepositUtils";
 export * from "./FillUtils";
 export * from "./ObjectUtils";
 export * from "./ContractUtils";
