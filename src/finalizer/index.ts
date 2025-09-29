@@ -35,12 +35,13 @@ import {
   EvmAddress,
   Address,
 } from "../utils";
-import { ChainFinalizer, CrossChainMessage, isAugmentedTransaction } from "./types";
+import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
   arbStackFinalizer,
   binanceFinalizer,
   cctpL1toL2Finalizer,
   cctpL2toL1Finalizer,
+  cctpV2Finalizer,
   heliosL1toL2Finalizer,
   lineaL1ToL2Finalizer,
   lineaL2ToL1Finalizer,
@@ -58,7 +59,7 @@ let logger: winston.Logger;
 /**
  * The finalization type is used to determine the direction of the finalization.
  */
-type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
+type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2" | "any<->any";
 
 /**
  * A list of finalizers that can be used to finalize messages on a chain. These are
@@ -67,124 +68,155 @@ type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2";
  * @note: finalizeOnL1 is used to finalize L2 -> L1 messages (from the spoke chain to mainnet)
  * @note: finalizeOnL2 is used to finalize L1 -> L2 messages (from mainnet to the spoke chain)
  */
-const chainFinalizers: { [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[] } } = {
+const chainFinalizers: {
+  [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[]; finalizeOnAny: Finalizer[] };
+} = {
   // Mainnets
   [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.PLASMA]: {
     finalizeOnL1: [],
     finalizeOnL2: [heliosL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.ZK_SYNC]: {
     finalizeOnL1: [zkSyncFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.BASE]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.LENS]: {
     finalizeOnL1: [zkSyncFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.LINEA]: {
     finalizeOnL1: [lineaL2ToL1Finalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer, cctpL1toL2Finalizer],
+    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.SOLANA]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.MODE]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.LISK]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.ZORA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.REDSTONE]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.BLAST]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.BSC]: {
     finalizeOnL1: [binanceFinalizer],
     finalizeOnL2: [heliosL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.SONEIUM]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.HYPEREVM]: {
     finalizeOnL1: [cctpL2toL1Finalizer],
     finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.UNICHAIN]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
     finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.MODE_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
+    finalizeOnAny: [],
   },
 };
 
@@ -225,13 +257,16 @@ export async function finalize(
 
     // We should only finalize the direction that has been specified in
     // the finalization strategy.
-    const chainSpecificFinalizers: ChainFinalizer[] = [];
+    const chainSpecificFinalizers: (ChainFinalizer | Finalizer)[] = [];
     switch (finalizationStrategy) {
       case "l1->l2":
         chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL2);
         break;
       case "l2->l1":
         chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL1);
+        break;
+      case "any<->any":
+        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnAny);
         break;
       case "l1<->l2":
         chainSpecificFinalizers.push(
@@ -263,16 +298,24 @@ export async function finalize(
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
+    const isChainSpecificFinalizer = (finalizer: ChainFinalizer | Finalizer): finalizer is ChainFinalizer => {
+      return finalizer.length === 6;
+    };
     await sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
       try {
-        const { callData, crossChainMessages } = await finalizer(
-          logger,
-          hubSigner,
-          hubPoolClient,
-          client,
-          spokePoolClients[hubChainId],
-          addressesToFinalize
-        );
+        let callData: (Multicall2Call | AugmentedTransaction)[], crossChainMessages: CrossChainMessage[];
+        if (isChainSpecificFinalizer(finalizer)) {
+          ({ callData, crossChainMessages } = await finalizer(
+            logger,
+            hubSigner,
+            hubPoolClient,
+            client,
+            spokePoolClients[hubChainId],
+            addressesToFinalize
+          ));
+        } else {
+          ({ callData, crossChainMessages } = await finalizer(logger, client, addressesToFinalize));
+        }
 
         callData.forEach((txn, idx) => {
           finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
@@ -558,7 +601,7 @@ export class FinalizerConfig extends CommonConfig {
     );
 
     const _finalizationStrategy = FINALIZATION_STRATEGY.toLowerCase();
-    ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2"]));
+    ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2", "any<->any"]));
     this.finalizationStrategy = _finalizationStrategy;
   }
 }

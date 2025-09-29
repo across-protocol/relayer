@@ -1387,6 +1387,19 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
+
+          // Before default withdrawing to L1, check if there are other chains for this L1 token that have
+          // underallocations, and then withdraw to those chains first.
+          const otherChainsToEvaluate = chainIds.filter(
+            (otherChainId) => otherChainId !== chainId && this._l1TokenEnabledForChain(l1Token, otherChainId)
+          );
+          for (const otherChainId of otherChainsToEvaluate) {
+            const otherChainAllocPct = this.getCurrentAllocationPct(l1Token, otherChainId, l2Token, true);
+            if (otherChainAllocPct.lt(targetPct)) {
+              });
+            }
+          }
+
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,

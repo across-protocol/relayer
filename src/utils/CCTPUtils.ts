@@ -52,14 +52,22 @@ type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number }[];
 type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
-type CCTPV2APIAttestation = {
+export type CCTPV2APIAttestation = {
   status: string;
   attestation: string;
   message: string;
   eventNonce: string;
   cctpVersion: number;
+  decodedMessage: {
+    destinationDomain: number;
+    decodedMessageBody: {
+      amount: string;
+      mintRecipient: string;
+      messageSender: string;
+    };
+  };
 };
-type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
+export type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
 
 // Notice: minimal data included in the `DepositForBurn` event on the Solana side
 type MinimalSvmDepositForBurnData = {
@@ -130,6 +138,10 @@ export function getCctpMessageTransmitter(
   ];
 }
 
+export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
+}
+
 /**
  * @notice Converts an ETH Address string to a 32-byte hex string.
  * @param address The address to convert.
@@ -160,6 +172,17 @@ export function getCctpDomainForChainId(chainId: number): number {
     throw new Error(`No CCTP domain found for chainId: ${chainId}`);
   }
   return cctpDomain;
+}
+
+export function getCctpDestinationChainFromDomain(domain: number): number {
+  if (domain === CCTP_NO_DOMAIN) {
+    throw new Error("Cannot input CCTP_NO_DOMAIN to getCctpDestinationChainFromDomain");
+  }
+  const chainId = Object.keys(PUBLIC_NETWORKS).find((key) => PUBLIC_NETWORKS[key].cctpDomain.toString() === domain);
+  if (!isDefined(chainId)) {
+    throw new Error(`No chainId found for domain: ${domain}`);
+  }
+  return parseInt(chainId);
 }
 
 /**
@@ -259,21 +282,67 @@ async function getRelevantCCTPTxHashes(
   }
 
   // Step 2: Get all DepositForBurn events matching the senderAddresses and source chain
+  let depositForBurnEventTxnHashes: string[] = [];
   const isCctpV2 = isCctpV2L2ChainId(l2ChainId);
-  const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
-  const srcTokenMessenger = new Contract(address, abi, srcProvider);
+  if (isCctpV2) {
+    const depositForBurnEventsMap = await getCctpV2DepositForBurnTxnHashes(
+      srcProvider,
+      sourceChainId,
+      _senderAddresses,
+      sourceEventSearchConfig
+    );
+    Object.entries(depositForBurnEventsMap).forEach(([txnHash, destinationDomain]) => {
+      if (destinationDomain === getCctpDomainForChainId(destinationChainId)) {
+        depositForBurnEventTxnHashes.push(txnHash);
+      }
+    });
+  } else {
+    const { address, abi } = getCctpTokenMessenger(l2ChainId, sourceChainId);
+    const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
-  const eventFilterParams = isCctpV2
-    ? [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses]
-    : [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
-  const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
-  const depositForBurnEvents = (
-    await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig)
-  ).filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId));
+    const eventFilterParams = [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
+    const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
+    depositForBurnEventTxnHashes = (await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig))
+      .filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId))
+      .map((e) => e.transactionHash);
+  }
 
-  const uniqueTxHashes = new Set([...txHashesFromHubPool, ...depositForBurnEvents.map((e) => e.transactionHash)]);
+  const uniqueTxHashes = new Set([...txHashesFromHubPool, ...depositForBurnEventTxnHashes]);
 
   return uniqueTxHashes;
+}
+
+export interface CctpV2DepositForBurnEventMap {
+  [txnHash: string]: number;
+}
+/**
+ * Return all deposit for burn transaction hashes along wtih corresponding destination domains that were
+ * created on the source chain.
+ * @param srcProvider Provider for the source chain.
+ * @param sourceChainId Chain ID where the deposit for burn events originated.
+ * @param _senderAddresses Addresses that initiated the `DepositForBurn` events.
+ * @param sourceEventSearchConfig Event search filter on origin chain.
+ * @returns A map of transaction hashes to destination domains.
+ */
+export async function getCctpV2DepositForBurnTxnHashes(
+  srcProvider: Provider,
+  sourceChainId: number,
+  _senderAddresses: Address[],
+  sourceEventSearchConfig: EventSearchConfig
+): Promise<CctpV2DepositForBurnEventMap> {
+  const senderAddresses = _senderAddresses.map((address) => address.toNative());
+  assert(isCctpV2L2ChainId(sourceChainId), "getCctpV2DepositForBurnTxnHashes only supports CCTP V2 chains");
+  const { address, abi } = getCctpTokenMessenger(sourceChainId, sourceChainId);
+  const srcTokenMessenger = new Contract(address, abi, srcProvider);
+
+  const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
+  const eventFilter = srcTokenMessenger.filters.DepositForBurn(...eventFilterParams);
+  const depositForBurnEvents = await paginatedEventQuery(srcTokenMessenger, eventFilter, sourceEventSearchConfig);
+  const depositForBurnEventsMap: CctpV2DepositForBurnEventMap = {};
+  depositForBurnEvents.forEach((e) => {
+    depositForBurnEventsMap[e.transactionHash] = e.args.destinationDomain;
+  });
+  return depositForBurnEventsMap;
 }
 
 /**
@@ -563,7 +632,7 @@ async function getCCTPMessagesWithStatus(
           messageEvent.sourceDomain
         );
       } else {
-        processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+        processed = await hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
 
       if (!processed) {
@@ -670,38 +739,20 @@ export async function getAttestedCCTPMessages(
 
   // Temporary structs we'll need until we can derive V2 nonce hashes:
   let destinationMessageTransmitter: ethers.Contract;
-  const attestationResponses: Map<string, CCTPV2APIGetAttestationResponse> = new Map();
+  let attestationResponses: { [sourceTxnHash: string]: CCTPV2APIGetAttestationResponse };
 
   if (isCctpV2) {
     // For v2, we're using an EVM `destinationMessageTransmitter` to determine message status, so destinationChain must be EVM
     assert(!chainIsSvm(destinationChainId));
 
     const dstProvider = getCachedProvider(destinationChainId);
-    const { address, abi } = getCctpMessageTransmitter(l2ChainId, destinationChainId);
+    const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
     destinationMessageTransmitter = new ethers.Contract(address, abi, dstProvider);
 
-    // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
-    const sourceDomainId = getCctpDomainForChainId(sourceChainId);
-    const uniqueTxHashes = Array.from(new Set([...messagesWithStatus.map((message) => message.log.transactionHash)]));
-
-    // Circle rate limit is 35 requests / second. To avoid getting banned, batch calls into chunks with 1 second delay between chunks
-    // For v2, this is actually required because we don't know if message is finalized or not before hitting the API. Therefore as our
-    // CCTP v2 list of chains grows, we might require more than 35 calls here to fetch all attestations
-    const chunkSize = 8;
-    for (let i = 0; i < uniqueTxHashes.length; i += chunkSize) {
-      const chunk = uniqueTxHashes.slice(i, i + chunkSize);
-
-      await Promise.all(
-        chunk.map(async (txHash) => {
-          const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
-          attestationResponses.set(txHash, attestations);
-        })
-      );
-
-      if (i + chunkSize < uniqueTxHashes.length) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
+    attestationResponses = await fetchCctpV2Attestations(
+      messagesWithStatus.map((message) => message.log.transactionHash),
+      sourceChainId
+    );
   }
 
   const attestedMessages = await Promise.all(
@@ -713,7 +764,7 @@ export async function getAttestedCCTPMessages(
 
       // Otherwise, update the deposit's status after loading its attestation.
       if (isCctpV2) {
-        const attestations = attestationResponses.get(message.log.transactionHash);
+        const attestations = attestationResponses[message.log.transactionHash];
 
         const matchingAttestation = attestations.messages.find((apiAttestation) => {
           return cmpAPIToEventMessageBytesV2(apiAttestation.message, message.messageBytes);
@@ -721,7 +772,7 @@ export async function getAttestedCCTPMessages(
 
         if (!matchingAttestation) {
           const anyApiMessageIsPending = attestations.messages.some(
-            (attestation) => _getPendingAttestationStatus(attestation) === "pending"
+            (attestation) => getPendingAttestationStatus(attestation) === "pending"
           );
 
           if (anyApiMessageIsPending) {
@@ -739,7 +790,7 @@ export async function getAttestedCCTPMessages(
           }
         }
 
-        const processed = await _hasCCTPMessageBeenProcessedEvm(
+        const processed = await hasCCTPMessageBeenProcessedEvm(
           matchingAttestation.eventNonce,
           destinationMessageTransmitter
         );
@@ -757,7 +808,7 @@ export async function getAttestedCCTPMessages(
             nonceHash: matchingAttestation.eventNonce,
             messageBytes: matchingAttestation.message,
             attestation: matchingAttestation?.attestation, // Will be undefined if status is "pending"
-            status: _getPendingAttestationStatus(matchingAttestation),
+            status: getPendingAttestationStatus(matchingAttestation),
           };
         }
       } else {
@@ -766,7 +817,7 @@ export async function getAttestedCCTPMessages(
         return {
           ...message,
           attestation: attestation?.attestation, // Will be undefined if status is "pending"
-          status: _getPendingAttestationStatus(attestation),
+          status: getPendingAttestationStatus(attestation),
         };
       }
     })
@@ -774,7 +825,39 @@ export async function getAttestedCCTPMessages(
   return attestedMessages;
 }
 
-function _getPendingAttestationStatus(
+export async function fetchCctpV2Attestations(
+  depositForBurnTxnHashes: string[],
+  sourceChainId: number
+): Promise<{ [sourceTxnHash: string]: CCTPV2APIGetAttestationResponse }> {
+  // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
+  const sourceDomainId = getCctpDomainForChainId(sourceChainId);
+  const isMainnet = utils.chainIsProd(sourceChainId);
+
+  // Circle rate limit is 35 requests / second. To avoid getting banned, batch calls into chunks with 1 second delay between chunks
+  // For v2, this is actually required because we don't know if message is finalized or not before hitting the API. Therefore as our
+  // CCTP v2 list of chains grows, we might require more than 35 calls here to fetch all attestations
+  const attestationResponses = {};
+  const chunkSize = 8;
+  for (let i = 0; i < depositForBurnTxnHashes.length; i += chunkSize) {
+    const chunk = depositForBurnTxnHashes.slice(i, i + chunkSize);
+
+    await Promise.all(
+      chunk.map(async (txHash) => {
+        const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
+
+        // If multiple deposit for burn events, there will be multiple attestations.
+        attestationResponses[txHash] = attestations;
+      })
+    );
+
+    if (i + chunkSize < depositForBurnTxnHashes.length) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+  return attestationResponses;
+}
+
+export function getPendingAttestationStatus(
   attestation: CCTPV2APIAttestation | CCTPAPIGetAttestationResponse
 ): CCTPMessageStatus {
   if (!isDefined(attestation.attestation)) {
@@ -786,7 +869,7 @@ function _getPendingAttestationStatus(
   }
 }
 
-async function _hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
+export async function hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
   const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
   // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
   return (resultingCall ?? bnZero).toNumber() === 1;
@@ -840,7 +923,7 @@ async function _getCCTPDepositEventsSvm(
       }
       // The destination network cannot be Solana since the origin network is Solana.
       const attestationStatusObject = await _fetchAttestation(decodedMessage.messageHash, chainIsProd(l2ChainId));
-      const alreadyProcessed = await _hasCCTPMessageBeenProcessedEvm(
+      const alreadyProcessed = await hasCCTPMessageBeenProcessedEvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
@@ -849,7 +932,7 @@ async function _getCCTPDepositEventsSvm(
         attestation: data.attestation,
         status: alreadyProcessed
           ? ("finalized" as CCTPMessageStatus)
-          : _getPendingAttestationStatus(attestationStatusObject),
+          : getPendingAttestationStatus(attestationStatusObject),
         log: undefined,
       };
     });
