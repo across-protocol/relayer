@@ -29,7 +29,6 @@ import {
   convertRelayDataParamsToBytes32,
   chainIsSvm,
   stringifyThrownValue,
-  addrsMatchDstChain,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -335,23 +334,6 @@ export class Relayer {
         depositUpdated: isDepositSpedUp(deposit),
         deposit,
       });
-      return ignoreDeposit();
-    }
-
-    // Skip deposits which have ill-formatted addresses for the destination chain
-    if (!addrsMatchDstChain(deposit)) {
-      this.logger.debug({
-        at: "Relayer::filterDeposit",
-        message: "Dropping deposit as some of its address fields are incorrectly formatted for destination chain.",
-        originChainId: deposit.originChainId,
-        depositId: deposit.depositId.toString(),
-        destinationChainId: deposit.destinationChainId,
-        recipient: recipient.toString(),
-        outputToken: deposit.outputToken.toString(),
-        exclusiveRelayer: deposit.exclusiveRelayer.toString(),
-        txnRef: deposit.txnRef,
-      });
-
       return ignoreDeposit();
     }
 
