@@ -732,28 +732,7 @@ export class Relayer {
     }
 
     // Skip a fill if the message would be too big to fit into a single SVM-side TX
-    try {
-      const fillTooLarge = chainIsSvm(deposit.destinationChainId) && (await this.isSVMFillTooLarge(deposit));
-      if (fillTooLarge.tooLarge) {
-        this.logger.debug({
-          at: "Relayer::evaluateFill",
-          message: "Skipping SVM-destined deposit: fill tx too large",
-          originChain,
-          destChain,
-          txnRef,
-          fillSizeBytes: fillTooLarge.sizeBytes,
-        });
-        return;
-      }
-    } catch (error) {
-      this.logger.debug({
-        at: "Relayer::evaluateFill",
-        message: "Skipping SVM-destined deposit: Failed to estimate fill size",
-        originChain,
-        destChain,
-        txnRef,
-        error: stringifyThrownValue(error),
-      });
+    if (!(await this.validateSVMFillSize(deposit, originChain, destChain, txnRef))) {
       return;
     }
 
@@ -1627,6 +1606,52 @@ export class Relayer {
     return this.config.tryMulticallChains.includes(chainId)
       ? this.clients.tryMulticallClient
       : this.clients.multiCallerClient;
+  }
+
+  /**
+   * Validate that SVM-destined fill tx wouldn't take up more than 1232 bytes (fits in a single TX)
+   * @returns `true` if the fill fits in a single SVM tx, `false` if it doesn't or fill size estimation failed
+   */
+  private async validateSVMFillSize(
+    deposit: Deposit,
+    originChain: string,
+    destinationChain: string,
+    txnRef: string
+  ): Promise<boolean> {
+    // Return `true` for all non-SVM chains
+    if (!chainIsSvm(deposit.destinationChainId)) {
+      return true;
+    }
+
+    // If fill tx is too large or estimation failed, return `false`
+    try {
+      const fillTooLarge = await this.isSVMFillTooLarge(deposit);
+      if (fillTooLarge.tooLarge) {
+        this.logger.debug({
+          at: "Relayer::validateSVMFillSize",
+          message: "Fill tx too large",
+          originChain,
+          destinationChain,
+          txnRef,
+          fillSizeBytes: fillTooLarge.sizeBytes,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logger.debug({
+        at: "Relayer::validateSVMFillSize",
+        message: "Failed to estimate fill size",
+        deposit,
+        originChain,
+        destinationChain,
+        txnRef,
+        error: stringifyThrownValue(error),
+      });
+      return false;
+    }
+
+    // Otherwise return `true`: fill fits in 1232 bytes
+    return true;
   }
 
   /**
