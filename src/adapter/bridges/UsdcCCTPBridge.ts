@@ -129,16 +129,20 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
       [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
-        const eventSpread = spreadEventWithBlockNumber(event) as unknown as SortableEvent & {
-          amount: string;
-          feeCollected: string;
-        };
-        const amount = toBN(eventSpread.amount);
-        const feeCollected = toBN(eventSpread.feeCollected);
-        return {
-          ...eventSpread,
-          amount: amount.add(feeCollected),
-        };
+        if (this.IS_CCTP_V2) {
+          const eventSpread = spreadEventWithBlockNumber(event) as unknown as SortableEvent & {
+            amount: string;
+            feeCollected: string;
+          };
+          const amount = toBN(eventSpread.amount);
+          const feeCollected = toBN(eventSpread.feeCollected);
+          return {
+            ...eventSpread,
+            amount: amount.add(feeCollected),
+          };
+        } else {
+          return processEvent(event, "amount");
+        }
       }),
     };
   }
