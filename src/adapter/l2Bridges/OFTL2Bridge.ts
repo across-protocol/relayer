@@ -28,6 +28,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
+  private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
 
   constructor(
     l2chainId: number,
@@ -77,7 +78,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
     const appliedFee = OFT.isStargateBridge(this.l2chainId)
-      ? roundedAmount.mul(5 * 10 ** 15).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      ? roundedAmount.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
       : bnZero;
     const expectedOutputAmount = roundedAmount.sub(appliedFee);
     const sendParamStruct: OFT.SendParamStruct = {
