@@ -45,7 +45,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       args: [amount],
       nonMulticall: true,
       message: `🎰 Unwrapped WETH on ${network} before withdrawing to L1`,
-      mrkdwn: `Unwrapped ${formatter(amount)} WETH before withdrawing from ${network} to L1`,
+      mrkdwn: `Unwrapped ${formatter(amount)} ${l2TokenInfo.symbol} before withdrawing from ${network} to L1`,
     };
     // Convert the deposit address into an ethers contract.
     const depositAddressContract = new Contract(depositAddress.address, [], this.l2Signer);
