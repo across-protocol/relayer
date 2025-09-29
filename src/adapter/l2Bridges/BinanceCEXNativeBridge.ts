@@ -37,16 +37,15 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       network: this.depositNetwork,
     });
     const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+    const network = getNetworkName(this.l2chainId);
     const unwrapTxn: AugmentedTransaction = {
       contract: weth,
       chainId: this.l2chainId,
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
-      message: `🎰 Unwrapped WETH on ${this.depositNetwork} before withdrawing to L1`,
-      mrkdwn: `Unwrapped ${formatter(amount.toString())} WETH before withdrawing from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      message: `🎰 Unwrapped WETH on ${network} before withdrawing to L1`,
+      mrkdwn: `Unwrapped ${formatter(amount)} WETH before withdrawing from ${network} to L1`,
     };
     // Convert the deposit address into an ethers contract.
     const depositAddressContract = new Contract(depositAddress.address, [], this.l2Signer);
@@ -58,10 +57,8 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       nonMulticall: true,
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
-      message: `🎰 Withdrew ${this.depositNetwork} ${l2TokenInfo.symbol} to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${network} to L1`,
     };
     return [unwrapTxn, transferValueTxn];
   }
