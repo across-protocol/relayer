@@ -478,9 +478,6 @@ async function constructChainSpecificFakes() {
 
   // Base contracts
   l1BaseBridge = await makeFake("ovmStandardBridge_8453", CONTRACT_ADDRESSES[1].ovmStandardBridge_8453.address);
-
-  // CCTP contracts
-  l1CCTPTokenMessager = await makeFake("cctpV2TokenMessenger", CONTRACT_ADDRESSES[1].cctpV2TokenMessenger.address);
 }
 
 async function makeFake(contractName: string, address: string) {
