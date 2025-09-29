@@ -1,6 +1,6 @@
 FROM node:20
 
-WORKDIR /relayer
+WORKDIR /across-relayer
 
 COPY . ./
 
