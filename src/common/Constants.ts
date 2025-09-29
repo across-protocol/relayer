@@ -37,6 +37,7 @@ import {
   BinanceCEXBridge,
   BinanceCEXNativeBridge,
   SolanaUsdcCCTPBridge,
+  OFTWethBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -388,7 +389,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
     "VLR",
     "ezETH",
   ],
-  [CHAIN_IDs.PLASMA]: ["USDT"],
+  [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
   [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
@@ -547,7 +548,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
   [CHAIN_IDs.PLASMA]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTWethBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.POLYGON]: {
@@ -683,6 +684,7 @@ export const CUSTOM_L2_BRIDGE: {
   },
   [CHAIN_IDs.PLASMA]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
@@ -1041,6 +1043,13 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
       [CHAIN_IDs.PLASMA, EvmAddress.from("0x02ca37966753bDdDf11216B73B16C1dE756A7CF9")],
       [CHAIN_IDs.POLYGON, EvmAddress.from("0x6BA10300f0DC58B7a1e4c0e41f5daBb7D7829e13")],
       [CHAIN_IDs.UNICHAIN, EvmAddress.from("0xc07bE8994D035631c36fb4a89C918CeFB2f03EC3")],
+    ]),
+  ],
+  [
+    TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
+    new Map<number, EvmAddress>([
+      [CHAIN_IDs.MAINNET, EvmAddress.from("0x77b2043768d28E9C9aB44E1aBfC95944bcE57931")],
+      [CHAIN_IDs.PLASMA, EvmAddress.from("0x0cEb237E109eE22374a567c6b09F373C73FA4cBb")],
     ]),
   ],
 ]);
