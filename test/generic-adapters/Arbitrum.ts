@@ -163,7 +163,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     it("return only relevant L1 bridge init events", async () => {
       await cctpBridgeContract.emitDepositForBurn(
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
@@ -172,7 +172,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
       );
       await cctpBridgeContract.emitDepositForBurn(
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
@@ -180,9 +180,9 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
 
-      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress, 1); // 1 token to receive, 1 token to pay for fee
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1UsdcAddress)]);
-      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(2));
     });
   });
 });

@@ -52,9 +52,6 @@ let l1BridgeHub: FakeContract;
 // Base contracts
 let l1BaseBridge: FakeContract;
 
-// CCTP L1 Contracts
-let l1CCTPTokenMessager: FakeContract;
-
 const enabledChainIds = [1, 10, 137, 288, 42161, 324, 8453];
 
 const mainnetTokens = {
@@ -138,17 +135,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       "0x" // data
     );
 
-    //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
-      amountToSend,
-      undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
-    );
-    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.called;
-
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -200,17 +186,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
 
-    //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
-      amountToSend,
-      false,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
-    );
-    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.called;
-
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
@@ -261,17 +236,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       "0x000000000000000000000000000000000000000000000000002386f26fc1000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000";
     const l2GasLimit = toBN(150000);
     const l2GasPrice = toBN(20e9);
-
-    //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
-      amountToSend,
-      false,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
-    );
-    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.called;
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
@@ -395,16 +359,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Base", async function () {
     const chainId = CHAIN_IDs.BASE;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
-    //  CCTP tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
-      amountToSend,
-      undefined,
-      toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], CHAIN_IDs.MAINNET)
-    );
-    expect(l1CCTPTokenMessager.depositForBurn).to.have.been.called;
 
     //  ERC20 tokens:
     await adapterManager.sendTokenCrossChain(

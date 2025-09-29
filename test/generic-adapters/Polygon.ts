@@ -833,7 +833,7 @@ describe("Cross Chain Adapter: Polygon", async function () {
     it("return only relevant L1 bridge init events", async () => {
       await l1TokenMessenger.emitDepositForBurn(
         l1Usdc,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.POLYGON),
@@ -842,16 +842,16 @@ describe("Cross Chain Adapter: Polygon", async function () {
       );
       await l1TokenMessenger.emitDepositForBurn(
         l1Usdc,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.POLYGON),
         ethers.utils.hexZeroPad(l1TokenMessenger.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await l1TokenMessenger.emitMintAndWithdraw(monitoredEoa, 1, l2Usdc);
+      await l1TokenMessenger.emitMintAndWithdraw(monitoredEoa, 1, l2Usdc, 1);
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1Usdc)]);
-      expect(outstandingTransfers[monitoredEoa][l1Usdc][l2Usdc].totalAmount).to.equal(toBN(1));
+      expect(outstandingTransfers[monitoredEoa][l1Usdc][l2Usdc].totalAmount).to.equal(toBN(2));
     });
   });
 });

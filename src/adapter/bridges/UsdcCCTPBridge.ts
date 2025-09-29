@@ -13,11 +13,14 @@ import {
   paginatedEventQuery,
   ethers,
   winston,
+  spreadEventWithBlockNumber,
+  toBN,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { getCctpTokenMessenger, getV2DepositForBurnMaxFee, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { SortableEvent } from "../../interfaces";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -69,12 +72,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     if (this.IS_CCTP_V2) {
-      const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
-        this.l1UsdcTokenAddress,
-        this.hubChainId,
-        this.l2chainId,
-        amount
-      );
+      const { maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount);
       return Promise.resolve({
         contract: this.getL1Bridge(),
         method: "depositForBurn",
@@ -130,7 +128,22 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => processEvent(event, "amount")),
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
+        const eventSpread = spreadEventWithBlockNumber(event) as unknown as SortableEvent & {
+          amount: string;
+          feeCollected: string;
+        };
+        const amount = toBN(eventSpread.amount);
+        const feeCollected = toBN(eventSpread.feeCollected);
+        return {
+          ...eventSpread,
+          amount: amount.add(feeCollected),
+        };
+      }),
     };
+  }
+
+  async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+    return getV2DepositForBurnMaxFee(this.l1UsdcTokenAddress, this.hubChainId, this.l2chainId, amount);
   }
 }
