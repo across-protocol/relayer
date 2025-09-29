@@ -54,9 +54,9 @@ contract CctpV2TokenMessenger {
         bytes hookData
     );
     event MintAndWithdraw(
-        address indexed mintRecipient, 
-        uint256 amount, address 
-        indexed mintToken, 
+        address indexed mintRecipient,
+        uint256 amount,
+        address indexed mintToken,
         uint256 feeCollected
     );
 
@@ -84,9 +84,9 @@ contract CctpV2TokenMessenger {
     }
 
     function emitMintAndWithdraw(
-        address mintRecipient, 
-        uint256 amount, 
-        address mintToken, 
+        address mintRecipient,
+        uint256 amount,
+        address mintToken,
         uint256 feeCollected
     ) external {
         emit MintAndWithdraw(mintRecipient, amount, mintToken, feeCollected);
