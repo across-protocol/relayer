@@ -97,13 +97,12 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
           finalityThreshold,
         ],
       });
-    } else {
-      return Promise.resolve({
-        contract: this.getL1Bridge(),
-        method: "depositForBurn",
-        args: [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
-      });
     }
+    return Promise.resolve({
+      contract: this.getL1Bridge(),
+      method: "depositForBurn",
+      args: [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
+    });
   }
 
   async queryL1BridgeInitiationEvents(
@@ -151,9 +150,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
             ...eventSpread,
             amount: amount.add(feeCollected),
           };
-        } else {
-          return processEvent(event, "amount");
         }
+        return processEvent(event, "amount");
       }),
     };
   }
