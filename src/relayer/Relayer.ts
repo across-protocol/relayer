@@ -1623,6 +1623,11 @@ export class Relayer {
       return true;
     }
 
+    // Fills with empty messages will fit into a single tx, they are valid size-wise
+    if (isMessageEmpty(deposit.message)) {
+      return true;
+    }
+
     // If fill tx is too large or estimation failed, return `false`
     try {
       const fillTooLarge = await this.isSVMFillTooLarge(deposit);
