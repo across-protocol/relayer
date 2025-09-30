@@ -24,13 +24,15 @@ import {
   EvmAddress,
   getTokenInfo,
   toBNWei,
+  forEachAsync,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
-import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
+import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
 import { assert, getRedisCache, Provider } from ".";
 import { KeyPairSigner } from "@solana/kit";
+import { TransactionRequest } from "@ethersproject/abstract-provider";
 
 type CommonMessageData = {
   // `cctpVersion` is nuanced. cctpVersion returned from API are 1 or 2 (v1 and v2 accordingly). The bytes responsible for a version within the message itself though are 0 or 1 (v1 and v2 accordingly) :\
@@ -131,7 +133,7 @@ export function getCctpTokenMessenger(
   ];
 }
 
-export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
+function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
   return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
 }
 
@@ -150,8 +152,14 @@ export function getCctpMessageTransmitter(
   ];
 }
 
-export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
+function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
   return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
+}
+
+async function getDestinationMessageTransmitterContract(destinationChainId: number): Promise<Contract> {
+  const dstProvider = await getProvider(destinationChainId);
+  const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
+  return new ethers.Contract(address, abi, dstProvider);
 }
 
 /**
@@ -332,7 +340,7 @@ async function getRelevantCCTPTxHashes(
   return uniqueTxHashes;
 }
 
-export interface CctpV2DepositForBurnEventMap {
+interface CctpV2DepositForBurnEventMap {
   [txnHash: string]: number;
 }
 /**
@@ -366,6 +374,87 @@ export async function getCctpV2DepositForBurnTxnHashes(
     depositForBurnEventsMap[e.transactionHash] = e.args.destinationDomain;
   });
   return depositForBurnEventsMap;
+}
+
+interface CctpV2ReadyToFinalizeDeposits {
+  txnHash: string;
+  destinationChainId: number;
+  attestationData: CCTPV2APIAttestation;
+}
+export async function getCctpV2DepositForBurnStatuses(
+  depositForBurnEvents: CctpV2DepositForBurnEventMap,
+  sourceChainId: number,
+  senderAndRecipientAddresses: Address[]
+): Promise<{
+  pendingDepositTxnHashes: string[];
+  finalizedDepositTxnHashes: { txnHash: string; destinationChainId: number }[];
+  readyToFinalizeDeposits: CctpV2ReadyToFinalizeDeposits[];
+}> {
+  // Fetch attestations for all deposit burn event transaction hashes. Note, some events might share the same
+  // transaction hash, so only fetch attestations for unique transaction hashes.
+  const uniqueTxHashes = Object.keys(depositForBurnEvents);
+  const attestationResponses = await fetchCctpV2Attestations(uniqueTxHashes, sourceChainId);
+
+  // Categorize deposits based on status:
+  const pendingDepositTxnHashes: string[] = [];
+  const finalizedDepositTxnHashes: { txnHash: string; destinationChainId: number }[] = [];
+  const readyToFinalizeDeposits: {
+    txnHash: string;
+    destinationChainId: number;
+    attestationData: CCTPV2APIAttestation;
+  }[] = [];
+  await forEachAsync(Object.entries(attestationResponses), async ([txnHash, attestations]) => {
+    await forEachAsync(attestations.messages, async (attestation) => {
+      if (attestation.cctpVersion !== 2) {
+        return;
+      }
+      // API has not produced an attestation for this deposit yet:
+      if (getPendingAttestationStatus(attestation) === "pending") {
+        pendingDepositTxnHashes.push(txnHash);
+        return;
+      }
+
+      // Filter out deposits for destinations that are not one of our supported CCTP V2 chains:
+      const destinationChainId = getCctpDestinationChainFromDomain(
+        attestation.decodedMessage.destinationDomain,
+        chainIsProd(sourceChainId)
+      );
+      if (destinationChainId !== CHAIN_IDs.MAINNET && !isCctpV2L2ChainId(destinationChainId)) {
+        return;
+      }
+
+      // Filter out events where the sender or recipient is not one of our expected addresses.
+      const recipient = attestation.decodedMessage.decodedMessageBody.mintRecipient;
+      const sender = attestation.decodedMessage.decodedMessageBody.messageSender;
+      if (
+        !senderAndRecipientAddresses.some(
+          (address) => address.eq(EvmAddress.from(recipient)) || address.eq(EvmAddress.from(sender))
+        )
+      ) {
+        return;
+      }
+
+      // If API attestationstatus  is "complete", then we need to check whether it has been already finalized:
+      const destinationMessageTransmitter = await getDestinationMessageTransmitterContract(destinationChainId);
+      const processed = await hasCCTPMessageBeenProcessedEvm(attestation.eventNonce, destinationMessageTransmitter);
+      if (processed) {
+        finalizedDepositTxnHashes.push({ txnHash, destinationChainId });
+      } else {
+        readyToFinalizeDeposits.push({ txnHash, destinationChainId, attestationData: attestation });
+      }
+    });
+  });
+  return { pendingDepositTxnHashes, finalizedDepositTxnHashes, readyToFinalizeDeposits };
+}
+
+export async function getCctpV2ReceiveMessageCallData(
+  readyToFinalizeDeposit: CctpV2ReadyToFinalizeDeposits
+): Promise<TransactionRequest> {
+  const messageTransmitter = await getDestinationMessageTransmitterContract(readyToFinalizeDeposit.destinationChainId);
+  return (await messageTransmitter.populateTransaction.receiveMessage(
+    readyToFinalizeDeposit.attestationData.message,
+    readyToFinalizeDeposit.attestationData.attestation
+  )) as TransactionRequest;
 }
 
 /**
