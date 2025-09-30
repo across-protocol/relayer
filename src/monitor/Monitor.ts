@@ -712,6 +712,7 @@ export class Monitor {
     this.logger[level]({
       at: "Monitor#checkBinanceWithdrawalLimits",
       message: "Binance withdrawal quota",
+      datadog: true,
       wdQuota,
     });
   }
