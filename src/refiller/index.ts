@@ -1,4 +1,4 @@
-import { winston, processEndPollingLoop, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { Refiller } from "./Refiller";
 import { constructRefillerClients } from "./RefillerClientHelper";
 import { RefillerConfig } from "./RefillerConfig";
@@ -14,18 +14,12 @@ export async function runRefiller(_logger: winston.Logger, baseSigner: Signer): 
 
   try {
     logger[startupLogLevel(config)]({ at: "Refiller#index", message: "Refiller started ⛽️", config });
-    for (;;) {
-      const loopStart = Date.now();
-      await refiller.refillNativeTokenBalances();
+    const start = Date.now();
+    await refiller.refillNativeTokenBalances();
 
-      await clients.multiCallerClient.executeTxnQueues();
+    await clients.multiCallerClient.executeTxnQueues();
 
-      logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
-
-      if (await processEndPollingLoop(logger, "Monitor#index", config.pollingDelay)) {
-        break;
-      }
-    }
+    logger.debug({ at: "Monitor#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
     await disconnectRedisClients(logger);
   }
