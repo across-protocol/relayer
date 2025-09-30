@@ -11,7 +11,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, L1Token } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero } from "../src/utils";
+import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero, EvmAddress } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -149,7 +149,7 @@ describe("Monitor", async function () {
     };
 
     [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
-      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1")
+      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(token), "L1Token1")
     );
 
     defaultMonitorEnvVars = {

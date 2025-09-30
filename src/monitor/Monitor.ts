@@ -237,8 +237,8 @@ export class Monitor {
       const deposit = invalidFill.deposit
         ? {
             txnRef: invalidFill.deposit.txnRef,
-            inputToken: invalidFill.deposit.inputToken,
-            depositor: invalidFill.deposit.depositor,
+            inputToken: invalidFill.deposit.inputToken.toNative(),
+            depositor: invalidFill.deposit.depositor.toNative(),
           }
         : undefined;
 
@@ -246,8 +246,8 @@ export class Monitor {
         at: "Monitor::reportInvalidFills",
         message,
         destinationChainId,
-        outputToken: invalidFill.fill.outputToken,
-        relayer: invalidFill.fill.relayer,
+        outputToken: invalidFill.fill.outputToken.toNative(),
+        relayer: invalidFill.fill.relayer.toNative(),
         blockExplorerLink: blockExplorerLink(invalidFill.fill.txnRef, destinationChainId),
         reason: invalidFill.reason,
         deposit,
