@@ -23,6 +23,7 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { TransferTokenParams } from "../utils";
 
 export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -57,7 +58,8 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     toAddress: EvmAddress,
     l2Token: EvmAddress,
     l1Token: EvmAddress,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<AugmentedTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
@@ -66,14 +68,18 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
     if (this.IS_CCTP_V2) {
-      const { maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount);
+      let maxFee = bnZero,
+        finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+      if (optionalParams?.fastMode) {
+        ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
+      }
       return Promise.resolve([
         {
           contract: this.l2Bridge,
           chainId: this.l2chainId,
           method: "depositForBurn",
           nonMulticall: true,
-          message: "🎰 Withdrew CCTP USDC to L1",
+          message: `🎰 Withdrew CCTP USDC to L1${optionalParams?.fastMode ? " using fast mode" : ""}`,
           mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP`,
           args: [
             amount,

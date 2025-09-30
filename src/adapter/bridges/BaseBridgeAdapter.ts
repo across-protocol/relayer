@@ -12,6 +12,7 @@ import {
   getSpokePoolAddress,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
+import { TransferTokenParams } from "../BaseChainAdapter";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;
@@ -47,7 +48,8 @@ export abstract class BaseBridgeAdapter {
     toAddress: Address,
     l1Token: EvmAddress,
     l2Token: Address,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails>;
 
   abstract queryL1BridgeInitiationEvents(

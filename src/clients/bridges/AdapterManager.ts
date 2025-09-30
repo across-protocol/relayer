@@ -27,7 +27,7 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BaseChainAdapter } from "../../adapter";
+import { BaseChainAdapter, TransferTokenParams } from "../../adapter";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
@@ -167,7 +167,8 @@ export class AdapterManager {
     l1Token: EvmAddress,
     amount: BigNumber,
     simMode = false,
-    l2Token?: Address
+    l2Token?: Address,
+    optionalParams?: TransferTokenParams
   ): Promise<TransactionResponse> {
     this.logger.debug({
       at: "AdapterManager",
@@ -177,7 +178,7 @@ export class AdapterManager {
       amount,
     });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
-    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode, optionalParams);
   }
 
   withdrawTokenFromL2(
@@ -185,7 +186,8 @@ export class AdapterManager {
     chainId: number | string,
     l2Token: Address,
     amount: BigNumber,
-    simMode = false
+    simMode = false,
+    optionalParams?: TransferTokenParams
   ): Promise<string[]> {
     chainId = Number(chainId);
     this.logger.debug({
@@ -195,7 +197,7 @@ export class AdapterManager {
       l2Token: l2Token.toNative(),
       amount,
     });
-    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode);
+    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode, optionalParams);
     return txnReceipts;
   }
 

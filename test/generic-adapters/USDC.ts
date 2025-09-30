@@ -2,8 +2,13 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { UsdcCCTPBridge } from "../../src/adapter/bridges/UsdcCCTPBridge";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
-import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
-import { BigNumber, CCTPV2_FINALITY_THRESHOLD_FAST, getCctpDomainForChainId } from "../../src/utils";
+import { bnZero, EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
+import {
+  BigNumber,
+  CCTPV2_FINALITY_THRESHOLD_FAST,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
+  getCctpDomainForChainId,
+} from "../../src/utils";
 
 describe("Cross Chain Adapter: USDC CCTP Bridge", async function () {
   let adapter: MockBaseChainAdapter;
@@ -36,7 +41,26 @@ describe("Cross Chain Adapter: USDC CCTP Bridge", async function () {
     adapter.setTargetL1Bridge(cctpBridgeContract);
     adapter.setTargetL2Bridge(cctpBridgeContract);
   });
-  it("constructWithdrawToL1Txns", async function () {
+  it("constructWithdrawToL1Txns: fast transfer mode", async function () {
+    const amountToSend = toBNWei("100", 6);
+    const result = await adapter.constructL1ToL2Txn(
+      toAddress(monitoredEoa),
+      toAddress(l1USDCToken),
+      toAddress(l2USDCToken),
+      amountToSend,
+      { fastMode: true }
+    );
+    expect(result.contract.address).to.equal(cctpBridgeContract.address);
+    expect(result.method).to.equal("depositForBurn");
+    expect(result.args[0]).to.equal(amountToSend);
+    expect(result.args[1]).to.equal(getCctpDomainForChainId(l2ChainId));
+    expect(result.args[2]).to.equal(toAddress(monitoredEoa).toBytes32());
+    expect(result.args[3]).to.equal(toAddress(l1USDCToken).toNative());
+    expect(result.args[4]).to.equal(ethers.constants.HashZero);
+    expect(result.args[5]).to.equal(amountToSend.div(10000));
+    expect(result.args[6]).to.equal(CCTPV2_FINALITY_THRESHOLD_FAST);
+  });
+  it("constructWithdrawToL1Txns: standard transfer mode", async function () {
     const amountToSend = toBNWei("100", 6);
     const result = await adapter.constructL1ToL2Txn(
       toAddress(monitoredEoa),
@@ -51,8 +75,8 @@ describe("Cross Chain Adapter: USDC CCTP Bridge", async function () {
     expect(result.args[2]).to.equal(toAddress(monitoredEoa).toBytes32());
     expect(result.args[3]).to.equal(toAddress(l1USDCToken).toNative());
     expect(result.args[4]).to.equal(ethers.constants.HashZero);
-    expect(result.args[5]).to.equal(amountToSend.div(10000));
-    expect(result.args[6]).to.equal(CCTPV2_FINALITY_THRESHOLD_FAST);
+    expect(result.args[5]).to.equal(bnZero);
+    expect(result.args[6]).to.equal(CCTPV2_FINALITY_THRESHOLD_STANDARD);
   });
   it("queryL1BridgeInitiationEvents", async function () {
     const amount = toBNWei("100", 6);
