@@ -1396,7 +1396,7 @@ export class InventoryClient {
           for (const otherChainId of otherChainsToEvaluate) {
             const otherChainAllocPct = this.getCurrentAllocationPct(l1Token, otherChainId, l2Token, true);
             if (otherChainAllocPct.lt(targetPct)) {
-              });
+              // Do something
             }
           }
 

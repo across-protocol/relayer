@@ -192,6 +192,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     }
 
     await inventoryClient.rebalanceInventoryIfNeeded();
+    // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();
   } finally {
     await disconnectRedisClients(logger);

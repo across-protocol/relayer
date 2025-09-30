@@ -16,6 +16,8 @@ import {
   getNetworkName,
   mapAsync,
   CHAIN_IDs,
+  getProvider,
+  chainIsProd,
 } from "../../../utils";
 import {
   getPendingAttestationStatus,
@@ -75,15 +77,31 @@ export async function cctpV2Finalizer(
     attestationData: CCTPV2APIAttestation;
   }[] = [];
   await forEachAsync(Object.entries(attestationResponses), async ([txnHash, attestations]) => {
-    await forEachAsync(attestations.messages, async (attestation, i) => {
+    await forEachAsync(attestations.messages, async (attestation) => {
+      if (attestation.cctpVersion !== 2) {
+        return;
+      }
       // API has not produced an attestation for this deposit yet:
-      if (getPendingAttestationStatus(attestations.messages[i]) === "pending") {
+      if (getPendingAttestationStatus(attestation) === "pending") {
         pendingDepositTxnHashes.push(txnHash);
+        logger.debug({
+          at: `Finalizer#CCTPV2AnyToAnyFinalizer:${sourceChainId}`,
+          message: "Attestation is pending confirmations",
+          txnHash,
+        });
         return;
       }
 
-      // Filter out events where the recipient is not one of our expected sender+recipient addresses. See note
-      // at the start of this file to finalize relays from one address to another.
+      // Filter out deposits for destinations that are not one of our supported CCTP V2 chains:
+      const destinationChainId = getCctpDestinationChainFromDomain(
+        attestation.decodedMessage.destinationDomain,
+        chainIsProd(sourceChainId)
+      );
+      if (destinationChainId !== CHAIN_IDs.MAINNET && !isCctpV2L2ChainId(destinationChainId)) {
+        return;
+      }
+
+      // Filter out events where the sender or recipient is not one of our expected addresses.
       const recipient = attestation.decodedMessage.decodedMessageBody.mintRecipient;
       const sender = attestation.decodedMessage.decodedMessageBody.messageSender;
       if (
@@ -96,29 +114,16 @@ export async function cctpV2Finalizer(
           message: "Skipping attestation because neither its sender nor recipient are in the addressesToFinalize list",
           sender,
           recipient,
+          senderAndRecipientAddresses,
           txnHash,
+          attestation,
         });
         return;
       }
 
       // If API attestationstatus  is "complete", then we need to check whether it has been already finalized:
-      // @dev If destinationDomain isn't mapped to a supported destination chain ID then the following calls will throw.
-      const destinationChainId = getCctpDestinationChainFromDomain(attestation.decodedMessage.destinationDomain);
-      if (destinationChainId !== CHAIN_IDs.MAINNET && !isCctpV2L2ChainId(destinationChainId)) {
-        logger.debug({
-          at: `Finalizer#CCTPV2AnyToAnyFinalizer:${sourceChainId}`,
-          message: "Skipping attestation because its destination chain is not a CCTP V2 chain",
-          destindestinationDomain: attestation.decodedMessage.destinationDomain,
-          destinationChainId,
-          txnHash,
-        });
-        return;
-      }
-      const destinationMessageTransmitter = getDestinationMessageTransmitter(destinationChainId);
-      const processed = await hasCCTPMessageBeenProcessedEvm(
-        attestations.messages[0].eventNonce,
-        destinationMessageTransmitter
-      );
+      const destinationMessageTransmitter = await getDestinationMessageTransmitter(destinationChainId);
+      const processed = await hasCCTPMessageBeenProcessedEvm(attestation.eventNonce, destinationMessageTransmitter);
       if (processed) {
         finalizedDepositTxnHashes.push({ txnHash, destinationChainId });
       } else {
@@ -155,7 +160,7 @@ export async function cctpV2Finalizer(
       destinationChainId: attestation.destinationChainId,
     })),
     callData: await mapAsync(readyToFinalizeDeposits, async (attestation) => {
-      const messageTransmitter = getDestinationMessageTransmitter(attestation.destinationChainId);
+      const messageTransmitter = await getDestinationMessageTransmitter(attestation.destinationChainId);
       const txn = (await messageTransmitter.populateTransaction.receiveMessage(
         attestation.attestationData.message,
         attestation.attestationData.attestation
@@ -168,8 +173,8 @@ export async function cctpV2Finalizer(
   };
 }
 
-function getDestinationMessageTransmitter(destinationChainId: number): Contract {
-  const dstProvider = getCachedProvider(destinationChainId);
+async function getDestinationMessageTransmitter(destinationChainId: number): Promise<Contract> {
+  const dstProvider = await getProvider(destinationChainId);
   const { address, abi } = getCctpV2MessageTransmitter(destinationChainId);
   return new ethers.Contract(address, abi, dstProvider);
 }

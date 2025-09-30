@@ -1,6 +1,13 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { PUBLIC_NETWORKS, CHAIN_IDs, TOKEN_SYMBOLS_MAP, CCTP_NO_DOMAIN } from "@across-protocol/constants";
+import {
+  PUBLIC_NETWORKS,
+  CHAIN_IDs,
+  TOKEN_SYMBOLS_MAP,
+  CCTP_NO_DOMAIN,
+  PRODUCTION_NETWORKS,
+  TEST_NETWORKS,
+} from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
 import { CONTRACT_ADDRESSES } from "../common";
@@ -49,7 +56,7 @@ type CCTPSvmAPIAttestation = {
 };
 
 type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
-type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
+type CCTPAPIGetAttestationResponse = { status: string; attestation: string; cctpVersion: number };
 type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number }[];
 type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
 export type CCTPV2APIAttestation = {
@@ -59,6 +66,7 @@ export type CCTPV2APIAttestation = {
   eventNonce: string;
   cctpVersion: number;
   decodedMessage: {
+    recipient: string;
     destinationDomain: number;
     decodedMessageBody: {
       amount: string;
@@ -123,6 +131,10 @@ export function getCctpTokenMessenger(
   ];
 }
 
+export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
+}
+
 /**
  * @notice Returns MessageTransmitter contract details on tokenMessengerChainId.
  * @param l2ChainId Used to determine whether to load the V1 or V2 contract.
@@ -174,13 +186,21 @@ export function getCctpDomainForChainId(chainId: number): number {
   return cctpDomain;
 }
 
-export function getCctpDestinationChainFromDomain(domain: number): number {
+export function getCctpDestinationChainFromDomain(domain: number, productionNetworks: boolean): number {
   if (domain === CCTP_NO_DOMAIN) {
     throw new Error("Cannot input CCTP_NO_DOMAIN to getCctpDestinationChainFromDomain");
   }
-  const chainId = Object.keys(PUBLIC_NETWORKS).find((key) => PUBLIC_NETWORKS[key].cctpDomain.toString() === domain);
+  // Test and Production networks use the same CCTP domain, so we need to use the flag passed in to
+  // determine whether to use the Test or Production networks.
+  const networks = productionNetworks ? PRODUCTION_NETWORKS : TEST_NETWORKS;
+  const otherNetworks = productionNetworks ? TEST_NETWORKS : PRODUCTION_NETWORKS;
+  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain);
   if (!isDefined(chainId)) {
-    throw new Error(`No chainId found for domain: ${domain}`);
+    const chainId = Object.keys(otherNetworks).find((key) => otherNetworks[key].cctpDomain.toString() === domain);
+    if (!isDefined(chainId)) {
+      throw new Error(`No chainId found for domain: ${domain}`);
+    }
+    return parseInt(chainId);
   }
   return parseInt(chainId);
 }
@@ -331,8 +351,11 @@ export async function getCctpV2DepositForBurnTxnHashes(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<CctpV2DepositForBurnEventMap> {
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
-  assert(isCctpV2L2ChainId(sourceChainId), "getCctpV2DepositForBurnTxnHashes only supports CCTP V2 chains");
-  const { address, abi } = getCctpTokenMessenger(sourceChainId, sourceChainId);
+  assert(
+    sourceChainId === CHAIN_IDs.MAINNET || isCctpV2L2ChainId(sourceChainId),
+    "getCctpV2DepositForBurnTxnHashes only supports CCTP V2 chains"
+  );
+  const { address, abi } = getCctpV2TokenMessenger(sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];

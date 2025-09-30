@@ -1,7 +1,7 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
-import { groupBy, uniq } from "lodash";
+import { groupBy } from "lodash";
 import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
 import {
   CONTRACT_ADDRESSES,
@@ -30,10 +30,10 @@ import {
   CHAIN_IDs,
   Profiler,
   stringifyThrownValue,
-  isEVMSpokePoolClient,
   chainIsEvm,
   EvmAddress,
   Address,
+  getProvider,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -75,7 +75,7 @@ const chainFinalizers: {
   [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
     finalizeOnL2: [cctpL1toL2Finalizer],
-    finalizeOnAny: [],
+    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.PLASMA]: {
     finalizeOnL1: [],
@@ -126,6 +126,11 @@ const chainFinalizers: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
     finalizeOnAny: [],
+  },
+  [CHAIN_IDs.MAINNET]: {
+    finalizeOnL1: [],
+    finalizeOnL2: [],
+    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.LISK]: {
     finalizeOnL1: [opStackFinalizer],
@@ -340,17 +345,12 @@ export async function finalize(
   });
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
-      uniq([
-        // We always want to include the hub chain in the finalization.
-        // since any L2 -> L1 transfers will be finalized on the hub chain.
-        hubChainId,
-        ...configuredChainIds,
-      ])
+      finalizerResponseTxns
+        .map(({ crossChainMessage }) => crossChainMessage.destinationChainId)
         .filter(chainIsEvm)
         .map(async (chainId) => {
-          const spokePoolClient = spokePoolClients[chainId];
-          assert(isEVMSpokePoolClient(spokePoolClient));
-          return [chainId, await getMultisender(chainId, spokePoolClient.spokePool.signer)] as [number, Contract];
+          const signer = hubSigner.connect(await getProvider(chainId));
+          return [chainId, getMultisender(chainId, signer)] as [number, Contract];
         })
     )
   );
