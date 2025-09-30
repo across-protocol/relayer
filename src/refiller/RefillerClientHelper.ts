@@ -19,10 +19,13 @@ export async function constructRefillerClients(
   // Contract instance, signer, and chain ID.
   await updateClients(commonClients, config, logger);
 
+  // Use latest set of enabled chains. This means we will not refill gas on chains that are currently disabled, but
+  // that seems reasonable since those chains presumably will not have deposits or fills.
+  const latestMainnetBlock = commonClients.configStoreClient.latestHeightSearched;
   const enabledChains = getEnabledChainsInBlockRange(
     configStoreClient,
     config.spokePoolChainsOverride,
-    hubPoolLookback
+    latestMainnetBlock
   );
   const l2Providers = Object.fromEntries(
     await mapAsync(enabledChains, async (chainId) => [chainId, await getProvider(chainId)])
