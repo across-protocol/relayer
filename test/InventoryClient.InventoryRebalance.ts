@@ -31,6 +31,7 @@ import {
   parseUnits,
   TOKEN_SYMBOLS_MAP,
   toAddressType,
+  isDefined,
 } from "../src/utils";
 import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -259,28 +260,33 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(tokenClient.getBalance(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON)).eq(toWei(10))).to.be.true; // Starting balance.
 
     // Construct a token shortfall of 18.
-    const shortfallAmount = toWei(18);
+    const shortfallAmount1 = toWei(10);
+    const shortfallAmount2 = toWei(8);
     tokenClient.setTokenShortFallData(
       POLYGON,
       toAddressType(l2TokensForWeth[POLYGON], POLYGON),
-      [6969],
-      shortfallAmount
+      [BigNumber.from(6969), BigNumber.from(6970)],
+      [shortfallAmount1, shortfallAmount2]
     );
     await inventoryClient.update();
+
+    // There should be a rebalance sent for each shortfall.
 
     // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
     // allocation of -5.3%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
     // should see a transfer of 5 + 2 - (-5.3)=12.3% of total inventory. This should be an amount of 0.1233*150=18.49.
-    const expectedBridgedAmount = toBN("18499999999999999950");
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "18.49 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
-    expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "unfilled deposit amounts: 10.00, 8.00")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "unfilled deposit ids: 6969, 6970")).to.be.true;
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
+    const expectedBridgedAmount = toWei(10).add(toWei(8));
     expect(tokenClient.getBalance(MAINNET, EvmAddress.from(mainnetWeth)).eq(toWei(100).sub(expectedBridgedAmount))).to
       .be.true;
     expect(
@@ -291,10 +297,34 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       )
     ).to.equal(expectedBridgedAmount);
 
-    // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount.eq(expectedBridgedAmount)).to.be.true;
+    // Now, mock funds having entered the canonical bridge. If we only mock enough to cover one shortfall,
+    // then we should see a rebalance for the other.
+    adapterManager.setMockedOutstandingCrossChainTransfers(
+      POLYGON,
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetWeth),
+      shortfallAmount1
+    );
 
-    // Now, mock these funds having entered the canonical bridge.
+    // Send tokens out of the relayer's balance so we can send a follow up rebalance without getting tripped up
+    // by the balance check.
+    mainnetWethContract.balanceOf
+      .whenCalledWith(owner.address)
+      .returns(initialAllocation[MAINNET][mainnetWeth].sub(expectedBridgedAmount));
+
+    // There should be one rebalance:
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "This chain's new pending L1->L2 transfer amount is now 18.00")).to.be.true;
+    mainnetWethContract.balanceOf
+      .whenCalledWith(owner.address)
+      .returns(initialAllocation[MAINNET][mainnetWeth].sub(expectedBridgedAmount).sub(shortfallAmount2));
+
+    // Now, mock enough funds to cover the total shortfall.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
       EvmAddress.from(owner.address),
@@ -302,42 +332,25 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       expectedBridgedAmount
     );
 
-    // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions as the util
-    // should consider the funds in transit as part of the balance and therefore should not send more.
+    // There should be no rebalances:
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"18.49"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"10.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"virtualBalanceOnChain":"28.49"')).to.be.true;
 
-    // Now mock that funds have finished coming over the bridge and check behavior is as expected.
-    // Zero the transfer. mock conclusion.
+    // Ok, now try mocking some pending transfers such that only the larger transfer will go through:
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
       EvmAddress.from(owner.address),
       EvmAddress.from(mainnetWeth),
-      bnZero
+      shortfallAmount2.add(toWei(1))
     );
-    // Balance after the relay concludes should be initial + bridged amount as 10+17.9=27.9
-    const expectedPostRelayBalance = toWei(10).add(expectedBridgedAmount);
-    tokenClient.setTokenData(
-      POLYGON,
-      toAddressType(l2TokensForWeth[POLYGON], POLYGON),
-      expectedPostRelayBalance,
-      bnZero
-    );
-    // The token shortfall should now no longer be an issue. This means we can fill the relay of 18 size now.
-    tokenClient.setTokenShortFallData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), [6969], bnZero);
-    tokenClient.decrementLocalBalance(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), shortfallAmount); // mock the relay actually filling.
-
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain Arbitrum that shows the actual balance after the relay concluded and the share.
-    // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
-    // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
+    expect(lastSpyLogIncludes(spy, "This chain's new pending L1->L2 transfer amount is now 19.00")).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
@@ -597,8 +610,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       tokenClient.setTokenShortFallData(
         testChain,
         toAddressType(bridgedUSDC[testChain], testChain),
-        [6969],
-        shortfallAmount
+        [BigNumber.from(6969)],
+        [shortfallAmount]
       );
       await inventoryClient.update();
 

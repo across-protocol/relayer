@@ -430,7 +430,7 @@ describe("InventoryClient: Refund chain selection", async function () {
       tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toWei(25));
 
       // Shortfalls are subtracted from just numerator
-      tokenClient.setTokenShortFallData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), [6969], toWei(5)); // Mock the shortfall.
+      tokenClient.setTokenShortFallData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), [6969], [toWei(5)]); // Mock the shortfall.
       // Post relay allocations:
       // Optimism (destination chain): (25-5)/(140) > 12%
       // Polygon (origin chain): (5-5+1)/(140) < 7%
