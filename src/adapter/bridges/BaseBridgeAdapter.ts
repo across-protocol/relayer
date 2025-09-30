@@ -12,7 +12,7 @@ import {
   getSpokePoolAddress,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
-import { TransferTokenParams } from "../BaseChainAdapter";
+import { TransferTokenParams } from "../utils";
 
 export interface BridgeTransactionDetails {
   readonly contract: Contract;

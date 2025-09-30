@@ -27,7 +27,8 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { BaseChainAdapter, TransferTokenParams } from "../../adapter";
+import { BaseChainAdapter } from "../../adapter";
+import { TransferTokenParams } from "../../adapter/utils";
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
