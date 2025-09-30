@@ -19,6 +19,7 @@ import {
   createFormatFunction,
   getTokenInfo,
   getV2DepositForBurnMaxFee,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
