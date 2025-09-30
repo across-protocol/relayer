@@ -300,7 +300,6 @@ export class Refiller {
         wethAddress: weth.address,
         account: this.baseSignerAddress,
       });
-      return;
     }
   }
 
