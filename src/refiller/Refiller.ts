@@ -264,6 +264,7 @@ export class Refiller {
           });
         }
       } else {
+        // @todo: Flip the isBelowTrigger check because there is a lot of indentation that can be removed as a result.
         this.logger.debug({
           at: "Refiller#refillBalances",
           message: "Balance is above trigger",
@@ -353,6 +354,7 @@ export class Refiller {
       });
       return txn;
     } else {
+      // @todo: Flip the swapData check because there is a lot of indentation that can be removed as a result.
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
       // can happen if the swapper doesn't have enough swap input token balance in addition to other
       // miscellaneous reasons.
