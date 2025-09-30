@@ -52,6 +52,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getTokenInfoForAddress(address: Address, _chainId: number): TokenInfo {
     // If output token is mapped manually to a symbol in the symbol map,
     // use that info.
