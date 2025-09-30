@@ -11,7 +11,6 @@ import {
   sinon,
   smock,
   spyLogIncludes,
-  toBN,
   toWei,
   winston,
 } from "./utils";
@@ -31,7 +30,6 @@ import {
   parseUnits,
   TOKEN_SYMBOLS_MAP,
   toAddressType,
-  isDefined,
 } from "../src/utils";
 import { MockBaseChainAdapter } from "./mocks/MockBaseChainAdapter";
 import { utils as sdkUtils } from "@across-protocol/sdk";
