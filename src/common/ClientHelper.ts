@@ -41,7 +41,7 @@ export interface Clients {
   arweaveClient: caching.ArweaveClient;
 }
 
-async function getSpokePoolSigners(
+export async function getSpokePoolSigners(
   baseSigner: Signer,
   spokePoolChains: number[]
 ): Promise<{ [chainId: number]: Signer }> {
@@ -176,7 +176,7 @@ export async function constructSpokePoolClientsWithLookback(
  * process.env.SPOKE_POOL_CHAINS_OVERRIDE to force certain spoke pool clients to be constructed.
  * @returns number[] List of enabled spoke pool chains.
  */
-function getEnabledChainsInBlockRange(
+export function getEnabledChainsInBlockRange(
   configStoreClient: clients.AcrossConfigStoreClient,
   spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
