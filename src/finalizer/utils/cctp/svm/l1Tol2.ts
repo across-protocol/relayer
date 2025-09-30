@@ -49,6 +49,12 @@ export async function finalizeCCTPV1MessagesSVM(
         )
         .send();
       if (result.value.err) {
+        logger.warn({
+          at: `Finalizer#simulateSvmMessages:${solanaClient.chainId}`,
+          message: `Failed to simulate CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+          error: result.value.err,
+          value: result.value,
+        });
         throw new Error(result.value.err.toString());
       }
       finalizedTxns.push("");
