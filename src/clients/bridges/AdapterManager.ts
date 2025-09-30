@@ -174,6 +174,7 @@ export class AdapterManager {
     this.logger.debug({
       at: "AdapterManager",
       message: "Sending token cross-chain",
+      optionalParams,
       chainId,
       l1Token: l1Token.toNative(),
       amount,
