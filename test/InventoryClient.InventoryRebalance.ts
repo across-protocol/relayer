@@ -108,8 +108,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     enabledChainIds.forEach((chainId) => {
-      hubPoolClient.mapTokenInfo(l2TokensForWeth[chainId], "WETH", 18);
-      hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForWeth[chainId], chainId), "WETH", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForUsdc[chainId], chainId), "USDC", 6);
     });
     await hubPoolClient.update();
 
@@ -394,7 +394,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   describe("Withdraws excess balance from L2 to L1", function () {
     const testChain = OPTIMISM;
     const testL1Token = mainnetUsdc;
-    const testL2Token = l2TokensForUsdc[testChain];
+    const testL2Token = toAddressType(l2TokensForUsdc[testChain], testChain);
     const targetOverageBuffer = toWei("2");
     beforeEach(function () {
       inventoryConfig.tokenConfig[testL1Token][testChain].withdrawExcessPeriod = 7200;
@@ -415,7 +415,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // equal to the current cumulative balance so the chain allocation gets set close to 50%.
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const increaseBalanceAmount = currentCumulativeBalance;
-      tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(testL1Token));
       const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
@@ -428,7 +428,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
       expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
-      expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token);
+      expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token.toNative());
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
     });
 
@@ -441,7 +441,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // We set the token balance on the L2 chain using 18 decimals rather than 6:
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const increaseBalanceAmount = l2TokenConverter(currentCumulativeBalance);
-      tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
 
       // Current allocation computations should still be able to be performed correctly:
@@ -497,8 +497,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
 
       enabledChainIds.forEach((chainId) => {
-        hubPoolClient.mapTokenInfo(nativeUSDC[chainId], "USDC", 6);
-        hubPoolClient.mapTokenInfo(bridgedUSDC[chainId], "USDC", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(nativeUSDC[chainId], chainId), "USDC", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[chainId], chainId), "USDC", 6);
       });
     });
 
@@ -557,7 +557,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     it("Correctly normalizes remote token balance to L1 token decimals", async function () {
       // Let's pretend that the Optimism USDC version uses 18 decimals instead of 6, like the L1 token decimals:
       const testChain = CHAIN_IDs.OPTIMISM;
-      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
         EvmAddress.from(mainnetUsdc),
@@ -584,7 +584,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     it("Correctly normalizes shortfalls to L1 token decimals", async function () {
       const testChain = CHAIN_IDs.OPTIMISM;
-      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
         EvmAddress.from(mainnetUsdc),
@@ -729,7 +729,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // Unset all bridged USDC allocations.
       for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
         const l2Token = bridgedUSDC[chainId];
-        hubPoolClient.mapTokenInfo(l2Token, "USDC.e", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(l2Token, chainId), "USDC.e", 6);
         delete inventoryConfig.tokenConfig[mainnetUsdc][l2Token];
       }
 

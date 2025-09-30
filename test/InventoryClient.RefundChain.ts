@@ -92,20 +92,22 @@ describe("InventoryClient: Refund chain selection", async function () {
   };
 
   const seedMocks = (seedBalances: { [chainId: string]: { [token: string]: BigNumber } }) => {
-    hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetWeth), decimals: 18, symbol: "WETH" });
-    hubPoolClient.addL1Token({ address: EvmAddress.from(mainnetUsdc), decimals: 6, symbol: "USDC" });
+    const wethEVMAddress = EvmAddress.from(mainnetWeth);
+    const usdcEVMAddress = EvmAddress.from(mainnetUsdc);
+    hubPoolClient.addL1Token({ address: wethEVMAddress, decimals: 18, symbol: "WETH" });
+    hubPoolClient.addL1Token({ address: usdcEVMAddress, decimals: 6, symbol: "USDC" });
     Object.keys(seedBalances).forEach((_chainId) => {
       const chainId = Number(_chainId);
       adapterManager.setMockedOutstandingCrossChainTransfers(
         chainId,
         toAddressType(owner.address, MAINNET),
-        toAddressType(mainnetWeth, MAINNET),
+        wethEVMAddress,
         bnZero
       );
       adapterManager.setMockedOutstandingCrossChainTransfers(
         chainId,
         toAddressType(owner.address, MAINNET),
-        toAddressType(mainnetUsdc, MAINNET),
+        usdcEVMAddress,
         bnZero
       );
       tokenClient.setTokenData(
@@ -113,15 +115,13 @@ describe("InventoryClient: Refund chain selection", async function () {
         toAddressType(l2TokensForWeth[chainId], chainId),
         seedBalances[chainId][mainnetWeth]
       );
-      tokenClient.setTokenData(
-        chainId,
-        toAddressType(l2TokensForUsdc[chainId], chainId),
-        seedBalances[chainId][mainnetUsdc]
-      );
+
+      const l2TokenForUsdcAddress = toAddressType(l2TokensForUsdc[chainId], chainId);
+      tokenClient.setTokenData(chainId, l2TokenForUsdcAddress, seedBalances[chainId][mainnetUsdc]);
       hubPoolClient.setTokenMapping(mainnetWeth, chainId, l2TokensForWeth[chainId]);
       hubPoolClient.setTokenMapping(mainnetUsdc, chainId, l2TokensForUsdc[chainId]);
-      hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
-      hubPoolClient.mapTokenInfo(mainnetWeth[chainId], "WETH", 18);
+      hubPoolClient.mapTokenInfo(l2TokenForUsdcAddress, "USDC", 6);
+      hubPoolClient.mapTokenInfo(wethEVMAddress, "WETH", 18);
     });
   };
 
@@ -216,7 +216,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     it("Normalizes repayment amount to correct precision", async function () {
       // We'll pretend the input token uses a different precision than the output token.
-      hubPoolClient.mapTokenInfo(l2TokensForWeth[ARBITRUM], "WETH", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), "WETH", 6);
       const toL2Decimals = sdkUtils.ConvertDecimals(18, 6);
       tokenClient.setTokenData(
         ARBITRUM,
@@ -245,7 +245,7 @@ describe("InventoryClient: Refund chain selection", async function () {
 
     it("Normalizes upcoming refunds to correct precision", async function () {
       // Identical setup to previous test but we'll pretend the L2 token uses a different precision than the L1 token.
-      hubPoolClient.mapTokenInfo(l2TokensForWeth[OPTIMISM], "WETH", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), "WETH", 6);
       tokenClient.setTokenData(OPTIMISM, toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM), toMegaWei(15));
 
       sampleDepositData.inputAmount = toWei(5);
