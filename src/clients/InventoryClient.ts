@@ -1126,13 +1126,15 @@ export class InventoryClient {
                 totalShortfall.toString()
               )} ${symbol} (unfilled deposit amounts: ${unfilledDepositAmounts
                 .map((amount) => l2TokenFormatter(amount.toString()))
-                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}).`
+                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}).` +
+              `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
           } else {
             mrkdwn +=
               ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
               `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
               `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
-              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).`;
+              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).` +
+              `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
           }
         }
       }
