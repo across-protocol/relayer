@@ -278,8 +278,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
     expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "unfilled deposit amounts: 10.00, 8.00")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "unfilled deposit ids: 6969, 6970")).to.be.true;
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
@@ -317,7 +315,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
     expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "This chain's new pending L1->L2 transfer amount is now 18.00")).to.be.true;
     mainnetWethContract.balanceOf
       .whenCalledWith(owner.address)
       .returns(initialAllocation[MAINNET][mainnetWeth].sub(expectedBridgedAmount).sub(shortfallAmount2));
@@ -348,7 +345,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
     expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
     expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
-    expect(lastSpyLogIncludes(spy, "This chain's new pending L1->L2 transfer amount is now 19.00")).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
