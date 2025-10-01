@@ -1402,8 +1402,8 @@ export class InventoryClient {
           }
 
           // Ignore L1->L2 pending amounts for the current allocation % calculation because we never want to cancel
-          // out a deposit from L1 to L2 by immediately withdrawing it.
-          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token, true);
+          // out a deposit from L1 to L2 by immediately withdrawing it. Don't ignore shortfalls.
+          const currentAllocPct = this.getCurrentAllocationPct(l1Token, chainId, l2Token, true, false);
 
           // We apply a discount on the effective target % because the repayment chain choice
           // algorithm should never allow the inventory to get above the target pct * target overage buffer.
