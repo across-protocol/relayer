@@ -1132,12 +1132,7 @@ export class InventoryClient {
               ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
               `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
               `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
-              `${l1Formatter(
-                cumulativeBalance.toString()
-              )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
-              `${l2TokenFormatter(
-                this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
-              )} ${symbol}.`
+              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).`;
           }
         }
       }
