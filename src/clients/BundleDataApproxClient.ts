@@ -105,12 +105,6 @@ export class BundleDataApproxClient {
   private getApproximateUpcomingRefunds(l1Token: Address): ReturnType<typeof this.getApproximateRefundsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
-    this.logger.debug({
-      at: "BundleDataApproxClient#getApproximateUpcomingRefunds",
-      message: `Approximated upcoming refunds for l1 token ${l1Token.toNative()}`,
-      fromBlocks,
-      refundsForChain,
-    });
     return refundsForChain;
   }
 
@@ -146,12 +140,6 @@ export class BundleDataApproxClient {
   ): ReturnType<typeof this.getApproximateDepositsForToken> {
     const fromBlocks = this.getUnexecutedBundleStartBlocks();
     const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
-    this.logger.debug({
-      at: "BundleDataApproxClient#getApproximateUpcomingDeposits",
-      message: `Approximated upcoming deposits for l1 token ${l1Token}`,
-      fromBlocks,
-      depositsForChain,
-    });
     return depositsForChain;
   }
 
@@ -170,6 +158,12 @@ export class BundleDataApproxClient {
       this.upcomingRefunds[l1Token.toNative()] = this.getApproximateUpcomingRefunds(l1Token);
       this.upcomingDeposits[l1Token.toNative()] = this.getApproximateUpcomingDepositsForToken(l1Token);
     }
+    this.logger.debug({
+      at: "BundleDataApproxClient#initialize",
+      message: "Initialized BundleDataApproxClient",
+      upcomingRefunds: this.upcomingRefunds,
+      upcomingDeposits: this.upcomingDeposits,
+    });
   }
 
   getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
