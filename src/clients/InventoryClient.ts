@@ -908,10 +908,13 @@ export class InventoryClient {
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
-          const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
-          const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
-          rebalancesRequired.push(...shortfallRebalances, inventoryRebalance);
+          const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
+          rebalancesRequired.push(...shortfallRebalances);
+          const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
+          if (inventoryRebalance) {
+            rebalancesRequired.push(inventoryRebalance);
+          }
         });
       });
     }
@@ -924,7 +927,7 @@ export class InventoryClient {
     l1Token: EvmAddress,
     chainId: number,
     l2Token: Address
-  ): Rebalance {
+  ): Rebalance | undefined {
     const currentAllocPct = this.getCurrentAllocationPct(
       l1Token,
       chainId,
