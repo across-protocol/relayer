@@ -326,8 +326,8 @@ describe("ProfitClient: Consider relay profit", () => {
             outputAmount,
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken.toNative());
-          hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), token.symbol, token.decimals);
-          hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(deposit.inputToken, token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -403,7 +403,7 @@ describe("ProfitClient: Consider relay profit", () => {
             outputAmount,
           };
           hubPoolClient.setTokenMapping(token.address, deposit.originChainId, deposit.inputToken.toNative());
-          hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), token.symbol, token.decimals);
+          hubPoolClient.mapTokenInfo(deposit.outputToken, token.symbol, token.decimals);
           const tokenPriceUsd = profitClient.getPriceOfToken(token.symbol);
 
           // Normalise any tokens with <18 decimals to 18 decimals.
@@ -503,8 +503,8 @@ describe("ProfitClient: Consider relay profit", () => {
     const deposit = { ...v3DepositTemplate };
     const l1Token = tokens.WETH;
     hubPoolClient.setTokenMapping(l1Token.address, originChainId, deposit.inputToken.toEvmAddress());
-    hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), l1Token.symbol, l1Token.decimals);
-    hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), l1Token.symbol, l1Token.decimals);
+    hubPoolClient.mapTokenInfo(deposit.outputToken, l1Token.symbol, l1Token.decimals);
+    hubPoolClient.mapTokenInfo(deposit.inputToken, l1Token.symbol, l1Token.decimals);
     randomiseGasCost(destinationChainId);
 
     const outputTokenPriceUsd = profitClient.getPriceOfToken(l1Token.symbol);
@@ -523,8 +523,8 @@ describe("ProfitClient: Consider relay profit", () => {
     const deposit = { ...v3DepositTemplate, updatedOutputAmount };
 
     hubPoolClient.setTokenMapping(tokens.WETH.address, originChainId, deposit.inputToken.toEvmAddress());
-    hubPoolClient.mapTokenInfo(deposit.outputToken.toNative(), tokens.WETH.symbol, tokens.WETH.decimals);
-    hubPoolClient.mapTokenInfo(deposit.inputToken.toNative(), tokens.WETH.symbol, tokens.WETH.decimals);
+    hubPoolClient.mapTokenInfo(deposit.outputToken, tokens.WETH.symbol, tokens.WETH.decimals);
+    hubPoolClient.mapTokenInfo(deposit.inputToken, tokens.WETH.symbol, tokens.WETH.decimals);
     const outputTokenPriceUsd = profitClient.getPriceOfToken(tokens.WETH.symbol);
 
     let expectedOutputAmountUsd = deposit.outputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
