@@ -81,9 +81,11 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
           method: "depositForBurn",
           nonMulticall: true,
           message: `🎰 Withdrew CCTP USDC to L1${optionalParams?.fastMode ? " using fast mode" : ""}`,
-          mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP`,
+          mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP${
+            optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee.toString())}` : ""
+          }`,
           args: [
-            amount,
+            amount.add(maxFee), // Add maxFee so that we end up with desired amount of tokens on destinationchain.
             this.l1DestinationDomain,
             toAddress.toBytes32(),
             this.l2UsdcTokenAddress.toNative(),

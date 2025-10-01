@@ -43,6 +43,7 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
   });
   it("constructWithdrawToL1Txns: fast transfer mode", async function () {
     const amountToWithdraw = toBNWei("100", 6);
+    const expectedMaxFee = amountToWithdraw.div(10000);
     const result = (
       await adapter.constructWithdrawToL1Txns(
         toAddress(monitoredEoa),
@@ -55,12 +56,12 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
     expect(result.chainId).to.equal(l2ChainId);
     expect(result.contract.address).to.equal(cctpBridgeContract.address);
     expect(result.method).to.equal("depositForBurn");
-    expect(result.args[0]).to.equal(amountToWithdraw);
+    expect(result.args[0]).to.equal(amountToWithdraw.add(expectedMaxFee));
     expect(result.args[1]).to.equal(getCctpDomainForChainId(hubChainId));
     expect(result.args[2]).to.equal(toAddress(monitoredEoa).toBytes32());
     expect(result.args[3]).to.equal(toAddress(l2USDCToken).toNative());
     expect(result.args[4]).to.equal(ethers.constants.HashZero);
-    expect(result.args[5]).to.equal(amountToWithdraw.div(10000));
+    expect(result.args[5]).to.equal(expectedMaxFee);
     expect(result.args[6]).to.equal(CCTPV2_FINALITY_THRESHOLD_FAST);
   });
   it("constructWithdrawToL1Txns: standard transfer mode", async function () {
