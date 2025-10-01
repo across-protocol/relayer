@@ -891,11 +891,6 @@ export class InventoryClient {
   }
 
   getPossibleRebalances(): Rebalance[] {
-    // Make sure to prioritize shortfall rebalances over ordinary rebalances.
-    return this.getPossibleShortfallRebalances().concat(this.getPossibleInventoryRebalances());
-  }
-
-  getPossibleInventoryRebalances(): Rebalance[] {
     const chainIds = this.getEnabledL2Chains();
     const rebalancesRequired: Rebalance[] = [];
 
@@ -913,34 +908,10 @@ export class InventoryClient {
 
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
-          const currentAllocPct = this.getCurrentAllocationPct(
-            l1Token,
-            chainId,
-            l2Token,
-            false, // Don't ignore pending l1 to l2 amounts so we don't send duplicate rebalances,
-            true // Ignore shortfall since we have already added rebalances specifically to cover shortfalls.
-          );
-          const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
-          if (!isDefined(tokenConfig)) {
-            return;
-          }
-
-          const { thresholdPct, targetPct } = tokenConfig;
-          if (currentAllocPct.gte(thresholdPct)) {
-            return;
-          }
-
-          const deltaPct = targetPct.sub(currentAllocPct);
-          const amount = deltaPct.mul(cumulativeBalance).div(this.scalar);
-          const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
-          rebalancesRequired.push({
-            chainId,
-            l1Token,
-            l2Token,
-            balance,
-            amount,
-            isShortfallRebalance: false,
-          });
+          const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
+          const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
+          // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
+          rebalancesRequired.push(...shortfallRebalances, inventoryRebalance);
         });
       });
     }
@@ -948,52 +919,67 @@ export class InventoryClient {
     return rebalancesRequired;
   }
 
-  getPossibleShortfallRebalances(): Rebalance[] {
-    const chainIds = this.getEnabledL2Chains();
-    const rebalancesRequired: Rebalance[] = [];
-
-    for (const l1Token of this.getL1Tokens()) {
-      const cumulativeBalance = this.getCumulativeBalance(l1Token);
-      if (cumulativeBalance.eq(bnZero)) {
-        continue;
-      }
-
-      chainIds.forEach((chainId) => {
-        // Skip if there's no configuration for l1Token on chainId.
-        if (!this._l1TokenEnabledForChain(l1Token, chainId)) {
-          return;
-        }
-
-        const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
-        l2Tokens.forEach((l2Token) => {
-          const unfilledDepositAmounts = this.tokenClient.getUnfilledDepositAmounts(chainId, l2Token);
-          let outstandingCrossChainTransferAmount =
-            this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-              this.relayer,
-              chainId,
-              l1Token,
-              l2Token
-            );
-          for (const depositAmount of unfilledDepositAmounts) {
-            // If there is a pending cross chain transfer that can cover this shortfall,
-            // then we don't need to send this rebalance.
-            if (depositAmount.lte(outstandingCrossChainTransferAmount)) {
-              outstandingCrossChainTransferAmount = outstandingCrossChainTransferAmount.sub(depositAmount);
-              continue;
-            }
-            rebalancesRequired.push({
-              chainId,
-              l1Token,
-              l2Token,
-              balance: this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token),
-              amount: depositAmount,
-              isShortfallRebalance: true,
-            });
-          }
-        });
-      });
+  _getPossibleInventoryRebalances(
+    cumulativeL1TokenBalance: BigNumber,
+    l1Token: EvmAddress,
+    chainId: number,
+    l2Token: Address
+  ): Rebalance {
+    const currentAllocPct = this.getCurrentAllocationPct(
+      l1Token,
+      chainId,
+      l2Token,
+      false, // Don't ignore pending l1 to l2 amounts so we don't send duplicate rebalances,
+      true // Ignore shortfall since we will account for shortfall rebalances in another step.
+    );
+    const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
+    if (!isDefined(tokenConfig)) {
+      return;
     }
 
+    const { thresholdPct, targetPct } = tokenConfig;
+    if (currentAllocPct.gte(thresholdPct)) {
+      return;
+    }
+
+    const deltaPct = targetPct.sub(currentAllocPct);
+    const amount = deltaPct.mul(cumulativeL1TokenBalance).div(this.scalar);
+    const balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+    return {
+      chainId,
+      l1Token,
+      l2Token,
+      balance,
+      amount,
+      isShortfallRebalance: false,
+    };
+  }
+
+  _getPossibleShortfallRebalances(l1Token: EvmAddress, chainId: number, l2Token: Address): Rebalance[] {
+    const unfilledDepositAmounts = this.tokenClient.getUnfilledDepositAmounts(chainId, l2Token);
+    let outstandingCrossChainTransferAmount = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+      this.relayer,
+      chainId,
+      l1Token,
+      l2Token
+    );
+    const rebalancesRequired: Rebalance[] = [];
+    for (const depositAmount of unfilledDepositAmounts) {
+      // If there is a pending cross chain transfer that can cover this shortfall,
+      // then we don't need to send this rebalance.
+      if (depositAmount.lte(outstandingCrossChainTransferAmount)) {
+        outstandingCrossChainTransferAmount = outstandingCrossChainTransferAmount.sub(depositAmount);
+        continue;
+      }
+      rebalancesRequired.push({
+        chainId,
+        l1Token,
+        l2Token,
+        balance: this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token),
+        amount: depositAmount,
+        isShortfallRebalance: true,
+      });
+    }
     return rebalancesRequired;
   }
 
