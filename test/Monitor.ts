@@ -11,7 +11,7 @@ import { Dataworker } from "../src/dataworker/Dataworker";
 import { BalanceType, L1Token } from "../src/interfaces";
 import { ALL_CHAINS_NAME, Monitor, REBALANCE_FINALIZE_GRACE_PERIOD } from "../src/monitor/Monitor";
 import { MonitorConfig } from "../src/monitor/MonitorConfig";
-import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero } from "../src/utils";
+import { MAX_UINT_VAL, getNetworkName, toBN, Address, toAddressType, bnZero, EvmAddress } from "../src/utils";
 import * as constants from "./constants";
 import { amountToDeposit, destinationChainId, mockTreeRoot, originChainId, repaymentChainId } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
@@ -26,7 +26,6 @@ import {
   ethers,
   expect,
   lastSpyLogIncludes,
-  toBNWei,
   deployMulticall3,
 } from "./utils";
 
@@ -150,7 +149,7 @@ describe("Monitor", async function () {
     };
 
     [l2Token.address, erc20_2.address, l1Token.address].forEach((token) =>
-      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(token, "L1Token1")
+      (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(token), "L1Token1")
     );
 
     defaultMonitorEnvVars = {
@@ -373,48 +372,5 @@ describe("Monitor", async function () {
     expect(lastSpyLogIncludes(spy, "Unfilled deposits ⏱")).to.be.true;
     const log = spy.lastCall;
     expect(log.lastArg.mrkdwn).to.contains("100.00");
-  });
-
-  it("Monitor should send token refills", async function () {
-    const refillConfig = [
-      {
-        account: hubPool.address,
-        isHubPool: true,
-        chainId: hubPoolClient.chainId,
-        trigger: 1,
-        target: 2,
-      },
-      {
-        account: spokePool_1.address,
-        isHubPool: false,
-        chainId: originChainId,
-        trigger: 1,
-        target: 2,
-      },
-    ];
-    const monitorEnvs = {
-      ...defaultMonitorEnvVars,
-      REFILL_BALANCES: JSON.stringify(refillConfig),
-    };
-    const _monitorConfig = new MonitorConfig(monitorEnvs);
-    const _monitor = new Monitor(spyLogger, _monitorConfig, {
-      bundleDataClient,
-      configStoreClient,
-      multiCallerClient,
-      hubPoolClient,
-      spokePoolClients,
-      tokenTransferClient,
-      crossChainTransferClient,
-    });
-    await _monitor.update();
-
-    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(0);
-
-    await _monitor.refillBalances();
-
-    expect(multiCallerClient.transactionCount()).to.equal(1);
-    await multiCallerClient.executeTxnQueues();
-
-    expect(await spokePool_1.provider.getBalance(spokePool_1.address)).to.equal(toBNWei("2"));
   });
 });

@@ -1,14 +1,15 @@
 import { clients } from "@across-protocol/sdk";
-import { Contract, winston, BigNumber } from "../utils";
-import { ConfigStoreClient } from "../../src/clients";
+import { Contract, winston, BigNumber, assert } from "../utils";
+import { ConfigStoreClient, HubPoolClient } from "../../src/clients";
 import { MockConfigStoreClient } from "./MockConfigStoreClient";
-import { L1Token, ProposedRootBundle } from "../../src/interfaces";
+import { L1Token, ProposedRootBundle, TokenInfo } from "../../src/interfaces";
+import { Address, EvmAddress } from "../../src/utils/SDKUtils";
 
 // Adds functions to MockHubPoolClient to facilitate Dataworker unit testing.
 export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   public latestBundleEndBlocks: { [chainId: number]: number } = {};
   public enableAllL2Tokens: boolean | undefined;
-  private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
+  private tokenInfoMap: { [tokenBytes32Str: string]: TokenInfo } = {};
   validatedRootBundles: ProposedRootBundle[] = [];
 
   constructor(
@@ -43,23 +44,25 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     this.lpTokens[l1Token] = { lastLpFeeUpdate, liquidReserves };
   }
 
-  mapTokenInfo(token: string, symbol: string, decimals?: number): void {
-    this.tokenInfoMap[token] = {
-      symbol,
-      address: token,
+  mapTokenInfo(address: Address, symbol: string, decimals?: number): void {
+    this.tokenInfoMap[address.toBytes32()] = {
+      symbol: symbol,
+      address: address,
       decimals: decimals ?? 18,
     };
   }
 
-  getTokenInfoForAddress(token: string): L1Token {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getTokenInfoForAddress(address: Address, _chainId: number): TokenInfo {
     // If output token is mapped manually to a symbol in the symbol map,
     // use that info.
-    if (this.tokenInfoMap[token]) {
-      return this.tokenInfoMap[token];
+    const key = address.toBytes32();
+    if (this.tokenInfoMap[key]) {
+      return this.tokenInfoMap[key];
     }
     return {
-      symbol: token,
-      address: token,
+      symbol: address.toString(),
+      address: address,
       decimals: 18,
     };
   }
@@ -68,7 +71,7 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
     this.enableAllL2Tokens = enableAllL2Tokens;
   }
 
-  l2TokenEnabledForL1Token(l1Token: string, destinationChainId: number): boolean {
+  l2TokenEnabledForL1Token(l1Token: EvmAddress, destinationChainId: number): boolean {
     if (this.enableAllL2Tokens === undefined) {
       return super.l2TokenEnabledForL1Token(l1Token, destinationChainId);
     }
@@ -83,30 +86,39 @@ export class MockHubPoolClient extends clients.mocks.MockHubPoolClient {
   }
 }
 
-export class SimpleMockHubPoolClient extends clients.HubPoolClient {
-  private tokenInfoMap: { [tokenAddress: string]: L1Token } = {};
+export class SimpleMockHubPoolClient extends HubPoolClient {
+  private tokenInfoMap: { [tokenBytes32Str: string]: TokenInfo } = {};
 
-  mapTokenInfo(token: string, symbol: string, decimals = 18): void {
-    this.tokenInfoMap[token] = {
+  mapTokenInfo(address: Address, symbol: string, decimals?: number): void {
+    const key = address.toBytes32();
+    this.tokenInfoMap[key] = {
       symbol,
-      address: token,
-      decimals,
+      address,
+      decimals: decimals ?? 18,
     };
   }
 
-  getTokenInfoForAddress(token: string, chainId: number): L1Token {
+  getTokenInfoForAddress(address: Address, chainId: number): TokenInfo {
     // If output token is mapped manually to a symbol in the symbol map,
     // use that info.
-    if (this.tokenInfoMap[token]) {
-      return this.tokenInfoMap[token];
+    const key = address.toBytes32();
+    if (this.tokenInfoMap[key]) {
+      return this.tokenInfoMap[key];
     }
-    return super.getTokenInfoForAddress(token, chainId);
+    return super.getTokenInfoForAddress(address, chainId);
   }
 
-  getTokenInfoForL1Token(l1Token: Address): L1Token | undefined {
-    if (this.tokenInfoMap[l1Token.toEvmAddress()]) {
-      return this.tokenInfoMap[l1Token.toEvmAddress()];
+  getTokenInfoForL1Token(l1Token: EvmAddress): L1Token | undefined {
+    const key = l1Token.toBytes32();
+    if (this.tokenInfoMap[key]) {
+      const value = this.tokenInfoMap[key];
+      assert(value.address.isEVM(), "getTokenInfoForL1Token: non-EVM address stored for an L1 token");
+      return { ...value, address: value.address };
     }
     return super.getTokenInfoForL1Token(l1Token);
+  }
+
+  setCurrentTime(time: number): void {
+    this.currentTime = time;
   }
 }

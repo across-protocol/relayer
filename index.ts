@@ -15,6 +15,7 @@ import { runDataworker } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
+import { runRefiller } from "./src/refiller";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -24,6 +25,7 @@ const CMDS = {
   finalizer: runFinalizer,
   help: help,
   monitor: runMonitor,
+  refiller: runRefiller,
   relayer: runRelayer,
   rebalancer: runRebalancer,
 };
