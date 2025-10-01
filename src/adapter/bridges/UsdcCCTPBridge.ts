@@ -88,7 +88,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
         contract: this.getL1Bridge(),
         method: "depositForBurn",
         args: [
-          amount,
+          amount.add(maxFee), // Add maxFee so that we end up with desired amount of tokens on destinationchain.
           this.l2DestinationDomain,
           toAddress.toBytes32(),
           this.l1UsdcTokenAddress.toNative(),
@@ -140,7 +140,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     return {
       [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
         if (this.IS_CCTP_V2) {
-          const eventSpread = spreadEventWithBlockNumber(event) as unknown as SortableEvent & {
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
             amount: string;
             feeCollected: string;
           };
