@@ -1115,26 +1115,26 @@ export class InventoryClient {
           const cumulativeBalance = this.getCumulativeBalance(l1Token);
           const tokenConfig = this.getTokenConfig(l1Token, chainId, l2Token);
           const { thresholdPct, targetPct } = tokenConfig;
-
+          const unfilledDepositAmounts = this.tokenClient.getUnfilledDepositAmounts(chainId, l2Token);
+          const unfilledDepositIds = this.tokenClient.getShortfallDeposits(chainId, l2Token);
           if (isShortfallRebalance) {
             const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
-            const unfilledDepositAmounts = this.tokenClient.getUnfilledDepositAmounts(chainId, l2Token);
-            const unfilledDepositIds = this.tokenClient.getShortfallDeposits(chainId, l2Token);
             mrkdwn +=
               `- ${l1Formatter(amount.toString())} ${symbol} rebalanced to cover total chain shortfall of ` +
-              `${l2TokenFormatter(
-                totalShortfall.toString()
-              )} ${symbol} (unfilled deposit amounts: ${unfilledDepositAmounts
-                .map((amount) => l2TokenFormatter(amount.toString()))
-                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}).` +
-              `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+              `${l2TokenFormatter(totalShortfall.toString())} ${symbol} `;
           } else {
             mrkdwn +=
               ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
               `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
               `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
-              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).` +
-              `tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).`;
+          }
+          if (unfilledDepositAmounts.length > 0) {
+            mrkdwn +=
+              `Unfilled deposit amounts: ${unfilledDepositAmounts
+                .map((amount) => l2TokenFormatter(amount.toString()))
+                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}.` +
+              ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
           }
         }
       }

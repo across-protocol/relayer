@@ -33,7 +33,6 @@ import {
   EvmAddress,
   convertRelayDataParamsToBytes32,
   getSolanaTokenBalance,
-  toBNWei,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
