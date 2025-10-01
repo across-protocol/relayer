@@ -28,10 +28,11 @@ import {
   CHAIN_IDs,
   convertRelayDataParamsToBytes32,
   chainIsSvm,
+  stringifyThrownValue,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { MultiCallerClient } from "../clients";
+import { MultiCallerClient, SOLANA_TX_SIZE_LIMIT } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -730,6 +731,14 @@ export class Relayer {
       }
     }
 
+    // Skip a fill if the message would be too big to fit into a single SVM-side TX
+    if (
+      chainIsSvm(deposit.destinationChainId) &&
+      !(await this.validateSVMFillSize(deposit, originChain, destChain, txnRef))
+    ) {
+      return;
+    }
+
     const l1Token = this.clients.inventoryClient.getL1TokenAddress(inputToken, originChainId);
 
     const { repaymentChainId, repaymentChainProfitability } = await this.resolveRepaymentChain(
@@ -1066,25 +1075,13 @@ export class Relayer {
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
       assert(spokePoolClient.spokePoolAddress.isSVM());
-
-      const [recipient, outputToken] = [deposit.recipient, deposit.outputToken];
-      if (!(recipient.isSVM() && outputToken.isSVM())) {
-        // @dev recipient or outputToken are incorrectly formatted for the destination chain, drop deposit processing and log
-        this.logger.debug({
-          at: "Relayer",
-          message: "Dropping slow fill request because recipient or outputToken are not valid SVM addresses.",
-          originChainId: deposit.originChainId,
-          depositId: deposit.depositId.toString(),
-          destinationChainId: deposit.destinationChainId,
-          recipient: recipient.toString(),
-          outputToken: outputToken.toString(),
-        });
-        return;
-      }
+      // We're good to assert here. Deposits that didn't adhere to this were dropped at the filter stage
+      assert(deposit.recipient.isSVM());
+      assert(deposit.outputToken.isSVM());
 
       this.clients.svmFillerClient.enqueueSlowFill(
         spokePoolClient.spokePoolAddress,
-        { ...deposit, recipient, outputToken },
+        { ...deposit, recipient: deposit.recipient, outputToken: deposit.outputToken },
         "Requested slow fill for deposit.",
         formatSlowFillRequestMarkdown()
       );
@@ -1160,20 +1157,9 @@ export class Relayer {
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
       assert(spokePoolClient.spokePoolAddress.isSVM());
-      const [recipient, outputToken] = [deposit.recipient, deposit.outputToken];
-      if (!(recipient.isSVM() && outputToken.isSVM())) {
-        // @dev recipient or outputToken are incorrectly formatted for the destination chain, drop deposit processing and log
-        this.logger.debug({
-          at: "Relayer",
-          message: "Dropping fill request because recipient or outputToken are not valid SVM addresses.",
-          originChainId: deposit.originChainId,
-          depositId: deposit.depositId.toString(),
-          destinationChainId: deposit.destinationChainId,
-          recipient: recipient.toString(),
-          outputToken: outputToken.toString(),
-        });
-        return;
-      }
+      // We're good to assert here. Deposits that didn't adhere to this were dropped at the filter stage
+      assert(deposit.recipient.isSVM());
+      assert(deposit.outputToken.isSVM());
 
       const message = "Filled v3 deposit on SVM 🚀";
       const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
@@ -1182,8 +1168,8 @@ export class Relayer {
         spokePoolClient.spokePoolAddress,
         {
           ...deposit,
-          recipient: recipient,
-          outputToken: outputToken,
+          recipient: deposit.recipient,
+          outputToken: deposit.outputToken,
         },
         repaymentChainId,
         this.getRelayerAddrOn(repaymentChainId),
@@ -1623,5 +1609,81 @@ export class Relayer {
     return this.config.tryMulticallChains.includes(chainId)
       ? this.clients.tryMulticallClient
       : this.clients.multiCallerClient;
+  }
+
+  /**
+   * Validate that SVM-destined fill tx wouldn't take up more than 1232 bytes (fits in a single TX)
+   * @returns `true` if the fill fits in a single SVM tx, `false` if it doesn't or fill size estimation failed
+   */
+  private async validateSVMFillSize(
+    deposit: Deposit,
+    originChain: string,
+    destinationChain: string,
+    txnRef: string
+  ): Promise<boolean> {
+    // Fills with empty messages will fit into a single tx, they are valid size-wise
+    if (isMessageEmpty(deposit.message)) {
+      return true;
+    }
+
+    // If fill tx is too large or estimation failed, return `false`
+    const logContext = { at: "Relayer::validateSVMFillSize", originChain, destinationChain, txnRef };
+    try {
+      const fillTooLarge = await this.isSVMFillTooLarge(deposit);
+      if (fillTooLarge.tooLarge) {
+        this.logger.debug({
+          message: "Fill tx too large",
+          ...logContext,
+          fillSizeBytes: fillTooLarge.sizeBytes,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logger.debug({
+        message: "Failed to estimate fill size",
+        ...logContext,
+        error: stringifyThrownValue(error),
+      });
+      return false;
+    }
+
+    // Otherwise return `true`: fill fits in 1232 bytes
+    return true;
+  }
+
+  /**
+   * Estimates size in bytes of a potential Fill attempt for the given deposit. Checks against Solana TX size limit
+   * @throws If deposit is ill-formatted for SVM chain OR if destinationChainId is not SVM or not enabled
+   */
+  private async isSVMFillTooLarge(deposit: Deposit): Promise<{
+    tooLarge: boolean;
+    sizeBytes: number;
+  }> {
+    const destinationChainId = deposit.destinationChainId;
+    const spokePoolClient = this.clients.spokePoolClients[destinationChainId];
+
+    assert(chainIsSvm(destinationChainId));
+    assert(deposit.recipient.isSVM());
+    assert(deposit.outputToken.isSVM());
+    assert(isSVMSpokePoolClient(spokePoolClient));
+    assert(spokePoolClient.spokePoolAddress.isSVM());
+
+    // We don't know repayment chain id for this fill attempt. That shouldn't affect our TX size estimation though (at
+    // least not significantly). We use `deposit.destinationChainId`
+    const repaymentChainId = deposit.destinationChainId;
+    const sizeBytes = await this.clients.svmFillerClient.calculateFillSizeBytes(
+      spokePoolClient.spokePoolAddress,
+      {
+        ...deposit,
+        recipient: deposit.recipient,
+        outputToken: deposit.outputToken,
+      },
+      repaymentChainId,
+      this.getRelayerAddrOn(repaymentChainId)
+    );
+    return {
+      tooLarge: sizeBytes > SOLANA_TX_SIZE_LIMIT,
+      sizeBytes,
+    };
   }
 }
