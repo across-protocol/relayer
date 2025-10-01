@@ -732,7 +732,10 @@ export class Relayer {
     }
 
     // Skip a fill if the message would be too big to fit into a single SVM-side TX
-    if (!(await this.validateSVMFillSize(deposit, originChain, destChain, txnRef))) {
+    if (
+      chainIsSvm(deposit.destinationChainId) &&
+      !(await this.validateSVMFillSize(deposit, originChain, destChain, txnRef))
+    ) {
       return;
     }
 
@@ -1618,38 +1621,27 @@ export class Relayer {
     destinationChain: string,
     txnRef: string
   ): Promise<boolean> {
-    // Return `true` for all non-SVM chains
-    if (!chainIsSvm(deposit.destinationChainId)) {
-      return true;
-    }
-
     // Fills with empty messages will fit into a single tx, they are valid size-wise
     if (isMessageEmpty(deposit.message)) {
       return true;
     }
 
     // If fill tx is too large or estimation failed, return `false`
+    const logContext = { at: "Relayer::validateSVMFillSize", originChain, destinationChain, txnRef };
     try {
       const fillTooLarge = await this.isSVMFillTooLarge(deposit);
       if (fillTooLarge.tooLarge) {
         this.logger.debug({
-          at: "Relayer::validateSVMFillSize",
           message: "Fill tx too large",
-          originChain,
-          destinationChain,
-          txnRef,
+          ...logContext,
           fillSizeBytes: fillTooLarge.sizeBytes,
         });
         return false;
       }
     } catch (error) {
       this.logger.debug({
-        at: "Relayer::validateSVMFillSize",
         message: "Failed to estimate fill size",
-        deposit,
-        originChain,
-        destinationChain,
-        txnRef,
+        ...logContext,
         error: stringifyThrownValue(error),
       });
       return false;
