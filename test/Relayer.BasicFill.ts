@@ -6,6 +6,7 @@ import {
   MultiCallerClient,
   SpokePoolClient,
   EVMSpokePoolClient,
+  HubPoolClient,
 } from "../src/clients";
 import { FillStatus, Deposit, RelayData } from "../src/interfaces";
 import { CONFIG_STORE_VERSION } from "../src/common";
@@ -77,7 +78,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: clients.EVMSpokePoolClient;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
-  let configStoreClient: ConfigStoreClient, hubPoolClient: clients.HubPoolClient, tokenClient: SimpleMockTokenClient;
+  let configStoreClient: ConfigStoreClient, hubPoolClient: HubPoolClient, tokenClient: SimpleMockTokenClient;
   let relayerInstance: Relayer;
   let multiCallerClient: MultiCallerClient, profitClient: MockProfitClient;
   let inventoryClient: MockInventoryClient;
@@ -99,12 +100,12 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       spokePool: spokePool_1,
       erc20: erc20_1,
       deploymentBlock: spokePool1DeploymentBlock,
-    } = await deploySpokePoolWithToken(originChainId, destinationChainId));
+    } = await deploySpokePoolWithToken(originChainId));
     ({
       spokePool: spokePool_2,
       erc20: erc20_2,
       deploymentBlock: spokePool2DeploymentBlock,
-    } = await deploySpokePoolWithToken(destinationChainId, originChainId));
+    } = await deploySpokePoolWithToken(destinationChainId));
 
     ({ hubPool, l1Token_1: l1Token } = await deployAndConfigureHubPool(owner, [
       { l2ChainId: destinationChainId, spokePool: spokePool_2 },
@@ -167,18 +168,25 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     // We will need to update the config store client at least once
     await configStoreClient.update();
 
+    const relayerAddressEVM = EvmAddress.from(relayer.address);
     // Tests use non-Wallet signers, so hardcode SVM address
-    const svmAddress = SvmAddress.from("11111111111111111111111111111111");
-
+    const relayerAddressSVM = SvmAddress.from("11111111111111111111111111111111");
     tokenClient = new SimpleMockTokenClient(
       spyLogger,
-      EvmAddress.from(relayer.address),
-      svmAddress,
+      relayerAddressEVM,
+      relayerAddressSVM,
       spokePoolClients,
       hubPoolClient
     );
     tokenClient.setRemoteTokens([l1Token, erc20_1, erc20_2]);
-    profitClient = new MockProfitClient(spyLogger, hubPoolClient, spokePoolClients, []);
+    profitClient = new MockProfitClient(
+      spyLogger,
+      hubPoolClient,
+      spokePoolClients,
+      [],
+      relayerAddressEVM,
+      relayerAddressSVM
+    );
     for (const erc20 of [l1Token]) {
       await profitClient.initToken(erc20);
     }
@@ -221,8 +229,8 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], weth, 10);
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_1.address), await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_2.address), await l1Token.symbol());
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);

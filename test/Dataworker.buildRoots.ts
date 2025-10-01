@@ -20,6 +20,7 @@ import {
 
 // Tested
 import { Dataworker } from "../src/dataworker/Dataworker";
+import { SimpleMockHubPoolClient } from "./mocks";
 
 let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
 let l1Token_1: Contract;
@@ -117,6 +118,9 @@ describe("Dataworker: Build merkle roots", async function () {
 
     const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
+    const maxQuoteTime = Math.max(deposit1.quoteTimestamp, deposit2.quoteTimestamp);
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(maxQuoteTime);
     // Deposits should not add to bundle LP fees, but fills should. LP fees are taken out of running balances
     // and added to realized LP fees, for fills.
     const lpFeePct1 = (
@@ -164,6 +168,8 @@ describe("Dataworker: Build merkle roots", async function () {
     const slowFillRequest = spokePoolClients[destinationChainId].getSlowFillRequestsForOriginChain(originChainId)[0];
     const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(getDefaultBlockRange(2), spokePoolClients);
 
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(deposit.quoteTimestamp);
     // Slow fills should not add to bundle LP fees.
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
@@ -204,6 +210,8 @@ describe("Dataworker: Build merkle roots", async function () {
     );
     const merkleRoot1 = await dataworkerInstance.buildPoolRebalanceRoot(blockRange1, spokePoolClients);
 
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(deposit.quoteTimestamp);
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
@@ -312,6 +320,8 @@ describe("Dataworker: Build merkle roots", async function () {
     const [leaf1Addr, leaf2Addr] = merkleRoot1.leaves.map(({ l2TokenAddress }) => l2TokenAddress);
     const [refundAddresses1, refundAddresses2] = merkleRoot1.leaves.map(({ refundAddresses }) => refundAddresses);
 
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(deposit.quoteTimestamp);
     // Origin chain should have negative running balance and therefore positive amount to return.
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
@@ -354,6 +364,8 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     const [deposit] = spokePoolClients[originChainId].getDeposits();
 
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(deposit.quoteTimestamp);
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
@@ -478,6 +490,8 @@ describe("Dataworker: Build merkle roots", async function () {
     await updateAllClients();
     const merkleRoot1 = await dataworkerInstance.buildSlowRelayRoot(getDefaultBlockRange(2), spokePoolClients);
 
+    // This cast is OK since `hubPoolClient` is of `SimpleMockHubPoolClient` type, created in `beforeEach`
+    (hubPoolClient as unknown as SimpleMockHubPoolClient).setCurrentTime(deposit.quoteTimestamp);
     const lpFeePct = (
       await hubPoolClient.computeRealizedLpFeePct({ ...deposit, paymentChainId: deposit.destinationChainId })
     ).realizedLpFeePct;
