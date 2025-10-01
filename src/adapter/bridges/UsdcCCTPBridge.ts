@@ -13,11 +13,20 @@ import {
   paginatedEventQuery,
   ethers,
   winston,
+  spreadEventWithBlockNumber,
+  toBN,
+  bnZero,
 } from "../../utils";
-import { processEvent } from "../utils";
-import { getCctpTokenMessenger, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
+import { processEvent, TransferTokenParams } from "../utils";
+import {
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
+  getCctpTokenMessenger,
+  getV2DepositForBurnMaxFee,
+  isCctpV2L2ChainId,
+} from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { SortableEvent } from "../../interfaces";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -62,24 +71,37 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     toAddress: Address,
     l1Token: EvmAddress,
     _l2Token: Address,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
+    // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
+    // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
+    if (this.IS_CCTP_V2) {
+      let maxFee = bnZero,
+        finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+      if (optionalParams?.fastMode) {
+        ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
+      }
+      return Promise.resolve({
+        contract: this.getL1Bridge(),
+        method: "depositForBurn",
+        args: [
+          amount.add(maxFee), // Add maxFee so that we end up with desired amount of tokens on destinationchain.
+          this.l2DestinationDomain,
+          toAddress.toBytes32(),
+          this.l1UsdcTokenAddress.toNative(),
+          ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+          maxFee,
+          finalityThreshold,
+        ],
+      });
+    }
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
-      args: this.IS_CCTP_V2
-        ? [
-            amount,
-            this.l2DestinationDomain,
-            toAddress.toBytes32(),
-            this.l1UsdcTokenAddress.toNative(),
-            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-            0, // maxFee set to 0 so this will be a "standard" speed transfer
-            2000, // Hardcoded minFinalityThreshold value for standard transfer
-          ]
-        : [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
+      args: [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
     });
   }
 
@@ -116,7 +138,25 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     const events = await paginatedEventQuery(this.getL2Bridge(), eventFilter, eventConfig);
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
-      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => processEvent(event, "amount")),
+      [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
+        if (this.IS_CCTP_V2) {
+          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+            amount: string;
+            feeCollected: string;
+          };
+          const amount = toBN(eventSpread.amount);
+          const feeCollected = toBN(eventSpread.feeCollected);
+          return {
+            ...eventSpread,
+            amount: amount.add(feeCollected),
+          };
+        }
+        return processEvent(event, "amount");
+      }),
     };
+  }
+
+  async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+    return getV2DepositForBurnMaxFee(this.l1UsdcTokenAddress, this.hubChainId, this.l2chainId, amount);
   }
 }

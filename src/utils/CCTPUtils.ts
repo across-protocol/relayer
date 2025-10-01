@@ -15,6 +15,8 @@ import {
   chainIsProd,
   Address,
   EvmAddress,
+  getTokenInfo,
+  toBNWei,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getSvmProvider } from "./ProviderUtils";
@@ -48,6 +50,8 @@ type CCTPSvmAPIAttestation = {
 
 type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
 type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
+type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number }[];
+type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
 type CCTPV2APIAttestation = {
   status: string;
   attestation: string;
@@ -80,6 +84,8 @@ const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1 = ethers.utils.id(
 const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
   "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
 );
+export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
+export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;
 
 /**
  * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
@@ -948,6 +954,111 @@ function _decodeDepositForBurnMessageDataV2(message: { data: string }, isSvm = f
 }
 
 /**
+ * @notice The maximum amount of USDC that can be sent using a fast transfer.
+ * @param isMainnet Toggles whether to call CCTP API on mainnet or sandbox environment.
+ * @returns USDC amount in units of USDC.
+ * @link https://developers.circle.com/api-reference/cctp/all/get-fast-burn-usdc-allowance
+ */
+async function _getV2FastBurnAllowance(isMainnet: boolean): Promise<string> {
+  const httpResponse = await axios.get<CCTPV2APIGetFastBurnAllowanceResponse>(
+    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/v2/fastBurn/USDC/allowance`
+  );
+  return httpResponse.data.allowance.toString();
+}
+
+/**
+ * Returns the minimum transfer fees required for a transfer to be relayed. When calling depositForBurn(), the maxFee
+ * parameter must be greater than or equal to the minimum fee.
+ * @param sourceChainId The source chain ID of the transfer.
+ * @param destinationChainId The destination chain ID of the transfer.
+ * @param isMainnet Toggles whether to call CCTP API on mainnet or sandbox environment.
+ * @returns The standard and fast transfer fees for the given source and destination chains.
+ * @link https://developers.circle.com/api-reference/cctp/all/get-burn-usdc-fees
+ */
+async function _getV2MinTransferFees(
+  sourceChainId: number,
+  destinationChainId: number
+): Promise<{ standard: BigNumber; fast: BigNumber }> {
+  const isMainnet = chainIsProd(destinationChainId);
+  const sourceDomain = getCctpDomainForChainId(sourceChainId);
+  const destinationDomain = getCctpDomainForChainId(destinationChainId);
+  const endpoint = `https://iris-api${
+    isMainnet ? "" : "-sandbox"
+  }.circle.com/v2/burn/USDC/fees/${sourceDomain}/${destinationDomain}`;
+  const httpResponse = await axios.get<CCTPV2APIGetFeesResponse>(endpoint);
+  const standardFee = httpResponse.data.find((fee) => fee.finalityThreshold === CCTPV2_FINALITY_THRESHOLD_STANDARD);
+  assert(
+    isDefined(standardFee?.minimumFee),
+    `CCTPUtils#getTransferFees: Standard fee not found in API response: ${endpoint}`
+  );
+  const fastFee = httpResponse.data.find((fee) => fee.finalityThreshold === CCTPV2_FINALITY_THRESHOLD_FAST);
+  assert(isDefined(fastFee?.minimumFee), `CCTPUtils#getTransferFees: Fast fee not found in API response: ${endpoint}`);
+  return {
+    standard: BigNumber.from(standardFee.minimumFee),
+    fast: BigNumber.from(fastFee.minimumFee),
+  };
+}
+
+/**
+ * @notice Returns the maxFee and finalityThreshold to set to transfer USDC via CCTP V2. If the finalityThreshold
+ * is < 2000, then the transfer is a "fast" transfer and the maxFee is > 0.
+ * @param originUsdcToken The address of the USDC token on the origin chain.
+ * @param originChainId The chain ID of the origin chain.
+ * @param destinationChainId The chain ID of the destination chain.
+ * @param amount The amount of USDC to transfer.
+ * @returns The maxFee (in units of USDC) and finalityThreshold to set to transfer USDC via CCTP V2.
+ */
+export async function getV2DepositForBurnMaxFee(
+  originUsdcToken: Address,
+  originChainId: number,
+  destinationChainId: number,
+  amount: BigNumber
+): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+  const [_fastBurnAllowance, transferFees] = await Promise.all([
+    _getV2FastBurnAllowance(chainIsProd(destinationChainId)),
+    _getV2MinTransferFees(originChainId, destinationChainId),
+  ]);
+  const expectedMaxFastTransferFee = getV2MaxExpectedTransferFee(originChainId);
+  // If we are using CCTP V2 then try to use the fast transfer if the amount is under the
+  // fast burn allowance and the transfer fee is under the expected max fast transfer fee.
+  // Fees are taken out of the received amount on the destination chain.
+  let finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+  let maxFee = bnZero;
+  const { decimals } = getTokenInfo(originUsdcToken, originChainId);
+  const fastBurnAllowance = toBNWei(_fastBurnAllowance, decimals);
+  if (amount.lte(fastBurnAllowance) && transferFees.fast.lte(expectedMaxFastTransferFee)) {
+    finalityThreshold = CCTPV2_FINALITY_THRESHOLD_FAST;
+    // Set maxFee to the expected max fast transfer fee, which is larger and provides a buffer
+    // in case the transfer fee moves. maxFee must be set higher than the minFee. Add a 1% buffer
+    // to final amount to account for rounding errors.
+    maxFee = amount.mul(transferFees.fast).div(10000).mul(101).div(100);
+  }
+  return {
+    maxFee,
+    finalityThreshold,
+  };
+}
+
+/**
+ * @notice Returns the maximum expected transfer fees that we can use to avoid overpaying for
+ * fast transfers. Based on empirical observations.
+ * @param sourceChainId The source chain ID of the transfer.
+ * @returns The fee in basis points.
+ */
+export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
+  // Based on https://developers.circle.com/cctp/technical-guide#cctp-fees
+  // as of 09/26/2025.
+  switch (sourceChainId) {
+    case CHAIN_IDs.LINEA:
+      return BigNumber.from(14);
+    case CHAIN_IDs.INK:
+      return BigNumber.from(2);
+    default:
+      return BigNumber.from(1);
+  }
+}
+
+/**
  * Generates an attestation proof for a given message hash. This is required to finalize a CCTP message.
  * @dev Only works for v1 messages because we don't have nonceHash filled in for message when the v2 event is emitted on-chain, so we can't generate a messageHash locally.
  * That's why for v2 messages we have to use _fetchAttestationsForTxn instead
@@ -983,7 +1094,7 @@ async function _fetchAttestationsForTxn(
 
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPSvmAPIGetAttestationResponse> {
   const httpResponse = await axios.get<CCTPSvmAPIGetAttestationResponse>(
-    `https://iris-api.circle.com/messages/5/${transactionHash}`
+    `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
   );
   const attestationResponse = httpResponse.data;
   return attestationResponse;
@@ -1019,9 +1130,10 @@ function cmpAPIToEventMessageBytesV2(apiResponseMessage: string, eventMessageByt
 
   // Skip `finalityThresholdExecuted`: Bytes [144 .. 148)
 
-  // Segment 3: Bytes [148..end)
-  const seg3Api = normApiMsg.substring(296);
-  const seg3Local = normLocalMsg.substring(296);
+  // Segment 3: `messageBody` Bytes [148..312), stopping at parameters that we don't know about until the
+  // destination chain transaction is executed like feeExecuted.
+  const seg3Api = normApiMsg.substring(296, 624);
+  const seg3Local = normLocalMsg.substring(296, 624);
   if (seg3Api !== seg3Local) {
     return false;
   }

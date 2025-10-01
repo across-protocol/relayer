@@ -84,7 +84,7 @@ describe("Cross Chain Adapter: OP Stack", async function () {
     daiBridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
     snxBridgeContract = await (await getContractFactory("OpStackSnxBridge", deployer)).deploy();
     erc20BridgeContract = await (await getContractFactory("OpStackStandardBridge", deployer)).deploy();
-    cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
+    cctpBridgeContract = await (await getContractFactory("CctpV2TokenMessenger", deployer)).deploy();
 
     const bridges = {
       [l1WethAddress]: new OpStackWethBridge(CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, deployer, deployer, undefined),
@@ -296,12 +296,9 @@ describe("Cross Chain Adapter: OP Stack", async function () {
 
   describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const processedNonce = 1;
-      const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
-        processedNonce,
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
@@ -309,18 +306,17 @@ describe("Cross Chain Adapter: OP Stack", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
-        unprocessedNonce,
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.OPTIMISM),
         ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress, 1); // 1 token to receive, 1 token to pay for fee
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1UsdcAddress)]);
-      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(2));
     });
   });
 

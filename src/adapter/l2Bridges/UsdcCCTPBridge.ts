@@ -18,10 +18,13 @@ import {
   assert,
   createFormatFunction,
   getTokenInfo,
+  getV2DepositForBurnMaxFee,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { TransferTokenParams } from "../utils";
 
 export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -52,11 +55,12 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     return getCctpDomainForChainId(this.hubChainId);
   }
 
-  constructWithdrawToL1Txns(
+  async constructWithdrawToL1Txns(
     toAddress: EvmAddress,
     l2Token: EvmAddress,
     l1Token: EvmAddress,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<AugmentedTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
@@ -64,6 +68,34 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     const formatter = createFormatFunction(2, 4, false, decimals);
 
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
+    if (this.IS_CCTP_V2) {
+      let maxFee = bnZero,
+        finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+      if (optionalParams?.fastMode) {
+        ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
+      }
+      return Promise.resolve([
+        {
+          contract: this.l2Bridge,
+          chainId: this.l2chainId,
+          method: "depositForBurn",
+          nonMulticall: true,
+          message: `🎰 Withdrew CCTP USDC to L1${optionalParams?.fastMode ? " using fast mode" : ""}`,
+          mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP${
+            optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee.toString())}` : ""
+          }`,
+          args: [
+            amount.add(maxFee), // Add maxFee so that we end up with desired amount of tokens on destinationchain.
+            this.l1DestinationDomain,
+            toAddress.toBytes32(),
+            this.l2UsdcTokenAddress.toNative(),
+            ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+            maxFee,
+            finalityThreshold,
+          ],
+        },
+      ]);
+    }
     return Promise.resolve([
       {
         contract: this.l2Bridge,
@@ -72,17 +104,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
         nonMulticall: true,
         message: "🎰 Withdrew CCTP USDC to L1",
         mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP`,
-        args: this.IS_CCTP_V2
-          ? [
-              amount,
-              this.l1DestinationDomain,
-              toAddress.toBytes32(),
-              this.l2UsdcTokenAddress.toNative(),
-              ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-              0, // maxFee set to 0 so this will be a "standard" speed transfer
-              2000, // Hardcoded minFinalityThreshold value for standard transfer
-            ]
-          : [amount, this.l1DestinationDomain, toAddress.toBytes32(), this.l2UsdcTokenAddress.toNative()],
+        args: [amount, this.l1DestinationDomain, toAddress.toBytes32(), this.l2UsdcTokenAddress.toNative()],
       },
     ]);
   }
@@ -113,7 +135,10 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
         // and we will need to adjust this logic.
-        if (counted.has(idx) || !toBN(l1Args.amount.toString()).eq(toBN(l2Args.amount.toString()))) {
+        const l1TotalAmount = this.IS_CCTP_V2
+          ? toBN(l1Args.amount.toString()).add(toBN(l1Args.feeCollected.toString()))
+          : toBN(l1Args.amount.toString());
+        if (counted.has(idx) || !l1TotalAmount.eq(toBN(l2Args.amount.toString()))) {
           return false;
         }
 
@@ -132,5 +157,9 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
         bridge: EvmAddress.from(this.l2Bridge.address),
       },
     ];
+  }
+
+  async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+    return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.hubChainId, amount);
   }
 }
