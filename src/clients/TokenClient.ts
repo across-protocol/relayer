@@ -33,6 +33,7 @@ import {
   EvmAddress,
   convertRelayDataParamsToBytes32,
   getSolanaTokenBalance,
+  toBNWei,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -89,6 +90,12 @@ export class TokenClient {
   }
 
   getUnfilledDepositAmounts(chainId: number, token: Address): BigNumber[] {
+    if (chainId === 8453 && token.eq(toAddressType("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", chainId))) {
+      return [
+        toBNWei("0.1", 6),
+        toBNWei("0.2", 6),
+      ];
+    }
     return this.unfilledDepositAmounts?.[chainId]?.[token.toNative()] || [];
   }
 

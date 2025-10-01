@@ -1126,14 +1126,7 @@ export class InventoryClient {
                 totalShortfall.toString()
               )} ${symbol} (unfilled deposit amounts: ${unfilledDepositAmounts
                 .map((amount) => l2TokenFormatter(amount.toString()))
-                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}).` +
-              " This chain's new pending L1->L2 transfer amount is now " +
-              `${l1Formatter(
-                this.crossChainTransferClient
-                  .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
-                  .toString()
-              )}.` +
-              ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+                .join(", ")}, unfilled deposit ids: ${unfilledDepositIds.map((id) => id.toString()).join(", ")}).`
           } else {
             mrkdwn +=
               ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
@@ -1144,14 +1137,7 @@ export class InventoryClient {
               )} ${symbol} over all chains (ignoring hubpool repayments). This chain has a shortfall of ` +
               `${l2TokenFormatter(
                 this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
-              )} ${symbol}.` +
-              +" This chain's new pending L1->L2 transfer amount is now " +
-              `${l1Formatter(
-                this.crossChainTransferClient
-                  .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
-                  .toString()
-              )}.` +
-              ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
+              )} ${symbol}.`
           }
         }
       }
