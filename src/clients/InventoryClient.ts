@@ -1400,7 +1400,6 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
-
           withdrawalsRequired[chainId] ??= [];
           withdrawalsRequired[chainId].push({
             l2Token,
