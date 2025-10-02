@@ -53,6 +53,7 @@ type RepaymentChainProfitability = {
 export class Relayer {
   public readonly relayerEvmAddress: Address;
   public readonly fillStatus: { [depositHash: string]: number } = {};
+  public readonly inventoryChainIds: number[];
   private pendingTxnHashes: { [chainId: number]: Promise<string[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
@@ -60,7 +61,6 @@ export class Relayer {
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
-  protected inventoryChainIds: number[];
   protected updated = 0;
 
   constructor(
@@ -149,11 +149,7 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([
-      acrossApiClient.update(this.config.ignoreLimits),
-      inventoryClient.update(this.inventoryChainIds),
-      tokenClient.update(),
-    ]);
+    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
