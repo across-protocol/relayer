@@ -1118,14 +1118,14 @@ export class InventoryClient {
           if (isShortfallRebalance) {
             const totalShortfall = this.tokenClient.getShortfallTotalRequirement(chainId, l2Token);
             mrkdwn +=
-              `- ${l1Formatter(amount.toString())} ${symbol} rebalanced to cover total chain shortfall of ` +
-              `${l2TokenFormatter(totalShortfall.toString())} ${symbol} `;
+              `- ${l1Formatter(amount)} ${symbol} rebalanced to cover total chain shortfall of ` +
+              `${l2TokenFormatter(totalShortfall)} ${symbol} `;
           } else {
             mrkdwn +=
-              ` - ${l1Formatter(amount.toString())} ${symbol} rebalanced. This meets target allocation of ` +
-              `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
-              `${this.formatWei(thresholdPct.mul(100).toString())}%) of the total ` +
-              `${l1Formatter(cumulativeBalance.toString())} ${symbol} over all chains (ignoring hubpool repayments).`;
+              ` - ${l1Formatter(amount)} ${symbol} rebalanced. This meets target allocation of ` +
+              `${this.formatWei(targetPct.mul(100))}% (trigger of ` +
+              `${this.formatWei(thresholdPct.mul(100))}%) of the total ` +
+              `${l1Formatter(cumulativeBalance)} ${symbol} over all chains (ignoring hubpool repayments).`;
           }
           mrkdwn += ` tx: ${blockExplorerLink(hash, this.hubPoolClient.chainId)}\n`;
         }
@@ -1151,20 +1151,23 @@ export class InventoryClient {
           const cumulativeBalance = this.getCumulativeBalance(l1Token);
           mrkdwn +=
             `- ${symbol} transfer blocked. Required to send ` +
-            `${l1Formatter(amount.toString())} but relayer has ` +
-            `${l1Formatter(balance.toString())} on L1. There is currently ` +
-            `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token).toString())} ${symbol} on ` +
+            `${l1Formatter(amount)} but relayer has ` +
+            `${l1Formatter(balance)} on L1. There is currently ` +
+            `${l1Formatter(this.getBalanceOnChain(chainId, l1Token, l2Token))} ${symbol} on ` +
             `${getNetworkName(chainId)} which is ` +
-            `${this.formatWei(distributionPct.toString())}% of the total ` +
-            `${l1Formatter(cumulativeBalance.toString())} ${symbol}.` +
+            `${this.formatWei(distributionPct)}% of the total ` +
+            `${l1Formatter(cumulativeBalance)} ${symbol}.` +
             " This chain's pending L1->L2 transfer amount is " +
             `${l1Formatter(
-              this.crossChainTransferClient
-                .getOutstandingCrossChainTransferAmount(this.relayer, chainId, l1Token, l2Token)
-                .toString()
+              this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+                this.relayer,
+                chainId,
+                l1Token,
+                l2Token
+              )
             )}.` +
             ` This chain has a shortfall of ${l2TokenFormatter(
-              this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).toString()
+              this.tokenClient.getShortfallTotalRequirement(chainId, l2Token)
             )} ${symbol}.\n`;
         }
       }
