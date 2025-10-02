@@ -414,6 +414,65 @@ export async function getCctpV1Messages(
   return attestedMessages;
 }
 
+/**
+ * @notice Returns the maxFee and finalityThreshold to set to transfer USDC via CCTP V2. If the finalityThreshold
+ * is < 2000, then the transfer is a "fast" transfer and the maxFee is > 0.
+ * @param originUsdcToken The address of the USDC token on the origin chain.
+ * @param originChainId The chain ID of the origin chain.
+ * @param destinationChainId The chain ID of the destination chain.
+ * @param amount The amount of USDC to transfer.
+ * @returns The maxFee (in units of USDC) and finalityThreshold to set to transfer USDC via CCTP V2.
+ */
+export async function getV2DepositForBurnMaxFee(
+  originUsdcToken: Address,
+  originChainId: number,
+  destinationChainId: number,
+  amount: BigNumber
+): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+  const [_fastBurnAllowance, transferFees] = await Promise.all([
+    _getV2FastBurnAllowance(chainIsProd(destinationChainId)),
+    _getV2MinTransferFees(originChainId, destinationChainId),
+  ]);
+  const expectedMaxFastTransferFee = getV2MaxExpectedTransferFee(originChainId);
+  // If we are using CCTP V2 then try to use the fast transfer if the amount is under the
+  // fast burn allowance and the transfer fee is under the expected max fast transfer fee.
+  // Fees are taken out of the received amount on the destination chain.
+  let finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+  let maxFee = bnZero;
+  const { decimals } = getTokenInfo(originUsdcToken, originChainId);
+  const fastBurnAllowance = toBNWei(_fastBurnAllowance, decimals);
+  if (amount.lte(fastBurnAllowance) && transferFees.fast.lte(expectedMaxFastTransferFee)) {
+    finalityThreshold = CCTPV2_FINALITY_THRESHOLD_FAST;
+    // Set maxFee to the expected max fast transfer fee, which is larger and provides a buffer
+    // in case the transfer fee moves. maxFee must be set higher than the minFee. Add a 1% buffer
+    // to final amount to account for rounding errors.
+    maxFee = amount.mul(transferFees.fast).div(10000).mul(101).div(100);
+  }
+  return {
+    maxFee,
+    finalityThreshold,
+  };
+}
+
+/**
+ * @notice Returns the maximum expected transfer fees that we can use to avoid overpaying for
+ * fast transfers. Based on empirical observations.
+ * @param sourceChainId The source chain ID of the transfer.
+ * @returns The fee in basis points.
+ */
+export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
+  // Based on https://developers.circle.com/cctp/technical-guide#cctp-fees
+  // as of 09/26/2025.
+  switch (sourceChainId) {
+    case CHAIN_IDs.LINEA:
+      return BigNumber.from(14);
+    case CHAIN_IDs.INK:
+      return BigNumber.from(2);
+    default:
+      return BigNumber.from(1);
+  }
+}
+
 /** ********************************************************************************************************************
  *
  * Internal functions and constants:
@@ -953,65 +1012,6 @@ async function _getV2MinTransferFees(
     standard: BigNumber.from(standardFee.minimumFee),
     fast: BigNumber.from(fastFee.minimumFee),
   };
-}
-
-/**
- * @notice Returns the maxFee and finalityThreshold to set to transfer USDC via CCTP V2. If the finalityThreshold
- * is < 2000, then the transfer is a "fast" transfer and the maxFee is > 0.
- * @param originUsdcToken The address of the USDC token on the origin chain.
- * @param originChainId The chain ID of the origin chain.
- * @param destinationChainId The chain ID of the destination chain.
- * @param amount The amount of USDC to transfer.
- * @returns The maxFee (in units of USDC) and finalityThreshold to set to transfer USDC via CCTP V2.
- */
-export async function getV2DepositForBurnMaxFee(
-  originUsdcToken: Address,
-  originChainId: number,
-  destinationChainId: number,
-  amount: BigNumber
-): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
-  const [_fastBurnAllowance, transferFees] = await Promise.all([
-    _getV2FastBurnAllowance(chainIsProd(destinationChainId)),
-    _getV2MinTransferFees(originChainId, destinationChainId),
-  ]);
-  const expectedMaxFastTransferFee = getV2MaxExpectedTransferFee(originChainId);
-  // If we are using CCTP V2 then try to use the fast transfer if the amount is under the
-  // fast burn allowance and the transfer fee is under the expected max fast transfer fee.
-  // Fees are taken out of the received amount on the destination chain.
-  let finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
-  let maxFee = bnZero;
-  const { decimals } = getTokenInfo(originUsdcToken, originChainId);
-  const fastBurnAllowance = toBNWei(_fastBurnAllowance, decimals);
-  if (amount.lte(fastBurnAllowance) && transferFees.fast.lte(expectedMaxFastTransferFee)) {
-    finalityThreshold = CCTPV2_FINALITY_THRESHOLD_FAST;
-    // Set maxFee to the expected max fast transfer fee, which is larger and provides a buffer
-    // in case the transfer fee moves. maxFee must be set higher than the minFee. Add a 1% buffer
-    // to final amount to account for rounding errors.
-    maxFee = amount.mul(transferFees.fast).div(10000).mul(101).div(100);
-  }
-  return {
-    maxFee,
-    finalityThreshold,
-  };
-}
-
-/**
- * @notice Returns the maximum expected transfer fees that we can use to avoid overpaying for
- * fast transfers. Based on empirical observations.
- * @param sourceChainId The source chain ID of the transfer.
- * @returns The fee in basis points.
- */
-export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
-  // Based on https://developers.circle.com/cctp/technical-guide#cctp-fees
-  // as of 09/26/2025.
-  switch (sourceChainId) {
-    case CHAIN_IDs.LINEA:
-      return BigNumber.from(14);
-    case CHAIN_IDs.INK:
-      return BigNumber.from(2);
-    default:
-      return BigNumber.from(1);
-  }
 }
 
 /**
