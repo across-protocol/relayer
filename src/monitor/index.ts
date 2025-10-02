@@ -13,7 +13,7 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
 
   logger.error({
     at: "Monitor#testPage",
-    message: `Testing @risk-labs/logger PagerDuty support`,
+    message: "Testing @risk-labs/logger PagerDuty support",
   });
 
   try {
