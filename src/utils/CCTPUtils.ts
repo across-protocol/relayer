@@ -206,7 +206,7 @@ export async function getCctpV2DepositForBurnTxnHashes(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<string[]> {
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
-  const { address, abi } = _getCctpV2TokenMessenger(sourceChainId);
+  const { address, abi } = getCctpV2TokenMessenger(sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
   const eventFilterParams = [TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
@@ -463,7 +463,7 @@ export function getCctpV1MessageTransmitter(messageTransmitterChainId: number): 
   return CONTRACT_ADDRESSES[messageTransmitterChainId]["cctpMessageTransmitter"];
 }
 
-export function ggetCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
+export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
   return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
 }
 
@@ -479,8 +479,8 @@ async function _getDestinationMessageTransmitterContract(
 ): Promise<Contract> {
   const dstProvider = await getProvider(destinationChainId);
   const { address, abi } = cctpV1
-    ? _getCctpV1MessageTransmitter(destinationChainId)
-    : _getCctpV2MessageTransmitter(destinationChainId);
+    ? getCctpV1MessageTransmitter(destinationChainId)
+    : getCctpV2MessageTransmitter(destinationChainId);
   return new ethers.Contract(address, abi, dstProvider);
 }
 
@@ -508,7 +508,7 @@ async function _getCCTPV1DepositForBurnTxnHashes(
   assert(chainIsEvm(sourceChainId));
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
   let depositForBurnEventTxnHashes: string[] = [];
-  const { address, abi } = _getCctpV1TokenMessenger(sourceChainId);
+  const { address, abi } = getCctpV1TokenMessenger(sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
   const eventFilterParams = [undefined, TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId], undefined, senderAddresses];
@@ -555,8 +555,8 @@ async function _getCCTPV1MessageEvents(
   const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
   assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
 
-  const tokenMessengerInterface = new ethers.utils.Interface(_getCctpV1TokenMessenger(sourceChainId).abi);
-  const messageTransmitterInterface = new ethers.utils.Interface(_getCctpV1MessageTransmitter(sourceChainId).abi);
+  const tokenMessengerInterface = new ethers.utils.Interface(getCctpV1TokenMessenger(sourceChainId).abi);
+  const messageTransmitterInterface = new ethers.utils.Interface(getCctpV1MessageTransmitter(sourceChainId).abi);
 
   const relevantEvents: CCTPMessageEvent[] = [];
   for (const receipt of receipts) {
@@ -744,7 +744,7 @@ async function _getCCTPV1MessagesWithStatus(
     sourceEventSearchConfig
   );
   const dstProvider = getCachedProvider(destinationChainId);
-  const { address, abi } = _getCctpV1MessageTransmitter(destinationChainId);
+  const { address, abi } = getCctpV1MessageTransmitter(destinationChainId);
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
@@ -837,7 +837,7 @@ async function _getCCTPV1DepositEventsSvm(
   assert(chainIsSvm(sourceChainId));
   // Get the `DepositForBurn` events on Solana.
   const provider = getSvmProvider(await getRedisCache());
-  const { address } = _getCctpV1TokenMessenger(sourceChainId);
+  const { address } = getCctpV1TokenMessenger(sourceChainId);
 
   const eventClient = await SvmCpiEventsClient.createFor(provider, address, TokenMessengerMinterIdl);
   const depositForBurnEvents = await eventClient.queryDerivedAddressEvents(
@@ -848,7 +848,7 @@ async function _getCCTPV1DepositEventsSvm(
   );
 
   const dstProvider = getCachedProvider(destinationChainId);
-  const { address: dstMessageTransmitterAddress, abi } = _getCctpV1MessageTransmitter(destinationChainId);
+  const { address: dstMessageTransmitterAddress, abi } = getCctpV1MessageTransmitter(destinationChainId);
   const destinationMessageTransmitter = new ethers.Contract(dstMessageTransmitterAddress, abi, dstProvider);
 
   // Query the CCTP API to get the encoded message bytes/attestation.
