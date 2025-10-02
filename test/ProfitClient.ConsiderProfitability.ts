@@ -1,6 +1,6 @@
 import { assert } from "chai";
 import { random } from "lodash";
-import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
+import { arch, constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, EVMSpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
 import {
@@ -20,6 +20,7 @@ import {
   EvmAddress,
   SvmAddress,
   ZERO_BYTES,
+  getMessageHash,
 } from "../src/utils";
 import { MockHubPoolClient, MockProfitClient } from "./mocks";
 import { originChainId, destinationChainId, ZERO_ADDRESS } from "./constants";
@@ -34,6 +35,7 @@ import {
   randomAddress,
   winston,
 } from "./utils";
+import { Address as KitAddress } from "@solana/kit";
 
 type TransactionCostEstimate = sdkUtils.TransactionCostEstimate;
 const { formatEther } = ethers.utils;
@@ -57,6 +59,7 @@ describe("ProfitClient: Consider relay profit", () => {
     outputAmount,
     quoteTimestamp: now,
     message: sdkConstants.EMPTY_MESSAGE,
+    messageHash: sdkUtils.getMessageHash(sdkConstants.EMPTY_MESSAGE),
     fillDeadline: now,
     exclusivityDeadline: 0,
     exclusiveRelayer: toAddressType(ZERO_ADDRESS, destinationChainId),
@@ -543,7 +546,8 @@ describe("ProfitClient: Consider relay profit", () => {
       quoteBlockNumber: 0,
       blockNumber: 0,
       transactionHash: "",
-      transactionIndex: 0,
+      txnIndex: 0,
+      txnRef: "0x",
       logIndex: 0,
     };
     const relayerFeePct = toBNWei("0.001");
@@ -553,6 +557,121 @@ describe("ProfitClient: Consider relay profit", () => {
     profitClient.captureUnprofitableFill(deposit, lpFeePct, relayerFeePct, gasCost);
     expect(profitClient.getUnprofitableFills()).to.deep.equal({
       [deposit.originChainId]: [{ deposit, lpFeePct, relayerFeePct, gasCost }],
+    });
+  });
+
+  describe.only("Auxiliary native token cost (SVM)", () => {
+    const SOLANA = CHAIN_IDs.SOLANA;
+
+    const encodeAcrossPlusMessage = (valueLamports: bigint): string => {
+      const encoder = arch.svm.getAcrossPlusMessageEncoder();
+      const messageBytes = encoder.encode({
+        handler: SvmAddress.from("11111111111111111111111111111111").toBase58() as KitAddress,
+        read_only_len: 0,
+        value_amount: valueLamports,
+        accounts: [],
+        handler_message: new Uint8Array(),
+      });
+      return "0x" + Buffer.from(messageBytes).toString("hex");
+    };
+
+    const setupSvmEnv = async () => {
+      // Neutral padding/multiplier for deterministic expectations.
+      profitClient.setGasPadding(toBNWei("1"));
+      profitClient.setGasMultiplier(toBNWei("1"));
+
+      // Ensure prices exist for SOL and $1 quote for simplicity.
+      profitClient.mapToken("SOL", "11111111111111111111111111111111");
+      profitClient.setTokenPrice("SOL", toBNWei("1"));
+      profitClient.setTokenPrice("USDC", toBNWei("1"));
+      profitClient.setTokenPrice("WETH", toBNWei("1"));
+
+      // Minimal gas cost to satisfy checks.
+      profitClient.setGasCost(SOLANA, { nativeGasCost: bnOne, tokenGasCost: bnOne, gasPrice: bnOne });
+    };
+
+    const buildSvmDeposit = (overrides?: Partial<Deposit>): Deposit => {
+      const outputToken = SvmAddress.from("11111111111111111111111111111111");
+      const recipient = SvmAddress.from("11111111111111111111111111111111");
+      const inputToken = toAddressType(randomAddress(), originChainId);
+      const nowTs = getCurrentTime();
+      const base: Deposit = {
+        originChainId,
+        depositId: BigNumber.from(1),
+        destinationChainId: SOLANA,
+        depositor: toAddressType(randomAddress(), originChainId),
+        recipient,
+        inputToken,
+        inputAmount: toBNWei("110"),
+        outputToken,
+        outputAmount: toBNWei("100"),
+        quoteTimestamp: nowTs,
+        message: sdkConstants.EMPTY_MESSAGE,
+        messageHash: getMessageHash(sdkConstants.EMPTY_MESSAGE),
+        fillDeadline: nowTs + 3600,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, SOLANA),
+        fromLiteChain: false,
+        toLiteChain: false,
+      };
+
+      // Token info for price lookups
+      hubPoolClient.mapTokenInfo(base.outputToken, "WETH", 18);
+      hubPoolClient.mapTokenInfo(base.inputToken, "WETH", 18);
+
+      const overrideMessage = overrides?.message;
+      if (overrides && overrideMessage !== undefined) {
+        overrides.messageHash = getMessageHash(overrideMessage);
+      }
+
+      return { ...base, ...(overrides ?? {}) };
+    };
+
+    it("returns zero auxiliary cost when message is empty", async () => {
+      await setupSvmEnv();
+      const deposit = buildSvmDeposit({ message: sdkConstants.EMPTY_MESSAGE });
+
+      const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
+      expect(fill.auxiliaryNativeTokenCost.eq(bnZero)).to.be.true;
+      expect(fill.nativeTokenFillCostUsd.eq(fill.gasCostUsd)).to.be.true;
+    });
+
+    it("accounts for auxiliary cost in profitability (profitable case)", async () => {
+      await setupSvmEnv();
+      // ~0.01 SOL in lamports (1e7) => ~$0.01
+      const message = encodeAcrossPlusMessage(10n ** 7n);
+      const deposit = buildSvmDeposit({ message });
+
+      const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
+      // input 110 - output 100 = gross 10; aux ~0.01 + negligible gas => still profitable
+      expect(fill.profitable).to.be.true;
+      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
+      expect(fill.nativeTokenFillCostUsd.gt(fill.gasCostUsd)).to.be.true;
+    });
+
+    it("accounts for auxiliary cost in profitability (unprofitable case)", async () => {
+      await setupSvmEnv();
+      // 15 SOL in lamports => $15 auxiliary cost, exceeds $10 gross
+      const message = encodeAcrossPlusMessage(15n * 10n ** 9n);
+      const deposit = buildSvmDeposit({ message });
+
+      const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
+      expect(fill.profitable).to.be.false;
+      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
+      expect(fill.nativeTokenFillCostUsd.gte(fill.gasCostUsd)).to.be.true;
+    });
+
+    it("handles extreme auxiliary cost (>> amountOut) without anomalies", async () => {
+      await setupSvmEnv();
+      // 10,000 SOL in lamports
+      const absurd = 10000n * 10n ** 9n;
+      const message = encodeAcrossPlusMessage(absurd);
+      const deposit = buildSvmDeposit({ message });
+
+      const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
+      expect(fill.profitable).to.be.false;
+      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
+      expect(fill.nativeTokenFillCostUsd.gte(fill.gasCostUsd)).to.be.true;
     });
   });
 });
