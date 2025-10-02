@@ -39,11 +39,15 @@ export type TokenDataType = { [chainId: number]: { [token: string]: { balance: B
 type TokenShortfallType = {
   [chainId: number]: { [token: string]: { deposits: BigNumber[]; totalRequirement: BigNumber } };
 };
+type UnfilledDepositAmountsType = {
+  [chainId: number]: { [token: string]: BigNumber[] };
+};
 
 export class TokenClient {
   private profiler: InstanceType<typeof Profiler>;
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
+  unfilledDepositAmounts: UnfilledDepositAmountsType = {};
 
   constructor(
     readonly logger: winston.Logger,
@@ -84,6 +88,10 @@ export class TokenClient {
     return this.tokenShortfall?.[chainId]?.[token.toNative()]?.deposits || [];
   }
 
+  getUnfilledDepositAmounts(chainId: number, token: Address): BigNumber[] {
+    return this.unfilledDepositAmounts?.[chainId]?.[token.toNative()] || [];
+  }
+
   hasBalanceForFill(deposit: Deposit): boolean {
     return this.getBalance(deposit.destinationChainId, deposit.outputToken).gte(deposit.outputAmount);
   }
@@ -97,6 +105,7 @@ export class TokenClient {
     // Deposits are the previous shortfall deposits, appended to this depositId.
     const deposits = [...this.getShortfallDeposits(chainId, token), depositId];
     assign(this.tokenShortfall, [chainId, token.toNative()], { deposits, totalRequirement });
+    assign(this.unfilledDepositAmounts, [chainId, token.toNative()], [unfilledAmount]);
   }
 
   captureTokenShortfallForFill(deposit: Deposit): void {
