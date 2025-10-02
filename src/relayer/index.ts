@@ -183,9 +183,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
 
   try {
-    await inventoryClient.update(rebalancer.inventoryChainIds);
     await rebalancer.init();
-    await rebalancer.update();
+    await Promise.all([inventoryClient.update(rebalancer.inventoryChainIds), rebalancer.update()]);
     await rebalancer.checkForUnfilledDepositsAndFill(false, true);
 
     if (config.sendingTransactionsEnabled) {
