@@ -90,6 +90,7 @@ export async function binanceFinalizer(
     fromTimestamp: fromTimestamp,
   });
   const binanceDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Confirmed);
+  const creditedDeposits = _binanceDeposits.filter((deposit) => deposit.status === Status.Credited);
 
   // We can run this in parallel since deposits for each tokens are independent of each other.
   await mapAsync(Object.entries(senderAddresses), async ([address, symbols]) => {
@@ -102,7 +103,7 @@ export async function binanceFinalizer(
         });
         continue;
       }
-      let coinBalance = coin.balance;
+      let coinBalance = Number(coin.balance);
       const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[hubChainId];
       const { decimals: l1Decimals } = getTokenInfo(EvmAddress.from(l1Token), hubChainId);
       const withdrawals = await getBinanceWithdrawals(binanceApi, symbol, fromTimestamp);
@@ -110,6 +111,9 @@ export async function binanceFinalizer(
       // @dev Since we cannot determine the address of the binance depositor without querying the transaction receipt, we need to assume that all tokens
       // with symbol `symbol` should be withdrawn to `address`.
       const depositsInScope = binanceDeposits.filter((deposit) => deposit.coin === symbol);
+      const creditedDepositAmount = creditedDeposits
+        .filter((deposit) => deposit.coin === symbol)
+        .reduce((sum, deposit) => sum + deposit.amount, 0);
       if (depositsInScope.length === 0) {
         logger.debug({
           at: "BinanceFinalizer",
@@ -165,20 +169,25 @@ export async function binanceFinalizer(
         }
         // Binance also takes fees from withdrawals. Since we are bundling together multiple deposits, it is possible that the amount we are trying to withdraw is slightly greater than our free balance
         // (since a prior withdrawal's fees were paid for in part from the current withdrawal's balance). In this case, set `amountToFinalize` as `min(amountToFinalize, accountBalance)`.
-        if (amountToFinalize > Number(coinBalance)) {
+        if (amountToFinalize > coinBalance) {
           logger.debug({
             at: "BinanceFinalizer",
             message: `(X -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
             balance: coinBalance,
           });
-          amountToFinalize = Number(coinBalance);
+          amountToFinalize = coinBalance;
         }
-        if (amountToFinalize >= Number(networkLimits.withdrawMin)) {
+        // If the amount we can finalize is above the withdraw minimum for this network, and if the amount to finalize is within the amount of our balance which corresponds to _finalized_ not credited
+        // deposits, then we can continue.
+        if (
+          amountToFinalize >= Number(networkLimits.withdrawMin) &&
+          amountToFinalize < coinBalance - creditedDepositAmount
+        ) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
           // Balance from Binance is in 8 decimal places, so we need to truncate to 8 decimal places.
-          coinBalance = (Number(coinBalance) - amountToFinalize).toFixed(8);
+          coinBalance = Number((coinBalance - amountToFinalize).toFixed(8));
           const withdrawalId = await binanceApi.withdraw({
             coin: symbol,
             address,
