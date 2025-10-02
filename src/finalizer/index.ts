@@ -262,21 +262,27 @@ export async function finalize(
 
     // We should only finalize the direction that has been specified in
     // the finalization strategy.
-    const chainSpecificFinalizers: (ChainFinalizer | Finalizer)[] = [];
+    const chainSpecificFinalizers: ({ genericFinalizer: boolean; finalizer: ChainFinalizer | Finalizer })[] = [];
     switch (finalizationStrategy) {
       case "l1->l2":
-        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL2);
+        chainSpecificFinalizers.push(
+          ...chainFinalizers[chainId].finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false }))
+        );
         break;
       case "l2->l1":
-        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnL1);
+        chainSpecificFinalizers.push(
+          ...chainFinalizers[chainId].finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false }))
+        );
         break;
       case "any<->any":
-        chainSpecificFinalizers.push(...chainFinalizers[chainId].finalizeOnAny);
+        chainSpecificFinalizers.push(
+          ...chainFinalizers[chainId].finalizeOnAny.map((finalizer) => ({ finalizer, genericFinalizer: true }))
+        );
         break;
       case "l1<->l2":
         chainSpecificFinalizers.push(
-          ...chainFinalizers[chainId].finalizeOnL1,
-          ...chainFinalizers[chainId].finalizeOnL2
+          ...chainFinalizers[chainId].finalizeOnL1.map((finalizer) => ({ finalizer, genericFinalizer: false })),
+          ...chainFinalizers[chainId].finalizeOnL2.map((finalizer) => ({ finalizer, genericFinalizer: false }))
         );
         break;
     }
@@ -303,13 +309,13 @@ export async function finalize(
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
-    const isChainSpecificFinalizer = (finalizer: ChainFinalizer | Finalizer): finalizer is ChainFinalizer => {
-      return finalizer.length === 6;
+    const isChainSpecificFinalizer = (finalizer: ChainFinalizer | Finalizer, genericFinalizer: boolean): finalizer is ChainFinalizer => {
+      return !genericFinalizer;
     };
-    await sdkUtils.mapAsync(chainSpecificFinalizers, async (finalizer) => {
+    await sdkUtils.mapAsync(chainSpecificFinalizers, async ({ finalizer, genericFinalizer }) => {
       try {
         let callData: (Multicall2Call | AugmentedTransaction)[], crossChainMessages: CrossChainMessage[];
-        if (isChainSpecificFinalizer(finalizer)) {
+        if (isChainSpecificFinalizer(finalizer, genericFinalizer)) {
           ({ callData, crossChainMessages } = await finalizer(
             logger,
             hubSigner,

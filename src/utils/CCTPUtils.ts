@@ -555,8 +555,8 @@ async function _getCCTPV1MessageEvents(
   const usdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[sourceChainId];
   assert(isDefined(usdcAddress), `USDC address not defined for chain ${sourceChainId}`);
 
-  const tokenMessengerInterface = new ethers.utils.Interface(_getCctpV2TokenMessenger(sourceChainId).abi);
-  const messageTransmitterInterface = new ethers.utils.Interface(_getCctpV2MessageTransmitter(sourceChainId).abi);
+  const tokenMessengerInterface = new ethers.utils.Interface(_getCctpV1TokenMessenger(sourceChainId).abi);
+  const messageTransmitterInterface = new ethers.utils.Interface(_getCctpV1MessageTransmitter(sourceChainId).abi);
 
   const relevantEvents: CCTPMessageEvent[] = [];
   for (const receipt of receipts) {
