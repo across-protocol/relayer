@@ -209,6 +209,20 @@ export async function runTransaction(
   }
 }
 
+export async function sendRawTransaction(
+  logger: winston.Logger,
+  contract: Contract,
+  value = bnZero,
+  calldata: unknown | null = null,
+  gasLimit: BigNumber | null = null,
+  nonce: number | null = null,
+  retries = 1
+): Promise<TransactionResponse> {
+  // method is always an empty string when sending a raw transaction
+  // calldata should be undefined if not sending any calldata to a contract.
+  return await runTransaction(logger, contract, "", calldata, value, gasLimit, nonce, retries);
+}
+
 export async function sendAndConfirmSolanaTransaction(
   unsignedTransaction: CompilableTransactionMessage,
   signer: KeyPairSigner,

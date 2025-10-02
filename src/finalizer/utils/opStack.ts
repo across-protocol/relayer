@@ -245,6 +245,22 @@ async function getOVMStdEvents(
     l2TokenAddress: WETH.addresses[chainId],
   }));
 
+  // The Blast bridge on L2 allows users to send ETH directly to its receive() function to initiate ETH withdrawals
+  // that look exactly emit the same events as the standard bridge's ETH withdrawal process. This is used by the
+  // https://blast.io/en/bridge UI, so the following query allows this finalizer to finalize withdrawals of WETH
+  // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
+  // have the same ETHBridgeInitiated event signature so we only need to change the contract addres.
+  if (chainIsBlast(chainId)) {
+    const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
+    const blastEthEvents = (
+      await paginatedEventQuery(blastBridge, blastBridge.filters.ETHBridgeInitiated(fromAddresses), searchConfig)
+    ).map((event) => ({
+      ...event,
+      l2TokenAddress: WETH.addresses[chainId],
+    }));
+    ethEvents.push(...blastEthEvents);
+  }
+
   const erc20filter = bridge.filters.ERC20BridgeInitiated(null, null, fromAddresses);
   const erc20Events = (await paginatedEventQuery(bridge, erc20filter, searchConfig))
     .map((event) => {

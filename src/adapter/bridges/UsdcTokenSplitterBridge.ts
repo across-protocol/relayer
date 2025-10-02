@@ -13,6 +13,7 @@ import {
   Address,
   winston,
 } from "../../utils";
+import { TransferTokenParams } from "../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   protected cctpBridge: BaseBridgeAdapter;
@@ -55,10 +56,11 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     toAddress: Address,
     l1Token: EvmAddress,
     l2Token: Address,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
+    return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount, optionalParams);
   }
 
   async queryL1BridgeInitiationEvents(

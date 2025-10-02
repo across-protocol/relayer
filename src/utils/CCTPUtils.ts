@@ -24,7 +24,6 @@ import {
   EvmAddress,
   getTokenInfo,
   toBNWei,
-  forEachAsync,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
@@ -58,10 +57,10 @@ type CCTPSvmAPIAttestation = {
 };
 
 type CCTPSvmAPIGetAttestationResponse = { messages: CCTPSvmAPIAttestation[] };
-type CCTPAPIGetAttestationResponse = { status: string; attestation: string; cctpVersion: number };
+type CCTPAPIGetAttestationResponse = { status: string; attestation: string };
 type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number }[];
 type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
-export type CCTPV2APIAttestation = {
+type CCTPV2APIAttestation = {
   status: string;
   attestation: string;
   message: string;
@@ -1224,8 +1223,9 @@ export async function getV2DepositForBurnMaxFee(
   if (amount.lte(fastBurnAllowance) && transferFees.fast.lte(expectedMaxFastTransferFee)) {
     finalityThreshold = CCTPV2_FINALITY_THRESHOLD_FAST;
     // Set maxFee to the expected max fast transfer fee, which is larger and provides a buffer
-    // in case the transfer fee moves. maxFee must be set higher than the minFee.
-    maxFee = amount.mul(expectedMaxFastTransferFee).div(10000);
+    // in case the transfer fee moves. maxFee must be set higher than the minFee. Add a 1% buffer
+    // to final amount to account for rounding errors.
+    maxFee = amount.mul(transferFees.fast).div(10000).mul(101).div(100);
   }
   return {
     maxFee,
@@ -1244,9 +1244,11 @@ export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
   // as of 09/26/2025.
   switch (sourceChainId) {
     case CHAIN_IDs.LINEA:
-      return BigNumber.from(20);
+      return BigNumber.from(14);
+    case CHAIN_IDs.INK:
+      return BigNumber.from(2);
     default:
-      return BigNumber.from(5);
+      return BigNumber.from(1);
   }
 }
 

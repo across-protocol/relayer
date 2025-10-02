@@ -12,7 +12,7 @@
   "dependencies": {
     "@across-protocol/constants": "^3.1.79",
     "@across-protocol/contracts": "^4.1.9",
-    "@across-protocol/sdk": "4.3.67",
+    "@across-protocol/sdk": "4.3.68",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -75,6 +75,7 @@
     "run-proposer": "PROPOSER_ENABLED=true node ./dist/index.js --dataworker",
     "run-rebalancer": "node ./dist/index.js --rebalancer",
     "run-monitor": "node ./dist/index.js --monitor",
+    "run-refiller": "node ./dist/index.js --refiller",
     "run-finalizer": "node ./dist/index.js --finalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
