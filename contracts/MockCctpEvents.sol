@@ -53,7 +53,12 @@ contract CctpV2TokenMessenger {
         uint32 indexed minFinalityThreshold,
         bytes hookData
     );
-    event MintAndWithdraw(address indexed mintRecipient, uint256 amount, address indexed mintToken);
+    event MintAndWithdraw(
+        address indexed mintRecipient,
+        uint256 amount,
+        address indexed mintToken,
+        uint256 feeCollected
+    );
 
     function emitDepositForBurn(
         address burnToken,
@@ -78,8 +83,13 @@ contract CctpV2TokenMessenger {
         );
     }
 
-    function emitMintAndWithdraw(address mintRecipient, uint256 amount, address mintToken) external {
-        emit MintAndWithdraw(mintRecipient, amount, mintToken);
+    function emitMintAndWithdraw(
+        address mintRecipient,
+        uint256 amount,
+        address mintToken,
+        uint256 feeCollected
+    ) external {
+        emit MintAndWithdraw(mintRecipient, amount, mintToken, feeCollected);
     }
 }
 

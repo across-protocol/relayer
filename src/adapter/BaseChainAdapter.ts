@@ -43,6 +43,7 @@ import {
   setTokenAllowanceInCache,
   getL2TokenAllowanceFromCache,
   setL2TokenAllowanceInCache,
+  TransferTokenParams,
 } from "./utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
@@ -271,7 +272,8 @@ export class BaseChainAdapter {
     address: EvmAddress,
     l2Token: Address,
     amount: BigNumber,
-    simMode: boolean
+    simMode: boolean,
+    optionalParams?: TransferTokenParams
   ): Promise<string[]> {
     const l1Token = getL1TokenAddress(l2Token, this.chainId);
     if (!this.isSupportedL2Bridge(l1Token)) {
@@ -283,7 +285,8 @@ export class BaseChainAdapter {
         address,
         l2Token,
         l1Token,
-        amount
+        amount,
+        optionalParams
       );
     } catch (e) {
       this.log(
@@ -337,18 +340,30 @@ export class BaseChainAdapter {
     );
   }
 
+  /**
+   * @notice Submits on-chain transaction to send tokens to the target chain.
+   * @param address Address to send tokens to.
+   * @param l1Token L1 token to send.
+   * @param l2Token L2 token to receive.
+   * @param amount Amount of tokens to send.
+   * @param simMode True if the transaction should only be simulated.
+   * @param {optionalParams} TransferTokenParams Params to send to underlying bridge adapter's
+   * constructL1ToL2Txn method. Not all adapters support this.
+   * @returns Transaction response.
+   */
   async sendTokenToTargetChain(
     address: Address,
     l1Token: EvmAddress,
     l2Token: Address,
     amount: BigNumber,
-    simMode: boolean
+    simMode: boolean,
+    optionalParams?: TransferTokenParams
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     let bridgeTransactionDetails: BridgeTransactionDetails;
     try {
-      bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount);
+      bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, optionalParams);
     } catch (e) {
       this.log(
         "Failed to construct L1 to L2 transaction",

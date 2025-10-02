@@ -43,6 +43,7 @@ import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interface
 import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
+import { TransferTokenParams } from "../adapter/utils";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -1027,7 +1028,19 @@ export class InventoryClient {
       // is already complex logic and most of the time we'll not be sending batches of rebalance transactions.
       for (const rebalance of possibleRebalances) {
         const { chainId, l1Token, l2Token, amount } = rebalance;
-        const { hash } = await this.sendTokenCrossChain(chainId, l1Token, amount, this.simMode, l2Token);
+        // Send a faster transfer if there is an active shortfall on the chain, otherwise use the slower, cheaper,
+        // default transfer.
+        const optionalParams: TransferTokenParams = {
+          fastMode: this.tokenClient.getShortfallTotalRequirement(chainId, l2Token).gt(bnZero),
+        };
+        const { hash } = await this.sendTokenCrossChain(
+          chainId,
+          l1Token,
+          amount,
+          this.simMode,
+          l2Token,
+          optionalParams
+        );
         executedTransactions.push({ ...rebalance, hash });
       }
 
@@ -1537,9 +1550,18 @@ export class InventoryClient {
     l1Token: EvmAddress,
     amount: BigNumber,
     simMode = false,
-    l2Token?: Address
+    l2Token?: Address,
+    optionalParams?: TransferTokenParams
   ): Promise<TransactionResponse> {
-    return this.adapterManager.sendTokenCrossChain(this.relayer, Number(chainId), l1Token, amount, simMode, l2Token);
+    return this.adapterManager.sendTokenCrossChain(
+      this.relayer,
+      Number(chainId),
+      l1Token,
+      amount,
+      simMode,
+      l2Token,
+      optionalParams
+    );
   }
 
   _unwrapWeth(chainId: number, _l2Weth: string, amount: BigNumber): Promise<TransactionResponse> {

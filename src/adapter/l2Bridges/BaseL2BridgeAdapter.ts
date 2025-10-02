@@ -10,6 +10,7 @@ import {
   getHubPoolAddress,
   getSpokePoolAddress,
 } from "../../utils";
+import { TransferTokenParams } from "../utils";
 
 export abstract class BaseL2BridgeAdapter {
   protected l2Bridge: Contract;
@@ -32,7 +33,8 @@ export abstract class BaseL2BridgeAdapter {
     toAddress: Address,
     l2Token: Address,
     l1Token: EvmAddress,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<AugmentedTransaction[]>;
 
   abstract getL2PendingWithdrawalAmount(
