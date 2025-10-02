@@ -18,9 +18,9 @@ import {
   bnZero,
 } from "../../utils";
 import { processEvent, TransferTokenParams } from "../utils";
-import { getV2DepositForBurnMaxFee } from "../../utils/CCTPUtils";
+import { getCctpV2TokenMessenger, getV2DepositForBurnMaxFee } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
-import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD, CONTRACT_ADDRESSES } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD } from "../../common";
 import { SortableEvent } from "../../interfaces";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
@@ -37,7 +37,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpV2TokenMessenger;
+    const { address: l1Address, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
@@ -46,8 +46,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } =
-      CONTRACT_ADDRESSES[l2chainId].cctpV2TokenMessenger;
+    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpV2TokenMessenger(l2chainId);
     this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);

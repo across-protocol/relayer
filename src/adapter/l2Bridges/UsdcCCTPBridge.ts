@@ -17,10 +17,11 @@ import {
   createFormatFunction,
   getTokenInfo,
   getV2DepositForBurnMaxFee,
+  getCctpV2TokenMessenger,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD, CONTRACT_ADDRESSES } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD } from "../../common";
 import { TransferTokenParams } from "../utils";
 
 export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
@@ -37,11 +38,10 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
 
-    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } =
-      CONTRACT_ADDRESSES[l2chainId].cctpV2TokenMessenger;
+    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpV2TokenMessenger(l2chainId);
     this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2Signer);
 
-    const { address: l1TokenMessengerAddress, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpV2TokenMessenger;
+    const { address: l1TokenMessengerAddress, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
     this.l1Bridge = new Contract(l1TokenMessengerAddress, l1Abi, l1Provider);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);

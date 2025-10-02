@@ -451,27 +451,27 @@ export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
   }
 }
 
+export function getCctpV1TokenMessenger(tokenMessengerChainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[tokenMessengerChainId]["cctpTokenMessenger"];
+}
+
+export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
+}
+
+export function getCctpV1MessageTransmitter(messageTransmitterChainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[messageTransmitterChainId]["cctpMessageTransmitter"];
+}
+
+export function ggetCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
+  return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
+}
+
 /** ********************************************************************************************************************
  *
  * Internal functions and constants:
  *
  ******************************************************************************************************************* **/
-
-function _getCctpV1TokenMessenger(tokenMessengerChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[tokenMessengerChainId]["cctpTokenMessenger"];
-}
-
-function _getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
-}
-
-function _getCctpV1MessageTransmitter(messageTransmitterChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[messageTransmitterChainId]["cctpMessageTransmitter"];
-}
-
-function _getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
-}
 
 async function _getDestinationMessageTransmitterContract(
   destinationChainId: number,

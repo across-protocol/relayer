@@ -262,7 +262,7 @@ export async function finalize(
 
     // We should only finalize the direction that has been specified in
     // the finalization strategy.
-    const chainSpecificFinalizers: ({ genericFinalizer: boolean; finalizer: ChainFinalizer | Finalizer })[] = [];
+    const chainSpecificFinalizers: { genericFinalizer: boolean; finalizer: ChainFinalizer | Finalizer }[] = [];
     switch (finalizationStrategy) {
       case "l1->l2":
         chainSpecificFinalizers.push(
@@ -309,7 +309,10 @@ export async function finalize(
     let totalWithdrawalsForChain = 0;
     let totalDepositsForChain = 0;
     let totalMiscTxnsForChain = 0;
-    const isChainSpecificFinalizer = (finalizer: ChainFinalizer | Finalizer, genericFinalizer: boolean): finalizer is ChainFinalizer => {
+    const isChainSpecificFinalizer = (
+      finalizer: ChainFinalizer | Finalizer,
+      genericFinalizer: boolean
+    ): finalizer is ChainFinalizer => {
       return !genericFinalizer;
     };
     await sdkUtils.mapAsync(chainSpecificFinalizers, async ({ finalizer, genericFinalizer }) => {

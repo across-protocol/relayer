@@ -17,12 +17,13 @@ import {
   getSvmSignerFromEvmSigner,
   getAssociatedTokenAddress,
   winston,
+  getCctpV1TokenMessenger,
 } from "../../utils";
 import { processEvent } from "../utils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { CCTP_MAX_SEND_AMOUNT, CONTRACT_ADDRESSES } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 
 type MintAndWithdrawData = {
   mintRecipient: string;
@@ -50,7 +51,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     _logger: winston.Logger
   ) {
     // This adapter currently only supports CCTP V1.
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger;
+    const { address: l1Address, abi: l1Abi } = getCctpV1TokenMessenger(hubChainId);
 
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
     assert(
@@ -60,7 +61,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2Address } = CONTRACT_ADDRESSES[l2chainId].cctpTokenMessenger;
+    const { address: l2Address } = getCctpV1TokenMessenger(l2chainId);
     this.solanaMessageTransmitter = SvmAddress.from(l2Address);
     this.solanaEventsClientPromise = arch.svm.SvmCpiEventsClient.createFor(
       l2Provider,
