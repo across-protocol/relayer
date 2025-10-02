@@ -1651,7 +1651,12 @@ export class InventoryClient {
 
     await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
 
+    // The following getTotalPendingWithdrawalAmount() call is slow, so don't re-initialize this.pendingL2Withdrawals
+    // for the L1 token if its already set.
     await forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      if (this.pendingL2Withdrawals[l1Token.toNative()]) {
+        return;
+      }
       this.pendingL2Withdrawals[l1Token.toNative()] = {};
       const pendingWithdrawalBalances =
         await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
