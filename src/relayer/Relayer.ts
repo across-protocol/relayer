@@ -118,15 +118,8 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const {
-      acrossApiClient,
-      configStoreClient,
-      hubPoolClient,
-      inventoryClient,
-      profitClient,
-      spokePoolClients,
-      tokenClient,
-    } = this.clients;
+    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
+      this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
@@ -167,6 +160,7 @@ export class Relayer {
 
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
+    await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
     // Unwrap WETH after filling deposits, but before rebalancing.

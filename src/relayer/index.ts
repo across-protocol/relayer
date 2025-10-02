@@ -90,7 +90,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
       if (!inventoryInit && inventoryManagement) {
         inventoryClient.setBundleData();
-        await inventoryClient.update(relayer.inventoryChainIds);
         inventoryInit = true;
       }
 
@@ -182,9 +181,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   inventoryClient.setBundleData();
 
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
-  await inventoryClient.update(rebalancer.inventoryChainIds);
 
   try {
+    await inventoryClient.update(rebalancer.inventoryChainIds);
     await rebalancer.init();
     await rebalancer.update();
     await rebalancer.checkForUnfilledDepositsAndFill(false, true);
