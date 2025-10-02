@@ -74,7 +74,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       if (optionalParams?.fastMode) {
         ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
       }
-      let adjustedAmount = amount.add(maxFee);
+      const adjustedAmount = amount.add(maxFee);
       return Promise.resolve([
         {
           contract: this.l2Bridge,
