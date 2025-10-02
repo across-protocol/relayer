@@ -11,6 +11,11 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
   const clients = await constructMonitorClients(config, logger, baseSigner);
   const acrossMonitor = new Monitor(logger, config, clients);
 
+  logger.error({
+    at: "Monitor#testPage",
+    message: `Testing @risk-labs/logger PagerDuty support`,
+  });
+
   try {
     logger[startupLogLevel(config)]({ at: "Monitor#index", message: "Monitor started 🔭", config });
     for (;;) {
