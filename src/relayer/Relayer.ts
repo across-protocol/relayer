@@ -160,7 +160,6 @@ export class Relayer {
 
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
-    await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
     // Unwrap WETH after filling deposits, but before rebalancing.
