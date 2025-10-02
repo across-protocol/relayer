@@ -1,8 +1,8 @@
 import { Contract } from "ethers";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ProfitClient } from "../../src/clients";
-import { SpokePoolClientsByChain } from "../../src/interfaces";
-import { bnOne, bnZero, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
+import { Deposit, SpokePoolClientsByChain } from "../../src/interfaces";
+import { bnOne, isDefined, TOKEN_SYMBOLS_MAP, EvmAddress, SvmAddress } from "../../src/utils";
 import { BigNumber, toBN, toBNWei, winston } from "../utils";
 import { MockHubPoolClient } from "./MockHubPoolClient";
 import { MockQuery } from "./MockQuery";
@@ -130,8 +130,14 @@ export class MockProfitClient extends ProfitClient {
   }
 
   // Override to avoid accessing undefined relayerFeeQueries in tests.
-  getAuxiliaryNativeTokenCost(deposit: { destinationChainId: number }): BigNumber {
-    const query = this.mockQueries[deposit.destinationChainId];
-    return query ? query.getAuxiliaryNativeTokenCost(deposit) : bnZero;
+  getAuxiliaryNativeTokenCost(deposit: Deposit): BigNumber {
+    const query = this.mockQueries[deposit.destinationChainId] ?? new MockQuery();
+    return query.getAuxiliaryNativeTokenCost(deposit);
+  }
+
+  async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
+    const cached = this.totalGasCosts[deposit.destinationChainId];
+    if (cached) return cached;
+    return super.getTotalGasCost(deposit);
   }
 }
