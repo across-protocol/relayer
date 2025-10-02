@@ -182,7 +182,7 @@ export async function binanceFinalizer(
         // deposits, then we can continue.
         if (
           amountToFinalize >= Number(networkLimits.withdrawMin) &&
-          amountToFinalize < coinBalance - creditedDepositAmount
+          amountToFinalize <= coinBalance - creditedDepositAmount
         ) {
           // Lastly, we need to truncate the amount to withdraw to 6 decimal places.
           amountToFinalize = Math.floor(amountToFinalize * DECIMAL_PRECISION) / DECIMAL_PRECISION;
