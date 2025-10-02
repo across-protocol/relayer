@@ -18,7 +18,7 @@ import {
   bnZero,
 } from "../../utils";
 import { processEvent, TransferTokenParams } from "../utils";
-import { getV2DepositForBurnMaxFee, isCctpV2L2ChainId } from "../../utils/CCTPUtils";
+import { getV2DepositForBurnMaxFee } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD, CONTRACT_ADDRESSES } from "../../common";
 import { SortableEvent } from "../../interfaces";
@@ -43,7 +43,6 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
     );
-    assert(isCctpV2L2ChainId(l2chainId));
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 

@@ -124,19 +124,6 @@ export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus
 export type AttestedCCTPDeposit = DepositForBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
 
 /**
- * @notice Returns whether the chainId is a CCTP V2 chain, based on a hardcoded list of CCTP V2 chain ID's
- * @param chainId
- * @returns True if the chainId is a CCTP V2 chain
- */
-export function isCctpV2L2ChainId(chainId: number): boolean {
-  return (
-    chainId !== CHAIN_IDs.MAINNET &&
-    CONTRACT_ADDRESSES[chainId].cctpV2TokenMessenger !== undefined &&
-    CONTRACT_ADDRESSES[chainId].cctpV2MessageTransmitter !== undefined
-  );
-}
-
-/**
  * @notice Converts an ETH Address string to a 32-byte hex string.
  * @param address The address to convert.
  * @returns The 32-byte hex string representation of the address - required for CCTP messages.
@@ -219,10 +206,6 @@ export async function getCctpV2DepositForBurnTxnHashes(
   sourceEventSearchConfig: EventSearchConfig
 ): Promise<string[]> {
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
-  assert(
-    sourceChainId === CHAIN_IDs.MAINNET || isCctpV2L2ChainId(sourceChainId),
-    "getCctpV2DepositForBurnTxnHashes only supports CCTP V2 chains"
-  );
   const { address, abi } = _getCctpV2TokenMessenger(sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
 
@@ -280,15 +263,6 @@ export async function getCctpV2DepositForBurnStatuses(
         return;
       }
 
-      // Filter out deposits for destinations that are not one of our supported CCTP V2 chains:
-      const destinationChainId = getCctpDestinationChainFromDomain(
-        attestation.decodedMessage.destinationDomain,
-        chainIsProd(sourceChainId)
-      );
-      if (destinationChainId !== CHAIN_IDs.MAINNET && !isCctpV2L2ChainId(destinationChainId)) {
-        return;
-      }
-
       // Filter out events where the sender or recipient is not one of our expected addresses.
       const recipient = attestation.decodedMessage.decodedMessageBody.mintRecipient;
       const sender = attestation.decodedMessage.decodedMessageBody.messageSender;
@@ -300,7 +274,11 @@ export async function getCctpV2DepositForBurnStatuses(
         return;
       }
 
-      // If API attestationstatus  is "complete", then we need to check whether it has been already finalized:
+      // If API attestationstatus is "complete", then we need to check whether it has been already finalized:
+      const destinationChainId = getCctpDestinationChainFromDomain(
+        attestation.decodedMessage.destinationDomain,
+        chainIsProd(sourceChainId)
+      );
       const destinationMessageTransmitter = await _getDestinationMessageTransmitterContract(destinationChainId, false);
       const processed = await _hasCCTPMessageBeenProcessedEvm(attestation.eventNonce, destinationMessageTransmitter);
       if (processed) {

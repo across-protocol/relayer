@@ -10,7 +10,6 @@ import {
   Signer,
   toBN,
   EvmAddress,
-  isCctpV2L2ChainId,
   getCctpDomainForChainId,
   TOKEN_SYMBOLS_MAP,
   ethers,
@@ -37,7 +36,6 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     l1Token: EvmAddress
   ) {
     super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
-    assert(isCctpV2L2ChainId(l2chainId));
 
     const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } =
       CONTRACT_ADDRESSES[l2chainId].cctpV2TokenMessenger;
