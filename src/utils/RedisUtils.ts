@@ -98,7 +98,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
     const reconnectStrategy = (retries: number): number | Error => {
       // Set a maximum retry limit to prevent infinite reconnection attempts
       const MAX_RETRIES = 10;
-      
+
       if (retries >= MAX_RETRIES) {
         logger?.error({
           at: "RedisUtils",
