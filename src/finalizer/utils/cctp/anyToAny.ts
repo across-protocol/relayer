@@ -14,7 +14,7 @@ import {
 import {
   getCctpV2DepositForBurnTxnHashes,
   getCctpV2DepositForBurnStatuses,
-  getCctpV2ReceiveMessageCallData,
+  getCctpReceiveMessageCallData,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, AddressesToFinalize } from "../../types";
 
@@ -73,16 +73,13 @@ export async function cctpV2Finalizer(
   return {
     crossChainMessages: readyToFinalizeDeposits.map((attestation) => ({
       l1TokenSymbol: "USDC", // Always USDC b/c that's the only token we support on CCTP
-      amount: convertFromWei(
-        attestation.attestationData.decodedMessage.decodedMessageBody.amount,
-        TOKEN_SYMBOLS_MAP.USDC.decimals
-      ),
+      amount: convertFromWei(attestation.attestationData.amount, TOKEN_SYMBOLS_MAP.USDC.decimals),
       type: "withdrawal",
       originationChainId: sourceChainId,
       destinationChainId: attestation.destinationChainId,
     })),
     callData: await mapAsync(readyToFinalizeDeposits, async (attestation) => {
-      const txn = await getCctpV2ReceiveMessageCallData(attestation);
+      const txn = await getCctpReceiveMessageCallData(attestation, false /* CCTP V2 */);
       return {
         target: txn.to,
         callData: txn.data,

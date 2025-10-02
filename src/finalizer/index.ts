@@ -39,8 +39,8 @@ import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } 
 import {
   arbStackFinalizer,
   binanceFinalizer,
-  cctpL1toL2Finalizer,
-  cctpL2toL1Finalizer,
+  cctpV1L1toL2Finalizer,
+  cctpV1L2toL1Finalizer,
   cctpV2Finalizer,
   heliosL1toL2Finalizer,
   lineaL1ToL2Finalizer,
@@ -73,8 +73,8 @@ const chainFinalizers: {
 } = {
   // Mainnets
   [CHAIN_IDs.OPTIMISM]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.PLASMA]: {
@@ -83,8 +83,8 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.POLYGON]: {
-    finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [polygonFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -93,13 +93,13 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.BASE]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.ARBITRUM]: {
-    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [arbStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.LENS]: {
@@ -108,8 +108,8 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.LINEA]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer, cctpL1toL2Finalizer],
+    finalizeOnL1: [lineaL2ToL1Finalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer, cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
@@ -118,8 +118,8 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.SOLANA]: {
-    finalizeOnL1: [cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.MODE]: {
@@ -163,13 +163,13 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.HYPEREVM]: {
-    finalizeOnL1: [cctpL2toL1Finalizer],
-    finalizeOnL2: [heliosL1toL2Finalizer, cctpL1toL2Finalizer],
+    finalizeOnL1: [cctpV1L2toL1Finalizer],
+    finalizeOnL2: [heliosL1toL2Finalizer, cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.INK]: {
@@ -178,29 +178,29 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.UNICHAIN]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
-    finalizeOnL1: [arbStackFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [arbStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.MODE_SEPOLIA]: {
@@ -209,8 +209,8 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
-    finalizeOnL1: [polygonFinalizer, cctpL2toL1Finalizer],
-    finalizeOnL2: [cctpL1toL2Finalizer],
+    finalizeOnL1: [polygonFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
   [CHAIN_IDs.LISK_SEPOLIA]: {
