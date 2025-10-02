@@ -560,8 +560,21 @@ describe("ProfitClient: Consider relay profit", () => {
     });
   });
 
-  describe.only("Auxiliary native token cost (SVM)", () => {
-    const SOLANA = CHAIN_IDs.SOLANA;
+  describe("Auxiliary native token cost (SVM)", () => {
+    beforeEach(() => {
+      // Neutral padding/multiplier for deterministic expectations.
+      profitClient.setGasPadding(toBNWei("1"));
+      profitClient.setGasMultiplier(toBNWei("1"));
+
+      // Ensure prices exist for SOL and $1 quote for simplicity.
+      profitClient.mapToken("SOL", "11111111111111111111111111111111");
+      profitClient.setTokenPrice("SOL", toBNWei("1"));
+      profitClient.setTokenPrice("USDC", toBNWei("1"));
+      profitClient.setTokenPrice("WETH", toBNWei("1"));
+
+      // Minimal gas cost to satisfy checks.
+      profitClient.setGasCost(CHAIN_IDs.SOLANA, { nativeGasCost: bnOne, tokenGasCost: bnOne, gasPrice: bnOne });
+    });
 
     const encodeAcrossPlusMessage = (valueLamports: bigint): string => {
       const encoder = arch.svm.getAcrossPlusMessageEncoder();
@@ -575,21 +588,6 @@ describe("ProfitClient: Consider relay profit", () => {
       return "0x" + Buffer.from(messageBytes).toString("hex");
     };
 
-    const setupSvmEnv = async () => {
-      // Neutral padding/multiplier for deterministic expectations.
-      profitClient.setGasPadding(toBNWei("1"));
-      profitClient.setGasMultiplier(toBNWei("1"));
-
-      // Ensure prices exist for SOL and $1 quote for simplicity.
-      profitClient.mapToken("SOL", "11111111111111111111111111111111");
-      profitClient.setTokenPrice("SOL", toBNWei("1"));
-      profitClient.setTokenPrice("USDC", toBNWei("1"));
-      profitClient.setTokenPrice("WETH", toBNWei("1"));
-
-      // Minimal gas cost to satisfy checks.
-      profitClient.setGasCost(SOLANA, { nativeGasCost: bnOne, tokenGasCost: bnOne, gasPrice: bnOne });
-    };
-
     const buildSvmDeposit = (overrides?: Partial<Deposit>): Deposit => {
       const outputToken = SvmAddress.from("11111111111111111111111111111111");
       const recipient = SvmAddress.from("11111111111111111111111111111111");
@@ -598,7 +596,7 @@ describe("ProfitClient: Consider relay profit", () => {
       const base: Deposit = {
         originChainId,
         depositId: BigNumber.from(1),
-        destinationChainId: SOLANA,
+        destinationChainId: CHAIN_IDs.SOLANA,
         depositor: toAddressType(randomAddress(), originChainId),
         recipient,
         inputToken,
@@ -610,7 +608,7 @@ describe("ProfitClient: Consider relay profit", () => {
         messageHash: getMessageHash(sdkConstants.EMPTY_MESSAGE),
         fillDeadline: nowTs + 3600,
         exclusivityDeadline: 0,
-        exclusiveRelayer: toAddressType(ZERO_ADDRESS, SOLANA),
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, CHAIN_IDs.SOLANA),
         fromLiteChain: false,
         toLiteChain: false,
       };
@@ -628,7 +626,6 @@ describe("ProfitClient: Consider relay profit", () => {
     };
 
     it("returns zero auxiliary cost when message is empty", async () => {
-      await setupSvmEnv();
       const deposit = buildSvmDeposit({ message: sdkConstants.EMPTY_MESSAGE });
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
@@ -637,7 +634,6 @@ describe("ProfitClient: Consider relay profit", () => {
     });
 
     it("accounts for auxiliary cost in profitability (profitable case)", async () => {
-      await setupSvmEnv();
       // ~0.01 SOL in lamports (1e7) => ~$0.01
       const message = encodeAcrossPlusMessage(10n ** 7n);
       const deposit = buildSvmDeposit({ message });
@@ -650,7 +646,6 @@ describe("ProfitClient: Consider relay profit", () => {
     });
 
     it("accounts for auxiliary cost in profitability (unprofitable case)", async () => {
-      await setupSvmEnv();
       // 15 SOL in lamports => $15 auxiliary cost, exceeds $10 gross
       const message = encodeAcrossPlusMessage(15n * 10n ** 9n);
       const deposit = buildSvmDeposit({ message });
@@ -662,7 +657,6 @@ describe("ProfitClient: Consider relay profit", () => {
     });
 
     it("handles extreme auxiliary cost (>> amountOut) without anomalies", async () => {
-      await setupSvmEnv();
       // 10,000 SOL in lamports
       const absurd = 10000n * 10n ** 9n;
       const message = encodeAcrossPlusMessage(absurd);
