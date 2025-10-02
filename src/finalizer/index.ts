@@ -108,8 +108,8 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.LINEA]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer, cctpV1L2toL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer, cctpV1L1toL2Finalizer],
+    finalizeOnL1: [lineaL2ToL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
@@ -163,13 +163,13 @@ const chainFinalizers: {
     finalizeOnAny: [],
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
-    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
-    finalizeOnL2: [cctpV1L1toL2Finalizer],
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.HYPEREVM]: {
-    finalizeOnL1: [cctpV1L2toL1Finalizer],
-    finalizeOnL2: [heliosL1toL2Finalizer, cctpV1L1toL2Finalizer],
+    finalizeOnL1: [],
+    finalizeOnL2: [heliosL1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.INK]: {
