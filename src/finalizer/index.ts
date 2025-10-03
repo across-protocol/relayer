@@ -203,8 +203,7 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] =
-    [];
+  const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   await sdkUtils.mapAsync(configuredChainIds, async (chainId) => {
@@ -316,7 +315,6 @@ export async function finalize(
       .filter(([, v]) => v === undefined)
       .map(([k]) => k)}`
   );
-
 
   if (finalizations.length > 0) {
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
