@@ -80,7 +80,6 @@ export type FillProfit = {
   gasMultiplier: BigNumber; // Gas multiplier applied to fill cost estimates before profitability.
   gasTokenPriceUsd: BigNumber; // Price paid per unit of gas the gas token in USD.
   gasCostUsd: BigNumber; // Estimated gas cost of completing the fill in USD.
-  nativeTokenFillCostUsd: BigNumber; // Estimated native token cost of completing the fill in USD: gas + auxiliary
   netRelayerFeePct: BigNumber; // Relayer fee after gas costs as a portion of relayerCapitalUsd.
   netRelayerFeeUsd: BigNumber; // Relayer fee in USD after paying for gas costs.
   totalFeePct: BigNumber; // Total fee as a portion of the fill amount.
@@ -311,7 +310,6 @@ export class ProfitClient {
       | "gasPrice"
       | "auxiliaryNativeTokenCost"
       | "auxiliaryNativeTokenCostUsd"
-      | "nativeTokenFillCostUsd"
     >
   > {
     const { destinationChainId: chainId } = deposit;
@@ -352,7 +350,6 @@ export class ProfitClient {
       .mul(nativeTokenPriceUsd)
       .div(bn10.pow(nativeToken.decimals));
 
-    const nativeTokenFillCostUsd = gasCostUsd.add(auxiliaryNativeTokenCostUsd);
     return {
       nativeGasCost,
       tokenGasCost,
@@ -361,7 +358,6 @@ export class ProfitClient {
       gasCostUsd,
       auxiliaryNativeTokenCost,
       auxiliaryNativeTokenCostUsd,
-      nativeTokenFillCostUsd,
     };
   }
 
@@ -432,18 +428,6 @@ export class ProfitClient {
     const scaledOutputAmount = effectiveOutputAmount.mul(outputTokenScalar);
     const outputAmountUsd = scaledOutputAmount.mul(outputTokenPriceUsd).div(fixedPoint);
 
-    const totalFeePct = inputAmountUsd.sub(outputAmountUsd).mul(fixedPoint).div(inputAmountUsd);
-
-    // Normalise token amounts to USD terms.
-    const scaledLpFeeAmount = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
-    const lpFeeUsd = scaledLpFeeAmount.mul(inputTokenPriceUsd).div(fixedPoint);
-
-    // Infer gross relayer fee (excluding gas cost of fill).
-    const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
-    const grossRelayerFeePct = grossRelayerFeeUsd.gt(bnZero)
-      ? grossRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd)
-      : bnZero;
-
     const {
       // Estimated gas cost of filling this relay
       nativeGasCost,
@@ -454,15 +438,30 @@ export class ProfitClient {
       // Estimated auxiliary native token cost
       auxiliaryNativeTokenCost,
       auxiliaryNativeTokenCostUsd,
-      // Estimated total native token cost in USD
-      nativeTokenFillCostUsd,
     } = await this.estimateFillCost(deposit);
+
+    const totalFeePct = inputAmountUsd
+      .sub(outputAmountUsd)
+      .sub(auxiliaryNativeTokenCostUsd)
+      .mul(fixedPoint)
+      .div(inputAmountUsd);
+
+    // Normalise token amounts to USD terms.
+    const scaledLpFeeAmount = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
+    const lpFeeUsd = scaledLpFeeAmount.mul(inputTokenPriceUsd).div(fixedPoint);
+
+    // Calculate gross relayer fee (excluding gas cost of fill).
+    const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd).sub(auxiliaryNativeTokenCostUsd);
+    const grossRelayerFeePct = grossRelayerFeeUsd.gt(bnZero)
+      ? grossRelayerFeeUsd.mul(fixedPoint).div(inputAmountUsd)
+      : bnZero;
 
     // Determine profitability. netRelayerFeePct effectively represents the capital cost to the relayer;
     // i.e. how much it pays out to the recipient vs. the net fee that it receives for doing so.
-    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(nativeTokenFillCostUsd);
-    const netRelayerFeePct = outputAmountUsd.gt(bnZero)
-      ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
+    const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
+    const relayerCapitalSpendUsd = outputAmountUsd.add(auxiliaryNativeTokenCostUsd);
+    const netRelayerFeePct = relayerCapitalSpendUsd.gt(bnZero)
+      ? netRelayerFeeUsd.mul(fixedPoint).div(relayerCapitalSpendUsd)
       : bnZero;
 
     // If either token prices are unknown, assume the relay is unprofitable.
@@ -486,7 +485,6 @@ export class ProfitClient {
       gasMultiplier: this.resolveGasMultiplier(deposit),
       gasTokenPriceUsd,
       gasCostUsd,
-      nativeTokenFillCostUsd,
       netRelayerFeePct,
       netRelayerFeeUsd,
       profitable,
@@ -535,7 +533,7 @@ export class ProfitClient {
         deposit: convertRelayDataParamsToBytes32(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
-        outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
+        outputTokenPriceUsd: formatEther(fill.outputTokenPriceUsd),
         outputTokenAmountUsd: formatEther(fill.outputAmountUsd),
         totalFeePct: `${formatFeePct(fill.totalFeePct)}%`,
         lpFeePct: `${formatFeePct(lpFeePct)}%`,
@@ -550,7 +548,6 @@ export class ProfitClient {
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
         grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
         gasCostUsd: formatEther(fill.gasCostUsd),
-        nativeTokenFillCostUsd: formatEther(fill.nativeTokenFillCostUsd),
         netRelayerFeeUsd: formatEther(fill.netRelayerFeeUsd),
         netRelayerFeePct: `${formatFeePct(fill.netRelayerFeePct)}%`,
         minRelayerFeePct: `${formatFeePct(minRelayerFeePct)}%`,
