@@ -72,27 +72,27 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
     // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
-      let maxFee = bnZero,
-        finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
-      if (optionalParams?.fastMode) {
-        ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
-      }
-      // Add maxFee so that we end up with desired amount of tokens on destination chain.
-      const amountWithFee = amount.add(maxFee);
-      const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
-      return Promise.resolve({
-        contract: this.getL1Bridge(),
-        method: "depositForBurn",
-        args: [
-          amountToSend,
-          this.l2DestinationDomain,
-          toAddress.toBytes32(),
-          this.l1UsdcTokenAddress.toNative(),
-          ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-          maxFee,
-          finalityThreshold,
-        ],
-      });
+    let maxFee = bnZero,
+      finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+    if (optionalParams?.fastMode) {
+      ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
+    }
+    // Add maxFee so that we end up with desired amount of tokens on destination chain.
+    const amountWithFee = amount.add(maxFee);
+    const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
+    return Promise.resolve({
+      contract: this.getL1Bridge(),
+      method: "depositForBurn",
+      args: [
+        amountToSend,
+        this.l2DestinationDomain,
+        toAddress.toBytes32(),
+        this.l1UsdcTokenAddress.toNative(),
+        ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+        maxFee,
+        finalityThreshold,
+      ],
+    });
   }
 
   async queryL1BridgeInitiationEvents(
