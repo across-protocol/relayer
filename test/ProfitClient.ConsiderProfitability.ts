@@ -631,30 +631,29 @@ describe("ProfitClient: Consider relay profit", () => {
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
       expect(fill.auxiliaryNativeTokenCost.eq(bnZero)).to.be.true;
-      expect(fill.nativeTokenFillCostUsd.eq(fill.gasCostUsd)).to.be.true;
     });
 
     it("accounts for auxiliary cost in profitability (profitable case)", async () => {
       // 9.9 SOL in lamports => $9.9 auxiliary cost vs $10 gross profit.
-      const message = encodeAcrossPlusMessage(99n * 10n ** 8n);
+      const valueAmount = 99n * 10n ** 8n;
+      const message = encodeAcrossPlusMessage(valueAmount);
       const deposit = buildSvmDeposit({ message });
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
       // input 110 - output 100 = gross 10; aux ~9.9 + negligible gas => still profitable
       expect(fill.profitable).to.be.true;
-      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
-      expect(fill.nativeTokenFillCostUsd.gt(fill.gasCostUsd)).to.be.true;
+      expect(fill.auxiliaryNativeTokenCost.eq(BigNumber.from(valueAmount))).to.be.true;
     });
 
     it("accounts for auxiliary cost in profitability (unprofitable case)", async () => {
       // 10.1 SOL in lamports => $10.1 auxiliary cost, exceeds $10 gross
-      const message = encodeAcrossPlusMessage(101n * 10n ** 8n);
+      const valueAmount = 101n * 10n ** 8n;
+      const message = encodeAcrossPlusMessage(valueAmount);
       const deposit = buildSvmDeposit({ message });
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
       expect(fill.profitable).to.be.false;
-      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
-      expect(fill.nativeTokenFillCostUsd.gte(fill.gasCostUsd)).to.be.true;
+      expect(fill.auxiliaryNativeTokenCost.eq(BigNumber.from(valueAmount))).to.be.true;
     });
 
     it("handles extreme auxiliary cost (>> amountOut) without anomalies", async () => {
@@ -665,8 +664,7 @@ describe("ProfitClient: Consider relay profit", () => {
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
       expect(fill.profitable).to.be.false;
-      expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
-      expect(fill.nativeTokenFillCostUsd.gte(fill.gasCostUsd)).to.be.true;
+      expect(fill.auxiliaryNativeTokenCost.eq(BigNumber.from(absurd))).to.be.true;
     });
   });
 });
