@@ -137,7 +137,9 @@ export class MockProfitClient extends ProfitClient {
 
   async getTotalGasCost(deposit: Deposit): Promise<TransactionCostEstimate> {
     const cached = this.totalGasCosts[deposit.destinationChainId];
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     return super.getTotalGasCost(deposit);
   }
 }
