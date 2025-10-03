@@ -790,7 +790,7 @@ async function _fetchCctpV2Attestations(
   // For v2, this is actually required because we don't know if message is finalized or not before hitting the API. Therefore as our
   // CCTP v2 list of chains grows, we might require more than 35 calls here to fetch all attestations
   const attestationResponses = {};
-  const chunkSize = 8;
+  const chunkSize = process.env.CCTP_API_REQUEST_CHUNK_SIZE ? parseInt(process.env.CCTP_API_REQUEST_CHUNK_SIZE) : 8;
   for (let i = 0; i < depositForBurnTxnHashes.length; i += chunkSize) {
     const chunk = depositForBurnTxnHashes.slice(i, i + chunkSize);
 
