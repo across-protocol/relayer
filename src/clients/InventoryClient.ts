@@ -36,6 +36,7 @@ import {
   toAddressType,
   repaymentChainCanBeQuicklyRebalanced,
   forEachAsync,
+  max,
 } from "../utils";
 import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
@@ -971,20 +972,20 @@ export class InventoryClient {
     );
     const rebalancesRequired: Rebalance[] = [];
     for (const depositAmount of unfilledDepositAmounts) {
-      // If there is a pending cross chain transfer that can cover this shortfall,
-      // then we don't need to send this rebalance.
-      if (depositAmount.lte(outstandingCrossChainTransferAmount)) {
-        outstandingCrossChainTransferAmount = outstandingCrossChainTransferAmount.sub(depositAmount);
-        continue;
+      // If this pending deposit amount is greater than the outstanding cross chain transfer amount,
+      // then we need to send a rebalance, so send enough to cover the shortfall when taking into account the
+      // outstanding cross chain transfer amount.
+      if (depositAmount.gt(outstandingCrossChainTransferAmount)) {
+        rebalancesRequired.push({
+          chainId,
+          l1Token,
+          l2Token,
+          balance: this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token),
+          amount: depositAmount.sub(outstandingCrossChainTransferAmount),
+          isShortfallRebalance: true,
+        });
       }
-      rebalancesRequired.push({
-        chainId,
-        l1Token,
-        l2Token,
-        balance: this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token),
-        amount: depositAmount,
-        isShortfallRebalance: true,
-      });
+      outstandingCrossChainTransferAmount = max(bnZero, outstandingCrossChainTransferAmount.sub(depositAmount));
     }
     return rebalancesRequired;
   }
