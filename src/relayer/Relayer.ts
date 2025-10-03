@@ -53,6 +53,7 @@ type RepaymentChainProfitability = {
 export class Relayer {
   public readonly relayerEvmAddress: Address;
   public readonly fillStatus: { [depositHash: string]: number } = {};
+  public readonly inventoryChainIds: number[];
   private pendingTxnHashes: { [chainId: number]: Promise<string[]> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
@@ -60,7 +61,6 @@ export class Relayer {
   private hubPoolBlockBuffer: number;
   protected fillLimits: { [originChainId: number]: { fromBlock: number; limit: BigNumber }[] };
   protected ignoredDeposits: { [depositHash: string]: boolean } = {};
-  protected inventoryChainIds: number[];
   protected updated = 0;
 
   constructor(
@@ -118,15 +118,8 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const {
-      acrossApiClient,
-      configStoreClient,
-      hubPoolClient,
-      inventoryClient,
-      profitClient,
-      spokePoolClients,
-      tokenClient,
-    } = this.clients;
+    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
+      this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
@@ -149,11 +142,7 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([
-      acrossApiClient.update(this.config.ignoreLimits),
-      inventoryClient.update(this.inventoryChainIds),
-      tokenClient.update(),
-    ]);
+    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
@@ -171,6 +160,7 @@ export class Relayer {
 
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
+    await inventoryClient.update(this.inventoryChainIds);
     await inventoryClient.wrapL2EthIfAboveThreshold();
 
     // Unwrap WETH after filling deposits, but before rebalancing.
