@@ -272,7 +272,7 @@ async function confirmManualQuote(
     ` ${formatFeePct(totalRelayFee)} ${token.symbol} (${formatFeePct(
       totalRelayFee.mul(fixedPoint).div(inputAmount)
     )} %)` +
-    ` (ETA N/A)`;
+    " (ETA N/A)";
 
   const accepted = await utils.askYesNoQuestion(quote);
   if (!accepted) {
