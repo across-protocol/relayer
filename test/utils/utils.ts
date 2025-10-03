@@ -1,6 +1,6 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@uma/logger";
-import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
+import { AcrossConfigStore } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
 import chai, { assert, expect } from "chai";
@@ -30,6 +30,7 @@ import {
   getMessageHash,
   toBytes32,
   toAddressType,
+  SvmAddress,
 } from "../../src/utils";
 import {
   DEFAULT_BLOCK_RANGE_FOR_CHAIN,
@@ -67,7 +68,7 @@ export const {
 } = utils;
 
 export type SignerWithAddress = utils.SignerWithAddress;
-export { assert, chai, expect, BigNumber, Contract, FakeContract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
+export { assert, chai, expect, BigNumber, Contract, sinon, toBN, toBNWei, toWei, utf8ToHex, winston };
 
 chai.use(chaiExclude);
 
@@ -131,6 +132,12 @@ export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePo
 
 export async function deployMulticall3(signer: SignerWithAddress) {
   return sdkUtils.deploy(signer);
+}
+
+// Generate a random base58-encoded 32-byte address suitable for SVM tests.
+export function randomBase58Address(): string {
+  const hex = utils.ethers.utils.hexlify(utils.ethers.utils.randomBytes(32));
+  return SvmAddress.from(hex).toBase58();
 }
 
 export async function deployConfigStore(

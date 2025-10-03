@@ -33,6 +33,7 @@ import {
   expect,
   hubPoolFixture,
   randomAddress,
+  randomBase58Address,
   winston,
 } from "./utils";
 import { Address as KitAddress } from "@solana/kit";
@@ -579,7 +580,7 @@ describe("ProfitClient: Consider relay profit", () => {
     const encodeAcrossPlusMessage = (valueLamports: bigint): string => {
       const encoder = arch.svm.getAcrossPlusMessageEncoder();
       const messageBytes = encoder.encode({
-        handler: SvmAddress.from("11111111111111111111111111111111").toBase58() as KitAddress,
+        handler: randomBase58Address() as KitAddress,
         read_only_len: 0,
         value_amount: valueLamports,
         accounts: [],
@@ -589,8 +590,8 @@ describe("ProfitClient: Consider relay profit", () => {
     };
 
     const buildSvmDeposit = (overrides?: Partial<Deposit>): Deposit => {
-      const outputToken = SvmAddress.from("11111111111111111111111111111111");
-      const recipient = SvmAddress.from("11111111111111111111111111111111");
+      const outputToken = SvmAddress.from(randomBase58Address());
+      const recipient = SvmAddress.from(randomBase58Address());
       const inputToken = toAddressType(randomAddress(), originChainId);
       const nowTs = getCurrentTime();
       const base: Deposit = {
