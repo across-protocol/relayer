@@ -88,7 +88,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
             optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
           }`,
           args: [
-            amountToSend, 
+            amountToSend,
             this.l1DestinationDomain,
             toAddress.toBytes32(),
             this.l2UsdcTokenAddress.toNative(),
