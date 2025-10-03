@@ -185,7 +185,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   try {
     await rebalancer.init();
-    await Promise.all([inventoryClient.update(rebalancer.inventoryChainIds), rebalancer.update()]);
+    await rebalancer.update();
+    await inventoryClient.update(rebalancer.inventoryChainIds);
     await rebalancer.checkForUnfilledDepositsAndFill(false, true);
 
     if (config.sendingTransactionsEnabled) {
