@@ -74,6 +74,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       if (optionalParams?.fastMode) {
         ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
       }
+      const adjustedAmount = amount.add(maxFee);
       return Promise.resolve([
         {
           contract: this.l2Bridge,
@@ -85,7 +86,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
             optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee.toString())}` : ""
           }`,
           args: [
-            amount.add(maxFee), // Add maxFee so that we end up with desired amount of tokens on destinationchain.
+            adjustedAmount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : adjustedAmount, // Add maxFee so that we end up with desired amount of tokens on destinationchain.
             this.l1DestinationDomain,
             toAddress.toBytes32(),
             this.l2UsdcTokenAddress.toNative(),
