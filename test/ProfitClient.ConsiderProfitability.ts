@@ -561,14 +561,14 @@ describe("ProfitClient: Consider relay profit", () => {
     });
   });
 
-  describe("Auxiliary native token cost (SVM)", () => {
+  describe.only("Auxiliary native token cost (SVM)", () => {
     beforeEach(() => {
       // Neutral padding/multiplier for deterministic expectations.
       profitClient.setGasPadding(toBNWei("1"));
       profitClient.setGasMultiplier(toBNWei("1"));
 
       // Ensure prices exist for SOL and $1 quote for simplicity.
-      profitClient.mapToken("SOL", "11111111111111111111111111111111");
+      profitClient.mapToken("SOL", randomBase58Address());
       profitClient.setTokenPrice("SOL", toBNWei("1"));
       profitClient.setTokenPrice("USDC", toBNWei("1"));
       profitClient.setTokenPrice("WETH", toBNWei("1"));

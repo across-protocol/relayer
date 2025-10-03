@@ -65,7 +65,6 @@ import {
   winston,
   deployMulticall3,
 } from "./utils";
-import { deserializeMessage } from "@across-protocol/sdk/dist/cjs/arch/svm/SpokeUtils";
 
 describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
   const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
