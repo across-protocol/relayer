@@ -84,12 +84,14 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
       if (optionalParams?.fastMode) {
         ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
       }
-      const adjustedAmount = amount.add(maxFee);
+      // Add maxFee so that we end up with desired amount of tokens on destination chain.
+      const amountWithFee = amount.add(maxFee);
+      const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
       return Promise.resolve({
         contract: this.getL1Bridge(),
         method: "depositForBurn",
         args: [
-          adjustedAmount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : adjustedAmount, // Add maxFee so that we end up with desired amount of tokens on destination chain.
+          amountToSend,
           this.l2DestinationDomain,
           toAddress.toBytes32(),
           this.l1UsdcTokenAddress.toNative(),

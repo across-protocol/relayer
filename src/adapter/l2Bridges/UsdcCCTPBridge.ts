@@ -74,7 +74,9 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
       if (optionalParams?.fastMode) {
         ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
       }
-      const adjustedAmount = amount.add(maxFee);
+      // Add maxFee so that we end up with desired amount of tokens on destination chain.
+      const amountWithFee = amount.add(maxFee);
+      const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
       return Promise.resolve([
         {
           contract: this.l2Bridge,
@@ -82,11 +84,11 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
           method: "depositForBurn",
           nonMulticall: true,
           message: `🎰 Withdrew CCTP USDC to L1${optionalParams?.fastMode ? " using fast mode" : ""}`,
-          mrkdwn: `Withdrew ${formatter(amount.toString())} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP${
-            optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee.toString())}` : ""
+          mrkdwn: `Withdrew ${formatter(amountToSend)} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP${
+            optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
           }`,
           args: [
-            adjustedAmount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : adjustedAmount, // Add maxFee so that we end up with desired amount of tokens on destinationchain.
+            amountToSend, 
             this.l1DestinationDomain,
             toAddress.toBytes32(),
             this.l2UsdcTokenAddress.toNative(),
