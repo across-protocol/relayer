@@ -57,7 +57,7 @@ export type Multicall2Call = {
   target: string;
 };
 
-export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
+export function getMultisender(chainId: number, baseSigner: Signer): Contract | undefined {
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 
