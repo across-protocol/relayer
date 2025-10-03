@@ -561,7 +561,7 @@ describe("ProfitClient: Consider relay profit", () => {
     });
   });
 
-  describe.only("Auxiliary native token cost (SVM)", () => {
+  describe("Auxiliary native token cost (SVM)", () => {
     beforeEach(() => {
       // Neutral padding/multiplier for deterministic expectations.
       profitClient.setGasPadding(toBNWei("1"));
@@ -635,20 +635,20 @@ describe("ProfitClient: Consider relay profit", () => {
     });
 
     it("accounts for auxiliary cost in profitability (profitable case)", async () => {
-      // ~0.01 SOL in lamports (1e7) => ~$0.01
-      const message = encodeAcrossPlusMessage(10n ** 7n);
+      // 9.9 SOL in lamports => $9.9 auxiliary cost vs $10 gross profit.
+      const message = encodeAcrossPlusMessage(99n * 10n ** 8n);
       const deposit = buildSvmDeposit({ message });
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
-      // input 110 - output 100 = gross 10; aux ~0.01 + negligible gas => still profitable
+      // input 110 - output 100 = gross 10; aux ~9.9 + negligible gas => still profitable
       expect(fill.profitable).to.be.true;
       expect(fill.auxiliaryNativeTokenCost.gt(bnZero)).to.be.true;
       expect(fill.nativeTokenFillCostUsd.gt(fill.gasCostUsd)).to.be.true;
     });
 
     it("accounts for auxiliary cost in profitability (unprofitable case)", async () => {
-      // 15 SOL in lamports => $15 auxiliary cost, exceeds $10 gross
-      const message = encodeAcrossPlusMessage(15n * 10n ** 9n);
+      // 10.1 SOL in lamports => $10.1 auxiliary cost, exceeds $10 gross
+      const message = encodeAcrossPlusMessage(101n * 10n ** 8n);
       const deposit = buildSvmDeposit({ message });
 
       const fill = await profitClient.calculateFillProfitability(deposit, bnZero, bnZero);
