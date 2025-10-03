@@ -2,7 +2,7 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
 import { groupBy } from "lodash";
-import { AugmentedTransaction, HubPoolClient, MultiCallerClient, TransactionClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
 import {
   CONTRACT_ADDRESSES,
   Clients,
@@ -15,8 +15,6 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
-  BigNumber,
-  bnZero,
   Signer,
   blockExplorerLink,
   config as dotenvConfig,
@@ -242,8 +240,7 @@ export async function finalize(
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
-  const finalizerResponseTxns: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] =
-    [];
+  const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage?: CrossChainMessage }[] = [];
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   await sdkUtils.mapAsync(configuredChainIds, async (chainId) => {
@@ -332,7 +329,7 @@ export async function finalize(
         }
 
         callData.forEach((txn, idx) => {
-          finalizerResponseTxns.push({ txn, crossChainMessage: crossChainMessages[idx] });
+          finalizations.push({ txn, crossChainMessage: crossChainMessages[idx] });
         });
 
         totalWithdrawalsForChain += crossChainMessages.filter(({ type }) => type === "withdrawal").length;
@@ -354,7 +351,7 @@ export async function finalize(
   });
   const multicall2Lookup = Object.fromEntries(
     await Promise.all(
-      finalizerResponseTxns
+      finalizations
         .map(({ crossChainMessage }) => crossChainMessage.destinationChainId)
         .filter(chainIsEvm)
         .map(async (chainId) => {
@@ -370,65 +367,6 @@ export async function finalize(
       .filter(([, v]) => v === undefined)
       .map(([k]) => k)}`
   );
-
-  const txnClient = new TransactionClient(logger);
-
-  let gasEstimation = bnZero;
-  const batchGasLimit = BigNumber.from(10_000_000);
-  // @dev To avoid running into block gas limit in case the # of finalizations gets too high, keep a running
-  // counter of the approximate gas estimation and cut off the list of finalizations if it gets too high.
-
-  // Ensure each transaction would succeed in isolation.
-  const finalizations = await sdkUtils.filterAsync(finalizerResponseTxns, async ({ txn: _txn, crossChainMessage }) => {
-    let simErrorReason: string;
-    if (!isAugmentedTransaction(_txn)) {
-      // Multicall transaction simulation flow
-      const txnToSubmit: AugmentedTransaction = {
-        contract: multicall2Lookup[crossChainMessage.destinationChainId],
-        chainId: crossChainMessage.destinationChainId,
-        method: "aggregate",
-        // aggregate() takes an array of tuples: [calldata: bytes, target: address].
-        args: [[_txn]],
-      };
-      const [{ reason, succeed, transaction }] = await txnClient.simulate([txnToSubmit]);
-
-      if (succeed) {
-        // Increase running counter of estimated gas cost for batch finalization.
-        // gasLimit should be defined if succeed is True.
-        const updatedGasEstimation = gasEstimation.add(transaction.gasLimit);
-        if (updatedGasEstimation.lt(batchGasLimit)) {
-          gasEstimation = updatedGasEstimation;
-          return true;
-        } else {
-          return false;
-        }
-      } else {
-        simErrorReason = reason;
-      }
-    } else {
-      // Individual transaction simulation flow
-      const [{ reason, succeed }] = await txnClient.simulate([_txn]);
-      if (succeed) {
-        return true;
-      } else {
-        simErrorReason = reason;
-      }
-    }
-
-    // Simulation failed, log the reason and continue.
-    let message: string;
-    if (isDefined(crossChainMessage)) {
-      const { originationChainId, destinationChainId, type, l1TokenSymbol, amount } = crossChainMessage;
-      const originationNetwork = getNetworkName(originationChainId);
-      const destinationNetwork = getNetworkName(destinationChainId);
-      message = `Failed to estimate gas for ${originationNetwork} -> ${destinationNetwork} ${amount} ${l1TokenSymbol} ${type}.`;
-    } else {
-      // @dev Likely to be the 2nd part of a 2-stage withdrawal (i.e. retrieve() on the Polygon bridge adapter).
-      message = "Unknown finalizer simulation failure.";
-    }
-    logger.warn({ at: "finalizer", message, simErrorReason, txn: _txn });
-    return false;
-  });
 
   if (finalizations.length > 0) {
     // @dev use multicaller client to execute batched txn to take advantage of its native txn simulation
@@ -464,8 +402,6 @@ export async function finalize(
             chainId: Number(chainId),
             method: "aggregate",
             args: [multicallTxns],
-            gasLimit: gasEstimation,
-            gasLimitMultiplier: 2,
             unpermissioned: true,
             message: `Batch finalized ${multicallTxns.length} txns`,
             mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
