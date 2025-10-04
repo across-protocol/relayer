@@ -16,7 +16,6 @@ import {
   getUnfilledDeposits,
   isDefined,
   winston,
-  fixedPointAdjustment,
   Profiler,
   formatGwei,
   depositForcesOriginChainRepayment,
@@ -47,6 +46,7 @@ type RepaymentChainProfitability = {
   gasCost: BigNumber;
   gasPrice: BigNumber;
   relayerFeePct: BigNumber;
+  totalUserFeePct: BigNumber;
   lpFeePct: BigNumber;
 };
 
@@ -741,6 +741,7 @@ export class Relayer {
       gasCost,
       gasLimit: _gasLimit,
       lpFeePct: realizedLpFeePct,
+      totalUserFeePct,
       gasPrice,
     } = repaymentChainProfitability;
 
@@ -798,7 +799,7 @@ export class Relayer {
     tokenClient.decrementLocalBalance(destinationChainId, outputToken, outputAmount);
 
     const gasLimit = isMessageEmpty(resolveDepositMessage(deposit)) ? undefined : _gasLimit;
-    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, gasPrice, gasLimit);
+    this.fillRelay(deposit, repaymentChainId, realizedLpFeePct, totalUserFeePct, gasPrice, gasLimit);
   }
 
   /**
@@ -1083,6 +1084,7 @@ export class Relayer {
     deposit: Deposit,
     repaymentChainId: number,
     realizedLpFeePct: BigNumber,
+    totalUserFeePct: BigNumber,
     gasPrice: BigNumber,
     gasLimit?: BigNumber
   ): void {
@@ -1137,7 +1139,13 @@ export class Relayer {
           ];
 
       const message = `Filled v3 deposit ${messageModifier}🚀`;
-      const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
+      const mrkdwn = this.constructRelayFilledMrkdwn(
+        deposit,
+        repaymentChainId,
+        realizedLpFeePct,
+        totalUserFeePct,
+        gasPrice
+      );
 
       const contract = spokePoolClient.spokePool;
       const chainId = deposit.destinationChainId;
@@ -1152,7 +1160,13 @@ export class Relayer {
       assert(deposit.outputToken.isSVM());
 
       const message = "Filled v3 deposit on SVM 🚀";
-      const mrkdwn = this.constructRelayFilledMrkdwn(deposit, repaymentChainId, realizedLpFeePct, gasPrice);
+      const mrkdwn = this.constructRelayFilledMrkdwn(
+        deposit,
+        repaymentChainId,
+        realizedLpFeePct,
+        totalUserFeePct,
+        gasPrice
+      );
 
       this.clients.svmFillerClient.enqueueFill(
         spokePoolClient.spokePoolAddress,
@@ -1217,6 +1231,7 @@ export class Relayer {
           gasCost: bnUint256Max,
           gasPrice: bnUint256Max,
           relayerFeePct: bnZero,
+          totalUserFeePct: bnZero,
           lpFeePct: bnUint256Max,
         },
       };
@@ -1251,13 +1266,15 @@ export class Relayer {
       gasCost: BigNumber;
       gasPrice: BigNumber;
       relayerFeePct: BigNumber;
+      totalUserFeePct: BigNumber;
     }> => {
       const {
         profitable,
         nativeGasCost: gasLimit,
         tokenGasCost: gasCost,
         gasPrice,
-        netRelayerFeePct: relayerFeePct, // net relayer fee is equal to total fee minus the lp fee.
+        netRelayerFeePct: relayerFeePct,
+        totalFeePct: totalUserFeePct,
       } = await profitClient.isFillProfitable(deposit, lpFeePct, hubPoolToken, preferredChainId);
       return {
         profitable,
@@ -1265,6 +1282,7 @@ export class Relayer {
         gasCost,
         gasPrice,
         relayerFeePct,
+        totalUserFeePct,
       };
     };
 
@@ -1283,12 +1301,14 @@ export class Relayer {
     // @dev The following internal function should be the only one used to set `preferredChain` above.
     const getProfitabilityDataForPreferredChainIndex = (preferredChainIndex: number): RepaymentChainProfitability => {
       const lpFeePct = lpFeePcts[preferredChainIndex];
-      const { gasLimit, gasCost, relayerFeePct, gasPrice } = repaymentChainProfitabilities[preferredChainIndex];
+      const { gasLimit, gasCost, relayerFeePct, gasPrice, totalUserFeePct } =
+        repaymentChainProfitabilities[preferredChainIndex];
       return {
         gasLimit,
         gasCost,
         gasPrice,
         relayerFeePct,
+        totalUserFeePct,
         lpFeePct,
       };
     };
@@ -1545,10 +1565,11 @@ export class Relayer {
     deposit: Deposit,
     repaymentChainId: number,
     realizedLpFeePct: BigNumber,
+    totalUserFeePct: BigNumber,
     gasPrice: BigNumber
   ): string {
     let mrkdwn =
-      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasPrice) +
+      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasPrice, totalUserFeePct) +
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {
@@ -1563,7 +1584,12 @@ export class Relayer {
     return mrkdwn;
   }
 
-  private constructBaseFillMarkdown(deposit: Deposit, _realizedLpFeePct: BigNumber, _gasPriceGwei: BigNumber): string {
+  private constructBaseFillMarkdown(
+    deposit: Deposit,
+    _realizedLpFeePct: BigNumber,
+    _totalUserFeePct: BigNumber,
+    _gasPriceGwei: BigNumber
+  ): string {
     const { symbol, decimals } = this.clients.hubPoolClient.getTokenInfoForAddress(
       deposit.inputToken,
       deposit.originChainId
@@ -1578,17 +1604,12 @@ export class Relayer {
 
     let msg = `Relayed depositId ${deposit.depositId.toString()} from ${srcChain} to ${dstChain} of ${inputAmount} ${symbol}`;
     const realizedLpFeePct = formatFeePct(_realizedLpFeePct);
-    const adjustedInputAmount = sdkUtils.ConvertDecimals(decimals, outputTokenDecimals)(deposit.inputAmount);
-    const _totalFeePct = adjustedInputAmount
-      .sub(deposit.outputAmount)
-      .mul(fixedPointAdjustment)
-      .div(adjustedInputAmount);
-    const totalFeePct = formatFeePct(_totalFeePct);
+    const totalUserFeePct = formatFeePct(_totalUserFeePct);
 
     const _outputAmount = createFormatFunction(2, 4, false, outputTokenDecimals)(deposit.outputAmount.toString());
     msg +=
       ` and output ${_outputAmount} ${outputTokenSymbol}, with depositor ${depositor}.` +
-      ` Realized LP fee: ${realizedLpFeePct}%, total fee: ${totalFeePct}%. Gas price used in profit calc: ${formatGwei(
+      ` Realized LP fee: ${realizedLpFeePct}%, total user fee: ${totalUserFeePct}%. Gas price used in profit calc: ${formatGwei(
         _gasPriceGwei.toString()
       )} Gwei.`;
 
