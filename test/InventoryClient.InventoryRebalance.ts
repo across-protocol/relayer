@@ -299,7 +299,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       POLYGON,
       EvmAddress.from(owner.address),
       EvmAddress.from(mainnetWeth),
-      shortfallAmount1
+      shortfallAmount1 // 10 WETH
     );
 
     // Send tokens out of the relayer's balance so we can send a follow up rebalance without getting tripped up
@@ -332,7 +332,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
 
-    // Ok, now try mocking some pending transfers such that only the larger transfer will go through:
+    // Ok, now try mocking some pending transfers such that part of the larger transfer is already covered by
+    // pending transfers.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
       EvmAddress.from(owner.address),
@@ -343,8 +344,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
+    expect(lastSpyLogIncludes(spy, "1.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
