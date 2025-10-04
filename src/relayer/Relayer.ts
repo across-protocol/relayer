@@ -16,7 +16,6 @@ import {
   getUnfilledDeposits,
   isDefined,
   winston,
-  fixedPointAdjustment,
   Profiler,
   formatGwei,
   depositForcesOriginChainRepayment,
