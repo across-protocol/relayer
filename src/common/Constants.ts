@@ -236,6 +236,8 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
 export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pre-profitability message fill gas estimates.
+// Maximum value of native token we're willing to forward to user beyond amountOut, in USD
+export const DEFAULT_RELAYER_MAX_AUX_NATIVE_USD = "2.0";
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 

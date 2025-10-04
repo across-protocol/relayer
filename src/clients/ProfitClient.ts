@@ -113,6 +113,7 @@ export class ProfitClient {
   private relayerFeeQueries: { [chainId: number]: relayFeeCalculator.QueryInterface } = {};
 
   private readonly isTestnet: boolean;
+  private readonly auxNativeTokenCostCaps: { [chainId: number]: BigNumber } = {};
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
   constructor(
@@ -164,6 +165,8 @@ export class ProfitClient {
     }
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
+
+    this.configureAuxNativeLimits();
   }
 
   resolveGasMultiplier(deposit: Deposit): BigNumber {
@@ -570,12 +573,29 @@ export class ProfitClient {
     let tokenGasCost = uint256Max;
     let gasPrice = uint256Max;
     try {
-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice } = await this.getFillProfitability(
-        deposit,
-        lpFeePct,
-        l1Token,
-        repaymentChainId
-      ));
+      let auxNativeTokenCostUsd = uint256Max;
+      ({
+        profitable,
+        netRelayerFeePct,
+        nativeGasCost,
+        tokenGasCost,
+        gasPrice,
+        auxiliaryNativeTokenCostUsd: auxNativeTokenCostUsd,
+      } = await this.getFillProfitability(deposit, lpFeePct, l1Token, repaymentChainId));
+
+      // If a deposit wants us to forward more native token than a configured limit, mark it unprofitable
+      const cap = this.auxNativeTokenCostCaps[deposit.destinationChainId];
+      if (auxNativeTokenCostUsd.gt(cap)) {
+        this.logger.debug({
+          at: "ProfitClient#isFillProfitable",
+          message: "Marking fill unprofitable: aux native token cost too large.",
+          costUsd: `$${formatEther(auxNativeTokenCostUsd)}`,
+          capUsd: `$${formatEther(cap)}`,
+          deposit: convertRelayDataParamsToBytes32(deposit),
+          lpFeePct,
+        });
+        profitable = false;
+      }
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -830,5 +850,24 @@ export class ProfitClient {
       coingeckoProApiKey,
       this.logger
     );
+  }
+
+  private configureAuxNativeLimits() {
+    const maxAuxNativeUsdDefault =
+      this.resolveAuxNativeUsd(process.env.RELAYER_MAX_AUX_NATIVE_USD) ??
+      toBNWei(constants.DEFAULT_RELAYER_MAX_AUX_NATIVE_USD);
+    this.enabledChainIds.forEach((chainId) => {
+      const override = this.resolveAuxNativeUsd(process.env[`RELAYER_MAX_AUX_NATIVE_USD_${chainId}`]);
+      this.auxNativeTokenCostCaps[chainId] = override ?? maxAuxNativeUsdDefault;
+    });
+  }
+
+  private resolveAuxNativeUsd(value?: string): BigNumber | undefined {
+    if (!isDefined(value)) {
+      return undefined;
+    }
+    const numeric = Number(value);
+    assert(!Number.isNaN(numeric) && numeric >= 0, "RELAYER_MAX_AUX_NATIVE_USD must be a non-negative number");
+    return toBNWei(value);
   }
 }
