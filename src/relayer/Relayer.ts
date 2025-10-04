@@ -1231,7 +1231,7 @@ export class Relayer {
           gasCost: bnUint256Max,
           gasPrice: bnUint256Max,
           relayerFeePct: bnZero,
-          totalUserFeePct: bnUint256Max,
+          totalUserFeePct: bnZero,
           lpFeePct: bnUint256Max,
         },
       };
