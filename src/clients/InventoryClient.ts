@@ -960,10 +960,13 @@ export class InventoryClient {
   }
 
   _getPossibleShortfallRebalances(l1Token: EvmAddress, chainId: number, l2Token: Address): Rebalance[] {
+    const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const l2TokenInfo = getTokenInfo(l2Token, chainId);
     // Order unfilled amounts from largest to smallest to prioritize larger shortfalls.
     const unfilledDepositAmounts = this.tokenClient
       .getUnfilledDepositAmounts(chainId, l2Token)
-      .sort(bnComparatorDescending);
+      .sort(bnComparatorDescending)
+      .map((amount) => sdkUtils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals)(amount));
     let outstandingCrossChainTransferAmount = this.crossChainTransferClient.getOutstandingCrossChainTransferAmount(
       this.relayer,
       chainId,
