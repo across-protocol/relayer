@@ -983,7 +983,7 @@ export class Relayer {
         this.lastLogTime = currentTime;
       }
       if (profitClient.anyCapturedUnprofitableFills()) {
-        this.handleUnprofitableFill();
+        this.handleUnfillableDeposit();
         this.lastLogTime = currentTime;
       }
     }
@@ -1469,10 +1469,7 @@ export class Relayer {
     return { symbol, decimals, formatter: createFormatFunction(2, 4, false, decimals) };
   }
 
-  // TODO: This should really be renamed to "handleUnfillableDeposit" since it not only logs about unprofitable relayer
-  // fees but also about fills with messages that fail to simulate and deposits from lite chains that are
-  // over-allocated.
-  private handleUnprofitableFill() {
+  private handleUnfillableDeposit() {
     const { profitClient } = this.clients;
     const unprofitableDeposits = profitClient.getUnprofitableFills();
 
@@ -1533,7 +1530,7 @@ export class Relayer {
 
     if (mrkdwn) {
       this.logger[this.config.sendingRelaysEnabled ? "warn" : "debug"]({
-        at: "Relayer::handleUnprofitableFill",
+         at: "Relayer::handleUnfillableDeposit",
         message: "Not relaying unprofitable deposits 🙅‍♂️!",
         mrkdwn,
         notificationPath: "across-unprofitable-fills",
