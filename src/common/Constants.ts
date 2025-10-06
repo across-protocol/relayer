@@ -1065,3 +1065,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
+
+export type CCTPMessageStatus = "finalized" | "ready" | "pending";
+export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
+export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;
