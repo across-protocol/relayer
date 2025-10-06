@@ -151,7 +151,17 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
+  logger.debug({
+    at: "Dataworker#index",
+    message: "Dataworker started. Trying to get Redis pub/sub client...",
+  });
+
   const pubSub = await getRedisPubSub(logger);
+
+  logger.debug({
+    at: "Dataworker#index",
+    message: "Dataworker started. Redis pub/sub client obtained.",
+  });
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
