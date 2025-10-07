@@ -514,7 +514,7 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
   const isHubPoolAmongSenders =
     isDefined(hubPool) && senderAddresses.some((senderAddr) => compareAddressesSimple(senderAddr, hubPool.address));
   const txHashesFromHubPool: string[] = [];
-  if (isDefined(hubPool) && isHubPoolAmongSenders) {
+  if (isHubPoolAmongSenders) {
     const hubPoolContract = new Contract(hubPool.address, hubPool.abi, srcProvider);
 
     const messageRelayedFilter = hubPoolContract.filters.MessageRelayed();
