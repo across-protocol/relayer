@@ -121,7 +121,7 @@ function generateChainConfig(): void {
     }
 
     if (UNIVERSAL_CHAINS.includes(chainId)) {
-      config.finalizeOnL1.push(heliosL1toL2Finalizer);
+      config.finalizeOnL2.push(heliosL1toL2Finalizer);
     }
 
     // Autoconfigure CCTPv1 + v2 finalisation for CCTP chains.
