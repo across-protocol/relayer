@@ -1,5 +1,4 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
-import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -149,9 +148,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.SOLANA]: 1000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
   };
-  return Object.fromEntries(
-    Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange])
-  );
+  return Object.fromEntries(Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange]));
 };
 
 export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
