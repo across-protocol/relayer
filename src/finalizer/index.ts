@@ -103,7 +103,6 @@ const chainFinalizers: {
 function generateChainConfig(): void {
   Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, chain]) => {
     const chainId = Number(_chainId);
-
     const config = (chainFinalizers[chainId] ??= {});
     config.finalizeOnL1 ??= [];
     config.finalizeOnL2 ??= [];
@@ -113,11 +112,9 @@ function generateChainConfig(): void {
       case ChainFamily.ORBIT:
         config.finalizeOnL1.push(arbStackFinalizer);
         break;
-
       case ChainFamily.OP_STACK:
         config.finalizeOnL1.push(opStackFinalizer);
         break;
-
       case ChainFamily.ZK_STACK:
         config.finalizeOnL1.push(zkSyncFinalizer);
         break;
