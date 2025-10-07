@@ -488,16 +488,16 @@ async function _getDestinationMessageTransmitterContract(
  * Gets all tx hashes that may be relevant for CCTPV1  finalization.
  * This includes:
  *  - All tx hashes where `DepositForBurn` events happened (for USDC transfers).
- *  - If `isSourceHubChain` is true, all txs where HubPool on `sourceChainId` emitted `MessageRelayed` or `TokensRelayed` events.
+ *  - If source is hub chain, all txs where HubPool on `sourceChainId` emitted `MessageRelayed` or `TokensRelayed` events.
  *
  * @param srcProvider - Provider for the source chain.
  * @param sourceChainId - Chain ID where the messages/deposits originated.
  * @param destinationChainId - Chain ID where the messages/deposits are targeted.
- * @param senderAddresses - Addresses that initiated the `DepositForBurn` events. If `isSourceHubChain` is true, the HubPool address itself is implicitly a sender for its messages.
+ * @param senderAddresses - Addresses that initiated the `DepositForBurn` events.
  * @param sourceEventSearchConfig - Configuration for event searching on the source chain.
  * @returns A Set of unique transaction hashes.
  */
-async function _getCCTPV1DepositForBurnTxnHashes(
+async function _getCCTPV1DepositAndMessageTxnHashes(
   srcProvider: Provider,
   sourceChainId: number,
   destinationChainId: number,
@@ -507,6 +507,27 @@ async function _getCCTPV1DepositForBurnTxnHashes(
   // This function only works with EVM source chains.
   assert(chainIsEvm(sourceChainId));
   const senderAddresses = _senderAddresses.map((address) => address.toNative());
+
+  // Special case: The HubPool can initiate MessageSent events, which have no filters we can easily query on, so
+  // we query for HubPool MessageRelayed events directly. These can theoretically appear without DepositForBurn events.
+  const hubPool = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
+  const isHubPoolAmongSenders =
+    isDefined(hubPool) && senderAddresses.some((senderAddr) => compareAddressesSimple(senderAddr, hubPool.address));
+  const txHashesFromHubPool: string[] = [];
+  if (isHubPoolAmongSenders) {
+    const hubPoolContract = new Contract(hubPool.address, hubPool.abi, srcProvider);
+
+    const messageRelayedFilter = hubPoolContract.filters.MessageRelayed();
+    const messageRelayedEvents = await paginatedEventQuery(
+      hubPoolContract,
+      messageRelayedFilter,
+      sourceEventSearchConfig
+    );
+    messageRelayedEvents.forEach((e) => {
+      txHashesFromHubPool.push(e.transactionHash);
+    });
+  }
+
   let depositForBurnEventTxnHashes: string[] = [];
   const { address, abi } = getCctpV1TokenMessenger(sourceChainId);
   const srcTokenMessenger = new Contract(address, abi, srcProvider);
@@ -517,7 +538,7 @@ async function _getCCTPV1DepositForBurnTxnHashes(
     .filter((e) => e.args.destinationDomain === getCctpDomainForChainId(destinationChainId))
     .map((e) => e.transactionHash);
 
-  const uniqueTxHashes = new Set([...depositForBurnEventTxnHashes]);
+  const uniqueTxHashes = new Set([...txHashesFromHubPool, ...depositForBurnEventTxnHashes]);
 
   return uniqueTxHashes;
 }
@@ -536,7 +557,7 @@ async function _getCCTPV1MessageEvents(
     .filter(isDefined);
 
   const srcProvider = getCachedProvider(sourceChainId);
-  const uniqueTxHashes = await _getCCTPV1DepositForBurnTxnHashes(
+  const uniqueTxHashes = await _getCCTPV1DepositAndMessageTxnHashes(
     srcProvider,
     sourceChainId,
     destinationChainId,
