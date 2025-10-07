@@ -510,16 +510,19 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
 
   // Special case: The HubPool can initiate MessageSent events, which have no filters we can easily query on, so
   // we query for HubPool MessageRelayed events directly. These can theoretically appear without DepositForBurn events.
-  const { address: hubPoolAddress, abi: hubPoolAbi } = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
-  const isHubPoolAmongSenders = senderAddresses.some((senderAddr) =>
-    compareAddressesSimple(senderAddr, hubPoolAddress)
-  );
+  const hubPool = CONTRACT_ADDRESSES[sourceChainId]?.hubPool;
+  const isHubPoolAmongSenders =
+    isDefined(hubPool) && senderAddresses.some((senderAddr) => compareAddressesSimple(senderAddr, hubPool.address));
   const txHashesFromHubPool: string[] = [];
-  if (isDefined(hubPoolAddress) && isHubPoolAmongSenders) {
-    const hubPool = new Contract(hubPoolAddress, hubPoolAbi, srcProvider);
+  if (isHubPoolAmongSenders) {
+    const hubPoolContract = new Contract(hubPool.address, hubPool.abi, srcProvider);
 
-    const messageRelayedFilter = hubPool.filters.MessageRelayed();
-    const messageRelayedEvents = await paginatedEventQuery(hubPool, messageRelayedFilter, sourceEventSearchConfig);
+    const messageRelayedFilter = hubPoolContract.filters.MessageRelayed();
+    const messageRelayedEvents = await paginatedEventQuery(
+      hubPoolContract,
+      messageRelayedFilter,
+      sourceEventSearchConfig
+    );
     messageRelayedEvents.forEach((e) => {
       txHashesFromHubPool.push(e.transactionHash);
     });
