@@ -62,11 +62,8 @@ let logger: winston.Logger;
 type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2" | "any<->any";
 
 /**
- * A list of finalizers that can be used to finalize messages on a chain. These are
- * broken down into two categories: finalizers that finalize messages on L1 and finalizers
- * that finalize messages on L2.
- * @note: finalizeOnL1 is used to finalize L2 -> L1 messages (from the spoke chain to mainnet)
- * @note: finalizeOnL2 is used to finalize L1 -> L2 messages (from mainnet to the spoke chain)
+ * A list of finalizers that can be used to finalize messages on a chain.
+ * The pre-populated entries are exceptions to what is autogeneated by generateChainConfig() below.
  */
 const chainFinalizers: {
   [chainId: number]: { finalizeOnL2?: ChainFinalizer[]; finalizeOnL1?: ChainFinalizer[]; finalizeOnAny?: Finalizer[] };
@@ -100,6 +97,10 @@ const chainFinalizers: {
   },
 };
 
+/**
+ * Autopopulate the majority of the chainFinalizers object above.
+ * @returns void
+ */
 function generateChainConfig(): void {
   Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, chain]) => {
     const chainId = Number(_chainId);
@@ -133,6 +134,8 @@ function generateChainConfig(): void {
         config.finalizeOnL1.push(cctpV1L2toL1Finalizer);
         config.finalizeOnL2.push(cctpV1L1toL2Finalizer);
       }
+
+      // SVM is currently limited to v1, pending SvmSpoke update to support v2.
       if (chain.family !== ChainFamily.SVM) {
         config.finalizeOnAny.push(cctpV2Finalizer);
       }
