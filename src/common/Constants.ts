@@ -146,6 +146,8 @@ const resolveRpcConfig = () => {
   const ranges = {
     [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
+    [CHAIN_IDs.SOLANA]: 1000,
+    [CHAIN_IDs.SOLANA_DEVNET]: 1000,
   };
   return Object.fromEntries(
     Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange])
