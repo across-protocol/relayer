@@ -382,7 +382,7 @@ export class Relayer {
           at: "Relayer::filterDeposit",
           message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
           limit,
-          l1Token: l1Token.toNative(),
+          l1Token: l1Token?.toNative(),
           depositId,
           inputToken: inputToken.toNative(),
           inputAmount,
