@@ -1,33 +1,40 @@
-import { TransactionRequest } from "@ethersproject/abstract-provider";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
-  Contract,
   EventSearchConfig,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
   groupObjectCountsByProp,
-  isDefined,
-  Multicall2Call,
   winston,
   convertFromWei,
   isEVMSpokePoolClient,
-  ethers,
   isSVMSpokePoolClient,
   getKitKeypairFromEvmSigner,
+  mapAsync,
 } from "../../../utils";
 import {
   AttestedCCTPMessage,
-  CCTPMessageStatus,
-  getAttestedCCTPMessages,
-  getCctpMessageTransmitter,
+  getCctpV1Messages,
   isDepositForBurnEvent,
+  getCctpReceiveMessageCallData,
 } from "../../../utils/CCTPUtils";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 import { KeyPairSigner } from "@solana/kit";
 import { finalizeCCTPV1MessagesSVM } from "./svm/l1Tol2";
+import { CCTPMessageStatus } from "../../../common/Constants";
 
-export async function cctpL1toL2Finalizer(
+/**
+ * Finalizes CCTP V1 token and message relays originating on Ethereum and destined to the input L2, as indicated
+ * by the input SpokePoolCLient.
+ * @param logger Logger instance.
+ * @param _signer Signer instance.
+ * @param hubPoolClient HubPool client instance.
+ * @param l2SpokePoolClient Destination SpokePool client instance.
+ * @param l1SpokePoolClient Origin SpokePool client instance.
+ * @param senderAddresses Sender addresses to finalize for.
+ * @returns FinalizerPromise instance.
+ */
+export async function cctpV1L1toL2Finalizer(
   logger: winston.Logger,
   _signer: Signer,
   hubPoolClient: HubPoolClient,
@@ -45,10 +52,9 @@ export async function cctpL1toL2Finalizer(
   if (isSVMSpokePoolClient(l2SpokePoolClient)) {
     signer = await getKitKeypairFromEvmSigner(_signer);
   }
-  const outstandingMessages = await getAttestedCCTPMessages(
+  const outstandingMessages = await getCctpV1Messages(
     Array.from(senderAddresses.keys()),
     hubPoolClient.chainId,
-    l2SpokePoolClient.chainId,
     l2SpokePoolClient.chainId,
     searchConfig,
     signer
@@ -66,16 +72,29 @@ export async function cctpL1toL2Finalizer(
     statusesGrouped,
   });
 
-  const { address, abi } = getCctpMessageTransmitter(l2SpokePoolClient.chainId, l2SpokePoolClient.chainId);
   if (isEVMSpokePoolClient(l2SpokePoolClient)) {
-    const l2Messenger = new ethers.Contract(address, abi, l2SpokePoolClient.spokePool.provider);
     return {
       crossChainMessages: await generateCrosschainMessages(
         unprocessedMessages,
         hubPoolClient.chainId,
         l2SpokePoolClient.chainId
       ),
-      callData: await generateMultiCallData(l2Messenger, unprocessedMessages),
+      callData: await mapAsync(unprocessedMessages, async (message) => {
+        const callData = await getCctpReceiveMessageCallData(
+          {
+            destinationChainId: l2SpokePoolClient.chainId,
+            attestationData: {
+              attestation: message.attestation,
+              message: message.messageBytes,
+            },
+          },
+          true /* CCTP V1 */
+        );
+        return {
+          target: callData.to,
+          callData: callData.data,
+        };
+      }),
     };
   } else {
     assert(isSVMSpokePoolClient(l2SpokePoolClient));
@@ -129,31 +148,6 @@ export async function cctpL1toL2Finalizer(
       callData: [],
     };
   }
-}
-
-/**
- * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
- * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
- * @param messages The messages to generate transactions for.
- * @returns A list of populated transactions that can be consumed by the Multicall2 contract.
- */
-async function generateMultiCallData(
-  messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPMessage, "attestation" | "messageBytes">[]
-): Promise<Multicall2Call[]> {
-  assert(messages.every(({ attestation }) => isDefined(attestation) && attestation !== "PENDING"));
-  return Promise.all(
-    messages.map(async (message) => {
-      const txn = (await messageTransmitter.populateTransaction.receiveMessage(
-        message.messageBytes,
-        message.attestation
-      )) as TransactionRequest;
-      return {
-        target: txn.to,
-        callData: txn.data,
-      };
-    })
-  );
 }
 
 /**
