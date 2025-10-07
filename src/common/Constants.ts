@@ -1,4 +1,5 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -138,53 +139,20 @@ Object.values(CHAIN_IDs)
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
-// Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
-// Alchemy-Polygon imposes a 3500 block limit.
-// Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
-// if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
-// Quicknode for example.
-export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  [CHAIN_IDs.ALEPH_ZERO]: 0, // Disabled
-  [CHAIN_IDs.ARBITRUM]: 10000,
-  [CHAIN_IDs.BASE]: 10000,
-  [CHAIN_IDs.BLAST]: 10000,
-  [CHAIN_IDs.BOBA]: 0, // Disabled
-  [CHAIN_IDs.BSC]: 10000,
-  [CHAIN_IDs.HYPEREVM]: 1000,
-  [CHAIN_IDs.INK]: 10000,
-  [CHAIN_IDs.LENS]: 10000,
-  [CHAIN_IDs.LINEA]: 5000,
-  [CHAIN_IDs.LISK]: 10000,
-  [CHAIN_IDs.MAINNET]: 10000,
-  [CHAIN_IDs.MODE]: 10000,
-  [CHAIN_IDs.OPTIMISM]: 10000, // Quick
-  [CHAIN_IDs.PLASMA]: 10000, // tbc - test this
-  [CHAIN_IDs.POLYGON]: 10000,
-  [CHAIN_IDs.REDSTONE]: 10000,
-  [CHAIN_IDs.SCROLL]: 10000,
-  [CHAIN_IDs.SONEIUM]: 10000,
-  [CHAIN_IDs.SOLANA]: 1000,
-  [CHAIN_IDs.UNICHAIN]: 10000,
-  [CHAIN_IDs.WORLD_CHAIN]: 10000,
-  [CHAIN_IDs.ZK_SYNC]: 10000,
-  [CHAIN_IDs.ZORA]: 10000,
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
-  [CHAIN_IDs.BASE_SEPOLIA]: 10000,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 10000,
-  [CHAIN_IDs.INK_SEPOLIA]: 10000,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 10000,
-  [CHAIN_IDs.LENS_SEPOLIA]: 10000,
-  [CHAIN_IDs.LISK_SEPOLIA]: 10000,
-  [CHAIN_IDs.MODE_SEPOLIA]: 10000,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
-  [CHAIN_IDs.PLASMA_TESTNET]: 10000,
-  [CHAIN_IDs.POLYGON_AMOY]: 10000,
-  [CHAIN_IDs.TATARA]: 10000,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
-  [CHAIN_IDs.SEPOLIA]: 10000,
-  [CHAIN_IDs.BOB_SEPOLIA]: 10000,
+// Autogenerate RPC config for each supported chain.
+// Any exceptions can be added to the ranges object.
+const resolveRpcConfig = () => {
+  const defaultRange = 10_000;
+  const ranges = {
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
+    [CHAIN_IDs.BOBA]: 0,
+  };
+  return Object.fromEntries(
+    Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange])
+  );
 };
+
+export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 
 // These should be safely above the finalization period for the chain and
 // also give enough buffer time so that any reasonable fill on the chain
