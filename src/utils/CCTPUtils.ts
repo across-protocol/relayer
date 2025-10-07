@@ -515,7 +515,8 @@ async function _getCCTPV1DepositAndMessageTxnHashes(
     compareAddressesSimple(senderAddr, hubPoolAddress)
   );
   const txHashesFromHubPool: string[] = [];
-  if (isDefined(hubPoolAddress) && isHubPoolAmongSenders) {
+  // CCTP message finalizations are only relevant for Solana.
+  if (isDefined(hubPoolAddress) && isHubPoolAmongSenders && destinationChainId === CHAIN_IDs.SOLANA) {
     const hubPool = new Contract(hubPoolAddress, hubPoolAbi, srcProvider);
 
     const messageRelayedFilter = hubPool.filters.MessageRelayed();
