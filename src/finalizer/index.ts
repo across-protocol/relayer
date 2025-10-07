@@ -70,6 +70,61 @@ const chainFinalizers: {
   [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[]; finalizeOnAny: Finalizer[] };
 } = {
   // Mainnets
+  [CHAIN_IDs.ARBITRUM]: {
+    finalizeOnL1: [arbStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.BASE]: {
+    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
+    finalizeOnL2: [cctpV1L1toL2Finalizer],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.BLAST]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.BSC]: {
+    finalizeOnL1: [binanceFinalizer],
+    finalizeOnL2: [heliosL1toL2Finalizer],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.HYPEREVM]: {
+    finalizeOnL1: [],
+    finalizeOnL2: [heliosL1toL2Finalizer],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.INK]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.LENS]: {
+    finalizeOnL1: [zkSyncFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.LINEA]: {
+    finalizeOnL1: [lineaL2ToL1Finalizer],
+    finalizeOnL2: [lineaL1ToL2Finalizer],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.LISK]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.MAINNET]: {
+    finalizeOnL1: [],
+    finalizeOnL2: [],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.MODE]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
   [CHAIN_IDs.OPTIMISM]: {
     finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
     finalizeOnL2: [cctpV1L1toL2Finalizer],
@@ -85,30 +140,10 @@ const chainFinalizers: {
     finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
   },
-  [CHAIN_IDs.ZK_SYNC]: {
-    finalizeOnL1: [zkSyncFinalizer],
+  [CHAIN_IDs.REDSTONE]: {
+    finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
     finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BASE]: {
-    finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
-    finalizeOnL2: [cctpV1L1toL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.ARBITRUM]: {
-    finalizeOnL1: [arbStackFinalizer, cctpV1L2toL1Finalizer],
-    finalizeOnL2: [cctpV1L1toL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.LENS]: {
-    finalizeOnL1: [zkSyncFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.LINEA]: {
-    finalizeOnL1: [lineaL2ToL1Finalizer],
-    finalizeOnL2: [lineaL1ToL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],
@@ -120,57 +155,7 @@ const chainFinalizers: {
     finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [],
   },
-  [CHAIN_IDs.MODE]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.MAINNET]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.LISK]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.ZORA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.REDSTONE]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BLAST]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BSC]: {
-    finalizeOnL1: [binanceFinalizer],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-    finalizeOnAny: [],
-  },
   [CHAIN_IDs.SONEIUM]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.WORLD_CHAIN]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.HYPEREVM]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.INK]: {
     finalizeOnL1: [opStackFinalizer],
     finalizeOnL2: [],
     finalizeOnAny: [],
@@ -179,6 +164,21 @@ const chainFinalizers: {
     finalizeOnL1: [opStackFinalizer, cctpV1L2toL1Finalizer],
     finalizeOnL2: [cctpV1L1toL2Finalizer],
     finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.WORLD_CHAIN]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [cctpV2Finalizer],
+  },
+  [CHAIN_IDs.ZK_SYNC]: {
+    finalizeOnL1: [zkSyncFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.ZORA]: {
+    finalizeOnL1: [opStackFinalizer],
+    finalizeOnL2: [],
+    finalizeOnAny: [],
   },
   // Testnets
   [CHAIN_IDs.BASE_SEPOLIA]: {
