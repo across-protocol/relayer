@@ -7,9 +7,6 @@ import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clien
 import {
   CONTRACT_ADDRESSES,
   Clients,
-  CommonConfig,
-  FINALIZER_TOKENBRIDGE_LOOKBACK,
-  ProcessEnv,
   constructClients,
   constructSpokePoolClientsWithLookback,
   updateSpokePoolClients,
@@ -32,7 +29,6 @@ import {
   stringifyThrownValue,
   chainIsEvm,
   EvmAddress,
-  Address,
   getProvider,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
@@ -50,16 +46,12 @@ import {
   scrollFinalizer,
   zkSyncFinalizer,
 } from "./utils";
-import { assert as ssAssert, enums } from "superstruct";
+import { FinalizerConfig } from "./config";
+
 const { isDefined } = sdkUtils;
 
 dotenvConfig();
 let logger: winston.Logger;
-
-/**
- * The finalization type is used to determine the direction of the finalization.
- */
-type FinalizationType = "l1->l2" | "l2->l1" | "l1<->l2" | "any<->any";
 
 /**
  * A list of finalizers that can be used to finalize messages on a chain.
@@ -435,42 +427,6 @@ export async function constructFinalizerClients(
 async function updateFinalizerClients(clients: Clients) {
   await clients.configStoreClient.update();
   await clients.hubPoolClient.update();
-}
-
-export class FinalizerConfig extends CommonConfig {
-  public readonly finalizationStrategy: FinalizationType;
-  public readonly maxFinalizerLookback: number;
-  public readonly userAddresses: Map<Address, string[]>;
-  public chainsToFinalize: number[];
-
-  constructor(env: ProcessEnv) {
-    const {
-      FINALIZER_MAX_TOKENBRIDGE_LOOKBACK,
-      FINALIZER_CHAINS = "[]",
-      FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
-      FINALIZATION_STRATEGY = "l1<->l2",
-    } = env;
-    super(env);
-
-    const userAddresses: { [address: string]: string[] } = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
-    this.userAddresses = new Map();
-    Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
-      this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
-    });
-
-    this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
-
-    // `maxFinalizerLookback` is how far we fetch events from, modifying the search config's 'fromBlock'
-    this.maxFinalizerLookback = Number(FINALIZER_MAX_TOKENBRIDGE_LOOKBACK ?? FINALIZER_TOKENBRIDGE_LOOKBACK);
-    assert(
-      Number.isInteger(this.maxFinalizerLookback),
-      `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
-    );
-
-    const _finalizationStrategy = FINALIZATION_STRATEGY.toLowerCase();
-    ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2", "any<->any"]));
-    this.finalizationStrategy = _finalizationStrategy;
-  }
 }
 
 export async function runFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
