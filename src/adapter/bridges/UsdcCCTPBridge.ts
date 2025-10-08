@@ -18,14 +18,9 @@ import {
   bnZero,
 } from "../../utils";
 import { processEvent, TransferTokenParams } from "../utils";
-import {
-  CCTPV2_FINALITY_THRESHOLD_STANDARD,
-  getCctpTokenMessenger,
-  getV2DepositForBurnMaxFee,
-  isCctpV2L2ChainId,
-} from "../../utils/CCTPUtils";
+import { getCctpV2TokenMessenger, getV2DepositForBurnMaxFee } from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD } from "../../common";
 import { SortableEvent } from "../../interfaces";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {
@@ -42,17 +37,16 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(getCctpTokenMessenger(l2chainId, hubChainId).address)]);
+    const { address: l1Address, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
     );
-    this.IS_CCTP_V2 = isCctpV2L2ChainId(l2chainId);
 
-    const { address: l1Address, abi: l1Abi } = getCctpTokenMessenger(l2chainId, hubChainId);
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
 
-    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpTokenMessenger(l2chainId, l2chainId);
+    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpV2TokenMessenger(l2chainId);
     this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2SignerOrProvider);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
@@ -78,33 +72,26 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // Check for fast-transfer allowance and also min fee, and if they are reasonable, then
     // construct a fast transfer, otherwise default to a standard transfer.
     amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
-    if (this.IS_CCTP_V2) {
-      let maxFee = bnZero,
-        finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
-      if (optionalParams?.fastMode) {
-        ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
-      }
-      // Add maxFee so that we end up with desired amount of tokens on destination chain.
-      const amountWithFee = amount.add(maxFee);
-      const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
-      return Promise.resolve({
-        contract: this.getL1Bridge(),
-        method: "depositForBurn",
-        args: [
-          amountToSend,
-          this.l2DestinationDomain,
-          toAddress.toBytes32(),
-          this.l1UsdcTokenAddress.toNative(),
-          ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
-          maxFee,
-          finalityThreshold,
-        ],
-      });
+    let maxFee = bnZero,
+      finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+    if (optionalParams?.fastMode) {
+      ({ maxFee, finalityThreshold } = await this._getCctpV2DepositForBurnMaxFee(amount));
     }
+    // Add maxFee so that we end up with desired amount of tokens on destination chain.
+    const amountWithFee = amount.add(maxFee);
+    const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
     return Promise.resolve({
       contract: this.getL1Bridge(),
       method: "depositForBurn",
-      args: [amount, this.l2DestinationDomain, toAddress.toBytes32(), this.l1UsdcTokenAddress.toNative()],
+      args: [
+        amountToSend,
+        this.l2DestinationDomain,
+        toAddress.toBytes32(),
+        this.l1UsdcTokenAddress.toNative(),
+        ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+        maxFee,
+        finalityThreshold,
+      ],
     });
   }
 
@@ -115,9 +102,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
-    const eventFilterArgs = this.IS_CCTP_V2
-      ? [this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()]
-      : [undefined, this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
+    const eventFilterArgs = [this.l1UsdcTokenAddress.toNative(), undefined, fromAddress.toNative()];
     const eventFilter = this.getL1Bridge().filters.DepositForBurn(...eventFilterArgs);
     const events = (await paginatedEventQuery(this.getL1Bridge(), eventFilter, eventConfig)).filter(
       (event) =>
@@ -142,19 +127,16 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // There is no "from" field in this event, so we set it to the L2 token received.
     return {
       [this.resolveL2TokenAddress(this.l1UsdcTokenAddress)]: events.map((event) => {
-        if (this.IS_CCTP_V2) {
-          const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
-            amount: string;
-            feeCollected: string;
-          };
-          const amount = toBN(eventSpread.amount);
-          const feeCollected = toBN(eventSpread.feeCollected);
-          return {
-            ...eventSpread,
-            amount: amount.add(feeCollected),
-          };
-        }
-        return processEvent(event, "amount");
+        const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & {
+          amount: string;
+          feeCollected: string;
+        };
+        const amount = toBN(eventSpread.amount);
+        const feeCollected = toBN(eventSpread.feeCollected);
+        return {
+          ...eventSpread,
+          amount: amount.add(feeCollected),
+        };
       }),
     };
   }

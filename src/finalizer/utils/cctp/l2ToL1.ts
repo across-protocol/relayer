@@ -1,13 +1,9 @@
-import { TransactionRequest } from "@ethersproject/abstract-provider";
-import { ethers } from "ethers";
 import { HubPoolClient, SpokePoolClient } from "../../../clients";
 import {
-  Contract,
   Signer,
   TOKEN_SYMBOLS_MAP,
   assert,
   groupObjectCountsByProp,
-  Multicall2Call,
   isDefined,
   winston,
   convertFromWei,
@@ -21,17 +17,25 @@ import {
   createFormatFunction,
   getKitKeypairFromEvmSigner,
   isSVMSpokePoolClient,
+  mapAsync,
 } from "../../../utils";
-import {
-  AttestedCCTPDeposit,
-  CCTPMessageStatus,
-  getAttestedCCTPDeposits,
-  getCctpMessageTransmitter,
-} from "../../../utils/CCTPUtils";
+import { AttestedCCTPDeposit, getCCTPV1Deposits, getCctpReceiveMessageCallData } from "../../../utils/CCTPUtils";
 import { bridgeTokensToHubPool } from "./svm";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
+import { CCTPMessageStatus } from "../../../common";
 
-export async function cctpL2toL1Finalizer(
+/**
+ * Finalizes CCTP V1 token and message relays originating on an L2 and destined to Ethereum, where the L2 is indicated
+ * by the input SpokePoolCLient.
+ * @param logger Logger instance.
+ * @param _signer Signer instance.
+ * @param hubPoolClient HubPool client instance.
+ * @param spokePoolClient Origin SpokePool client instance.
+ * @param _l1SpokePoolClient Hub chain spoke pool client, unused
+ * @param senderAddresses Sender addresses to finalize for.
+ * @returns FinalizerPromise instance.
+ */
+export async function cctpV1L2toL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
@@ -63,11 +67,10 @@ export async function cctpL2toL1Finalizer(
       signature: bridgeTokens.signature,
     });
   }
-  const outstandingDeposits = await getAttestedCCTPDeposits(
+  const outstandingDeposits = await getCCTPV1Deposits(
     augmentedSenderAddresses,
     spokePoolClient.chainId,
     hubPoolClient.chainId,
-    spokePoolClient.chainId,
     searchConfig
   );
 
@@ -97,42 +100,29 @@ export async function cctpL2toL1Finalizer(
     pending,
   });
 
-  const { address, abi } = getCctpMessageTransmitter(spokePoolClient.chainId, hubPoolClient.chainId);
-  const l1MessengerContract = new ethers.Contract(address, abi, hubPoolClient.hubPool.provider);
-
   return {
     crossChainMessages: await generateWithdrawalData(
       unprocessedMessages,
       spokePoolClient.chainId,
       hubPoolClient.chainId
     ),
-    callData: await generateMultiCallData(l1MessengerContract, unprocessedMessages),
-  };
-}
-
-/**
- * Generates a series of populated transactions that can be consumed by the Multicall2 contract.
- * @param messageTransmitter The CCTPMessageTransmitter contract that will be used to populate the transactions.
- * @param messages The messages to generate transactions for.
- * @returns A list of populated transactions that can be consumed by the Multicall2 contract.
- */
-async function generateMultiCallData(
-  messageTransmitter: Contract,
-  messages: Pick<AttestedCCTPDeposit, "attestation" | "messageBytes">[]
-): Promise<Multicall2Call[]> {
-  assert(messages.every((message) => isDefined(message.attestation)));
-  return Promise.all(
-    messages.map(async (message) => {
-      const txn = (await messageTransmitter.populateTransaction.receiveMessage(
-        message.messageBytes,
-        message.attestation
-      )) as TransactionRequest;
+    callData: await mapAsync(unprocessedMessages, async (message) => {
+      const callData = await getCctpReceiveMessageCallData(
+        {
+          destinationChainId: hubPoolClient.chainId,
+          attestationData: {
+            attestation: message.attestation,
+            message: message.messageBytes,
+          },
+        },
+        true /* CCTP V1 */
+      );
       return {
-        target: txn.to,
-        callData: txn.data,
+        target: callData.to,
+        callData: callData.data,
       };
-    })
-  );
+    }),
+  };
 }
 
 /**

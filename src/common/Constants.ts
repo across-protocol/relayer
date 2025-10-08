@@ -1,4 +1,5 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
+import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -344,23 +345,18 @@ export const PROVIDER_CACHE_TTL_MODIFIER = 0.15;
 
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
-export const spokesThatHoldNativeTokens = [
-  CHAIN_IDs.BASE,
-  CHAIN_IDs.BLAST,
-  CHAIN_IDs.INK,
-  CHAIN_IDs.LENS,
-  CHAIN_IDs.LINEA,
-  CHAIN_IDs.LISK,
-  CHAIN_IDs.MODE,
-  CHAIN_IDs.OPTIMISM,
-  CHAIN_IDs.REDSTONE,
-  CHAIN_IDs.SCROLL,
-  CHAIN_IDs.SONEIUM,
-  CHAIN_IDs.UNICHAIN,
-  CHAIN_IDs.WORLD_CHAIN,
-  CHAIN_IDs.ZK_SYNC,
-  CHAIN_IDs.ZORA,
-];
+const resolveNativeTokenSpokes = () => {
+  const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.SCROLL, CHAIN_IDs.ZK_SYNC];
+  Object.entries(PUBLIC_NETWORKS).forEach(([_chainId, config]) => {
+    const chainId = Number(_chainId);
+    if ([ChainFamily.OP_STACK, ChainFamily.ZK_STACK].includes(config.family)) {
+      chains.push(chainId);
+    }
+  });
+
+  return chains;
+};
+export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
@@ -1065,3 +1061,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
+
+export type CCTPMessageStatus = "finalized" | "ready" | "pending";
+export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
+export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;
