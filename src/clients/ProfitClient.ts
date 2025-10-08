@@ -37,13 +37,12 @@ import {
   Address,
   SvmAddress,
   toAddressType,
-  convertRelayDataParamsToBytes32,
   PriceClient,
   acrossApi,
   coingecko,
   defiLlama,
 } from "../utils";
-import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, RelayData, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -266,7 +265,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         cause,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
@@ -532,7 +531,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
         outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
@@ -583,7 +582,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         lpFeePct,
       });
     }
@@ -606,7 +605,7 @@ export class ProfitClient {
     this.logger.debug({
       at: "ProfitClient",
       message: "Handling unprofitable fill",
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit: this.formatDepositForLog(deposit),
       lpFeePct,
       relayerFeePct,
       gasCost,
@@ -833,5 +832,12 @@ export class ProfitClient {
       coingeckoProApiKey,
       this.logger
     );
+  }
+
+  private formatDepositForLog(deposit: RelayData & { destinationChainId: number }) {
+    return {
+      ...deposit,
+      message: !isMessageEmpty(deposit.message), // Don't dump the entire message; it spams the logs.
+    };
   }
 }
