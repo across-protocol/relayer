@@ -1,7 +1,5 @@
-import assert from "assert";
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
-import { getNetworkName } from "../utils/NetworkUtils";
 import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
@@ -460,23 +458,17 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
   };
 
+  const defaultBridges = {
+    [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
+    [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
+    [ChainFamily.ZK_STACK]: ZKStackBridge,
+  };
+
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS)
-      .map(([_chainId, config]) => {
+      .map(([_chainId, { family }]) => {
         const chainId = Number(_chainId);
-        let bridge = bridges[chainId];
-        if (!isDefined(bridge)) {
-          switch (config.family) {
-            case ChainFamily.OP_STACK:
-              bridge = OpStackDefaultERC20Bridge;
-              break;
-
-            case ChainFamily.ZK_STACK:
-              bridge = ZKStackBridge;
-              break;
-          }
-        }
-
+        const bridge = bridges[chainId] ?? defaultBridges[family];
         return [chainId, bridge];
       })
       .filter(([, bridge]) => isDefined(bridge))
