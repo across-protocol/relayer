@@ -31,6 +31,7 @@ import {
   toBNWei,
   forEachAsync,
   chainIsEvm,
+  delay,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
@@ -755,7 +756,8 @@ async function _getCCTPV1MessagesWithStatus(
   sourceChainId: number,
   destinationChainId: number,
   sourceEventSearchConfig: EventSearchConfig,
-  signer?: KeyPairSigner
+  signer?: KeyPairSigner,
+  maxRetries = 3
 ): Promise<AttestedCCTPMessage[]> {
   assert(chainIsEvm(sourceChainId));
   const cctpMessageEvents = await _getCCTPV1MessageEvents(
@@ -769,17 +771,33 @@ async function _getCCTPV1MessagesWithStatus(
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
+  let svmProvider, latestBlockhash;
+  if (chainIsSvm(destinationChainId)) {
+    svmProvider = getSvmProvider(await getRedisCache());
+    latestBlockhash = await svmProvider.getLatestBlockhash().send();
+  }
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
-        processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
-          getSvmProvider(await getRedisCache()),
-          signer,
-          messageEvent.nonce,
-          messageEvent.sourceDomain
-        );
+        let nRetries = 0;
+        while (nRetries < maxRetries) {
+          try {
+            processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
+              svmProvider,
+              signer,
+              messageEvent.nonce,
+              messageEvent.sourceDomain,
+              latestBlockhash!.value
+            );
+            break;
+          } catch {
+            const delaySeconds = 2 ** nRetries + Math.random();
+            await delay(delaySeconds);
+            nRetries++;
+          }
+        }
       } else {
         processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
