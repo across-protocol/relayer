@@ -6,7 +6,8 @@ import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
 import { signer } from "./Solana.setup";
-import { finalizeCCTPV1MessagesSVM, cctpV1L1toL2Finalizer } from "../src/finalizer/utils/cctp";
+import { finalizeCCTPV1MessagesSVM } from "../src/finalizer/utils/cctp/svmUtils";
+import { cctpV1L1toSvmL2Finalizer } from "../src/finalizer/utils/cctp/l1ToSvmL2";
 import { AttestedCCTPMessage, ZERO_ADDRESS } from "../src/utils";
 import { FinalizerPromise } from "../src/finalizer/types";
 import { createSpyLogger, ethers, getContractFactory } from "./utils";
@@ -344,7 +345,7 @@ describe("finalizeCCTPV1Messages", () => {
         createDefaultSolanaClient().rpc // eventSearchConfig
       );
 
-      const result: FinalizerPromise = await cctpV1L1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
         hubPoolClient as any, // Cast to local HubPoolClient type
@@ -409,7 +410,7 @@ describe("finalizeCCTPV1Messages", () => {
         createDefaultSolanaClient().rpc // eventSearchConfig
       );
 
-      const result: FinalizerPromise = await cctpV1L1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
         hubPoolClient as any, // Cast to local HubPoolClient type
@@ -472,7 +473,7 @@ describe("finalizeCCTPV1Messages", () => {
       );
 
       // Call the finalizer
-      const result: FinalizerPromise = await cctpV1L1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
         hubPoolClient as any, // Cast to local HubPoolClient type
@@ -541,7 +542,7 @@ describe("finalizeCCTPV1Messages", () => {
       );
 
       // Call the finalizer
-      const result: FinalizerPromise = await cctpV1L1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
         hubPoolClient as any, // Cast to local HubPoolClient type
