@@ -779,9 +779,14 @@ async function _getCCTPV1MessagesWithStatus(
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
+      let nRetries = 0;
+      const retry = async () => {
+        const delaySeconds = 2 ** nRetries + Math.random();
+        await delay(delaySeconds);
+        nRetries++;
+      };
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
-        let nRetries = 0;
         while (nRetries < maxRetries) {
           try {
             processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
@@ -793,9 +798,7 @@ async function _getCCTPV1MessagesWithStatus(
             );
             break;
           } catch {
-            const delaySeconds = 2 ** nRetries + Math.random();
-            await delay(delaySeconds);
-            nRetries++;
+            await retry();
           }
         }
       } else {
