@@ -36,7 +36,7 @@ type RelayerFeeQuery = {
   destinationChainId: number;
   token: string;
   amount: string;
-  recipientAddress?: string;
+  recipient?: string;
   message?: string;
   skipAmountLimit?: string;
   timestamp?: number;
@@ -141,7 +141,7 @@ async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
     return quote.data;
   } catch (err) {
     if (isAxiosError(err) && err.response.status >= 400) {
-      throw new Error(`Failed to get quote for deposit (${err.response.data})`);
+      throw new Error(`Failed to get quote for deposit (${JSON.stringify(err.response.data)})`);
     }
     throw err;
   }
@@ -170,7 +170,7 @@ async function getRelayerQuote(
     originChainId: fromChainId,
     destinationChainId: toChainId,
     amount: amount.toString(),
-    recipientAddress: recipient.toNative(),
+    recipient: recipient.toNative(),
     message,
   };
   const timeout = 5000;
@@ -245,6 +245,52 @@ async function getRelayerQuote(
   return { outputToken, outputAmount, exclusiveRelayer, exclusivityDeadline, quoteTimestamp, fillDeadline };
 }
 
+async function confirmManualQuote(
+  fromChainId: number,
+  toChainId: number,
+  token: utils.ERC20,
+  inputAmount: BigNumber,
+  outputAmount: BigNumber
+): Promise<{
+  outputToken: Address;
+  outputAmount: BigNumber;
+  exclusiveRelayer: Address;
+  exclusivityDeadline: number;
+  quoteTimestamp: number;
+  fillDeadline: number;
+} | null> {
+  const tokenFormatter = sdkUtils.createFormatFunction(2, 4, false, token.decimals);
+  const totalRelayFee = inputAmount.sub(outputAmount);
+
+  if (totalRelayFee.lt(0)) {
+    console.log("Error: amountOut cannot be greater than the input amount.");
+    return null;
+  }
+
+  const quote =
+    `Manual quote for ${tokenFormatter(inputAmount)} ${token.symbol} ${fromChainId} -> ${toChainId}:` +
+    ` ${formatFeePct(totalRelayFee)} ${token.symbol} (${formatFeePct(
+      totalRelayFee.mul(fixedPoint).div(inputAmount)
+    )} %)` +
+    " (ETA N/A)";
+
+  const accepted = await utils.askYesNoQuestion(quote);
+  if (!accepted) {
+    return null;
+  }
+
+  const outputTokenInfo = utils.resolveToken(token.symbol, toChainId);
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    outputToken: toAddressType(outputTokenInfo.address, toChainId),
+    outputAmount,
+    exclusiveRelayer: toAddressType(AddressZero, toChainId),
+    exclusivityDeadline: 0,
+    quoteTimestamp: now,
+    fillDeadline: now + 7200, // 2 hours
+  };
+}
+
 async function deposit(args: Record<string, number | string>, signer: Signer): Promise<boolean> {
   const [fromChainId, toChainId, baseAmount] = [args.from, args.to, args.amount].map(Number);
   if (!utils.validateChainIds([fromChainId, toChainId])) {
@@ -294,7 +340,25 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     console.log("Approval complete...");
   }
 
-  const depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
+  let depositQuote: {
+    outputToken: Address;
+    outputAmount: BigNumber;
+    exclusiveRelayer: Address;
+    exclusivityDeadline: number;
+    quoteTimestamp: number;
+    fillDeadline: number;
+  };
+
+  if (args.amountOut) {
+    const manualOutputAmount = ethers.utils.parseUnits(String(args.amountOut), args.decimals ? 0 : token.decimals);
+    depositQuote = await confirmManualQuote(fromChainId, toChainId, token, inputAmount, manualOutputAmount);
+    if (!depositQuote) {
+      console.log("Deposit cancelled.");
+      return false;
+    }
+  } else {
+    depositQuote = await getRelayerQuote(fromChainId, toChainId, token, inputAmount, recipient, message);
+  }
 
   // Use the exclusiveRelayer provided by the user if present; otherwise fall back to the
   // value supplied by the quote (for SVM chains this will be the zero address).
@@ -561,7 +625,7 @@ function usage(badInput?: string): boolean {
   const depositArgs =
     "--from <originChainId> --to <destinationChainId>" +
     " --token <tokenSymbol> --amount <amount>" +
-    " [--recipient <recipient>] [--decimals]" +
+    " [--recipient <recipient>] [--decimals] [--amountOut <outputAmount>]" +
     " [--relayer <exclusiveRelayer> --exclusivityDeadline <exclusivityDeadline>]";
 
   const dumpConfigArgs = "--chainId";
@@ -592,6 +656,7 @@ async function run(argv: string[]): Promise<number> {
     "message",
     "exclusiveRelayer",
     "exclusivityDeadline",
+    "amountOut",
   ];
   const fetchOpts = ["chainId", "transactionHash", "depositId"];
   const fillOpts = ["txnHash", "chainId", "depositId"];
