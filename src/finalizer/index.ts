@@ -120,8 +120,7 @@ function generateChainConfig(): void {
       config.finalizeOnL2.push(heliosL1toL2Finalizer);
     }
 
-    // Autoconfigure CCTPv1 + v2 finalisation for CCTP chains.
-    // SVM is currently limited to v1, pending SvmSpoke update to support v2.
+    // Autoconfigure CCTP finalisation. SVM is currently limited to v1.
     if (cctpDomain !== CCTP_NO_DOMAIN && family !== ChainFamily.SVM) {
       config.finalizeOnAny.push(cctpV2Finalizer);
     }
