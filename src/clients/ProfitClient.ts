@@ -37,7 +37,6 @@ import {
   Address,
   SvmAddress,
   toAddressType,
-  convertRelayDataParamsToBytes32,
   PriceClient,
   acrossApi,
   coingecko,
@@ -239,10 +238,7 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(
-    deposit: Omit<Deposit, "messageHash">,
-    relayer: Address
-  ): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
@@ -266,7 +262,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         cause,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
@@ -532,7 +528,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
         outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
@@ -583,7 +579,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         lpFeePct,
       });
     }
@@ -606,7 +602,7 @@ export class ProfitClient {
     this.logger.debug({
       at: "ProfitClient",
       message: "Handling unprofitable fill",
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit: this.formatDepositForLog(deposit),
       lpFeePct,
       relayerFeePct,
       gasCost,
@@ -755,6 +751,7 @@ export class ProfitClient {
             destinationChainId
           ),
           message: EMPTY_MESSAGE,
+          messageHash: EMPTY_MESSAGE,
           fromLiteChain: false,
           toLiteChain: false,
         };
@@ -833,5 +830,10 @@ export class ProfitClient {
       coingeckoProApiKey,
       this.logger
     );
+  }
+
+  private formatDepositForLog(deposit: Deposit): Omit<Deposit, "message" | "fromLiteChain" | "toLiteChain"> {
+    const { message, fromLiteChain, toLiteChain, ...strippedDeposit } = deposit;
+    return strippedDeposit;
   }
 }
