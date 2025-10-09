@@ -31,7 +31,6 @@ import {
   toBNWei,
   forEachAsync,
   chainIsEvm,
-  delay,
 } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
@@ -756,8 +755,7 @@ async function _getCCTPV1MessagesWithStatus(
   sourceChainId: number,
   destinationChainId: number,
   sourceEventSearchConfig: EventSearchConfig,
-  signer?: KeyPairSigner,
-  maxRetries = 3
+  signer?: KeyPairSigner
 ): Promise<AttestedCCTPMessage[]> {
   assert(chainIsEvm(sourceChainId));
   const cctpMessageEvents = await _getCCTPV1MessageEvents(
@@ -779,28 +777,15 @@ async function _getCCTPV1MessagesWithStatus(
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
-      let nRetries = 0;
-      const retry = async () => {
-        const delaySeconds = 2 ** nRetries + Math.random();
-        await delay(delaySeconds);
-        nRetries++;
-      };
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
-        while (nRetries < maxRetries) {
-          try {
-            processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
-              svmProvider,
-              signer,
-              messageEvent.nonce,
-              messageEvent.sourceDomain,
-              latestBlockhash!.value
-            );
-            break;
-          } catch {
-            await retry();
-          }
-        }
+        processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
+          svmProvider,
+          signer,
+          messageEvent.nonce,
+          messageEvent.sourceDomain,
+          latestBlockhash!.value
+        );
       } else {
         processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
