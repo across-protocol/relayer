@@ -42,7 +42,7 @@ import {
   coingecko,
   defiLlama,
 } from "../utils";
-import { Deposit, DepositWithBlock, L1Token, RelayData, SpokePoolClientsByChain } from "../interfaces";
+import { Deposit, DepositWithBlock, L1Token, SpokePoolClientsByChain } from "../interfaces";
 import { getAcrossHost } from "./AcrossAPIClient";
 import { HubPoolClient } from "./HubPoolClient";
 
@@ -238,10 +238,7 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(
-    deposit: Omit<Deposit, "messageHash">,
-    relayer: Address
-  ): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
@@ -754,6 +751,7 @@ export class ProfitClient {
             destinationChainId
           ),
           message: EMPTY_MESSAGE,
+          messageHash: EMPTY_MESSAGE,
           fromLiteChain: false,
           toLiteChain: false,
         };
@@ -834,10 +832,8 @@ export class ProfitClient {
     );
   }
 
-  private formatDepositForLog(deposit: RelayData & { destinationChainId: number }) {
-    return {
-      ...deposit,
-      message: !isMessageEmpty(deposit.message), // Don't dump the entire message; it spams the logs.
-    };
+  private formatDepositForLog(deposit: Deposit): Omit<Deposit, "message" | "fromLiteChain" | "toLiteChain"> {
+    const { message, fromLiteChain, toLiteChain, ...strippedDeposit } = deposit;
+    return strippedDeposit;
   }
 }
