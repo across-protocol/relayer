@@ -769,16 +769,22 @@ async function _getCCTPV1MessagesWithStatus(
   const messageTransmitterContract = chainIsSvm(destinationChainId)
     ? undefined
     : new Contract(address, abi, dstProvider);
+  let svmProvider, latestBlockhash;
+  if (chainIsSvm(destinationChainId)) {
+    svmProvider = getSvmProvider(await getRedisCache());
+    latestBlockhash = await svmProvider.getLatestBlockhash().send();
+  }
   return await Promise.all(
     cctpMessageEvents.map(async (messageEvent) => {
       let processed;
       if (chainIsSvm(destinationChainId)) {
         assert(signer, "Signer is required for Solana CCTP messages");
         processed = await arch.svm.hasCCTPV1MessageBeenProcessed(
-          getSvmProvider(await getRedisCache()),
+          svmProvider,
           signer,
           messageEvent.nonce,
-          messageEvent.sourceDomain
+          messageEvent.sourceDomain,
+          latestBlockhash!.value
         );
       } else {
         processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
