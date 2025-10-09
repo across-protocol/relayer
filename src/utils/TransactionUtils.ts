@@ -26,7 +26,6 @@ import {
   KeyPairSigner,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
-  type Blockhash,
 } from "@solana/kit";
 
 dotenv.config();
@@ -45,11 +44,6 @@ export type TransactionSimulationResult = {
   succeed: boolean;
   reason?: string;
   data?: any;
-};
-
-export type LatestBlockhash = {
-  blockhash: Blockhash;
-  lastValidBlockHeight: bigint;
 };
 
 export type Multicall2Call = {

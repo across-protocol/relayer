@@ -35,8 +35,8 @@ import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } 
 import {
   arbStackFinalizer,
   binanceFinalizer,
-  cctpV1L1toL2Finalizer,
-  cctpV1L2toL1Finalizer,
+  cctpV1L1toSvmL2Finalizer,
+  cctpV1SvmL2toL1Finalizer,
   cctpV2Finalizer,
   heliosL1toL2Finalizer,
   lineaL1ToL2Finalizer,
@@ -87,6 +87,10 @@ const chainFinalizers: {
   [CHAIN_IDs.POLYGON_AMOY]: {
     finalizeOnL1: [polygonFinalizer],
   },
+  [CHAIN_IDs.SOLANA]: {
+    finalizeOnL1: [cctpV1L1toSvmL2Finalizer],
+    finalizeOnL2: [cctpV1SvmL2toL1Finalizer],
+  },
 };
 
 /**
@@ -94,23 +98,22 @@ const chainFinalizers: {
  * @returns void
  */
 function generateChainConfig(): void {
-  Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, chain]) => {
+  const erc20Defaults = {
+    [ChainFamily.OP_STACK]: opStackFinalizer,
+    [ChainFamily.ORBIT]: arbStackFinalizer,
+    [ChainFamily.ZK_STACK]: zkSyncFinalizer,
+  };
+
+  Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, { cctpDomain, family }]) => {
     const chainId = Number(_chainId);
     const config = (chainFinalizers[chainId] ??= {});
     config.finalizeOnL1 ??= [];
     config.finalizeOnL2 ??= [];
     config.finalizeOnAny ??= [];
 
-    switch (chain.family) {
-      case ChainFamily.ORBIT:
-        config.finalizeOnL1.push(arbStackFinalizer);
-        break;
-      case ChainFamily.OP_STACK:
-        config.finalizeOnL1.push(opStackFinalizer);
-        break;
-      case ChainFamily.ZK_STACK:
-        config.finalizeOnL1.push(zkSyncFinalizer);
-        break;
+    const l1Finalizer = erc20Defaults[family];
+    if (isDefined(l1Finalizer)) {
+      config.finalizeOnL1.push(l1Finalizer);
     }
 
     if (UNIVERSAL_CHAINS.includes(chainId)) {
@@ -118,19 +121,9 @@ function generateChainConfig(): void {
     }
 
     // Autoconfigure CCTPv1 + v2 finalisation for CCTP chains.
-    if (chain.cctpDomain !== CCTP_NO_DOMAIN) {
-      const { ARBITRUM, BASE, OPTIMISM, POLYGON, SOLANA, UNICHAIN } = CHAIN_IDs;
-      const cctpV1Chains = [ARBITRUM, BASE, OPTIMISM, POLYGON, SOLANA, UNICHAIN];
-
-      if (cctpV1Chains.includes(chainId)) {
-        config.finalizeOnL1.push(cctpV1L2toL1Finalizer);
-        config.finalizeOnL2.push(cctpV1L1toL2Finalizer);
-      }
-
-      // SVM is currently limited to v1, pending SvmSpoke update to support v2.
-      if (chain.family !== ChainFamily.SVM) {
-        config.finalizeOnAny.push(cctpV2Finalizer);
-      }
+    // SVM is currently limited to v1, pending SvmSpoke update to support v2.
+    if (cctpDomain !== CCTP_NO_DOMAIN && family !== ChainFamily.SVM) {
+      config.finalizeOnAny.push(cctpV2Finalizer);
     }
   });
 }
