@@ -195,7 +195,9 @@ export async function runTransaction(
 
     if (scaleGas) {
       const maxGasScaler = Number(
-        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ?? MAX_GAS_RETRY_SCALER_DEFAULT
+        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
+          process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
+          MAX_GAS_RETRY_SCALER_DEFAULT
       );
       retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT);
       retryScaler = Math.min(retryScaler, maxGasScaler);
