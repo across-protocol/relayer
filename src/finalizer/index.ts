@@ -1,3 +1,4 @@
+import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
@@ -9,6 +10,7 @@ import {
   constructClients,
   constructSpokePoolClientsWithLookback,
   updateSpokePoolClients,
+  UNIVERSAL_CHAINS,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
@@ -53,168 +55,78 @@ dotenvConfig();
 let logger: winston.Logger;
 
 /**
- * A list of finalizers that can be used to finalize messages on a chain. These are
- * broken down into two categories: finalizers that finalize messages on L1 and finalizers
- * that finalize messages on L2.
- * @note: finalizeOnL1 is used to finalize L2 -> L1 messages (from the spoke chain to mainnet)
- * @note: finalizeOnL2 is used to finalize L1 -> L2 messages (from mainnet to the spoke chain)
+ * A list of finalizers that can be used to finalize messages on a chain.
+ * The pre-populated entries are exceptions to what is autogeneated by generateChainConfig() below.
  */
 const chainFinalizers: {
-  [chainId: number]: { finalizeOnL2: ChainFinalizer[]; finalizeOnL1: ChainFinalizer[]; finalizeOnAny: Finalizer[] };
+  [chainId: number]: { finalizeOnL2?: ChainFinalizer[]; finalizeOnL1?: ChainFinalizer[]; finalizeOnAny?: Finalizer[] };
 } = {
   // Mainnets
-  [CHAIN_IDs.OPTIMISM]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.PLASMA]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-    finalizeOnAny: [],
-  },
   [CHAIN_IDs.POLYGON]: {
     finalizeOnL1: [polygonFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.ZK_SYNC]: {
     finalizeOnL1: [zkSyncFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BASE]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.ARBITRUM]: {
     finalizeOnL1: [arbStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.LENS]: {
-    finalizeOnL1: [zkSyncFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
   },
   [CHAIN_IDs.LINEA]: {
     finalizeOnL1: [lineaL2ToL1Finalizer],
     finalizeOnL2: [lineaL1ToL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
   },
   [CHAIN_IDs.SCROLL]: {
     finalizeOnL1: [scrollFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
+  },
+  [CHAIN_IDs.BSC]: {
+    finalizeOnL1: [binanceFinalizer],
+  },
+  // Testnets
+  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
+    finalizeOnL1: [arbStackFinalizer],
+  },
+  [CHAIN_IDs.POLYGON_AMOY]: {
+    finalizeOnL1: [polygonFinalizer],
   },
   [CHAIN_IDs.SOLANA]: {
     finalizeOnL1: [cctpV1L1toSvmL2Finalizer],
     finalizeOnL2: [cctpV1SvmL2toL1Finalizer],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.MODE]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.MAINNET]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.LISK]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.ZORA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.REDSTONE]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BLAST]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BSC]: {
-    finalizeOnL1: [binanceFinalizer],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.SONEIUM]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.WORLD_CHAIN]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.HYPEREVM]: {
-    finalizeOnL1: [],
-    finalizeOnL2: [heliosL1toL2Finalizer],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.INK]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.UNICHAIN]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  // Testnets
-  [CHAIN_IDs.BASE_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
-    finalizeOnL1: [arbStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.MODE_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.POLYGON_AMOY]: {
-    finalizeOnL1: [polygonFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [cctpV2Finalizer],
-  },
-  [CHAIN_IDs.LISK_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
-  },
-  [CHAIN_IDs.BLAST_SEPOLIA]: {
-    finalizeOnL1: [opStackFinalizer],
-    finalizeOnL2: [],
-    finalizeOnAny: [],
   },
 };
+
+/**
+ * Autopopulate the majority of the chainFinalizers object above.
+ * @returns void
+ */
+function generateChainConfig(): void {
+  const erc20Defaults = {
+    [ChainFamily.OP_STACK]: opStackFinalizer,
+    [ChainFamily.ORBIT]: arbStackFinalizer,
+    [ChainFamily.ZK_STACK]: zkSyncFinalizer,
+  };
+
+  Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, { cctpDomain, family }]) => {
+    const chainId = Number(_chainId);
+    const config = (chainFinalizers[chainId] ??= {});
+    config.finalizeOnL1 ??= [];
+    config.finalizeOnL2 ??= [];
+    config.finalizeOnAny ??= [];
+
+    const l1Finalizer = erc20Defaults[family];
+    if (isDefined(l1Finalizer)) {
+      config.finalizeOnL1.push(l1Finalizer);
+    }
+
+    if (UNIVERSAL_CHAINS.includes(chainId)) {
+      config.finalizeOnL2.push(heliosL1toL2Finalizer);
+    }
+
+    // Autoconfigure CCTP finalisation. SVM is currently limited to v1.
+    if (cctpDomain !== CCTP_NO_DOMAIN && family !== ChainFamily.SVM) {
+      config.finalizeOnAny.push(cctpV2Finalizer);
+    }
+  });
+}
 
 export async function finalize(
   logger: winston.Logger,
@@ -230,6 +142,8 @@ export async function finalize(
     finalizationStrategy,
     sendingTransactionsEnabled: submitFinalizationTransactions,
   } = config;
+
+  generateChainConfig();
 
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
