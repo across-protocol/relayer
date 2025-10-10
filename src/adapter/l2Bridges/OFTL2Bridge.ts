@@ -3,7 +3,6 @@ import { AugmentedTransaction } from "../../clients";
 import {
   Address,
   EvmAddress,
-  Provider,
   assert,
   createFormatFunction,
   ConvertDecimals,
@@ -30,14 +29,8 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
   private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     assert(translatedL2Token.isEVM());
@@ -48,7 +41,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 
-    this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, l1Provider);
+    this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, l1Signer);
     this.l2Bridge = new Contract(l2OftMessenger.toNative(), IOFT_ABI_FULL, l2Signer);
 
     this.l2ChainEid = OFT.getEndpointId(l2chainId);
