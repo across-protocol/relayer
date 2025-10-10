@@ -1102,7 +1102,7 @@ export class InventoryClient {
       } catch (error) {
         this.log(
           "Something errored during inventory rebalance",
-          { error, possibleRebalances, unexecutedRebalances, executedTransactions }, // include all info to help debugging.
+          { error, chainId, l1Token, l2Token, amount, optionalParams }, // include all info to help debugging.
           "error"
         );
       }
