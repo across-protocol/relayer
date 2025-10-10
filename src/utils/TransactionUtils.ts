@@ -26,7 +26,6 @@ import {
   KeyPairSigner,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
-  type Blockhash,
 } from "@solana/kit";
 
 dotenv.config();
@@ -47,17 +46,12 @@ export type TransactionSimulationResult = {
   data?: any;
 };
 
-export type LatestBlockhash = {
-  blockhash: Blockhash;
-  lastValidBlockHeight: bigint;
-};
-
 export type Multicall2Call = {
   callData: ethers.utils.BytesLike;
   target: string;
 };
 
-export async function getMultisender(chainId: number, baseSigner: Signer): Promise<Contract | undefined> {
+export function getMultisender(chainId: number, baseSigner: Signer): Contract | undefined {
   return sdkUtils.getMulticall3(chainId, baseSigner);
 }
 

@@ -14,6 +14,6 @@ export function stringifyThrownValue(value: unknown): string {
       ? objStringified
       : `could not extract error from 'Object' instance ${objStringified}`;
   } else {
-    return `ThrownValue: ${value.toString()}`;
+    return `ThrownValue: ${value?.toString()}`;
   }
 }
