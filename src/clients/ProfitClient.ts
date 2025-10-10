@@ -726,7 +726,7 @@ export class ProfitClient {
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
-      await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+      await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
         // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
         const destinationAddress = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
@@ -751,7 +751,7 @@ export class ProfitClient {
             destinationChainId
           ),
           message: EMPTY_MESSAGE,
-          messageHash: EMPTY_MESSAGE,
+          messageHash: ZERO_BYTES,
           fromLiteChain: false,
           toLiteChain: false,
         };
