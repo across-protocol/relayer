@@ -102,6 +102,7 @@ export const {
   randomAddress,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
+  chunk,
 } = sdk.utils;
 
 export const {
