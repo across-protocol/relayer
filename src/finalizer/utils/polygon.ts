@@ -94,7 +94,7 @@ export async function polygonFinalizer(
 
 async function getPosClient(mainnetSigner: Signer): Promise<POSClient> {
   const from = await mainnetSigner.getAddress();
-  // Following from https://maticnetwork.github.io/matic.js/docs/pos
+  // Following from https://docs.polygon.technology/tools/matic-js/pos/client/
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
   const posClient = new POSClient();
