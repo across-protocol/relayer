@@ -223,7 +223,7 @@ export async function sendAndConfirmSolanaTransaction(
   _unsignedTransaction: CompilableTransactionMessage,
   signer: KeyPairSigner,
   provider: SVMProvider,
-  cycles = 250,
+  cycles = 25,
   pollingDelay = 600 // 1.5 slots on Solana.
 ): Promise<string> {
   const delay = (ms: number) => {
