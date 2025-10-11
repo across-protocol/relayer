@@ -106,7 +106,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
       contract: this.l2Bridge,
       chainId: this.l2chainId,
       method: "send",
-      unpermissionsed: false,
+      unpermissioned: false,
       nonMulticall: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
