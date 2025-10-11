@@ -249,7 +249,7 @@ async function getOVMStdEvents(
   // that look exactly emit the same events as the standard bridge's ETH withdrawal process. This is used by the
   // https://blast.io/en/bridge UI, so the following query allows this finalizer to finalize withdrawals of WETH
   // from blast initiated through this hosted UI. ETH withdrawals sent in this manner through the Blast Bridge
-  // have the same ETHBridgeInitiated event signature so we only need to change the contract addres.
+  // have the same ETHBridgeInitiated event signature so we only need to change the contract address.
   if (chainIsBlast(chainId)) {
     const blastBridge = new Contract(CONTRACT_ADDRESSES[chainId].blastBridge.address, ovmStandardBridge.abi, provider);
     const blastEthEvents = (
