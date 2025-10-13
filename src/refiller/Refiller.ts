@@ -181,7 +181,7 @@ export class Refiller {
           } else {
             return;
           }
-        } else if (nativeTokenSymbol === "MATIC" || nativeTokenSymbol === "HYPE") {
+        } else if (nativeTokenSymbol === "MATIC") {
           // To refill other native tokens, we will first submit an async cross chain swap to receive the native token, and then on the next
           // run, the refill should be successful. Actual swap routes are currently determined by a hardcoded map from destination chain ID to
           // swap strategy.
