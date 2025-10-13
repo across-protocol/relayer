@@ -1080,15 +1080,15 @@ export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
     destinationChainId: CHAIN_IDs.POLYGON,
   },
   [CHAIN_IDs.HYPEREVM]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]),
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.MAINNET,
+    originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.HYPEREVM,
   },
   [CHAIN_IDs.PLASMA]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.MAINNET,
+    originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.PLASMA,
   },
 };
