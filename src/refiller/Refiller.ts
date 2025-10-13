@@ -5,7 +5,6 @@ import {
   assert,
   BigNumber,
   blockExplorerLink,
-  CHAIN_IDs,
   chainIsEvm,
   chainIsSvm,
   Contract,
@@ -29,9 +28,9 @@ import {
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
   WETH9,
-  ZERO_ADDRESS,
   isDefined,
 } from "../utils";
+import { SWAP_ROUTES, SwapRoute } from "../common";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -43,23 +42,6 @@ export interface RefillerClients {
   multiCallerClient: MultiCallerClient;
 }
 
-type SwapRoute = {
-  inputToken: EvmAddress;
-  outputToken: EvmAddress;
-  originChainId: number;
-  destinationChainId: number;
-};
-
-const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
-  [CHAIN_IDs.POLYGON]: {
-    // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
-    // the native token address is not actually ZERO_ADDRESS.
-    inputToken: EvmAddress.from(ZERO_ADDRESS),
-    outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.POLYGON,
-  },
-};
 /**
  * @notice This class is in charge of refilling native token balances for accounts running other bots, like the relayer and
  * dataworker. It is run with an account whose funds are used to refill balances for other accounts by either swapping
