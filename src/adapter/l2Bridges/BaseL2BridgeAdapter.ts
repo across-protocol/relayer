@@ -31,7 +31,7 @@ export abstract class BaseL2BridgeAdapter {
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
     this.spokePoolAddress = getSpokePoolAddress(l2chainId);
-    if (l2SignerOrSvmProvider instanceof Signer) {
+    if (Signer.isSigner(l2SignerOrSvmProvider)) {
       this.l2Signer = l2SignerOrSvmProvider satisfies Signer;
     } else {
       this.svmProvider = l2SignerOrSvmProvider satisfies SVMProvider;
