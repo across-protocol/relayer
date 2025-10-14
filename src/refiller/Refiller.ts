@@ -1,5 +1,5 @@
 import winston from "winston";
-import { RefillerConfig } from "./RefillerConfig";
+import { RefillerConfig, RefillBalanceData } from "./RefillerConfig";
 import {
   Address,
   assert,
@@ -29,8 +29,12 @@ import {
   TransactionReceipt,
   WETH9,
   isDefined,
+  chainIsL1,
+  Provider,
+  bnZero,
+  getL1TokenAddress,
 } from "../utils";
-import { SWAP_ROUTES, SwapRoute } from "../common";
+import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -74,7 +78,7 @@ export class Refiller {
     this.initialized = true;
   }
 
-  async refillNativeTokenBalances(): Promise<void> {
+  async refillBalances(): Promise<void> {
     assert(this.initialized, "not initialized, call initialize() first");
     const { refillEnabledBalances } = this.config;
 
@@ -82,185 +86,254 @@ export class Refiller {
     const currentBalances = await this._getBalances(refillEnabledBalances);
     const decimalValues = await this._getDecimals(refillEnabledBalances);
     this.logger.debug({
-      at: "Refiller#refillNativeTokenBalances",
-      message: "Checking native token balances",
+      at: "Refiller#refillBalances",
+      message: "Checking token balances",
       currentBalances: refillEnabledBalances.map(({ chainId, token, account, target }, i) => {
         return {
           chainId,
-          token: token.toEvmAddress(),
-          account: account.toEvmAddress(),
+          token: token.toNative(),
+          account: account.toNative(),
           currentBalance: currentBalances[i].toString(),
           target: parseUnits(target.toString(), decimalValues[i]),
         };
       }),
     });
-
-    // Compare current balances with triggers and send tokens if signer has enough balance.
-    await mapAsync(refillEnabledBalances, async ({ chainId, isHubPool, token, account, target, trigger }, i) => {
-      assert(token.eq(getNativeTokenAddressForChain(chainId)), "Token must be the native token");
+    await mapAsync(refillEnabledBalances, async (refillBalanceData, i) => {
+      const { token, chainId } = refillBalanceData;
       const l2Provider = this.clients.balanceAllocator.providers[chainId];
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
+      if (token.eq(getNativeTokenAddressForChain(chainId))) {
+        return await this.refillNativeTokenBalances(
+          currentBalances[i],
+          decimalValues[i],
+          refillBalanceData,
+          l2Provider
+        );
+      }
+      return await this.refillTokenBalances(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
+    });
+  }
 
-      const currentBalance = currentBalances[i];
-      const decimals = decimalValues[i];
-      const balanceTrigger = parseUnits(trigger.toString(), decimals);
-      const isBelowTrigger = currentBalance.lte(balanceTrigger);
-      if (!isBelowTrigger) {
+  private async refillNativeTokenBalances(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalances: RefillBalanceData,
+    l2Provider: Provider
+  ): Promise<void> {
+    const { chainId, isHubPool, token, account, target, trigger } = refillBalances;
+    // Compare current balances with triggers and send tokens if signer has enough balance.
+
+    const balanceTrigger = parseUnits(trigger.toString(), decimals);
+    const isBelowTrigger = currentBalance.lte(balanceTrigger);
+    if (!isBelowTrigger) {
+      this.logger.debug({
+        at: "Refiller#refillBalances",
+        message: "Balance is above trigger",
+        account,
+        balanceTrigger,
+        currentBalance: currentBalance.toString(),
+        token,
+        chainId,
+      });
+      return;
+    }
+    // Fill balance back to target, not trigger.
+    const balanceTarget = parseUnits(target.toString(), decimals);
+    // Deficit amount is in units of the output token.
+    const deficit = balanceTarget.sub(currentBalance);
+    const selfRefill = account.eq(this.baseSignerAddress);
+    // If the account and the signer are the same, we can't transfer to ourselves so we need to try to go through
+    // one of the `canRefill` paths below, which tries to source the `token` from other means, like unwrapping
+    // WETH or sending a cross chain swap.
+    let canRefill = selfRefill
+      ? false
+      : await this.clients.balanceAllocator.requestBalanceAllocation(chainId, [token], this.baseSignerAddress, deficit);
+    if (!canRefill && chainIsEvm(chainId)) {
+      const nativeTokenSymbol = getNativeTokenSymbol(chainId);
+      // If token is the native token and the native token is ETH, try unwrapping some WETH into ETH first before
+      // transferring ETH to the account.
+      if (nativeTokenSymbol === "ETH") {
         this.logger.debug({
-          at: "Refiller#refillBalances",
-          message: "Balance is above trigger",
-          account,
-          balanceTrigger,
+          at: "Refiller#refillNativeTokenBalances",
+          message: `Balance of ETH below trigger on chain ${chainId} and account has insufficient ETH to transfer on chain, now trying to unwrap WETH to refill ETH`,
+          chainId,
           currentBalance: currentBalance.toString(),
-          token,
-          chainId,
-        });
-        return;
-      }
-      // Fill balance back to target, not trigger.
-      const balanceTarget = parseUnits(target.toString(), decimals);
-      const deficit = balanceTarget.sub(currentBalance);
-      const selfRefill = account.eq(this.baseSignerAddress);
-      // If the account and the signer are the same, we can't transfer to ourselves so we need to try to go through
-      // one of the `canRefill` paths below, which tries to source the `token` from other means, like unwrapping
-      // WETH or sending a cross chain swap.
-      let canRefill = selfRefill
-        ? false
-        : await this.clients.balanceAllocator.requestBalanceAllocation(
-            chainId,
-            [token],
-            this.baseSignerAddress,
-            deficit
-          );
-      if (!canRefill && chainIsEvm(chainId)) {
-        const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-        // If token is the native token and the native token is ETH, try unwrapping some WETH into ETH first before
-        // transferring ETH to the account.
-        if (nativeTokenSymbol === "ETH") {
-          this.logger.debug({
-            at: "Refiller#refillNativeTokenBalances",
-            message: `Balance of ETH below trigger on chain ${chainId} and account has insufficient ETH to transfer on chain, now trying to unwrap WETH to refill ETH`,
-            chainId,
-            currentBalance: currentBalance.toString(),
-            trigger: balanceTrigger.toString(),
-            balanceTarget: balanceTarget.toString(),
-            deficit,
-            account: this.baseSignerAddress,
-          });
-          const txn = await this._unwrapWethToRefill(chainId, deficit);
-          if (txn) {
-            this.logger.info({
-              at: "Refiller#refillNativeTokenBalances",
-              message: `Unwrapped WETH from ${this.baseSignerAddress} to refill ETH in ${account} 🎁!`,
-              chainId,
-              requiredUnwrapAmount: deficit.toString(),
-              ethBalance: currentBalance.toString(),
-              trigger: balanceTrigger.toString(),
-              balanceTarget: balanceTarget.toString(),
-              transactionHash: blockExplorerLink(txn.transactionHash, chainId),
-            });
-            // Don't return early and flip canRefill to true because we now have enough ETH to transfer to the account
-            canRefill = true;
-          } else {
-            return;
-          }
-        } else if (isDefined(SWAP_ROUTES[chainId])) {
-          // To refill other native tokens, we will first submit an async cross chain swap to receive the native token, and then on the next
-          // run, the refill should be successful. Actual swap routes are currently determined by a hardcoded map from destination chain ID to
-          // swap strategy.
-          const swapRoute: SwapRoute = SWAP_ROUTES[chainId];
-          this.logger.debug({
-            at: "Refiller#refillNativeTokenBalances",
-            message: `Balance of ${nativeTokenSymbol} below trigger on chain ${chainId} and account has insufficient ${nativeTokenSymbol} to transfer on chain, now trying to swap ${
-              swapRoute.inputToken
-            } from ${getNetworkName(swapRoute.originChainId)} to ${nativeTokenSymbol}`,
-            swapRoute,
-            currentBalance: currentBalance.toString(),
-            trigger: balanceTrigger.toString(),
-            balanceTarget: balanceTarget.toString(),
-            deficit,
-            account: this.baseSignerAddress,
-          });
-          const txn = await this._swapToRefill(swapRoute, deficit, EvmAddress.from(account.toEvmAddress()));
-          if (txn) {
-            this.logger.info({
-              at: "Monitor#refillBalances",
-              message: `Swapped ${swapRoute.inputToken} on ${getNetworkName(
-                swapRoute.originChainId
-              )} to ${nativeTokenSymbol} on ${getNetworkName(chainId)} for ${account} 🎁!`,
-              transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
-              currentBalance: currentBalance.toString(),
-              trigger: balanceTrigger.toString(),
-              balanceTarget: balanceTarget.toString(),
-              amount: deficit.toString(),
-            });
-          }
-          // Return early now because the cross chain swap, successful or not, is async and we won't be able to
-          // refill balances via a transfer() until the next bot iteration.
-          return;
-        }
-      }
-
-      // Now try to transfer native tokens from the base account to the target account on the same chain.
-      if (canRefill && chainIsEvm(chainId)) {
-        this.logger.debug({
-          at: "Monitor#refillBalances",
-          message: "Balance below trigger and can refill to target",
-          from: this.baseSignerAddress,
-          to: account.toEvmAddress(),
-          balanceTrigger,
-          balanceTarget,
+          trigger: balanceTrigger.toString(),
+          balanceTarget: balanceTarget.toString(),
           deficit,
-          token: token.toEvmAddress(),
-          chainId,
-          isHubPool,
+          account: this.baseSignerAddress,
         });
-        // There are three cases:
-        // 1. The account is the HubPool. In which case we need to call a special function to load ETH into it.
-        // 2. The account is not a HubPool and we want to load ETH.
-        if (isHubPool) {
-          // Note: We ignore the `token` if the account is HubPool because we can't call the method with other tokens.
-          this.clients.multiCallerClient.enqueueTransaction({
-            contract: this.clients.hubPoolClient.hubPool,
-            chainId: this.clients.hubPoolClient.chainId,
-            method: "loadEthForL2Calls",
-            args: [],
-            message: "Reloaded ETH in HubPool 🫡!",
-            mrkdwn: `Loaded ${formatUnits(deficit, decimals)} ETH from ${this.baseSignerAddress}.`,
-            value: deficit,
-          });
-        } else {
-          const nativeSymbolForChain = getNativeTokenSymbol(chainId);
-          // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
-          // set the method param to be an empty string.
-          const sendRawTransactionContract = new Contract(
-            account.toEvmAddress(),
-            [],
-            this.baseSigner.connect(l2Provider)
-          );
-          const txn = await (await sendRawTransaction(this.logger, sendRawTransactionContract, deficit)).wait();
+        const txn = await this._unwrapWethToRefill(chainId, deficit);
+        if (txn) {
           this.logger.info({
-            at: "Refiller#refillBalances",
-            message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${
-              this.baseSignerAddress
-            } 🫡!`,
+            at: "Refiller#refillNativeTokenBalances",
+            message: `Unwrapped WETH from ${this.baseSignerAddress} to refill ETH in ${account} 🎁!`,
+            chainId,
+            requiredUnwrapAmount: deficit.toString(),
+            ethBalance: currentBalance.toString(),
+            trigger: balanceTrigger.toString(),
+            balanceTarget: balanceTarget.toString(),
             transactionHash: blockExplorerLink(txn.transactionHash, chainId),
           });
+          // Don't return early and flip canRefill to true because we now have enough ETH to transfer to the account
+          canRefill = true;
+        } else {
+          return;
         }
-      } else {
-        this.logger.warn({
-          at: "Refiller#refillBalances",
-          message: "Cannot refill balance to target",
-          from: this.baseSignerAddress,
-          to: account,
+      } else if (isDefined(SWAP_ROUTES[chainId])) {
+        // To refill other native tokens, we will first submit an async cross chain swap to receive the native token, and then on the next
+        // run, the refill should be successful. Actual swap routes are currently determined by a hardcoded map from destination chain ID to
+        // swap strategy.
+        const swapRoute: SwapRoute = SWAP_ROUTES[chainId];
+        this.logger.debug({
+          at: "Refiller#refillNativeTokenBalances",
+          message: `Balance of ${nativeTokenSymbol} below trigger on chain ${chainId} and account has insufficient ${nativeTokenSymbol} to transfer on chain, now trying to swap ${
+            swapRoute.inputToken
+          } from ${getNetworkName(swapRoute.originChainId)} to ${nativeTokenSymbol}`,
+          swapRoute,
           currentBalance: currentBalance.toString(),
-          balanceTrigger,
-          balanceTarget,
+          trigger: balanceTrigger.toString(),
+          balanceTarget: balanceTarget.toString(),
           deficit,
-          token,
-          chainId,
+          account: this.baseSignerAddress,
+        });
+        const txn = await this._swapToRefill(swapRoute, deficit, EvmAddress.from(account.toEvmAddress()));
+        if (txn) {
+          this.logger.info({
+            at: "Monitor#refillBalances",
+            message: `Swapped ${swapRoute.inputToken} on ${getNetworkName(
+              swapRoute.originChainId
+            )} to ${nativeTokenSymbol} on ${getNetworkName(chainId)} for ${account} 🎁!`,
+            transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
+            currentBalance: currentBalance.toString(),
+            trigger: balanceTrigger.toString(),
+            balanceTarget: balanceTarget.toString(),
+            amount: deficit.toString(),
+          });
+        }
+        // Return early now because the cross chain swap, successful or not, is async and we won't be able to
+        // refill balances via a transfer() until the next bot iteration.
+        return;
+      }
+    }
+
+    // Now try to transfer native tokens from the base account to the target account on the same chain.
+    if (canRefill && chainIsEvm(chainId)) {
+      this.logger.debug({
+        at: "Monitor#refillBalances",
+        message: "Balance below trigger and can refill to target",
+        from: this.baseSignerAddress,
+        to: account.toEvmAddress(),
+        balanceTrigger,
+        balanceTarget,
+        deficit,
+        token: token.toEvmAddress(),
+        chainId,
+        isHubPool,
+      });
+      // There are three cases:
+      // 1. The account is the HubPool. In which case we need to call a special function to load ETH into it.
+      // 2. The account is not a HubPool and we want to load ETH.
+      if (isHubPool) {
+        // Note: We ignore the `token` if the account is HubPool because we can't call the method with other tokens.
+        this.clients.multiCallerClient.enqueueTransaction({
+          contract: this.clients.hubPoolClient.hubPool,
+          chainId: this.clients.hubPoolClient.chainId,
+          method: "loadEthForL2Calls",
+          args: [],
+          message: "Reloaded ETH in HubPool 🫡!",
+          mrkdwn: `Loaded ${formatUnits(deficit, decimals)} ETH from ${this.baseSignerAddress}.`,
+          value: deficit,
+        });
+      } else {
+        const nativeSymbolForChain = getNativeTokenSymbol(chainId);
+        // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
+        // set the method param to be an empty string.
+        const sendRawTransactionContract = new Contract(
+          account.toEvmAddress(),
+          [],
+          this.baseSigner.connect(l2Provider)
+        );
+        const txn = await (await sendRawTransaction(this.logger, sendRawTransactionContract, deficit)).wait();
+        this.logger.info({
+          at: "Refiller#refillBalances",
+          message: `Reloaded ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account} from ${
+            this.baseSignerAddress
+          } 🫡!`,
+          transactionHash: blockExplorerLink(txn.transactionHash, chainId),
         });
       }
+    } else {
+      this.logger.warn({
+        at: "Refiller#refillBalances",
+        message: "Cannot refill balance to target",
+        from: this.baseSignerAddress,
+        to: account,
+        currentBalance: currentBalance.toString(),
+        balanceTrigger,
+        balanceTarget,
+        deficit,
+        token,
+        chainId,
+      });
+    }
+  }
+
+  private async refillTokenBalances(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalanceData: RefillBalanceData,
+    l2Provider: Provider
+  ): Promise<void> {
+    const { chainId, token, account, target, trigger } = refillBalanceData;
+    assert(!chainIsL1(chainId), "Cannot refil mainnet non-native token balance.");
+    // Determine the amounts to bridge.
+    const balanceTrigger = parseUnits(trigger.toString(), decimals);
+    const isBelowTrigger = currentBalance.lte(balanceTrigger);
+    if (!isBelowTrigger) {
+      this.logger.debug({
+        at: "Refiller#refillBalances",
+        message: "Balance is above trigger",
+        account,
+        balanceTrigger,
+        currentBalance: currentBalance.toString(),
+        token,
+        chainId,
+      });
+      return;
+    }
+    // Fill balance back to target, not trigger.
+    const balanceTarget = parseUnits(target.toString(), decimals);
+    // Deficit amount is in the output token, but in this case, input token == output token.
+    const amount = balanceTarget.sub(currentBalance);
+
+    // Construct a token bridge for the target token and build a transaction to send the l1 token to l2.
+    const l1Token = getL1TokenAddress(token, chainId);
+    const l2TokenInfo = getTokenInfo(token, chainId);
+    const tokenBridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_BRIDGE[chainId];
+    const tokenBridge = new tokenBridgeConstructor(
+      chainId,
+      this.clients.hubPoolClient.chainId,
+      this.baseSigner,
+      l2Provider,
+      l1Token,
+      this.logger
+    );
+    const {
+      contract,
+      method,
+      args,
+      value = bnZero,
+    } = await tokenBridge.constructL1ToL2Txn(account, l1Token, token, amount);
+
+    // Execute the l1 to l2 rebalance.
+    const txn = await (await runTransaction(this.logger, contract, method, args, value)).wait();
+    this.logger.info({
+      at: "Refiller#refillBalances",
+      message: `Reloaded ${formatUnits(amount, decimals)} ${l2TokenInfo.symbol} for ${account} from ${
+        this.baseSignerAddress
+      } 🫡!`,
+      transactionHash: blockExplorerLink(txn.transactionHash, chainId),
     });
   }
 
