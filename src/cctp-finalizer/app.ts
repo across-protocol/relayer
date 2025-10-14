@@ -1,19 +1,24 @@
 import express, { Request, Response } from "express";
 import { CCTPService } from "./services/cctpService";
-import { Logger } from "./utils/logger";
-import { validateEnvironmentVariables } from "./config/chains";
+import { winston } from "../utils";
 import { PubSubMessage } from "./types";
 
 const app = express();
 
+// Create logger instance
+const logger = winston.createLogger({
+  level: "info",
+  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+  transports: [new winston.transports.Console()],
+});
+
 let cctpService: CCTPService;
 
 try {
-  validateEnvironmentVariables();
-  cctpService = new CCTPService(true);
-  Logger.info("Application initialized successfully");
+  cctpService = new CCTPService(logger);
+  logger.info({ at: "CCTPFinalizer#init", message: "Application initialized successfully" });
 } catch (error) {
-  Logger.error("Failed to initialize application:", error);
+  logger.error({ at: "CCTPFinalizer#init", message: "Failed to initialize application", error });
   process.exit(1);
 }
 
@@ -32,19 +37,24 @@ app.post("/", async (req: Request, res: Response) => {
     const pubSubMessage = req.body.message;
 
     if (!pubSubMessage) {
-      Logger.error("Invalid Pub/Sub message format");
+      logger.error({ at: "CCTPFinalizer#processMessage", message: "Invalid Pub/Sub message format" });
       res.status(400).send("Bad Request: Invalid Pub/Sub message format");
       return;
     }
 
     const data = Buffer.from(pubSubMessage.data, "base64").toString().trim();
-    Logger.info("Received Pub/Sub message", { data, attributes: pubSubMessage.attributes });
+    logger.info({
+      at: "CCTPFinalizer#processMessage",
+      message: "Received Pub/Sub message",
+      data,
+      attributes: pubSubMessage.attributes,
+    });
 
     await processMessage(data, pubSubMessage.attributes);
 
     res.status(204).send();
   } catch (error) {
-    Logger.error("Error processing message:", error);
+    logger.error({ at: "CCTPFinalizer#processMessage", message: "Error processing message", error });
     res.status(500).send("Internal Server Error");
   }
 });
@@ -53,7 +63,9 @@ async function processMessage(data: string, attributes?: { [key: string]: string
   try {
     const messageData: PubSubMessage = JSON.parse(data);
 
-    Logger.info("Processing CCTP burn transaction", {
+    logger.info({
+      at: "CCTPFinalizer#processMessage",
+      message: "Processing CCTP burn transaction",
       burnTransactionHash: messageData.burnTransactionHash,
       sourceChainId: messageData.sourceChainId,
       attributes: attributes || {},
@@ -62,18 +74,22 @@ async function processMessage(data: string, attributes?: { [key: string]: string
     const response = await cctpService.processBurnTransaction(messageData);
 
     if (response.success) {
-      Logger.info("Burn transaction processed successfully", {
+      logger.info({
+        at: "CCTPFinalizer#processMessage",
+        message: "Burn transaction processed successfully",
         mintTxHash: response.mintTxHash,
         burnTransactionHash: messageData.burnTransactionHash,
       });
     } else {
-      Logger.error("Burn transaction processing failed", {
+      logger.error({
+        at: "CCTPFinalizer#processMessage",
+        message: "Burn transaction processing failed",
         error: response.error,
         burnTransactionHash: messageData.burnTransactionHash,
       });
     }
   } catch (parseError) {
-    Logger.error("Error parsing message data:", parseError);
+    logger.error({ at: "CCTPFinalizer#processMessage", message: "Error parsing message data", error: parseError });
     throw parseError;
   }
 }

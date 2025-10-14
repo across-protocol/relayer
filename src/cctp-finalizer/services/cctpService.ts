@@ -1,32 +1,52 @@
 import { ethers } from "ethers";
-import { getChainConfig } from "../config/chains";
-import { AttestationService } from "./attestationService";
-import { MESSAGE_TRANSMITTER_ABI, TOKEN_MESSENGER_ABI } from "../utils/contracts/abis";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
+import {
+  winston,
+  getProvider,
+  getCctpDestinationChainFromDomain,
+  runTransaction,
+  getCctpV2MessageTransmitter,
+  getCctpDomainForChainId,
+  PUBLIC_NETWORKS,
+  chainIsProd,
+  _fetchAttestationsForTxn,
+  getCctpV2TokenMessenger,
+} from "../../utils";
 
 export class CCTPService {
-  private attestationService: AttestationService;
   private privateKey: string;
+  private logger: winston.Logger;
 
-  constructor(isMainnet: boolean = true) {
-    this.attestationService = new AttestationService(isMainnet);
+  constructor(logger?: winston.Logger) {
     this.privateKey = process.env.PRIVATE_KEY!;
+    this.logger =
+      logger ||
+      winston.createLogger({
+        level: "info",
+        format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+        transports: [new winston.transports.Console()],
+      });
   }
 
   async processBurnTransaction(message: PubSubMessage): Promise<ProcessBurnTransactionResponse> {
     try {
       const { burnTransactionHash, sourceChainId } = message;
 
-      console.log(`Processing burn transaction: ${burnTransactionHash}`);
-      console.log(`Source chain: ${sourceChainId}`);
+      this.logger.info({
+        at: "CCTPService#processBurnTransaction",
+        message: "Processing burn transaction",
+        burnTransactionHash,
+        sourceChainId,
+      });
 
-      // Get source chain config
-      const sourceConfig = getChainConfig(sourceChainId);
+      // Get source chain CCTP domain
+      const sourceCctpDomain = getCctpDomainForChainId(sourceChainId);
 
       // Fetch attestation
-      const attestationResponse = await this.attestationService.fetchAttestation(
-        sourceConfig.cctpDomain,
-        burnTransactionHash
+      const attestationResponse = await _fetchAttestationsForTxn(
+        sourceCctpDomain,
+        burnTransactionHash,
+        chainIsProd(sourceChainId)
       );
 
       if (!attestationResponse.messages?.length) {
@@ -38,7 +58,7 @@ export class CCTPService {
 
       const attestation = attestationResponse.messages[0];
 
-      if (!this.attestationService.isAttestationReady(attestation.status)) {
+      if (!this.isAttestationReady(attestation.status)) {
         return {
           success: false,
           error: `Attestation not ready. Status: ${attestation.status}`,
@@ -46,7 +66,7 @@ export class CCTPService {
       }
 
       // Get burn transaction details
-      const sourceProvider = new ethers.providers.JsonRpcProvider(sourceConfig.rpcUrl);
+      const sourceProvider = await getProvider(sourceChainId, this.logger);
       const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
 
       if (!burnTx) {
@@ -58,10 +78,9 @@ export class CCTPService {
 
       // Decode transaction to get destination domain
       const destinationChainId = this.getDestinationChainId(burnTx);
-      const destinationConfig = getChainConfig(destinationChainId);
 
       // Check if already processed
-      const isAlreadyProcessed = await this.checkIfAlreadyProcessed(destinationConfig, attestation.message);
+      const isAlreadyProcessed = await this.checkIfAlreadyProcessed(destinationChainId, attestation.message);
 
       if (isAlreadyProcessed) {
         return {
@@ -72,9 +91,13 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationConfig, attestation);
+      return await this.processMint(destinationChainId, attestation);
     } catch (error) {
-      console.error("Error processing burn transaction:", error);
+      this.logger.error({
+        at: "CCTPService#processBurnTransaction",
+        message: "Error processing burn transaction",
+        error,
+      });
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error occurred",
@@ -83,7 +106,9 @@ export class CCTPService {
   }
 
   private getDestinationChainId(burnTx: ethers.providers.TransactionResponse): number {
-    const tokenMessengerInterface = new ethers.utils.Interface(TOKEN_MESSENGER_ABI);
+    // Get the ABI (we'll use mainnet for the ABI)
+    const { abi } = getCctpV2TokenMessenger(1);
+    const tokenMessengerInterface = new ethers.utils.Interface(abi!);
     const decodedCall = tokenMessengerInterface.parseTransaction({ data: burnTx.data });
 
     if (!decodedCall || decodedCall.name !== "depositForBurn") {
@@ -92,27 +117,17 @@ export class CCTPService {
 
     const destinationDomainId = Number(decodedCall.args.destinationDomain);
 
-    // Map domain IDs to chain IDs
-    const domainToChainId: Record<number, number> = {
-      0: 1, // Ethereum
-      1: 42161, // Arbitrum
-      2: 10, // Optimism
-      3: 137, // Polygon
-      6: 8453, // Base
-    };
-
-    const destinationChainId = domainToChainId[destinationDomainId];
-    if (!destinationChainId) {
-      throw new Error(`Unknown destination domain ID: ${destinationDomainId}`);
-    }
+    // Map domain to chain ID
+    const destinationChainId = getCctpDestinationChainFromDomain(destinationDomainId, true); // true for production networks
 
     return destinationChainId;
   }
 
-  private async checkIfAlreadyProcessed(config: any, message: string): Promise<boolean> {
+  private async checkIfAlreadyProcessed(chainId: number, message: string): Promise<boolean> {
     try {
-      const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
-      const contract = new ethers.Contract(config.messageTransmitterAddress, MESSAGE_TRANSMITTER_ABI, provider);
+      const provider = await getProvider(chainId, this.logger);
+      const { address, abi } = getCctpV2MessageTransmitter(chainId);
+      const contract = new ethers.Contract(address!, abi, provider);
 
       const messageBytes = ethers.utils.arrayify(message);
       const nonceBytes = messageBytes.slice(12, 44);
@@ -120,36 +135,58 @@ export class CCTPService {
 
       return await contract.usedNonces(nonce);
     } catch (error) {
-      console.warn("Could not check used nonces, proceeding anyway:", error);
+      this.logger.warn({
+        at: "CCTPService#checkIfAlreadyProcessed",
+        message: "Could not check used nonces, proceeding anyway",
+        error,
+      });
       return false;
     }
   }
 
-  private async processMint(config: any, attestation: any): Promise<ProcessBurnTransactionResponse> {
-    const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
+  private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
+    const provider = await getProvider(chainId, this.logger);
     const signer = new ethers.Wallet(this.privateKey, provider);
 
-    const contract = new ethers.Contract(config.messageTransmitterAddress, MESSAGE_TRANSMITTER_ABI, signer);
+    const { address, abi } = getCctpV2MessageTransmitter(chainId);
+    const contract = new ethers.Contract(address!, abi, signer);
 
-    console.log(`Calling receiveMessage on ${config.name} (${config.chainId})`);
+    const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
+    this.logger.info({
+      at: "CCTPService#processMint",
+      message: `Calling receiveMessage on ${chainName} (${chainId})`,
+    });
 
-    const mintTx = await contract.receiveMessage(attestation.message, attestation.attestation);
+    try {
+      const mintTx = await runTransaction(this.logger, contract, "receiveMessage", [
+        attestation.message,
+        attestation.attestation,
+      ]);
 
-    console.log(`Mint transaction submitted: ${mintTx.hash}`);
+      this.logger.info({
+        at: "CCTPService#processMint",
+        message: "Mint transaction confirmed",
+        txHash: mintTx.hash,
+      });
 
-    const receipt = await mintTx.wait();
-
-    if (receipt.status === 1) {
-      console.log(`Mint transaction confirmed: ${receipt.transactionHash}`);
       return {
         success: true,
-        mintTxHash: receipt.transactionHash,
+        mintTxHash: mintTx.hash,
       };
-    } else {
+    } catch (error) {
+      this.logger.error({
+        at: "CCTPService#processMint",
+        message: "Mint transaction failed",
+        error,
+      });
       return {
         success: false,
-        error: "Mint transaction failed",
+        error: error instanceof Error ? error.message : "Mint transaction failed",
       };
     }
+  }
+
+  private isAttestationReady(status: string): boolean {
+    return ["complete", "done", "succeeded"].includes(status);
   }
 }
