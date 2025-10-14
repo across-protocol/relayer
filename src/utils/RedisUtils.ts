@@ -96,8 +96,16 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   if (!redisClients[url]) {
     let redisClient: _RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
-      // Just implement the default reconnection strategy:
-      // https://github.com/redis/node-redis/blob/558ebb4d25f2cbeb707cb601d4bd11014a6a6992/docs/client-configuration.md
+      // Set a maximum retry limit to prevent infinite reconnection attempts
+      const MAX_RETRIES = 10;
+
+      if (retries >= MAX_RETRIES) {
+        logger?.error({
+          at: "RedisUtils",
+          message: `Redis connection failed after ${MAX_RETRIES} retries. Giving up.`,
+        });
+        return new Error(`Redis connection failed after ${MAX_RETRIES} retries`);
+      }
 
       // Generate a random jitter between 0 – 200 ms:
       const jitter = Math.floor(Math.random() * 200);
@@ -105,7 +113,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
       const delay = Math.min(Math.pow(2, retries) * 50, 2000);
       logger?.debug({
         at: "RedisUtils",
-        message: `Lost redis connection, retrying in ${delay} ms.`,
+        message: `Lost redis connection, retrying in ${delay} ms (attempt ${retries + 1}/${MAX_RETRIES}).`,
       });
       return delay + jitter;
     };
@@ -128,6 +136,7 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
         message: `Failed to connect to redis server at ${url}.`,
         error: String(err),
       });
+      throw err;
     }
   }
 
