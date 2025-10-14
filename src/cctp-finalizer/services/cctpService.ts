@@ -66,7 +66,7 @@ export class CCTPService {
       }
 
       // Get burn transaction details
-      const sourceProvider = await getProvider(sourceChainId, this.logger);
+      const sourceProvider = await this.getProviderWithFallback(sourceChainId);
       const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
 
       if (!burnTx) {
@@ -125,7 +125,7 @@ export class CCTPService {
 
   private async checkIfAlreadyProcessed(chainId: number, message: string): Promise<boolean> {
     try {
-      const provider = await getProvider(chainId, this.logger);
+      const provider = await this.getProviderWithFallback(chainId);
       const { address, abi } = getCctpV2MessageTransmitter(chainId);
       const contract = new ethers.Contract(address!, abi, provider);
 
@@ -145,7 +145,7 @@ export class CCTPService {
   }
 
   private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
-    const provider = await getProvider(chainId, this.logger);
+    const provider = await this.getProviderWithFallback(chainId);
     const signer = new ethers.Wallet(this.privateKey, provider);
 
     const { address, abi } = getCctpV2MessageTransmitter(chainId);
@@ -188,5 +188,38 @@ export class CCTPService {
 
   private isAttestationReady(status: string): boolean {
     return ["complete", "done", "succeeded"].includes(status);
+  }
+
+  private async getProviderWithFallback(chainId: number): Promise<ethers.providers.JsonRpcProvider> {
+    try {
+      return await getProvider(chainId, this.logger);
+    } catch (error) {
+      // Fallback to simple ethers provider if Redis is unavailable
+      this.logger.warn({
+        at: "CCTPService#getProviderWithFallback",
+        message: "Redis unavailable, using simple ethers provider",
+        chainId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      const rpcUrl = this.getRpcUrlForChain(chainId);
+      return new ethers.providers.JsonRpcProvider(rpcUrl);
+    }
+  }
+
+  private getRpcUrlForChain(chainId: number): string {
+    const rpcUrlMap: { [chainId: number]: string } = {
+      1: process.env.ETHEREUM_RPC_URL!,
+      10: process.env.OPTIMISM_RPC_URL!,
+      137: process.env.POLYGON_RPC_URL!,
+      42161: process.env.ARBITRUM_RPC_URL!,
+      8453: process.env.BASE_RPC_URL!,
+    };
+
+    const rpcUrl = rpcUrlMap[chainId];
+    if (!rpcUrl) {
+      throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+    }
+    return rpcUrl;
   }
 }
