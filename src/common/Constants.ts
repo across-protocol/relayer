@@ -1,5 +1,6 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -78,6 +79,9 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 // rollup challenge period seems safe.
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
+// Chain IDs using the Succinct/Helios SP1 messaging bridge.
+export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA];
+
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
 // a large deposit (i.e. with an amount equal to a large amount of $$$) but the deposit is included in a re-orged
@@ -139,53 +143,21 @@ Object.values(CHAIN_IDs)
 
 export const REDIS_URL_DEFAULT = "redis://localhost:6379";
 
-// Quicknode is the bottleneck here and imposes a 10k block limit on an event search.
-// Alchemy-Polygon imposes a 3500 block limit.
-// Note: a 0 value here leads to an infinite lookback, which would be useful and reduce RPC requests
-// if the RPC provider allows it. This is why the user should override these lookbacks if they are not using
-// Quicknode for example.
-export const CHAIN_MAX_BLOCK_LOOKBACK = {
-  [CHAIN_IDs.ALEPH_ZERO]: 0, // Disabled
-  [CHAIN_IDs.ARBITRUM]: 10000,
-  [CHAIN_IDs.BASE]: 10000,
-  [CHAIN_IDs.BLAST]: 10000,
-  [CHAIN_IDs.BOBA]: 0, // Disabled
-  [CHAIN_IDs.BSC]: 10000,
-  [CHAIN_IDs.HYPEREVM]: 1000,
-  [CHAIN_IDs.INK]: 10000,
-  [CHAIN_IDs.LENS]: 10000,
-  [CHAIN_IDs.LINEA]: 5000,
-  [CHAIN_IDs.LISK]: 10000,
-  [CHAIN_IDs.MAINNET]: 10000,
-  [CHAIN_IDs.MODE]: 10000,
-  [CHAIN_IDs.OPTIMISM]: 10000, // Quick
-  [CHAIN_IDs.PLASMA]: 10000, // tbc - test this
-  [CHAIN_IDs.POLYGON]: 10000,
-  [CHAIN_IDs.REDSTONE]: 10000,
-  [CHAIN_IDs.SCROLL]: 10000,
-  [CHAIN_IDs.SONEIUM]: 10000,
-  [CHAIN_IDs.SOLANA]: 1000,
-  [CHAIN_IDs.UNICHAIN]: 10000,
-  [CHAIN_IDs.WORLD_CHAIN]: 10000,
-  [CHAIN_IDs.ZK_SYNC]: 10000,
-  [CHAIN_IDs.ZORA]: 10000,
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 10000,
-  [CHAIN_IDs.BASE_SEPOLIA]: 10000,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 10000,
-  [CHAIN_IDs.INK_SEPOLIA]: 10000,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 10000,
-  [CHAIN_IDs.LENS_SEPOLIA]: 10000,
-  [CHAIN_IDs.LISK_SEPOLIA]: 10000,
-  [CHAIN_IDs.MODE_SEPOLIA]: 10000,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 10000,
-  [CHAIN_IDs.PLASMA_TESTNET]: 10000,
-  [CHAIN_IDs.POLYGON_AMOY]: 10000,
-  [CHAIN_IDs.TATARA]: 10000,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 10000,
-  [CHAIN_IDs.SEPOLIA]: 10000,
-  [CHAIN_IDs.BOB_SEPOLIA]: 10000,
+// Autogenerate RPC config for each supported chain.
+// Any exceptions can be added to the ranges object.
+const resolveRpcConfig = () => {
+  const defaultRange = 10_000;
+  const ranges = {
+    [CHAIN_IDs.ALEPH_ZERO]: 0,
+    [CHAIN_IDs.BOBA]: 0,
+    [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
+    [CHAIN_IDs.SOLANA]: 1_000,
+    [CHAIN_IDs.SOLANA_DEVNET]: 1000,
+  };
+  return Object.fromEntries(Object.values(CHAIN_IDs).map((chainId) => [chainId, ranges[chainId] ?? defaultRange]));
 };
+
+export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 
 // These should be safely above the finalization period for the chain and
 // also give enough buffer time so that any reasonable fill on the chain
@@ -438,40 +410,39 @@ type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
-export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdapter>> = {
-  [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
-  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BSC]: BinanceCEXBridge,
-  [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LENS]: ZKStackBridge,
-  [CHAIN_IDs.LINEA]: LineaBridge,
-  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
-  [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
-  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
-  [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
-  [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
-  // Testnets:
-  [CHAIN_IDs.LENS_SEPOLIA]: ZKStackBridge,
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
-  [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LISK_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
-  [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-  [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BOB_SEPOLIA]: OpStackDefaultERC20Bridge,
+const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
+  const bridges = {
+    [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
+    [CHAIN_IDs.BSC]: BinanceCEXBridge,
+    [CHAIN_IDs.LINEA]: LineaBridge,
+    [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+    [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+    [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
+    [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
+    // Testnets:
+    [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
+    [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
+    [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
+    [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
+  };
+
+  const defaultBridges = {
+    [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
+    [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
+    [ChainFamily.ZK_STACK]: ZKStackBridge,
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS)
+      .map(([_chainId, { family }]) => {
+        const chainId = Number(_chainId);
+        const bridge = bridges[chainId] ?? defaultBridges[family];
+        return [chainId, bridge];
+      })
+      .filter(([, bridge]) => isDefined(bridge))
+  );
 };
+export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
 export const CANONICAL_L2_BRIDGE: {
   [chainId: number]: {
@@ -1060,6 +1031,37 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
+};
+
+export type SwapRoute = {
+  inputToken: EvmAddress;
+  outputToken: EvmAddress;
+  originChainId: number;
+  destinationChainId: number;
+};
+
+// Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
+export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
+  [CHAIN_IDs.POLYGON]: {
+    // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
+    // the native token address is not actually ZERO_ADDRESS.
+    inputToken: EvmAddress.from(ZERO_ADDRESS),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.POLYGON,
+  },
+  [CHAIN_IDs.HYPEREVM]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.HYPEREVM,
+  },
+  [CHAIN_IDs.PLASMA]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.PLASMA,
+  },
 };
 
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";

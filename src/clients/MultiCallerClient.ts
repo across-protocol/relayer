@@ -64,7 +64,7 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 //      with OoG. Because we optimistically construct an aggregate() transaction without simulating each simulating
 //      each transaction, we do not know the gas cost of each bundled transaction. Therefore, pad the resulting
 //      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
-//      See also https://community.optimism.io/docs/developers/bedrock/differences/
+//      See also https://docs.optimism.io/stack/differences
 const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
 // The below interface is used by the TryMulticallClient to store information about successfully simulated transactions.

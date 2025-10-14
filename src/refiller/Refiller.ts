@@ -5,7 +5,6 @@ import {
   assert,
   BigNumber,
   blockExplorerLink,
-  CHAIN_IDs,
   chainIsEvm,
   chainIsSvm,
   Contract,
@@ -29,8 +28,9 @@ import {
   TOKEN_SYMBOLS_MAP,
   TransactionReceipt,
   WETH9,
-  ZERO_ADDRESS,
+  isDefined,
 } from "../utils";
+import { SWAP_ROUTES, SwapRoute } from "../common";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -42,12 +42,6 @@ export interface RefillerClients {
   multiCallerClient: MultiCallerClient;
 }
 
-type SwapRoute = {
-  inputToken: EvmAddress;
-  outputToken: EvmAddress;
-  originChainId: number;
-  destinationChainId: number;
-};
 /**
  * @notice This class is in charge of refilling native token balances for accounts running other bots, like the relayer and
  * dataworker. It is run with an account whose funds are used to refill balances for other accounts by either swapping
@@ -139,9 +133,10 @@ export class Refiller {
             deficit
           );
       if (!canRefill && chainIsEvm(chainId)) {
+        const nativeTokenSymbol = getNativeTokenSymbol(chainId);
         // If token is the native token and the native token is ETH, try unwrapping some WETH into ETH first before
         // transferring ETH to the account.
-        if (getNativeTokenSymbol(chainId) === "ETH") {
+        if (nativeTokenSymbol === "ETH") {
           this.logger.debug({
             at: "Refiller#refillNativeTokenBalances",
             message: `Balance of ETH below trigger on chain ${chainId} and account has insufficient ETH to transfer on chain, now trying to unwrap WETH to refill ETH`,
@@ -169,24 +164,16 @@ export class Refiller {
           } else {
             return;
           }
-        } else if (getNativeTokenSymbol(chainId) === "MATIC") {
-          // To refill MATIC, we will first submit an async cross chain swap to receive MATIC, and then on the next
-          // run, the refill should be successful. By default we will swap ETH on Arbitrum to MATIC on Polygon because
-          // bridging from Arbitrum is fast, and we tend to accumulate ETH on Arbitrum because its refunded for
-          // each L1->Arbitrum message we initiate.
-          const swapRoute: SwapRoute = {
-            // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
-            // the native token address is not actually ZERO_ADDRESS.
-            inputToken: EvmAddress.from(ZERO_ADDRESS),
-            outputToken: EvmAddress.from(ZERO_ADDRESS),
-            originChainId: CHAIN_IDs.ARBITRUM,
-            destinationChainId: chainId,
-          };
+        } else if (isDefined(SWAP_ROUTES[chainId])) {
+          // To refill other native tokens, we will first submit an async cross chain swap to receive the native token, and then on the next
+          // run, the refill should be successful. Actual swap routes are currently determined by a hardcoded map from destination chain ID to
+          // swap strategy.
+          const swapRoute: SwapRoute = SWAP_ROUTES[chainId];
           this.logger.debug({
             at: "Refiller#refillNativeTokenBalances",
-            message: `Balance of MATIC below trigger on chain ${chainId} and account has insufficient MATIC to transfer on chain, now trying to swap ETH from ${getNetworkName(
-              swapRoute.originChainId
-            )} to MATIC`,
+            message: `Balance of ${nativeTokenSymbol} below trigger on chain ${chainId} and account has insufficient ${nativeTokenSymbol} to transfer on chain, now trying to swap ${
+              swapRoute.inputToken
+            } from ${getNetworkName(swapRoute.originChainId)} to ${nativeTokenSymbol}`,
             swapRoute,
             currentBalance: currentBalance.toString(),
             trigger: balanceTrigger.toString(),
@@ -194,13 +181,13 @@ export class Refiller {
             deficit,
             account: this.baseSignerAddress,
           });
-          const txn = await this._swapEthToMaticToRefill(swapRoute, deficit, EvmAddress.from(account.toEvmAddress()));
+          const txn = await this._swapToRefill(swapRoute, deficit, EvmAddress.from(account.toEvmAddress()));
           if (txn) {
             this.logger.info({
               at: "Monitor#refillBalances",
-              message: `Swapped ETH on ${getNetworkName(
+              message: `Swapped ${swapRoute.inputToken} on ${getNetworkName(
                 swapRoute.originChainId
-              )} to MATIC on Polygon for ${account} 🎁!`,
+              )} to ${nativeTokenSymbol} on ${getNetworkName(chainId)} for ${account} 🎁!`,
               transactionHash: blockExplorerLink(txn.transactionHash, swapRoute.originChainId),
               currentBalance: currentBalance.toString(),
               trigger: balanceTrigger.toString(),
@@ -303,7 +290,7 @@ export class Refiller {
     }
   }
 
-  private async _swapEthToMaticToRefill(
+  private async _swapToRefill(
     swapRoute: SwapRoute,
     amount: BigNumber,
     recipient: EvmAddress
@@ -338,7 +325,7 @@ export class Refiller {
       // miscellaneous reasons.
       this.logger.warn({
         at: "Monitor#refillBalances",
-        message: `Failed to swap ETH on ${getNetworkName(swapRoute.originChainId)} to MATIC on Polygon`,
+        message: `Failed to execute swap route on ${getNetworkName(swapRoute.originChainId)}`,
         swapRoute,
         amount,
         swapper: this.baseSignerAddress,
