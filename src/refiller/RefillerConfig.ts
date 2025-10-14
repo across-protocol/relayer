@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { getNativeTokenAddressForChain, Address, toAddressType } from "../utils";
+import { getNativeTokenAddressForChain, Address, toAddressType, isDefined } from "../utils";
 
 export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: {
@@ -19,7 +19,7 @@ export class RefillerConfig extends CommonConfig {
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger }) => {
+        ({ chainId, account, isHubPool, target, trigger, token }) => {
           if (Number.isNaN(target) || target <= 0) {
             throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
           }
@@ -37,8 +37,7 @@ export class RefillerConfig extends CommonConfig {
             trigger,
             // Optional fields that will set to defaults:
             isHubPool: Boolean(isHubPool),
-            // Fields that are always set to defaults:
-            token: getNativeTokenAddressForChain(chainId),
+            token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
           };
         }
       );
