@@ -15,9 +15,8 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
   private redisClient: RedisClient | undefined;
 
   /**
-   * The constructor takes in the redisUrl and an optional logger.
-   * @param redisUrl The URL of the redis server to connect to.
-   * @param logger The logger to use to log debug messages.
+   * The constructor takes in the redisClient.
+   * @param redisClient The redis client to use for caching.
    */
   constructor(redisClient: RedisClient) {
     this.redisClient = redisClient;
