@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, CHAIN_IDs, EvmAddress, winston, ZERO_ADDRESS } from "../utils";
+import { BigNumber, EvmAddress, winston } from "../utils";
+import { SWAP_ROUTES } from "../common";
 
 interface Route {
   inputToken: EvmAddress;
@@ -25,16 +26,7 @@ interface SwapData {
  * @notice This class interfaces with the Across Swap API to execute swaps between chains.
  */
 export class AcrossSwapApiClient {
-  private routesSupported: Set<Route> = new Set([
-    {
-      // Allow refilling bot balances from ETH on Arbitrum, where we receive excess ETH as a gas refund
-      // periodically, to MATIC on Polygon.
-      inputToken: EvmAddress.from(ZERO_ADDRESS),
-      outputToken: EvmAddress.from(ZERO_ADDRESS),
-      originChainId: CHAIN_IDs.ARBITRUM,
-      destinationChainId: CHAIN_IDs.POLYGON,
-    },
-  ]);
+  private routesSupported: Set<Route> = new Set(Object.values(SWAP_ROUTES));
   private initialized = false;
   private readonly urlBase = "https://app.across.to/api/swap/approval";
   private readonly apiResponseTimeout = 3000;
