@@ -1065,6 +1065,37 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.POLYGON]: toWei("1600"),
 };
 
+export type SwapRoute = {
+  inputToken: EvmAddress;
+  outputToken: EvmAddress;
+  originChainId: number;
+  destinationChainId: number;
+};
+
+// Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
+export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
+  [CHAIN_IDs.POLYGON]: {
+    // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
+    // the native token address is not actually ZERO_ADDRESS.
+    inputToken: EvmAddress.from(ZERO_ADDRESS),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.POLYGON,
+  },
+  [CHAIN_IDs.HYPEREVM]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.HYPEREVM,
+  },
+  [CHAIN_IDs.PLASMA]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.PLASMA,
+  },
+};
+
 export type CCTPMessageStatus = "finalized" | "ready" | "pending";
 export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
 export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;
