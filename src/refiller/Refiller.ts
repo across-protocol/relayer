@@ -285,8 +285,14 @@ export class Refiller {
     refillBalanceData: RefillBalanceData,
     l2Provider: Provider
   ): Promise<void> {
-    const { chainId, token, account, target, trigger } = refillBalanceData;
+    const { chainId, token, account, target, trigger, refillPeriod = 10 * 60 } = refillBalanceData;
     assert(!chainIsL1(chainId), "Cannot refil mainnet non-native token balance.");
+    const redisKey = `refill:${account.toNative()}->${chainId}-${token.toNative()}`;
+    const isRefillProcessed = await this._isRefillProcessed(redisKey);
+    if (isRefillProcessed) {
+      return;
+    }
+
     // Determine the amounts to bridge.
     const balanceTrigger = parseUnits(trigger.toString(), decimals);
     const isBelowTrigger = currentBalance.lte(balanceTrigger);
@@ -335,6 +341,7 @@ export class Refiller {
       } 🫡!`,
       transactionHash: blockExplorerLink(txn.transactionHash, chainId),
     });
+    await this.redisCache.set(redisKey, "true", refillPeriod);
   }
 
   private async _unwrapWethToRefill(chainId: number, amount: BigNumber): Promise<TransactionReceipt | undefined> {
@@ -371,14 +378,8 @@ export class Refiller {
     const redisKey = `acrossSwap:${swapRoute.originChainId}-${swapRoute.inputToken.toNative()}->${
       swapRoute.destinationChainId
     }-${swapRoute.outputToken.toNative()}`;
-    const pendingSwap = await this.redisCache.get(redisKey);
-    if (pendingSwap) {
-      const ttl = await this.redisCache.ttl(redisKey);
-      this.logger.debug({
-        at: "Refiller#refillNativeTokenBalances",
-        message: `Found pending swap in cache with key ${redisKey}, avoiding new swap`,
-        ttl,
-      });
+    const isRefillProcessed = await this._isRefillProcessed(redisKey);
+    if (isRefillProcessed) {
       return;
     }
     assert(
@@ -480,6 +481,20 @@ export class Refiller {
         return decimals;
       })
     );
+  }
+
+  private async _isRefillProcessed(redisKey: string): Promise<boolean> {
+    const pendingSwap = await this.redisCache.get(redisKey);
+    if (pendingSwap) {
+      const ttl = await this.redisCache.ttl(redisKey);
+      this.logger.debug({
+        at: "Refiller#refillNativeTokenBalances",
+        message: `Found pending swap in cache with key ${redisKey}, avoiding new swap`,
+        ttl,
+      });
+      return true;
+    }
+    return false;
   }
 }
 

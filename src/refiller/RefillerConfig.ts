@@ -8,6 +8,7 @@ export type RefillBalanceData = {
   token: Address;
   target: number;
   trigger: number;
+  refillPeriod?: number;
 };
 
 export class RefillerConfig extends CommonConfig {
