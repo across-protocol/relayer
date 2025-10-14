@@ -89,7 +89,7 @@ export class AcrossSwapApiClient {
       swapData = {
         target: EvmAddress.from(response.data.swapTx.to),
         calldata: response.data.swapTx.data,
-        value: BigNumber.from(response.data.swapTx.value),
+        value: BigNumber.from(response.data.swapTx.value ?? 0),
       };
     } catch (err) {
       this.logger.warn({
