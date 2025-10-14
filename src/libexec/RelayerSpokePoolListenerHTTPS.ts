@@ -6,7 +6,6 @@ import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
-  CHAIN_IDs,
   disconnectRedisClients,
   EventManager,
   exit,
@@ -31,30 +30,13 @@ import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
+const PROGRAM = "RelayerSpokePoolListenerHTTPS";
 const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
 
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
 let stop = false;
-
-// This mapping is necessary because viem imposes extremely narrow type inference. @todo: Improve?
-const _chains = {
-  [CHAIN_IDs.ARBITRUM]: chains.arbitrum,
-  [CHAIN_IDs.BASE]: chains.base,
-  [CHAIN_IDs.BLAST]: chains.blast,
-  [CHAIN_IDs.LINEA]: chains.linea,
-  [CHAIN_IDs.LISK]: chains.lisk,
-  [CHAIN_IDs.MAINNET]: chains.mainnet,
-  [CHAIN_IDs.MODE]: chains.mode,
-  [CHAIN_IDs.OPTIMISM]: chains.optimism,
-  [CHAIN_IDs.POLYGON]: chains.polygon,
-  [CHAIN_IDs.REDSTONE]: chains.redstone,
-  [CHAIN_IDs.SCROLL]: chains.scroll,
-  [CHAIN_IDs.WORLD_CHAIN]: chains.worldchain,
-  [CHAIN_IDs.ZK_SYNC]: chains.zksync,
-  [CHAIN_IDs.ZORA]: chains.zora,
-} as const;
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -92,10 +74,11 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
   const nProviders = Object.values(urls).length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
+  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
   const providers = Object.entries(urls).map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     return createPublicClient({
-      chain: _chains[chainId],
+      chain: viemChain,
       transport: http(url, { fetchOptions: { headers } }),
       name: getOriginFromURL(url),
     });
@@ -144,6 +127,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
+  const at = `${PROGRAM}::run`;
+
   const minimistOpts = {
     string: ["lookback", "relayer", "spokepool"],
   };
@@ -184,7 +169,7 @@ async function run(argv: string[]): Promise<void> {
       await getBlockForTimestamp(logger, chainId, latestBlock.timestamp - lookback, blockFinder, cache)
     );
   } else {
-    logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
+    logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
   const spokePool = getSpokePool(chainId, spokePoolAddr);
@@ -201,20 +186,20 @@ async function run(argv: string[]): Promise<void> {
     quorum,
   };
 
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
+  logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
     stop = true;
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
     stop = true;
   });
 
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and deduplication.
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Scraping previous ${chain} events.`, opts });
+  logger.debug({ at, message: `Scraping previous ${chain} events.`, opts });
 
   if (latestBlock.number > startBlock) {
     const events = [
@@ -232,11 +217,12 @@ async function run(argv: string[]): Promise<void> {
   const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
 
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
+  logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
   await listen(eventMgr, spokePool, events, quorum);
 }
 
 if (require.main === module) {
+  const at = PROGRAM;
   logger = Logger;
 
   run(process.argv.slice(2))
@@ -244,12 +230,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolListener", message: `${chain} listener exited with error.`, error });
+      logger.error({ at, message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
+      logger.debug({ at, message: `Exiting ${chain} listener.` });
       exit(Number(process.exitCode));
     });
 }

@@ -32,6 +32,7 @@ type EventWithData = arch.svm.EventWithData;
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const abortController = new AbortController();
 
+const PROGRAM = "RelayerSpokePoolListenerSVM";
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
@@ -192,6 +193,7 @@ async function listen(
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
+  const at = `${PROGRAM}::run`;
   const minimistOpts = {
     string: ["lookback", "spokepool"],
   };
@@ -232,7 +234,7 @@ async function run(argv: string[]): Promise<void> {
       )
     );
   } else {
-    logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
+    logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
@@ -241,15 +243,15 @@ async function run(argv: string[]): Promise<void> {
     lookback: Number(latestSlot - startSlot),
   };
 
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
+  logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
     abortController.abort();
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
     abortController.abort();
   });
 
@@ -260,13 +262,14 @@ async function run(argv: string[]): Promise<void> {
   }
 
   const events = ["FundsDeposited", "FilledRelay"];
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
+  logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
   const eventMgr = new EventManager(logger, chainId, quorum);
 
   await listen(eventMgr, eventsClient, events, quorum);
 }
 
 if (require.main === module) {
+  const at = PROGRAM;
   logger = Logger;
 
   run(process.argv.slice(2))
@@ -274,12 +277,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolListener", message: `${chain} listener exited with error.`, error });
+      logger.error({ at, message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
+      logger.debug({ at, message: `Exiting ${chain} listener.` });
       exit(Number(process.exitCode));
     });
 }
