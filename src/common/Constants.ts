@@ -1046,7 +1046,7 @@ export type SwapRoute = {
 // the native token address is not actually ZERO_ADDRESS.
 export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
   [CHAIN_IDs.BSC]: {
-    inputToken: EvmAddress.from(ZERO_ADDRESS),
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.LISK]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.LISK,
     destinationChainId: CHAIN_IDs.BSC,
