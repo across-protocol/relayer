@@ -1,5 +1,6 @@
 import { DEFAULT_L2_CONTRACT_ADDRESSES } from "@eth-optimism/sdk";
 import { ChainFamily, PUBLIC_NETWORKS } from "@across-protocol/constants";
+import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
   chainIsOrbit,
@@ -409,40 +410,39 @@ type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
-export const CANONICAL_BRIDGE: Record<number, L1BridgeConstructor<BaseBridgeAdapter>> = {
-  [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
-  [CHAIN_IDs.BASE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BLAST]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BSC]: BinanceCEXBridge,
-  [CHAIN_IDs.UNICHAIN]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.INK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LENS]: ZKStackBridge,
-  [CHAIN_IDs.LINEA]: LineaBridge,
-  [CHAIN_IDs.LISK]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.OPTIMISM]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
-  [CHAIN_IDs.REDSTONE]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
-  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
-  [CHAIN_IDs.SONEIUM]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.WORLD_CHAIN]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
-  [CHAIN_IDs.ZORA]: OpStackDefaultERC20Bridge,
-  // Testnets:
-  [CHAIN_IDs.LENS_SEPOLIA]: ZKStackBridge,
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
-  [CHAIN_IDs.BASE_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BLAST_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.LISK_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.MODE_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
-  [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-  [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: OpStackDefaultERC20Bridge,
-  [CHAIN_IDs.BOB_SEPOLIA]: OpStackDefaultERC20Bridge,
+const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
+  const bridges = {
+    [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
+    [CHAIN_IDs.BSC]: BinanceCEXBridge,
+    [CHAIN_IDs.LINEA]: LineaBridge,
+    [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
+    [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
+    [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
+    [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
+    // Testnets:
+    [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
+    [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
+    [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
+    [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
+  };
+
+  const defaultBridges = {
+    [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
+    [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
+    [ChainFamily.ZK_STACK]: ZKStackBridge,
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS)
+      .map(([_chainId, { family }]) => {
+        const chainId = Number(_chainId);
+        const bridge = bridges[chainId] ?? defaultBridges[family];
+        return [chainId, bridge];
+      })
+      .filter(([, bridge]) => isDefined(bridge))
+  );
 };
+export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
 export const CANONICAL_L2_BRIDGE: {
   [chainId: number]: {
@@ -1038,29 +1038,40 @@ export type SwapRoute = {
   outputToken: EvmAddress;
   originChainId: number;
   destinationChainId: number;
+  tradeType: string;
 };
 
 // Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
+// @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
+// the native token address is not actually ZERO_ADDRESS.
 export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
+  [CHAIN_IDs.BSC]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.BSC,
+    tradeType: "exactOutput",
+  },
   [CHAIN_IDs.POLYGON]: {
-    // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
-    // the native token address is not actually ZERO_ADDRESS.
     inputToken: EvmAddress.from(ZERO_ADDRESS),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.POLYGON,
+    tradeType: "exactOutput",
   },
   [CHAIN_IDs.HYPEREVM]: {
     inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.HYPEREVM,
+    tradeType: "exactOutput",
   },
   [CHAIN_IDs.PLASMA]: {
     inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.PLASMA,
+    tradeType: "exactOutput",
   },
 };
 
