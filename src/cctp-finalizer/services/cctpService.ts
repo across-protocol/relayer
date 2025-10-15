@@ -118,7 +118,7 @@ export class CCTPService {
     const destinationDomainId = Number(decodedCall.args.destinationDomain);
 
     // Map domain to chain ID
-    const destinationChainId = getCctpDestinationChainFromDomain(destinationDomainId, true); // true for production networks
+    const destinationChainId = this.getCctpDestinationChainFromDomainWithFallback(destinationDomainId, true); // true for production networks
 
     return destinationChainId;
   }
@@ -221,5 +221,50 @@ export class CCTPService {
       throw new Error(`No RPC URL configured for chain ID ${chainId}`);
     }
     return rpcUrl;
+  }
+
+  private getCctpDestinationChainFromDomainWithFallback(domain: number, productionNetworks: boolean): number {
+    // Fallback mapping for domain to chain ID
+    const domainToChainId: Record<number, number> = productionNetworks
+      ? {
+          // Production networks
+          0: 1, // Ethereum Mainnet
+          2: 10, // Optimism
+          3: 42161, // Arbitrum
+          5: 34268394551451, // Solana
+          6: 8453, // Base
+          7: 137, // Polygon
+          10: 130, // Arbitrum Nova
+          11: 59144, // Linea
+          14: 480, // ZkSync Era
+          19: 999, // Polygon zkEVM
+        }
+      : {
+          // Test networks
+          0: 11155111, // Sepolia
+          2: 11155420, // Optimism Sepolia
+          3: 421614, // Arbitrum Sepolia
+          5: 133268194659241, // Solana Devnet
+          6: 84532, // Base Sepolia
+          7: 80002, // Polygon Amoy
+          10: 1301, // Arbitrum Nova Sepolia
+          19: 998, // Polygon zkEVM Sepolia
+        };
+
+    try {
+      return getCctpDestinationChainFromDomain(domain, productionNetworks);
+    } catch (error) {
+      console.log(
+        `[CCTP Service] getCctpDestinationChainFromDomain failed for domain ${domain}, using fallback mapping`
+      );
+      if (domainToChainId[domain]) {
+        const fallbackChainId = domainToChainId[domain];
+        console.log(`[CCTP Service] Using fallback mapping: domain ${domain} -> chain ${fallbackChainId}`);
+        return fallbackChainId;
+      } else {
+        console.error(`[CCTP Service] No fallback mapping found for domain ${domain}`);
+        throw error; // Re-throw the original error if no fallback exists
+      }
+    }
   }
 }
