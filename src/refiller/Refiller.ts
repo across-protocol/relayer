@@ -313,12 +313,7 @@ export class Refiller {
       `No L2 provider found for chain ${swapRoute.originChainId}, have you overridden the spoke pool chains?`
     );
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
-    const swapData = await this.acrossSwapApiClient.swapExactOutput(
-      swapRoute,
-      amount,
-      this.baseSignerAddress,
-      recipient
-    );
+    const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
     if (!swapData) {
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
       // can happen if the swapper doesn't have enough swap input token balance in addition to other
