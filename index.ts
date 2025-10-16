@@ -33,6 +33,16 @@ const CMDS = {
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
   logger = Logger;
 
+  logger.info({
+    at: "index.ts",
+    message: "Starting Across Relayer",
+  });
+
+  logger.info({
+    at: "index.ts",
+    message: `${process.env.PAGER_DUTY_V2_CONFIG}`,
+  });
+
   // todo Make the mode of operation an operand, rather than an option.
   // i.e. ts-node ./index.ts [options] <relayer|...>
   // Note: ts does not produce a narrow type from Object.keys, so we have to help.
