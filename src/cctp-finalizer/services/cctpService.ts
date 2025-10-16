@@ -30,54 +30,107 @@ export class CCTPService {
 
   async processBurnTransaction(message: PubSubMessage): Promise<ProcessBurnTransactionResponse> {
     try {
-      const { burnTransactionHash, sourceChainId } = message;
+      const {
+        burnTransactionHash,
+        sourceChainId,
+        message: cctpMessage,
+        attestation: cctpAttestation,
+        destinationChainId: providedDestinationChainId,
+      } = message;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
         message: "Processing burn transaction",
         burnTransactionHash,
         sourceChainId,
+        hasProvidedMessage: !!cctpMessage,
+        hasProvidedAttestation: !!cctpAttestation,
+        hasProvidedDestinationChainId: !!providedDestinationChainId,
       });
 
-      // Get source chain CCTP domain
-      const sourceCctpDomain = getCctpDomainForChainId(sourceChainId);
+      let attestation: { message: string; attestation: string; status?: string };
+      let destinationChainId: number;
 
-      // Fetch attestation
-      const attestationResponse = await _fetchAttestationsForTxn(
-        sourceCctpDomain,
-        burnTransactionHash,
-        chainIsProd(sourceChainId)
-      );
+      // If message and attestation are provided, use them directly
+      if (cctpMessage && cctpAttestation) {
+        this.logger.info({
+          at: "CCTPService#processBurnTransaction",
+          message: "Using provided message and attestation, skipping attestation fetch",
+        });
 
-      if (!attestationResponse.messages?.length) {
-        return {
-          success: false,
-          error: "No attestation found for the burn transaction",
+        attestation = {
+          message: cctpMessage,
+          attestation: cctpAttestation,
         };
+
+        // If destination chain ID is also provided, use it
+        if (providedDestinationChainId) {
+          this.logger.info({
+            at: "CCTPService#processBurnTransaction",
+            message: "Using provided destination chain ID, skipping burn transaction fetch",
+            destinationChainId: providedDestinationChainId,
+          });
+          destinationChainId = providedDestinationChainId;
+        } else {
+          // Need to fetch burn transaction to decode destination chain ID
+          const sourceProvider = await this.getProviderWithFallback(sourceChainId);
+          const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
+
+          if (!burnTx) {
+            return {
+              success: false,
+              error: "Could not fetch burn transaction details",
+            };
+          }
+
+          destinationChainId = this.getDestinationChainId(burnTx);
+        }
+      } else {
+        this.logger.info({
+          at: "CCTPService#processBurnTransaction",
+          message: "Fetching attestation from API",
+        });
+
+        // Get source chain CCTP domain
+        const sourceCctpDomain = getCctpDomainForChainId(sourceChainId);
+
+        // Fetch attestation
+        const attestationResponse = await _fetchAttestationsForTxn(
+          sourceCctpDomain,
+          burnTransactionHash,
+          chainIsProd(sourceChainId)
+        );
+
+        if (!attestationResponse.messages?.length) {
+          return {
+            success: false,
+            error: "No attestation found for the burn transaction",
+          };
+        }
+
+        attestation = attestationResponse.messages[0];
+
+        if (!this.isAttestationReady(attestation.status!)) {
+          return {
+            success: false,
+            error: `Attestation not ready. Status: ${attestation.status}`,
+          };
+        }
+
+        // Get burn transaction details
+        const sourceProvider = await this.getProviderWithFallback(sourceChainId);
+        const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
+
+        if (!burnTx) {
+          return {
+            success: false,
+            error: "Could not fetch burn transaction details",
+          };
+        }
+
+        // Decode transaction to get destination domain
+        destinationChainId = this.getDestinationChainId(burnTx);
       }
-
-      const attestation = attestationResponse.messages[0];
-
-      if (!this.isAttestationReady(attestation.status)) {
-        return {
-          success: false,
-          error: `Attestation not ready. Status: ${attestation.status}`,
-        };
-      }
-
-      // Get burn transaction details
-      const sourceProvider = await this.getProviderWithFallback(sourceChainId);
-      const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
-
-      if (!burnTx) {
-        return {
-          success: false,
-          error: "Could not fetch burn transaction details",
-        };
-      }
-
-      // Decode transaction to get destination domain
-      const destinationChainId = this.getDestinationChainId(burnTx);
 
       // Check if already processed
       const isAlreadyProcessed = await this.checkIfAlreadyProcessed(destinationChainId, attestation.message);
