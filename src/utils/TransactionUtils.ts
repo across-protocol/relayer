@@ -26,7 +26,9 @@ import {
   KeyPairSigner,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
+  type MicroLamports,
 } from "@solana/kit";
+import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
 dotenv.config();
 
@@ -193,7 +195,9 @@ export async function runTransaction(
 
     if (scaleGas) {
       const maxGasScaler = Number(
-        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ?? MAX_GAS_RETRY_SCALER_DEFAULT
+        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
+          process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
+          MAX_GAS_RETRY_SCALER_DEFAULT
       );
       retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT);
       retryScaler = Math.min(retryScaler, maxGasScaler);
@@ -218,7 +222,7 @@ export async function sendRawTransaction(
 }
 
 export async function sendAndConfirmSolanaTransaction(
-  unsignedTransaction: CompilableTransactionMessage,
+  _unsignedTransaction: CompilableTransactionMessage,
   signer: KeyPairSigner,
   provider: SVMProvider,
   cycles = 25,
@@ -227,7 +231,11 @@ export async function sendAndConfirmSolanaTransaction(
   const delay = (ms: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   };
-  const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
+  const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
+  const unsignedTx = isDefined(priorityFeeOverride)
+    ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTransaction)
+    : _unsignedTransaction;
+  const signedTx = await signTransactionMessageWithSigners(unsignedTx);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
   const txSignature = await provider
     .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
