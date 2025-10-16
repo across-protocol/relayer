@@ -50,7 +50,7 @@ let stop = false;
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-export async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
+async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
   const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
   const events = await Promise.all(
     eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
