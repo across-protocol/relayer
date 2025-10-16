@@ -16,13 +16,22 @@ import {
   getKitKeypairFromEvmSigner,
   getCCTPDepositAccounts,
   SVMProvider,
+  createDefaultTransaction,
+  isDefined,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
-import { Address, generateKeyPairSigner, address, type KeyPairSigner } from "@solana/kit";
+import {
+  Address,
+  generateKeyPairSigner,
+  address,
+  appendTransactionMessageInstruction,
+  pipe,
+  type KeyPairSigner,
+} from "@solana/kit";
 
 export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -113,7 +122,10 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
       destinationDomain: this.l1DestinationDomain,
       mintRecipient: address(toAddress.toBase58()),
     });
-    return [];
+    const depositForBurnTx = pipe(await createDefaultTransaction(this.svmProvider, this.svmSigner), (tx) =>
+      appendTransactionMessageInstruction(depositForBurnIx, tx)
+    );
+    return [depositForBurnTx];
   }
 
   async getL2PendingWithdrawalAmount(
@@ -126,15 +138,31 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
       return bnZero;
     }
     this.svmSigner ??= await this.svmSignerPromise;
+    this.solanaEventsClient ??= await this.solanaEventsClientPromise;
 
     // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
     // for all use cases of this adapter.
     const l1EventFilterArgs = [fromAddress.toNative(), undefined, this.l1UsdcTokenAddress.toNative()];
-    const [withdrawalFinalizedEvents] = await Promise.all([
+    const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
+      this.solanaEventsClient.queryDerivedAddressEvents(
+        "DepositForBurn",
+        this.messageTransmitter,
+        BigInt(l2EventConfig.from),
+        BigInt(l2EventConfig.to)
+      ),
       paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
     ]);
-    // const counted = new Set<number>();
-    const withdrawalAmount = bnZero;
+    const counted = new Set<number>();
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, l2Args) => {
+      const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
+        if (counted.has(idx) || !l1Args.amount.eq(l2Args.amount)) {
+          return false;
+        }
+        counted.add(idx);
+        return true;
+      });
+      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(l2Args.amount);
+    }, bnZero);
     return withdrawalAmount;
   }
 
