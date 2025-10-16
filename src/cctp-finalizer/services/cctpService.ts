@@ -186,7 +186,9 @@ export class CCTPService {
       const nonceBytes = messageBytes.slice(12, 44);
       const nonce = ethers.utils.hexlify(nonceBytes);
 
-      return await contract.usedNonces(nonce);
+      const usedNonce = await contract.usedNonces(nonce);
+      // usedNonces returns a BigNumber: 0 for false, 1 for true
+      return usedNonce.gt(0);
     } catch (error) {
       this.logger.warn({
         at: "CCTPService#checkIfAlreadyProcessed",
