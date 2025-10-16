@@ -7,6 +7,9 @@ export interface ProcessBurnTransactionResponse {
 export interface PubSubMessage {
   burnTransactionHash: string;
   sourceChainId: number;
+  message?: string;
+  attestation?: string;
+  destinationChainId?: number;
 }
 
 export interface ChainConfig {
