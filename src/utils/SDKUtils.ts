@@ -103,6 +103,7 @@ export const {
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
   chunk,
+  chainIsL1,
 } = sdk.utils;
 
 export const {
