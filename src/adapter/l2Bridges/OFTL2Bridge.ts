@@ -168,6 +168,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   /**
    * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
    * @param amount amount to round
+   * @param decimals token decimals to use for rounding
    * @returns amount rounded down
    */
   private async roundAmountToSend(amount: BigNumber, decimals: number): Promise<BigNumber> {
