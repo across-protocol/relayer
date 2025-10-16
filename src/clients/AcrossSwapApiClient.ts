@@ -1,12 +1,7 @@
 import axios, { AxiosError } from "axios";
-import { BigNumber, CHAIN_IDs, EvmAddress, winston, ZERO_ADDRESS } from "../utils";
+import { BigNumber, EvmAddress, winston } from "../utils";
+import { SWAP_ROUTES, SwapRoute } from "../common";
 
-interface Route {
-  inputToken: EvmAddress;
-  outputToken: EvmAddress;
-  originChainId: number;
-  destinationChainId: number;
-}
 interface SwapApiResponse {
   swapTx: {
     simulationSuccess: boolean;
@@ -25,16 +20,7 @@ interface SwapData {
  * @notice This class interfaces with the Across Swap API to execute swaps between chains.
  */
 export class AcrossSwapApiClient {
-  private routesSupported: Set<Route> = new Set([
-    {
-      // Allow refilling bot balances from ETH on Arbitrum, where we receive excess ETH as a gas refund
-      // periodically, to MATIC on Polygon.
-      inputToken: EvmAddress.from(ZERO_ADDRESS),
-      outputToken: EvmAddress.from(ZERO_ADDRESS),
-      originChainId: CHAIN_IDs.ARBITRUM,
-      destinationChainId: CHAIN_IDs.POLYGON,
-    },
-  ]);
+  private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
   private initialized = false;
   private readonly urlBase = "https://app.across.to/api/swap/approval";
   private readonly apiResponseTimeout = 3000;
@@ -50,8 +36,8 @@ export class AcrossSwapApiClient {
    * @param recipient The address of the recipient.
    * @returns The swap data if the swap is successful, undefined otherwise.
    */
-  async swapExactOutput(
-    route: Route,
+  async swapWithRoute(
+    route: SwapRoute,
     amountOut: BigNumber,
     swapper: EvmAddress,
     recipient: EvmAddress
@@ -69,7 +55,7 @@ export class AcrossSwapApiClient {
       destinationChainId: route.destinationChainId,
       inputToken: route.inputToken.toNative(),
       outputToken: route.outputToken.toNative(),
-      tradeType: "exactOutput",
+      tradeType: route.tradeType,
       amount: amountOut.toString(),
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
@@ -103,7 +89,7 @@ export class AcrossSwapApiClient {
       swapData = {
         target: EvmAddress.from(response.data.swapTx.to),
         calldata: response.data.swapTx.data,
-        value: BigNumber.from(response.data.swapTx.value),
+        value: BigNumber.from(response.data.swapTx.value ?? 0),
       };
     } catch (err) {
       this.logger.warn({
@@ -118,16 +104,16 @@ export class AcrossSwapApiClient {
 
     this.logger.debug({
       at: "AcrossSwapApiClient",
-      message: `Successfully fetched swap calldata for ${route.originChainId}-${route.inputToken.toNative()} -> ${
-        route.destinationChainId
-      }-${route.outputToken.toNative()}`,
+      message: `Successfully fetched ${route.tradeType} swap calldata for ${
+        route.originChainId
+      }-${route.inputToken.toNative()} -> ${route.destinationChainId}-${route.outputToken.toNative()}`,
       swapData,
     });
 
     return swapData;
   }
 
-  private _isRouteSupported(route: Route): boolean {
+  private _isRouteSupported(route: SwapRoute): boolean {
     return Array.from(this.routesSupported).some(
       (r) =>
         r.inputToken.eq(route.inputToken) &&

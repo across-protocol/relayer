@@ -37,6 +37,7 @@ export const {
   getCCTPDepositAccounts,
 } = sdk.arch.svm;
 export type SVMProvider = sdk.arch.svm.SVMProvider;
+export type LatestBlockhash = sdk.arch.svm.LatestBlockhash;
 
 export const {
   assign,
@@ -101,6 +102,7 @@ export const {
   randomAddress,
   convertRelayDataParamsToNative,
   convertFillParamsToNative,
+  chunk,
 } = sdk.utils;
 
 export const {
