@@ -102,10 +102,10 @@ export class Refiller {
       const { token, chainId } = refillBalanceData;
       const l2Provider = this.clients.balanceAllocator.providers[chainId];
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
-      const refillHandler = token.eq(getNativeTokenAddressForChain(chainId)
+      const refillHandler = token.eq(getNativeTokenAddressForChain(chainId))
         ? this.refillNativeTokenBalances
         : this.refillTokenBalances;
-        
+
       return refillHandler(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
     });
   }
@@ -329,7 +329,20 @@ export class Refiller {
     } = await tokenBridge.constructL1ToL2Txn(account, l1Token, token, amount);
 
     // Execute the l1 to l2 rebalance.
-    const txn = await (await runTransaction(this.logger, contract, method, args, value)).wait();
+    let txn;
+    try {
+      txn = await (await runTransaction(this.logger, contract, method, args, value)).wait();
+    } catch (error) {
+      // Log the error and do not retry.
+      this.logger.warn({
+        at: "Refiller#refillBalances",
+        message: `Failed to refill ${formatUnits(amount, decimals)} ${l2TokenInfo.symbol} for ${account} from ${
+          this.baseSignerAddress
+        }`,
+        error,
+      });
+      return;
+    }
     this.logger.info({
       at: "Refiller#refillBalances",
       message: `Reloaded ${formatUnits(amount, decimals)} ${l2TokenInfo.symbol} for ${account} from ${
