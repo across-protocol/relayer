@@ -103,8 +103,8 @@ export class Refiller {
       const l2Provider = this.clients.balanceAllocator.providers[chainId];
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
       const refillHandler = token.eq(getNativeTokenAddressForChain(chainId))
-        ? this.refillNativeTokenBalances
-        : this.refillTokenBalances;
+        ? this.refillNativeTokenBalances.bind(this)
+        : this.refillTokenBalances.bind(this);
 
       return refillHandler(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
     });
