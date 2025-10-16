@@ -6,7 +6,6 @@ import * as chains from "viem/chains";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
-  CHAIN_IDs,
   disconnectRedisClients,
   EventManager,
   exit,
