@@ -6,7 +6,6 @@ import {
   EventSearchConfig,
   getNetworkName,
   isDefined,
-  Provider,
   Signer,
   EvmAddress,
   getBinanceApiClient,
@@ -35,17 +34,11 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   // The deposit network corresponding to the L2.
   protected depositNetwork: string;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     if (hubChainId !== CHAIN_IDs.MAINNET) {
       throw new Error("Cannot define a Binance CEX bridge for a non-production network");
     }
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     this.l2Bridge = new Contract(l2Token.toNative(), ERC20_ABI, l2Signer);

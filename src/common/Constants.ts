@@ -7,7 +7,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
-  Provider,
   ZERO_ADDRESS,
   bnUint32Max,
   EvmAddress,
@@ -408,6 +407,14 @@ type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   logger: winston.Logger
 ) => T;
 
+type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
+  l2chainId: number,
+  hubChainId: number,
+  l2SignerOrProvider: any,
+  l1Signer: Signer,
+  l1Token: EvmAddress
+) => T;
+
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
 const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
@@ -444,17 +451,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
 };
 export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
-export const CANONICAL_L2_BRIDGE: {
-  [chainId: number]: {
-    new (
-      l2chainId: number,
-      hubChainId: number,
-      l2Signer: Signer,
-      l1Provider: Provider | Signer,
-      l1Token?: EvmAddress
-    ): BaseL2BridgeAdapter;
-  };
-} = {
+export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
@@ -590,19 +587,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
 };
 
-export const CUSTOM_L2_BRIDGE: {
-  [chainId: number]: {
-    [tokenAddress: string]: {
-      new (
-        l2chainId: number,
-        hubChainId: number,
-        l2Signer: Signer,
-        l1Provider: Provider | Signer,
-        l1Token?: EvmAddress
-      ): BaseL2BridgeAdapter;
-    };
-  };
-} = {
+export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
