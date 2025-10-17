@@ -18,9 +18,9 @@ import {
   SVMProvider,
   createDefaultTransaction,
   isDefined,
+  SolanaTransaction,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
-import { AugmentedTransaction } from "../../clients/TransactionClient";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { arch } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl, TokenMessengerMinterClient } from "@across-protocol/contracts";
@@ -32,6 +32,17 @@ import {
   pipe,
   type KeyPairSigner,
 } from "@solana/kit";
+
+type DepositForBurnEvent = {
+  nonce: BigInt;
+  burnToken: string;
+  amount: BigInt;
+  depositor: string;
+  mintRecipient: string;
+  destinationDomain: number;
+  destinationTokenMessenger: string;
+  destinationCaller: string;
+};
 
 export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
   private IS_CCTP_V2 = false;
@@ -77,7 +88,7 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     l2Token: SvmAddress,
     l1Token: EvmAddress,
     amount: BigNumber
-  ): Promise<AugmentedTransaction[]> {
+  ): Promise<SolanaTransaction[]> {
     assert(l1Token.eq(this.l1UsdcTokenAddress));
     assert(l2Token.eq(this.l2UsdcTokenAddress));
     this.svmSigner ??= await this.svmSignerPromise;
@@ -146,22 +157,29 @@ export class SolanaUsdcCCTPBridge extends BaseL2BridgeAdapter {
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
       this.solanaEventsClient.queryDerivedAddressEvents(
         "DepositForBurn",
-        this.messageTransmitter,
+        this.tokenMessengerMinter,
         BigInt(l2EventConfig.from),
         BigInt(l2EventConfig.to)
       ),
       paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
     ]);
     const counted = new Set<number>();
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, l2Args) => {
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, _l2Args) => {
+      const l2Args = _l2Args.data as DepositForBurnEvent;
+      const l2MintRecipient = l2Args.mintRecipient;
+      // Exit early if the event parsed was initiated by an address we are not tracking.
+      if (l2MintRecipient !== fromAddress.toBase58()) {
+        return totalAmount;
+      }
       const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
-        if (counted.has(idx) || !l1Args.amount.eq(l2Args.amount)) {
+        const l1MintRecipient = EvmAddress.from(l1Args.mintRecipient);
+        if (counted.has(idx) || !l1Args.amount.eq(l2Args.amount) || l2MintRecipient !== l1MintRecipient.toBase58()) {
           return false;
         }
         counted.add(idx);
         return true;
       });
-      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(l2Args.amount);
+      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(Number(l2Args.amount));
     }, bnZero);
     return withdrawalAmount;
   }
