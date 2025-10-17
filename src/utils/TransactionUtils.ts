@@ -23,7 +23,6 @@ import {
 } from "../utils";
 import {
   CompilableTransactionMessage,
-  KeyPairSigner,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
   type MicroLamports,
@@ -223,7 +222,6 @@ export async function sendRawTransaction(
 
 export async function sendAndConfirmSolanaTransaction(
   _unsignedTransaction: CompilableTransactionMessage,
-  signer: KeyPairSigner,
   provider: SVMProvider,
   cycles = 25,
   pollingDelay = 600 // 1.5 slots on Solana.
