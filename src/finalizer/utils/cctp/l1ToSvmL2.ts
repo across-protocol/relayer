@@ -43,7 +43,7 @@ export async function cctpV1L1toSvmL2Finalizer(
   };
   const signer: KeyPairSigner = await getKitKeypairFromEvmSigner(_signer);
   const outstandingMessages = await getCctpV1Messages(
-    Array.from(senderAddresses.keys()),
+    Array.from(senderAddresses.keys()).filter((address) => address.isEVM()),
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     searchConfig,
