@@ -1,5 +1,15 @@
-import { BigNumber, ethers } from ".";
-import { ApiProofRequest, PROOF_OUTPUTS_ABI_TUPLE, ProofOutputs } from "../interfaces/ZkApi";
+import axios from "axios";
+import { backoffWithJitter, BigNumber, ethers } from ".";
+import {
+  ApiProofRequest,
+  PROOF_OUTPUTS_ABI_TUPLE,
+  ProofOutputs,
+  ProofStateResponse,
+  ProofStateResponseSS,
+  VkeyResponse,
+  VkeyResponseSS,
+} from "../interfaces/ZkApi";
+import { create } from "superstruct";
 
 /**
  * Calculates the deterministic Proof ID based on the request parameters.
@@ -51,4 +61,70 @@ export function decodeProofOutputs(publicValuesBytes: string): ProofOutputs {
       contractAddress: slot[2],
     })),
   };
+}
+
+export async function getProofStateWithRetries(
+  apiBaseUrl: string,
+  proofId: string,
+  maxAttempts = 3
+): Promise<ProofStateResponse | 404> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const response = await axios.get(`${apiBaseUrl}/v1/api/proofs/${proofId}`);
+      const proofState: ProofStateResponse = create(response.data, ProofStateResponseSS);
+      return proofState;
+    } catch (e: any) {
+      // 404 is a valid/expected response: proof not yet created
+      if (axios.isAxiosError(e) && e.response?.status === 404) {
+        return 404;
+      }
+
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
+}
+
+export async function requestProofWithRetries(
+  apiBaseUrl: string,
+  request: ApiProofRequest,
+  maxAttempts = 3
+): Promise<void> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await axios.post(`${apiBaseUrl}/v1/api/proofs`, request);
+      return;
+    } catch (e: any) {
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
+}
+
+export async function getVkeyWithRetries(apiBaseUrl: string, maxAttempts = 3): Promise<VkeyResponse> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const response = await axios.get(`${apiBaseUrl}/v1/api/vkey`);
+      const vkeyResponse: VkeyResponse = create(response.data, VkeyResponseSS);
+      return vkeyResponse;
+    } catch (e) {
+      attempt++;
+      if (attempt >= maxAttempts) {
+        throw e;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffWithJitter(attempt)));
+      // todo: consider adding a logger log here .onRetry with `datadog = true` to monitor the error rates
+    }
+  }
 }
