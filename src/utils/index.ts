@@ -25,7 +25,7 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 
 export { config } from "dotenv";
 
-export { Logger, waitForLogger } from "@risk-labs/logger";
+export { Logger, waitForLogger } from "@uma/logger";
 
 export {
   CHAIN_IDs,
