@@ -106,7 +106,7 @@ export async function bridgeTokensToHubPool(
   );
   const formatUsdc = createFormatFunction(2, 4, false, 6);
   if (process.env.SEND_TRANSACTIONS === "true") {
-    const withdrawSignature = await sendAndConfirmSolanaTransaction(bridgeTokensToHubPoolTx, signer, svmProvider);
+    const withdrawSignature = await sendAndConfirmSolanaTransaction(bridgeTokensToHubPoolTx, svmProvider);
     return {
       message: `Withdrew ${formatUsdc(pendingWithdrawAmount.toString())} USDC from Solana to the hub pool.`,
       signature: withdrawSignature,
