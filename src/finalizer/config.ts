@@ -1,7 +1,7 @@
 import assert from "assert";
 import { assert as ssAssert, enums } from "superstruct";
 import { CommonConfig, FINALIZER_TOKENBRIDGE_LOOKBACK, ProcessEnv } from "../common";
-import { Address, EvmAddress } from "../utils";
+import { Address, EvmAddress, SvmAddress, ethers } from "../utils";
 
 /**
  * The finalization type is used to determine the direction of the finalization.
@@ -28,7 +28,11 @@ export class FinalizerConfig extends CommonConfig {
     const userAddresses: { [address: string]: string[] } = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
     this.userAddresses = new Map();
     Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
-      this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
+      if (ethers.utils.isHexString(address)) {
+        this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
+      } else {
+        this.userAddresses.set(SvmAddress.from(address), tokensToFinalize);
+      }
     });
 
     this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);

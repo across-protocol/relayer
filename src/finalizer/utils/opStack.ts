@@ -145,6 +145,7 @@ export async function opStackFinalizer(
   // the lite chain to Ethereum via the canonical OVM standard bridge.
   // Filter out SpokePool as sender since we query for it previously using the TokensBridged event query.
   const ovmFromAddresses = Array.from(senderAddresses.keys())
+    .filter((address) => address.isEVM())
     .map((sender) => sender.toEvmAddress())
     .filter((sender) => sender !== spokePool.address);
   const searchConfig = { ...spokePoolClient.eventSearchConfig, to };
