@@ -691,7 +691,13 @@ export class ProfitClient {
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
+      const matic = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
+      tokenPrices.forEach(({ address, price }) => {
+        this.tokenPrices[address] = toBNWei(price);
+        if (this.tokenPrices[matic].eq(bnZero)) {
+          this.tokenPrices[matic] = toBNWei("0.10");
+        }
+      });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
