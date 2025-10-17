@@ -99,9 +99,11 @@ export class AdapterManager {
         return {};
       }
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      let l2Signer;
+      let l2SignerOrSvmProvider;
       if (isEVMSpokePoolClient(spokePoolClient)) {
-        l2Signer = spokePoolClient.spokePool.signer;
+        l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
+      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+        l2SignerOrSvmProvider = spokePoolClient.svmEventsClient.getRpc();
       }
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
@@ -111,7 +113,13 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
+            const bridge = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l2SignerOrSvmProvider,
+              l1Signer,
+              EvmAddress.from(l1Token)
+            );
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
