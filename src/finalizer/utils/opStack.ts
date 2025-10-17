@@ -444,7 +444,7 @@ async function viem_multicallOptimismFinalizations(
       }
     } else if (withdrawalStatus === "waiting-to-finalize") {
       const { seconds } = await getTimeToFinalize(publicClientL1 as viem.Client, {
-        chain: VIEM_OP_STACK_CHAINS[hubChainId],
+        chain: publicClientL1.chain as viem.Chain,
         withdrawalHash: withdrawal.withdrawalHash,
         targetChain: viemOpStackTargetChainParam,
       });
