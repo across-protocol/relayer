@@ -1,5 +1,5 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
-import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
+import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
@@ -50,7 +50,7 @@ export {
   lastSpyLogLevel,
   spyLogIncludes,
   spyLogLevel,
-} from "@risk-labs/logger";
+} from "@uma/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 export const {
   ethers,
