@@ -2565,7 +2565,7 @@
   dependencies:
     abitype "^1.0.2"
 
-"@risk-labs/logger@^1.3.5":
+"@risk-labs/logger@^1.3.6":
   version "1.3.6"
   resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.6.tgz#d939502af2423ae9c3c4ff5e90ef13ba40c6c37b"
   integrity sha512-tfxTpxGF5eVVl/QcDmA/hV6VU8YUyYlT1pIN43vOqOVl+2xR07mdPW8hhlOHsh4tnBjREkGsmsZHbeZWKjsJuw==
@@ -2582,21 +2582,6 @@
     superstruct "^2.0.2"
     winston "3.8.2"
     winston-transport "4.5.0"
-
-"@risk-labs/serverless-orchestration@^1.0.4":
-  version "1.0.4"
-  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.0.4.tgz#04dfe5c98eaa2311c1e00740ad7da6e58b24833c"
-  integrity sha512-9Ws8DOCIpNbSNCDyDLQ/uJl5H9eQ8aRRxz0CVauUe0aJWU4874cThe2ze84hEWb+pnZtGk9TYfC0rtXAd8UrQA==
-  dependencies:
-    "@awaitjs/express" "^0.3.0"
-    "@google-cloud/datastore" "^7.0.0"
-    "@google-cloud/storage" "^6.4.2"
-    "@risk-labs/logger" "^1.3.5"
-    express "^4.17.1"
-    fetch-retry "^5.0.3"
-    google-auth-library "^8.5.1"
-    node-fetch "^2.3.0"
-    viem "^2.37.2"
 
 "@sapphire/async-queue@^1.5.0":
   version "1.5.0"
@@ -4280,6 +4265,21 @@
     ipfs-http-client "^49.0.2"
     mocha "^8.3.0"
     node-fetch "^2.6.1"
+
+"@uma/serverless-orchestration@^2.17.2":
+  version "2.17.2"
+  resolved "https://registry.yarnpkg.com/@uma/serverless-orchestration/-/serverless-orchestration-2.17.2.tgz#e75a7d170d48d3a3c165d728f62c47a6eed3f832"
+  integrity sha512-6RXl1Geb3lOaloQqpQna3SvjyMf7+txG/UMVp1VGgQKCbD0jTOERfnzRkJZ26y/2gU15zSfHYjVOARl+cGWBFw==
+  dependencies:
+    "@awaitjs/express" "^0.3.0"
+    "@google-cloud/datastore" "^7.0.0"
+    "@google-cloud/storage" "^6.4.2"
+    "@uma/logger" "^1.3.3"
+    express "^4.17.1"
+    fetch-retry "^5.0.3"
+    google-auth-library "^8.5.1"
+    node-fetch "^2.3.0"
+    viem "^2.37.2"
 
 "@ungap/promise-all-settled@1.1.2":
   version "1.1.2"
