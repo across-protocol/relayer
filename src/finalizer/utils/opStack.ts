@@ -841,7 +841,7 @@ async function multicallOptimismFinalizations(
     ),
     Promise.all(
       claimableWithdrawalRequests.map(({ requestId }) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), l2FromBlock)
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), l1FromBlock)
       )
     ),
   ]);
