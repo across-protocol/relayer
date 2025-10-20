@@ -779,7 +779,12 @@ async function multicallOptimismFinalizations(
   );
   // Reduce the query by only querying events that were emitted after the earliest TokenBridged event we saw. This
   // is an easy optimization as we know that WithdrawalRequested events are only emitted after the TokenBridged event.
-  const fromBlock = tokensBridgedEvents[0].blockNumber;
+  const l2FromBlock = tokensBridgedEvents[0].blockNumber;
+  const l2Provider = Signer.isSigner(crossChainMessenger.l2SignerOrProvider)
+    ? crossChainMessenger.l2SignerOrProvider.provider
+    : crossChainMessenger.l2SignerOrProvider;
+  const l2Block = await l2Provider.getBlock(l2FromBlock);
+  const l1FromBlock = await getBlockForTimestamp(logger, hubPoolClient.chainId, l2Block.timestamp);
   const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
     usdYieldManager.queryFilter(
       usdYieldManager.filters.WithdrawalRequested(
@@ -794,7 +799,7 @@ async function multicallOptimismFinalizations(
         // stops querying TokensBridged/L2 Withdrawal events that have the HubPool as the recipient.
         [hubPoolClient.hubPool.address, blastDaiRetriever.address]
       ),
-      fromBlock
+      l1FromBlock
     ),
     usdYieldManager.getLastCheckpointId(),
     // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
@@ -836,7 +841,7 @@ async function multicallOptimismFinalizations(
     ),
     Promise.all(
       claimableWithdrawalRequests.map(({ requestId }) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), fromBlock)
+        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), l1FromBlock)
       )
     ),
   ]);
