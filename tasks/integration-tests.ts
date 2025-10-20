@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { task } from "hardhat/config";
 import { getSigner, winston } from "../src/utils";
-import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
+import { SpyTransport, bigNumberFormatter } from "@uma/logger";
 import { runDataworker } from "../src/dataworker";
 import { runRelayer } from "../src/relayer";
 import { runFinalizer } from "../src/finalizer";
