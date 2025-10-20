@@ -44,7 +44,7 @@ import {
   EvmAddress,
   ZERO_ADDRESS,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES } from "../../common";
+import { CONTRACT_ADDRESSES, OPSTACK_CONTRACT_OVERRIDES, CHAIN_MAX_BLOCK_LOOKBACK } from "../../common";
 import OPStackPortalL1 from "../../common/abi/OpStackPortalL1.json";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 const { utils } = ethers;
@@ -791,6 +791,7 @@ async function multicallOptimismFinalizations(
   const l1SearchConfig = {
     from: l1FromBlock,
     to: latestL1Block,
+    maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId],
   };
   const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
     paginatedEventQuery(
