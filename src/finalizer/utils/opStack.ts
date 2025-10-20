@@ -783,10 +783,18 @@ async function multicallOptimismFinalizations(
   const l2Provider = Signer.isSigner(crossChainMessenger.l2SignerOrProvider)
     ? crossChainMessenger.l2SignerOrProvider.provider
     : crossChainMessenger.l2SignerOrProvider;
-  const l2Block = await l2Provider.getBlock(l2FromBlock);
+  const [l2Block, latestL1Block] = await Promise.all([
+    l2Provider.getBlock(l2FromBlock),
+    usdYieldManager.provider.getBlockNumber(),
+  ]);
   const l1FromBlock = await getBlockForTimestamp(logger, hubPoolClient.chainId, l2Block.timestamp);
+  const l1SearchConfig = {
+    from: l1FromBlock,
+    to: latestL1Block,
+  };
   const [_withdrawalRequests, lastCheckpointId, lastFinalizedRequestId] = await Promise.all([
-    usdYieldManager.queryFilter(
+    paginatedEventQuery(
+      usdYieldManager,
       usdYieldManager.filters.WithdrawalRequested(
         null,
         null,
@@ -799,7 +807,7 @@ async function multicallOptimismFinalizations(
         // stops querying TokensBridged/L2 Withdrawal events that have the HubPool as the recipient.
         [hubPoolClient.hubPool.address, blastDaiRetriever.address]
       ),
-      l1FromBlock
+      l1SearchConfig
     ),
     usdYieldManager.getLastCheckpointId(),
     // We fetch the lastFinalizedRequestId to filter out any withdrawal requests to give more
@@ -841,7 +849,7 @@ async function multicallOptimismFinalizations(
     ),
     Promise.all(
       claimableWithdrawalRequests.map(({ requestId }) =>
-        usdYieldManager.queryFilter(usdYieldManager.filters.WithdrawalClaimed(requestId), l1FromBlock)
+        paginatedEventQuery(usdYieldManager, usdYieldManager.filters.WithdrawalClaimed(requestId), l1SearchConfig)
       )
     ),
   ]);
