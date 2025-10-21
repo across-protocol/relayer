@@ -1405,7 +1405,7 @@ export class InventoryClient {
             }`,
             {
               l1Token: l1Token.toEvmAddress(),
-              l2Token: l2Token.toEvmAddress(),
+              l2Token: l2Token.toNative(),
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1496,7 +1496,7 @@ export class InventoryClient {
             withdrawals.map((withdrawal) => {
               return {
                 ...withdrawal,
-                l2Token: withdrawal.l2Token.toEvmAddress(),
+                l2Token: withdrawal.l2Token.toNative(),
               };
             }),
           ];

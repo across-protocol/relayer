@@ -9,6 +9,7 @@ import {
   getHubPoolAddress,
   getSpokePoolAddress,
   SVMProvider,
+  SolanaTransaction,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
@@ -31,7 +32,7 @@ export abstract class BaseL2BridgeAdapter {
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
     this.spokePoolAddress = getSpokePoolAddress(l2chainId);
-    if (Signer.isSigner(l2SignerOrSvmProvider)) {
+    if (l2SignerOrSvmProvider instanceof Signer) {
       this.l2Signer = l2SignerOrSvmProvider satisfies Signer;
     } else {
       this.svmProvider = l2SignerOrSvmProvider satisfies SVMProvider;
@@ -44,7 +45,7 @@ export abstract class BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber,
     optionalParams?: TransferTokenParams
-  ): Promise<AugmentedTransaction[]>;
+  ): Promise<AugmentedTransaction[] | SolanaTransaction[]>;
 
   abstract getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,
