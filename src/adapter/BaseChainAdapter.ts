@@ -323,7 +323,7 @@ export class BaseChainAdapter {
     if (chainIsEvm(this.chainId)) {
       const multicallerClient = new MultiCallerClient(this.logger);
       txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
-      const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
+      const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
       return txnReceipts[this.chainId];
     }
     const txnSignatures = [];
