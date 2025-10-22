@@ -63,11 +63,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   try {
     for (let run = 1; !stop; ++run) {
-      logger.error({
-        at: "Relayer#testPage",
-        message: "Testing @risk-labs/logger PagerDuty support",
-        notificationPath: "across-error",
-      });
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }

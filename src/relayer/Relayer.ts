@@ -906,6 +906,12 @@ export class Relayer {
       HUB_SPOKE_BLOCK_LAG * (await arch.evm.averageBlockTime(hubPoolClient.hubPool.provider)).average
     );
 
+    this.logger.error({
+      at: "Relayer#testPage",
+      message: "Testing @risk-labs/logger PagerDuty support",
+      notificationPath: "across-error",
+    });
+
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
