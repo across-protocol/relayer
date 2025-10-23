@@ -1,21 +1,9 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import {
-  PUBLIC_NETWORKS,
-  CHAIN_IDs,
-  TOKEN_SYMBOLS_MAP,
-  CCTP_NO_DOMAIN,
-  PRODUCTION_NETWORKS,
-  TEST_NETWORKS,
-} from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
-import {
-  CCTPMessageStatus,
-  CCTPV2_FINALITY_THRESHOLD_FAST,
-  CCTPV2_FINALITY_THRESHOLD_STANDARD,
-  CONTRACT_ADDRESSES,
-} from "../common";
+import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -57,31 +45,6 @@ type CCTPV1APIGetMessagesResponse = { messages: CCTPV1APIMessageAttestation[] };
 // CCTP V1 /attestations/{messageHash} response
 type CCTPV1APIGetAttestationResponse = { status: string; attestation: string };
 
-// CCTP V2 /burn/USDC/fees/{sourceDomainId}/{destDomainId} response
-type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number }[];
-
-// CCTP V2 /fastBurn/USDC/allowance response
-type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
-
-// CCTP V2 /messages/{sourceDomainId} response
-type CCTPV2APIAttestation = {
-  status: string;
-  attestation: string;
-  message: string;
-  eventNonce: string;
-  cctpVersion: number;
-  decodedMessage: {
-    recipient: string;
-    destinationDomain: number;
-    decodedMessageBody: {
-      amount: string;
-      mintRecipient: string;
-      messageSender: string;
-    };
-  };
-};
-type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
-
 /** ********************************************************************************************************************
  *
  * CCTP SMART CONTRACT EVENT TYPES
@@ -107,12 +70,6 @@ type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
 type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
 
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
-const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1 = ethers.utils.id(
-  "DepositForBurn(uint64,address,uint256,address,bytes32,uint32,bytes32,bytes32)"
-);
-const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
-  "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
-);
 
 /** ********************************************************************************************************************
  *
@@ -120,76 +77,17 @@ const CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2 = ethers.utils.id(
  *
  ******************************************************************************************************************* **/
 
-export type AttestedCCTPMessage = CCTPMessageEvent & { status: CCTPMessageStatus; attestation?: string };
-export type AttestedCCTPDeposit = DepositForBurnMessageEvent & { status: CCTPMessageStatus; attestation?: string };
+export const { CCTPV2_FINALITY_THRESHOLD_FAST, CCTPV2_FINALITY_THRESHOLD_STANDARD } = utils;
+export type AttestedCCTPMessage = utils.AttestedCCTPMessage;
+export type AttestedCCTPDeposit = utils.AttestedCCTPDeposit;
 
-/**
- * @notice Converts an ETH Address string to a 32-byte hex string.
- * @param address The address to convert.
- * @returns The 32-byte hex string representation of the address - required for CCTP messages.
- */
-export function cctpAddressToBytes32(address: string): string {
-  return ethers.utils.hexZeroPad(address, 32);
-}
-
-/**
- * Converts a 32-byte hex string with padding to a standard ETH address.
- * @param bytes32 The 32-byte hex string to convert.
- * @returns The ETH address representation of the 32-byte hex string.
- */
-export function cctpBytes32ToAddress(bytes32: string): string {
-  // Grab the last 20 bytes of the 32-byte hex string
-  return ethers.utils.getAddress(ethers.utils.hexDataSlice(bytes32, 12));
-}
-
-/**
- * @notice Returns the CCTP domain for a given chain ID. Throws if the chain ID is not a CCTP domain.
- * @param chainId
- * @returns CCTP Domain ID
- */
-export function getCctpDomainForChainId(chainId: number): number {
-  const cctpDomain = PUBLIC_NETWORKS[chainId]?.cctpDomain;
-  if (!isDefined(cctpDomain) || cctpDomain === CCTP_NO_DOMAIN) {
-    throw new Error(`No CCTP domain found for chainId: ${chainId}`);
-  }
-  return cctpDomain;
-}
-
-/**
- * @notice Returns the chain ID for a given CCTP domain. Inverse functionof `getCctpDomainForChainId()`. However,
- * since CCTP Domains are shared between production and test networks, we need to use the `productionNetworks` flag
- * to determine whether to return the production  or test network chain ID.
- * @param domain CCTP domain ID.
- * @param productionNetworks Whether to return the production or test network chain ID.
- * @returns Chain ID.
- */
-export function getCctpDestinationChainFromDomain(domain: number, productionNetworks: boolean): number {
-  if (domain === CCTP_NO_DOMAIN) {
-    throw new Error("Cannot input CCTP_NO_DOMAIN to getCctpDestinationChainFromDomain");
-  }
-  // Test and Production networks use the same CCTP domain, so we need to use the flag passed in to
-  // determine whether to use the Test or Production networks.
-  const networks = productionNetworks ? PRODUCTION_NETWORKS : TEST_NETWORKS;
-  const otherNetworks = productionNetworks ? TEST_NETWORKS : PRODUCTION_NETWORKS;
-  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain);
-  if (!isDefined(chainId)) {
-    const chainId = Object.keys(otherNetworks).find((key) => otherNetworks[key].cctpDomain.toString() === domain);
-    if (!isDefined(chainId)) {
-      throw new Error(`No chainId found for domain: ${domain}`);
-    }
-    return parseInt(chainId);
-  }
-  return parseInt(chainId);
-}
-
-/**
- * @notice Typeguard. Returns whether the event is a CCTP deposit for burn event. Should work for V1 and V2
- * @param event CCTP message event.
- * @returns True if the event is a CCTP V1 deposit for burn event.
- */
-export function isDepositForBurnEvent(event: CCTPMessageEvent): event is DepositForBurnMessageEvent {
-  return "amount" in event && "mintRecipient" in event && "burnToken" in event;
-}
+export const {
+  cctpAddressToBytes32,
+  cctpBytes32ToAddress,
+  getCctpDomainForChainId,
+  getCctpDestinationChainFromDomain,
+  isDepositForBurnEvent,
+} = utils;
 
 /**
  * Return all deposit for burn transaction hashes that were created on the source chain.
@@ -242,7 +140,7 @@ export async function getCctpV2DepositForBurnStatuses(
   // Fetch attestations for all deposit burn event transaction hashes. Note, some events might share the same
   // transaction hash, so only fetch attestations for unique transaction hashes.
   const uniqueTxHashes = Array.from(new Set(depositForBurnHashes));
-  const attestationResponses = await _fetchCctpV2Attestations(uniqueTxHashes, sourceChainId);
+  const attestationResponses = await utils.fetchCctpV2Attestations(uniqueTxHashes, sourceChainId);
 
   // Categorize deposits based on status:
   const pendingDepositTxnHashes: string[] = [];
@@ -258,7 +156,7 @@ export async function getCctpV2DepositForBurnStatuses(
         return;
       }
       // API has not produced an attestation for this deposit yet:
-      if (_getPendingAttestationStatus(attestation) === "pending") {
+      if (utils.getPendingAttestationStatus(attestation) === "pending") {
         pendingDepositTxnHashes.push(txnHash);
         return;
       }
@@ -280,7 +178,10 @@ export async function getCctpV2DepositForBurnStatuses(
         chainIsProd(sourceChainId)
       );
       const destinationMessageTransmitter = await _getDestinationMessageTransmitterContract(destinationChainId, false);
-      const processed = await _hasCCTPMessageBeenProcessedEvm(attestation.eventNonce, destinationMessageTransmitter);
+      const processed = await utils.hasCCTPMessageBeenProcessedEvm(
+        attestation.eventNonce,
+        destinationMessageTransmitter
+      );
       if (processed) {
         finalizedDepositTxnHashes.push({ txnHash, destinationChainId });
       } else {
@@ -385,7 +286,7 @@ export async function getCctpV1Messages(
       return {
         ...message,
         attestation: attestation?.attestation, // Will be undefined if status is "pending"
-        status: _getPendingAttestationStatus(attestation),
+        status: utils.getPendingAttestationStatus(attestation),
       };
     })
   );
@@ -408,8 +309,8 @@ export async function getV2DepositForBurnMaxFee(
   amount: BigNumber
 ): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
   const [_fastBurnAllowance, transferFees] = await Promise.all([
-    _getV2FastBurnAllowance(chainIsProd(destinationChainId)),
-    _getV2MinTransferFees(originChainId, destinationChainId),
+    utils.getV2FastBurnAllowance(chainIsProd(destinationChainId)),
+    utils.getV2MinTransferFees(originChainId, destinationChainId),
   ]);
   const expectedMaxFastTransferFee = getV2MaxExpectedTransferFee(originChainId);
   // If we are using CCTP V2 then try to use the fast transfer if the amount is under the
@@ -699,7 +600,7 @@ function _getCCTPV1EventsFromReceipt(
   const depositIndexPairs = [];
   receipt.logs.forEach((log, i) => {
     // Attempt to parse as `MessageSent`
-    const messageSentVersion = _getMessageSentVersion(log);
+    const messageSentVersion = utils.getMessageSentVersion(log);
     const isV1MessageSentEvent = messageSentVersion === 0;
 
     if (isV1MessageSentEvent) {
@@ -708,7 +609,7 @@ function _getCCTPV1EventsFromReceipt(
     }
 
     // Attempt to parse as `DepositForBurn`
-    const depositForBurnVersion = _getDepositForBurnVersion(log);
+    const depositForBurnVersion = utils.getDepositForBurnVersion(log);
     const isV1DepositForBurnEvent = depositForBurnVersion === 0;
 
     if (!isV1DepositForBurnEvent) {
@@ -787,7 +688,7 @@ async function _getCCTPV1MessagesWithStatus(
           latestBlockhash!.value
         );
       } else {
-        processed = await _hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
+        processed = await utils.hasCCTPMessageBeenProcessedEvm(messageEvent.nonceHash, messageTransmitterContract);
       }
 
       if (!processed) {
@@ -803,56 +704,6 @@ async function _getCCTPV1MessagesWithStatus(
       }
     })
   );
-}
-
-async function _fetchCctpV2Attestations(
-  depositForBurnTxnHashes: string[],
-  sourceChainId: number
-): Promise<{ [sourceTxnHash: string]: CCTPV2APIGetAttestationResponse }> {
-  // For v2, we fetch an API response for every txn hash we have. API returns an array of both v1 and v2 attestations
-  const sourceDomainId = getCctpDomainForChainId(sourceChainId);
-  const isMainnet = utils.chainIsProd(sourceChainId);
-
-  // Circle rate limit is 35 requests / second. To avoid getting banned, batch calls into chunks with 1 second delay between chunks
-  // For v2, this is actually required because we don't know if message is finalized or not before hitting the API. Therefore as our
-  // CCTP v2 list of chains grows, we might require more than 35 calls here to fetch all attestations
-  const attestationResponses = {};
-  const chunkSize = process.env.CCTP_API_REQUEST_CHUNK_SIZE ? parseInt(process.env.CCTP_API_REQUEST_CHUNK_SIZE) : 8;
-  for (let i = 0; i < depositForBurnTxnHashes.length; i += chunkSize) {
-    const chunk = depositForBurnTxnHashes.slice(i, i + chunkSize);
-
-    await Promise.all(
-      chunk.map(async (txHash) => {
-        const attestations = await _fetchAttestationsForTxn(sourceDomainId, txHash, isMainnet);
-
-        // If multiple deposit for burn events, there will be multiple attestations.
-        attestationResponses[txHash] = attestations;
-      })
-    );
-
-    if (i + chunkSize < depositForBurnTxnHashes.length) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-  return attestationResponses;
-}
-
-function _getPendingAttestationStatus(
-  attestation: CCTPV2APIAttestation | CCTPV1APIGetAttestationResponse
-): CCTPMessageStatus {
-  if (!isDefined(attestation.attestation)) {
-    return "pending";
-  } else {
-    return attestation.status === "pending_confirmations" || attestation.attestation === "PENDING"
-      ? "pending"
-      : "ready";
-  }
-}
-
-async function _hasCCTPMessageBeenProcessedEvm(nonceHash: string, contract: ethers.Contract): Promise<boolean> {
-  const resultingCall: BigNumber = await contract.callStatic.usedNonces(nonceHash);
-  // If the resulting call is 1, the message has been processed. If it is 0, the message has not been processed.
-  return (resultingCall ?? bnZero).toNumber() === 1;
 }
 
 async function _getCCTPV1DepositEventsSvm(
@@ -906,7 +757,7 @@ async function _getCCTPV1DepositEventsSvm(
         decodedMessage.messageHash,
         chainIsProd(sourceChainId)
       );
-      const alreadyProcessed = await _hasCCTPMessageBeenProcessedEvm(
+      const alreadyProcessed = await utils.hasCCTPMessageBeenProcessedEvm(
         decodedMessage.nonceHash,
         destinationMessageTransmitter
       );
@@ -914,8 +765,8 @@ async function _getCCTPV1DepositEventsSvm(
         ...decodedMessage,
         attestation: data.attestation,
         status: alreadyProcessed
-          ? ("finalized" as CCTPMessageStatus)
-          : _getPendingAttestationStatus(attestationStatusObject),
+          ? ("finalized" as utils.CCTPMessageStatus)
+          : utils.getPendingAttestationStatus(attestationStatusObject),
         log: undefined,
       };
     });
@@ -974,52 +825,6 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = f
 }
 
 /**
- * @notice The maximum amount of USDC that can be sent using a fast transfer.
- * @param isMainnet Toggles whether to call CCTP API on mainnet or sandbox environment.
- * @returns USDC amount in units of USDC.
- * @link https://developers.circle.com/api-reference/cctp/all/get-fast-burn-usdc-allowance
- */
-async function _getV2FastBurnAllowance(isMainnet: boolean): Promise<string> {
-  const httpResponse = await axios.get<CCTPV2APIGetFastBurnAllowanceResponse>(
-    `https://iris-api${isMainnet ? "" : "-sandbox"}.circle.com/v2/fastBurn/USDC/allowance`
-  );
-  return httpResponse.data.allowance.toString();
-}
-
-/**
- * Returns the minimum transfer fees required for a transfer to be relayed. When calling depositForBurn(), the maxFee
- * parameter must be greater than or equal to the minimum fee.
- * @param sourceChainId The source chain ID of the transfer.
- * @param destinationChainId The destination chain ID of the transfer.
- * @param isMainnet Toggles whether to call CCTP API on mainnet or sandbox environment.
- * @returns The standard and fast transfer fees for the given source and destination chains.
- * @link https://developers.circle.com/api-reference/cctp/all/get-burn-usdc-fees
- */
-async function _getV2MinTransferFees(
-  sourceChainId: number,
-  destinationChainId: number
-): Promise<{ standard: BigNumber; fast: BigNumber }> {
-  const isMainnet = chainIsProd(destinationChainId);
-  const sourceDomain = getCctpDomainForChainId(sourceChainId);
-  const destinationDomain = getCctpDomainForChainId(destinationChainId);
-  const endpoint = `https://iris-api${
-    isMainnet ? "" : "-sandbox"
-  }.circle.com/v2/burn/USDC/fees/${sourceDomain}/${destinationDomain}`;
-  const httpResponse = await axios.get<CCTPV2APIGetFeesResponse>(endpoint);
-  const standardFee = httpResponse.data.find((fee) => fee.finalityThreshold === CCTPV2_FINALITY_THRESHOLD_STANDARD);
-  assert(
-    isDefined(standardFee?.minimumFee),
-    `CCTPUtils#getTransferFees: Standard fee not found in API response: ${endpoint}`
-  );
-  const fastFee = httpResponse.data.find((fee) => fee.finalityThreshold === CCTPV2_FINALITY_THRESHOLD_FAST);
-  assert(isDefined(fastFee?.minimumFee), `CCTPUtils#getTransferFees: Fast fee not found in API response: ${endpoint}`);
-  return {
-    standard: BigNumber.from(standardFee.minimumFee),
-    fast: BigNumber.from(fastFee.minimumFee),
-  };
-}
-
-/**
  * Generates an attestation proof for a given message hash. This is required to finalize a CCTP message.
  * @param messageHash The message hash to generate an attestation proof for. This is generated by taking the keccak256 hash of the message bytes of the initial transaction log.
  * @param isMainnet Whether or not the attestation proof should be generated on mainnet. If this is false, the attestation proof will be generated on the sandbox environment.
@@ -1038,22 +843,6 @@ async function _fetchCctpV1Attestation(
   return attestationResponse;
 }
 
-// @todo: We can pass in a nonceHash here once we know how to recreate the nonceHash.
-// Returns both v1 and v2 attestations
-async function _fetchAttestationsForTxn(
-  sourceDomainId: number,
-  transactionHash: string,
-  isMainnet: boolean
-): Promise<CCTPV2APIGetAttestationResponse> {
-  const httpResponse = await axios.get<CCTPV2APIGetAttestationResponse>(
-    `https://iris-api${
-      isMainnet ? "" : "-sandbox"
-    }.circle.com/v2/messages/${sourceDomainId}?transactionHash=${transactionHash}`
-  );
-
-  return httpResponse.data;
-}
-
 async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<CCTPV1APIGetMessagesResponse> {
   const httpResponse = await axios.get<CCTPV1APIGetMessagesResponse>(
     `https://iris-api.circle.com/messages/${getCctpDomainForChainId(CHAIN_IDs.SOLANA)}/${transactionHash}`
@@ -1061,28 +850,3 @@ async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<C
   const attestationResponse = httpResponse.data;
   return attestationResponse;
 }
-
-// returns 0 for v1 `MessageSent` event, 1 for v2, -1 for other events
-const _getMessageSentVersion = (log: ethers.providers.Log): number => {
-  if (log.topics[0] !== CCTP_MESSAGE_SENT_TOPIC_HASH) {
-    return -1;
-  }
-  // v1 and v2 have the same topic hash, so we have to do a bit of decoding here to understand the version
-  const messageBytes = ethers.utils.defaultAbiCoder.decode(["bytes"], log.data)[0];
-  // Source: https://developers.circle.com/stablecoins/message-format
-  const version = parseInt(messageBytes.slice(2, 10), 16); // read version: first 4 bytes (skipping '0x')
-  return version;
-};
-
-// returns 0 for v1 `DepositForBurn` event, 1 for v2, -1 for other events
-const _getDepositForBurnVersion = (log: ethers.providers.Log): number => {
-  const topic = log.topics[0];
-  switch (topic) {
-    case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V1:
-      return 0;
-    case CCTP_DEPOSIT_FOR_BURN_TOPIC_HASH_V2:
-      return 1;
-    default:
-      return -1;
-  }
-};

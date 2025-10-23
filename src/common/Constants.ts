@@ -1063,7 +1063,3 @@ export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
     tradeType: "exactOutput",
   },
 };
-
-export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
-export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;
