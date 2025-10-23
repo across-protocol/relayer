@@ -67,7 +67,7 @@ class TestMonitor extends Monitor {
 }
 
 describe("Monitor", async function () {
-  const TEST_NETWORK_NAMES = ["Hardhat1", "HyperCore", "unknown", "HardhatNetwork", ALL_CHAINS_NAME];
+  const TEST_NETWORK_NAMES = ["Hardhat1", "Hardhat2", "unknown", "HardhatNetwork", ALL_CHAINS_NAME];
   let l1Token: Contract, l2Token: Contract, erc20_2: Contract;
   let hubPool: Contract, spokePool_1: Contract, spokePool_2: Contract;
   let dataworker: SignerWithAddress, depositor: SignerWithAddress, relayer: SignerWithAddress;
