@@ -264,11 +264,24 @@ export class CCTPService {
 
   private getRpcUrlForChain(chainId: number): string {
     const rpcUrlMap: { [chainId: number]: string } = {
+      // Production networks
       1: process.env.ETHEREUM_RPC_URL!,
       10: process.env.OPTIMISM_RPC_URL!,
       137: process.env.POLYGON_RPC_URL!,
       42161: process.env.ARBITRUM_RPC_URL!,
       8453: process.env.BASE_RPC_URL!,
+      130: process.env.ARBITRUM_NOVA_RPC_URL!,
+      59144: process.env.LINEA_RPC_URL!,
+      480: process.env.ZKSYNC_RPC_URL!,
+      999: process.env.POLYGON_ZKEVM_RPC_URL!,
+      // Test networks
+      11155111: process.env.SEPOLIA_RPC_URL!,
+      11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL!,
+      421614: process.env.ARBITRUM_SEPOLIA_RPC_URL!,
+      84532: process.env.BASE_SEPOLIA_RPC_URL!,
+      80002: process.env.POLYGON_AMOY_RPC_URL!,
+      1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
+      998: process.env.POLYGON_ZKEVM_SEPOLIA_RPC_URL!,
     };
 
     const rpcUrl = rpcUrlMap[chainId];
@@ -286,7 +299,6 @@ export class CCTPService {
           0: 1, // Ethereum Mainnet
           2: 10, // Optimism
           3: 42161, // Arbitrum
-          5: 34268394551451, // Solana
           6: 8453, // Base
           7: 137, // Polygon
           10: 130, // Arbitrum Nova
@@ -299,7 +311,6 @@ export class CCTPService {
           0: 11155111, // Sepolia
           2: 11155420, // Optimism Sepolia
           3: 421614, // Arbitrum Sepolia
-          5: 133268194659241, // Solana Devnet
           6: 84532, // Base Sepolia
           7: 80002, // Polygon Amoy
           10: 1301, // Arbitrum Nova Sepolia
