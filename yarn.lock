@@ -63,46 +63,14 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@^4.1.9":
-  version "4.1.9"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.9.tgz#2f8a6680e899d1b26b96dda599463ba3292977a5"
-  integrity sha512-R0DASCEhxW2MnhXxs7abrSavFJByaVlEjA5gO5e6i58EGJmZcxZbi0EIR2WH+WRniGIYFNlAZNbRxMN16bmKhQ==
-  dependencies:
-    "@across-protocol/constants" "^3.1.77"
-    "@coral-xyz/anchor" "^0.31.1"
-    "@defi-wonderland/smock" "^2.3.4"
-    "@eth-optimism/contracts" "^0.5.40"
-    "@ethersproject/abstract-provider" "5.7.0"
-    "@ethersproject/abstract-signer" "5.7.0"
-    "@ethersproject/bignumber" "5.7.0"
-    "@openzeppelin/contracts" "4.9.6"
-    "@openzeppelin/contracts-upgradeable" "4.9.6"
-    "@openzeppelin/foundry-upgrades" "^0.4.0"
-    "@scroll-tech/contracts" "^0.1.0"
-    "@solana-developers/helpers" "^2.4.0"
-    "@solana-program/address-lookup-table" "^0.7.0"
-    "@solana-program/token" "^0.5.1"
-    "@solana/kit" "^2.1.0"
-    "@solana/spl-token" "^0.4.6"
-    "@solana/web3.js" "1.98.2"
-    "@types/yargs" "^17.0.33"
-    "@uma/common" "^2.37.3"
-    "@uma/contracts-node" "^0.4.17"
-    "@uma/core" "^2.61.0"
-    axios "^1.7.4"
-    bs58 "^6.0.0"
-    prettier-plugin-rust "^0.1.9"
-    yargs "^17.7.2"
-    zksync-web3 "^0.14.3"
-
-"@across-protocol/sdk@4.3.75":
-  version "4.3.75"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.75.tgz#a51f1896ec4a96038df4877ef9d52a233a8f1a7e"
-  integrity sha512-y+HkFgxEjq/gNcWWam0aSPaG7xfXxYmW4SBbJrxaZhT78a9gcelBJtki1lZ5jYtaZjaSbiOh3sbA9Hk8bqjSlg==
+"@across-protocol/sdk@4.3.78":
+  version "4.3.78"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.78.tgz#15e1b0fa846dedf43761a5930157a50198ae69be"
+  integrity sha512-RW8ikhs46XKfG+Y+BqbsGkHILP00zOSh9luCuJ1VwgY0PLCCGsFGJseo4Q4nxy2IbAE86jfJ+TtUCCi+USWO9Q==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.82"
-    "@across-protocol/contracts" "^4.1.9"
+    "@across-protocol/contracts" "^4.1.11"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
