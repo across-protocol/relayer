@@ -1,3 +1,4 @@
+// eslint-disable-next-line node/no-extraneous-import -- express is a transitive dependency from @uma/serverless-orchestration
 import express, { Request, Response } from "express";
 import { CCTPService } from "./services/cctpService";
 import { winston } from "../utils";
@@ -19,6 +20,7 @@ try {
   logger.info({ at: "CCTPFinalizer#init", message: "Application initialized successfully" });
 } catch (error) {
   logger.error({ at: "CCTPFinalizer#init", message: "Failed to initialize application", error });
+  // eslint-disable-next-line no-process-exit -- Initialization failure is fatal, app cannot function
   process.exit(1);
 }
 

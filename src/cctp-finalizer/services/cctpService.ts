@@ -171,7 +171,11 @@ export class CCTPService {
     const destinationDomainId = Number(decodedCall.args.destinationDomain);
 
     // Map domain to chain ID
-    const destinationChainId = this.getCctpDestinationChainFromDomainWithFallback(destinationDomainId, true); // true for production networks
+    const destinationChainId = this.getCctpDestinationChainFromDomainWithFallback(
+      destinationDomainId,
+      true,
+      this.logger
+    ); // true for production networks
 
     return destinationChainId;
   }
@@ -291,7 +295,11 @@ export class CCTPService {
     return rpcUrl;
   }
 
-  private getCctpDestinationChainFromDomainWithFallback(domain: number, productionNetworks: boolean): number {
+  private getCctpDestinationChainFromDomainWithFallback(
+    domain: number,
+    productionNetworks: boolean,
+    logger: winston.Logger
+  ): number {
     // Fallback mapping for domain to chain ID
     const domainToChainId: Record<number, number> = productionNetworks
       ? {
@@ -320,15 +328,18 @@ export class CCTPService {
     try {
       return getCctpDestinationChainFromDomain(domain, productionNetworks);
     } catch (error) {
-      console.log(
+      logger.warn(
         `[CCTP Service] getCctpDestinationChainFromDomain failed for domain ${domain}, using fallback mapping`
       );
       if (domainToChainId[domain]) {
         const fallbackChainId = domainToChainId[domain];
-        console.log(`[CCTP Service] Using fallback mapping: domain ${domain} -> chain ${fallbackChainId}`);
+        logger.info({
+          at: "CCTPService#getCctpDestinationChainFromDomainWithFallback",
+          message: `Using fallback mapping: domain ${domain} -> chain ${fallbackChainId}`,
+        });
         return fallbackChainId;
       } else {
-        console.error(`[CCTP Service] No fallback mapping found for domain ${domain}`);
+        logger.error(`[CCTP Service] No fallback mapping found for domain ${domain}`);
         throw error; // Re-throw the original error if no fallback exists
       }
     }

@@ -12,11 +12,13 @@ const logger = winston.createLogger({
 
 process.on("uncaughtException", (error) => {
   logger.error({ at: "CCTPFinalizer#uncaughtException", message: "Uncaught Exception", error });
+  // eslint-disable-next-line no-process-exit -- Uncaught exceptions are fatal, must exit to prevent undefined state
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   logger.error({ at: "CCTPFinalizer#unhandledRejection", message: "Unhandled Rejection", reason, promise });
+  // eslint-disable-next-line no-process-exit -- Unhandled rejections are fatal, must exit to prevent undefined state
   process.exit(1);
 });
 
