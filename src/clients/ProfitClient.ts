@@ -178,7 +178,8 @@ export class ProfitClient {
     }
 
     const { decimals, addresses } = token;
-    const address = addresses[1]; // Mainnet tokens are always used for price lookups.
+    
+    const address = addresses[this.hubPoolClient.chainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
 
     return { symbol, address, decimals };
   }
