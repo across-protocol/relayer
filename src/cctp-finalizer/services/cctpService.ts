@@ -83,7 +83,7 @@ export class CCTPService {
             };
           }
 
-          destinationChainId = this.getDestinationChainId(burnTx);
+          destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
         }
       } else {
         this.logger.info({
@@ -129,7 +129,7 @@ export class CCTPService {
         }
 
         // Decode transaction to get destination domain
-        destinationChainId = this.getDestinationChainId(burnTx);
+        destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
       }
 
       // Check if already processed
@@ -158,7 +158,7 @@ export class CCTPService {
     }
   }
 
-  private getDestinationChainId(burnTx: ethers.providers.TransactionResponse): number {
+  private getDestinationChainId(burnTx: ethers.providers.TransactionResponse, sourceChainId: number): number {
     // Get the ABI (we'll use mainnet for the ABI)
     const { abi } = getCctpV2TokenMessenger(1);
     const tokenMessengerInterface = new ethers.utils.Interface(abi!);
@@ -171,11 +171,7 @@ export class CCTPService {
     const destinationDomainId = Number(decodedCall.args.destinationDomain);
 
     // Map domain to chain ID
-    const destinationChainId = this.getCctpDestinationChainFromDomainWithFallback(
-      destinationDomainId,
-      true,
-      this.logger
-    ); // true for production networks
+    const destinationChainId = getCctpDestinationChainFromDomain(destinationDomainId, chainIsProd(sourceChainId));
 
     return destinationChainId;
   }
@@ -293,55 +289,5 @@ export class CCTPService {
       throw new Error(`No RPC URL configured for chain ID ${chainId}`);
     }
     return rpcUrl;
-  }
-
-  private getCctpDestinationChainFromDomainWithFallback(
-    domain: number,
-    productionNetworks: boolean,
-    logger: winston.Logger
-  ): number {
-    // Fallback mapping for domain to chain ID
-    const domainToChainId: Record<number, number> = productionNetworks
-      ? {
-          // Production networks
-          0: 1, // Ethereum Mainnet
-          2: 10, // Optimism
-          3: 42161, // Arbitrum
-          6: 8453, // Base
-          7: 137, // Polygon
-          10: 130, // Arbitrum Nova
-          11: 59144, // Linea
-          14: 480, // ZkSync Era
-          19: 999, // Polygon zkEVM
-        }
-      : {
-          // Test networks
-          0: 11155111, // Sepolia
-          2: 11155420, // Optimism Sepolia
-          3: 421614, // Arbitrum Sepolia
-          6: 84532, // Base Sepolia
-          7: 80002, // Polygon Amoy
-          10: 1301, // Arbitrum Nova Sepolia
-          19: 998, // Polygon zkEVM Sepolia
-        };
-
-    try {
-      return getCctpDestinationChainFromDomain(domain, productionNetworks);
-    } catch (error) {
-      logger.warn(
-        `[CCTP Service] getCctpDestinationChainFromDomain failed for domain ${domain}, using fallback mapping`
-      );
-      if (domainToChainId[domain]) {
-        const fallbackChainId = domainToChainId[domain];
-        logger.info({
-          at: "CCTPService#getCctpDestinationChainFromDomainWithFallback",
-          message: `Using fallback mapping: domain ${domain} -> chain ${fallbackChainId}`,
-        });
-        return fallbackChainId;
-      } else {
-        logger.error(`[CCTP Service] No fallback mapping found for domain ${domain}`);
-        throw error; // Re-throw the original error if no fallback exists
-      }
-    }
   }
 }
