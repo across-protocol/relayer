@@ -64,7 +64,7 @@ type CCTPV2APIGetFeesResponse = { finalityThreshold: number; minimumFee: number 
 type CCTPV2APIGetFastBurnAllowanceResponse = { allowance: number };
 
 // CCTP V2 /messages/{sourceDomainId} response
-type CCTPV2APIAttestation = {
+export type CCTPV2APIAttestation = {
   status: string;
   attestation: string;
   message: string;
@@ -80,7 +80,7 @@ type CCTPV2APIAttestation = {
     };
   };
 };
-type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
+export type CCTPV2APIGetAttestationResponse = { messages: CCTPV2APIAttestation[] };
 
 /** ********************************************************************************************************************
  *
@@ -171,9 +171,11 @@ export function getCctpDestinationChainFromDomain(domain: number, productionNetw
   // determine whether to use the Test or Production networks.
   const networks = productionNetworks ? PRODUCTION_NETWORKS : TEST_NETWORKS;
   const otherNetworks = productionNetworks ? TEST_NETWORKS : PRODUCTION_NETWORKS;
-  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain);
+  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain.toString());
   if (!isDefined(chainId)) {
-    const chainId = Object.keys(otherNetworks).find((key) => otherNetworks[key].cctpDomain.toString() === domain);
+    const chainId = Object.keys(otherNetworks).find(
+      (key) => otherNetworks[key].cctpDomain.toString() === domain.toString()
+    );
     if (!isDefined(chainId)) {
       throw new Error(`No chainId found for domain: ${domain}`);
     }
@@ -1040,7 +1042,7 @@ async function _fetchCctpV1Attestation(
 
 // @todo: We can pass in a nonceHash here once we know how to recreate the nonceHash.
 // Returns both v1 and v2 attestations
-async function _fetchAttestationsForTxn(
+export async function _fetchAttestationsForTxn(
   sourceDomainId: number,
   transactionHash: string,
   isMainnet: boolean
