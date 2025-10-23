@@ -563,19 +563,18 @@ export class ProfitClient {
     lpFeePct: BigNumber,
     l1Token: EvmAddress,
     repaymentChainId: number
-  ): Promise<Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct">> {
+  ): Promise<
+    Pick<FillProfit, "profitable" | "nativeGasCost" | "gasPrice" | "tokenGasCost" | "netRelayerFeePct" | "totalFeePct">
+  > {
     let profitable = false;
     let netRelayerFeePct = bnZero;
     let nativeGasCost = uint256Max;
     let tokenGasCost = uint256Max;
     let gasPrice = uint256Max;
+    let totalFeePct = bnZero;
     try {
-      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice } = await this.getFillProfitability(
-        deposit,
-        lpFeePct,
-        l1Token,
-        repaymentChainId
-      ));
+      ({ profitable, netRelayerFeePct, nativeGasCost, tokenGasCost, gasPrice, totalFeePct } =
+        await this.getFillProfitability(deposit, lpFeePct, l1Token, repaymentChainId));
     } catch (err) {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
@@ -591,6 +590,7 @@ export class ProfitClient {
       tokenGasCost,
       gasPrice,
       netRelayerFeePct,
+      totalFeePct,
     };
   }
 
