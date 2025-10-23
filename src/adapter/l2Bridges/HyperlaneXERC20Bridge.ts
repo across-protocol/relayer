@@ -2,7 +2,6 @@ import {
   BigNumber,
   Contract,
   Signer,
-  Provider,
   EvmAddress,
   assert,
   isDefined,
@@ -28,14 +27,8 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
   private readonly originDomainId: number;
   private readonly destinationDomainId: number;
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const l2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     assert(l2Token.isEVM());
@@ -54,7 +47,7 @@ export class HyperlaneXERC20BridgeL2 extends BaseL2BridgeAdapter {
     );
 
     this.l2Bridge = new Contract(l2RouterAddressStr, HYPERLANE_ROUTER_ABI, l2Signer);
-    this.l1Bridge = new Contract(l1RouterAddressStr, HYPERLANE_ROUTER_ABI, l1Provider);
+    this.l1Bridge = new Contract(l1RouterAddressStr, HYPERLANE_ROUTER_ABI, l1Signer);
 
     this.originDomainId = PUBLIC_NETWORKS[l2chainId].hypDomainId;
     assert(

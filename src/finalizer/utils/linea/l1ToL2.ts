@@ -55,7 +55,9 @@ export async function lineaL1ToL2Finalizer(
   _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = Array.from(_senderAddresses.keys()).map((address) => address.toEvmAddress());
+  const senderAddresses = Array.from(_senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toEvmAddress());
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");

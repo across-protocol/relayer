@@ -1,7 +1,7 @@
 import assert from "assert";
 import { assert as ssAssert, enums } from "superstruct";
 import { CommonConfig, FINALIZER_TOKENBRIDGE_LOOKBACK, ProcessEnv } from "../common";
-import { Address, EvmAddress } from "../utils";
+import { Address, EvmAddress, SvmAddress, ethers } from "../utils";
 
 /**
  * The finalization type is used to determine the direction of the finalization.
@@ -12,6 +12,7 @@ export class FinalizerConfig extends CommonConfig {
   public readonly finalizationStrategy: FinalizationType;
   public readonly maxFinalizerLookback: number;
   public readonly userAddresses: Map<Address, string[]>;
+  public readonly chunkSize: number;
   public chainsToFinalize: number[];
 
   constructor(env: ProcessEnv) {
@@ -20,13 +21,18 @@ export class FinalizerConfig extends CommonConfig {
       FINALIZER_CHAINS = "[]",
       FINALIZER_WITHDRAWAL_TO_ADDRESSES = "[]",
       FINALIZATION_STRATEGY = "l1<->l2",
+      FINALIZER_CHUNK_SIZE = 3,
     } = env;
     super(env);
 
     const userAddresses: { [address: string]: string[] } = JSON.parse(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
     this.userAddresses = new Map();
     Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
-      this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
+      if (ethers.utils.isHexString(address)) {
+        this.userAddresses.set(EvmAddress.from(address), tokensToFinalize);
+      } else {
+        this.userAddresses.set(SvmAddress.from(address), tokensToFinalize);
+      }
     });
 
     this.chainsToFinalize = JSON.parse(FINALIZER_CHAINS);
@@ -37,6 +43,8 @@ export class FinalizerConfig extends CommonConfig {
       Number.isInteger(this.maxFinalizerLookback),
       `Invalid FINALIZER_MAX_TOKENBRIDGE_LOOKBACK: ${FINALIZER_MAX_TOKENBRIDGE_LOOKBACK}`
     );
+
+    this.chunkSize = Number(FINALIZER_CHUNK_SIZE);
 
     const _finalizationStrategy = FINALIZATION_STRATEGY.toLowerCase();
     ssAssert(_finalizationStrategy, enums(["l1->l2", "l2->l1", "l1<->l2", "any<->any"]));

@@ -20,22 +20,22 @@ import {
   mapAsync,
 } from "../../../utils";
 import { AttestedCCTPDeposit, getCCTPV1Deposits, getCctpReceiveMessageCallData } from "../../../utils/CCTPUtils";
-import { bridgeTokensToHubPool } from "./svm";
+import { bridgeTokensToHubPool } from "./svmUtils";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
-import { CCTPMessageStatus } from "../../../common";
+import { utils } from "@across-protocol/sdk";
 
 /**
- * Finalizes CCTP V1 token and message relays originating on an L2 and destined to Ethereum, where the L2 is indicated
- * by the input SpokePoolCLient.
+ * Finalizes CCTP V1 token and message relays originating on an SVM L2 and destined to Ethereum, where the L2 is indicated
+ * by the input SpokePoolCLient. Only works for SVM L2's since all EVM L2's use CCTP V2.
  * @param logger Logger instance.
  * @param _signer Signer instance.
  * @param hubPoolClient HubPool client instance.
- * @param spokePoolClient Origin SpokePool client instance.
+ * @param spokePoolClient Origin SpokePool client instance. Should be an SVM SpokePool client.
  * @param _l1SpokePoolClient Hub chain spoke pool client, unused
  * @param senderAddresses Sender addresses to finalize for.
  * @returns FinalizerPromise instance.
  */
-export async function cctpV1L2toL1Finalizer(
+export async function cctpV1SvmL2toL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
@@ -48,25 +48,20 @@ export async function cctpV1L2toL1Finalizer(
     to: spokePoolClient.latestHeightSearched,
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
-
-  const finalizingFromSolana = chainIsSvm(spokePoolClient.chainId);
+  assert(isSVMSpokePoolClient(spokePoolClient));
+  assert(chainIsSvm(spokePoolClient.chainId));
   const senderAddresses = Array.from(_senderAddresses.keys());
-  const augmentedSenderAddresses = finalizingFromSolana
-    ? await augmentSendersListForSolana(senderAddresses, spokePoolClient)
-    : senderAddresses;
+  const augmentedSenderAddresses = await augmentSendersListForSolana(senderAddresses, spokePoolClient);
 
   // Solana has a two step withdrawal process, where the funds in the spoke pool's transfer liability PDA must be manually withdrawn after
   // a refund leaf has been executed.
-  if (finalizingFromSolana) {
-    assert(isSVMSpokePoolClient(spokePoolClient));
-    const svmSigner = await getKitKeypairFromEvmSigner(signer);
-    const bridgeTokens = await bridgeTokensToHubPool(spokePoolClient, svmSigner, logger, hubPoolClient.chainId);
-    logger[isDefined(bridgeTokens.signature) ? "info" : "debug"]({
-      at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
-      message: bridgeTokens.message,
-      signature: bridgeTokens.signature,
-    });
-  }
+  const svmSigner = await getKitKeypairFromEvmSigner(signer);
+  const bridgeTokens = await bridgeTokensToHubPool(spokePoolClient, svmSigner, logger, hubPoolClient.chainId);
+  logger[isDefined(bridgeTokens.signature) ? "info" : "debug"]({
+    at: `Finalizer#CCTPV1L2ToL1Finalizer:${spokePoolClient.chainId}`,
+    message: bridgeTokens.message,
+    signature: bridgeTokens.signature,
+  });
   const outstandingDeposits = await getCCTPV1Deposits(
     augmentedSenderAddresses,
     spokePoolClient.chainId,
@@ -79,7 +74,7 @@ export async function cctpV1L2toL1Finalizer(
   );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
-    (message: { status: CCTPMessageStatus }) => message.status
+    (message: { status: utils.CCTPMessageStatus }) => message.status
   );
   const pending = outstandingDeposits
     .filter(({ status }) => status === "pending")
@@ -94,7 +89,7 @@ export async function cctpV1L2toL1Finalizer(
       };
     });
   logger.debug({
-    at: `Finalizer#CCTPL2ToL1Finalizer:${spokePoolClient.chainId}`,
+    at: `Finalizer#CCTPV1L2ToL1Finalizer:${spokePoolClient.chainId}`,
     message: `Detected ${unprocessedMessages.length} ready to finalize messages for CCTP ${spokePoolClient.chainId} to L1`,
     statusesGrouped,
     pending,

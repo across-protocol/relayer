@@ -37,7 +37,6 @@ import {
   Address,
   SvmAddress,
   toAddressType,
-  convertRelayDataParamsToBytes32,
   PriceClient,
   acrossApi,
   coingecko,
@@ -179,7 +178,8 @@ export class ProfitClient {
     }
 
     const { decimals, addresses } = token;
-    const address = addresses[1]; // Mainnet tokens are always used for price lookups.
+
+    const address = addresses[this.hubPoolClient.chainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
 
     return { symbol, address, decimals };
   }
@@ -239,10 +239,7 @@ export class ProfitClient {
     return price;
   }
 
-  private async _getTotalGasCost(
-    deposit: Omit<Deposit, "messageHash">,
-    relayer: Address
-  ): Promise<TransactionCostEstimate> {
+  private async _getTotalGasCost(deposit: Deposit, relayer: Address): Promise<TransactionCostEstimate> {
     try {
       return await this.relayerFeeQueries[deposit.destinationChainId].getGasCosts(deposit, relayer);
     } catch (err) {
@@ -266,7 +263,7 @@ export class ProfitClient {
         message: "Failed to simulate fill for deposit.",
         reason,
         cause,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         notificationPath: "across-warn",
       });
       return { nativeGasCost: uint256Max, tokenGasCost: uint256Max, gasPrice: uint256Max };
@@ -532,7 +529,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#getFillProfitability",
         message: `${symbol} deposit to ${destinationChainId} #${depositId.toString()} with repayment on ${repaymentChainId} is ${profitable}`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         inputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
         inputTokenAmountUsd: formatEther(fill.inputAmountUsd),
         outputTokenPriceUsd: formatEther(fill.inputTokenPriceUsd),
@@ -582,7 +579,7 @@ export class ProfitClient {
       this.logger.debug({
         at: "ProfitClient#isFillProfitable",
         message: `Unable to determine fill profitability (${err}).`,
-        deposit: convertRelayDataParamsToBytes32(deposit),
+        deposit: this.formatDepositForLog(deposit),
         lpFeePct,
       });
     }
@@ -606,7 +603,7 @@ export class ProfitClient {
     this.logger.debug({
       at: "ProfitClient",
       message: "Handling unprofitable fill",
-      deposit: convertRelayDataParamsToBytes32(deposit),
+      deposit: this.formatDepositForLog(deposit),
       lpFeePct,
       relayerFeePct,
       gasCost,
@@ -695,7 +692,13 @@ export class ProfitClient {
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => (this.tokenPrices[address] = toBNWei(price)));
+      const matic = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
+      tokenPrices.forEach(({ address, price }) => {
+        this.tokenPrices[address] = toBNWei(price);
+        if (this.tokenPrices[matic].eq(bnZero)) {
+          this.tokenPrices[matic] = toBNWei("0.10");
+        }
+      });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
       const errMsg = `Failed to update token prices (${err})`;
@@ -730,7 +733,7 @@ export class ProfitClient {
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
-      await sdkUtils.mapAsync(enabledChainIds, async (destinationChainId) => {
+      await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
         // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
         const destinationAddress = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
@@ -755,6 +758,7 @@ export class ProfitClient {
             destinationChainId
           ),
           message: EMPTY_MESSAGE,
+          messageHash: ZERO_BYTES,
           fromLiteChain: false,
           toLiteChain: false,
         };
@@ -833,5 +837,10 @@ export class ProfitClient {
       coingeckoProApiKey,
       this.logger
     );
+  }
+
+  private formatDepositForLog(deposit: Deposit): Omit<Deposit, "message" | "fromLiteChain" | "toLiteChain"> {
+    const { message, fromLiteChain, toLiteChain, ...strippedDeposit } = deposit;
+    return strippedDeposit;
   }
 }

@@ -1,4 +1,4 @@
-import { MultiCallerClient, SpokePoolClient } from "../clients";
+import { MultiCallerClient, SpokePoolClient, SpokePoolManager } from "../clients";
 import {
   AnyObject,
   BigNumber,
@@ -34,6 +34,9 @@ import {
   ZERO_BYTES,
   isEVMSpokePoolClient,
   EvmAddress,
+  chainIsEvm,
+  sendAndConfirmSolanaTransaction,
+  getSvmProvider,
 } from "../utils";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import {
@@ -57,10 +60,11 @@ export type SupportedTokenSymbol = string;
 export class BaseChainAdapter {
   protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "to">;
   protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "to">;
+  protected readonly spokePoolManager: SpokePoolManager;
   private transactionClient: TransactionClient;
 
   constructor(
-    protected readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
     protected readonly chainId: number,
     protected readonly hubChainId: number,
     protected readonly monitoredAddresses: Address[],
@@ -70,6 +74,7 @@ export class BaseChainAdapter {
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
+    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.baseL1SearchConfig = { ...this.getSearchConfig(this.hubChainId) };
     this.baseL2SearchConfig = { ...this.getSearchConfig(this.chainId) };
     this.transactionClient = new TransactionClient(logger);
@@ -85,19 +90,29 @@ export class BaseChainAdapter {
   }
 
   protected getSearchConfig(chainId: number): MakeOptional<EventSearchConfig, "to"> {
-    return { ...this.spokePoolClients[chainId].eventSearchConfig };
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    if (!spokePoolClient) {
+      throw new Error("spokePoolClient is undefined - cannot read eventSearchConfig");
+    }
+
+    return { ...spokePoolClient.eventSearchConfig };
   }
 
   protected getSigner(chainId: number): Signer {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
 
   // Note: this must be called after the SpokePoolClients are updated.
   public getUpdatedSearchConfigs(): { l1SearchConfig: EventSearchConfig; l2SearchConfig: EventSearchConfig } {
-    const l1LatestBlock = this.spokePoolClients[this.hubChainId].latestHeightSearched;
-    const l2LatestBlock = this.spokePoolClients[this.chainId].latestHeightSearched;
+    const l1SpokePoolClient = this.spokePoolManager.getClient(this.hubChainId);
+    const l2SpokePoolClient = this.spokePoolManager.getClient(this.chainId);
+    assert(isDefined(l1SpokePoolClient), `SpokePoolClient not found for chainId ${this.hubChainId}`);
+    assert(isDefined(l2SpokePoolClient), `SpokePoolClient not found for chainId ${this.chainId}`);
+    const l1LatestBlock = l1SpokePoolClient.latestHeightSearched;
+    const l2LatestBlock = l2SpokePoolClient.latestHeightSearched;
     if (l1LatestBlock === 0 || l2LatestBlock === 0) {
       throw new Error("One or more SpokePoolClients have not been updated");
     }
@@ -279,7 +294,7 @@ export class BaseChainAdapter {
     if (!this.isSupportedL2Bridge(l1Token)) {
       return [];
     }
-    let txnsToSend: AugmentedTransaction[];
+    let txnsToSend;
     try {
       txnsToSend = await this.l2Bridges[l1Token.toNative()].constructWithdrawToL1Txns(
         address,
@@ -305,10 +320,17 @@ export class BaseChainAdapter {
       );
       return [];
     }
-    const multicallerClient = new MultiCallerClient(this.logger);
-    txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
-    const txnReceipts = await multicallerClient.executeTxnQueues(simMode);
-    return txnReceipts[this.chainId];
+    if (chainIsEvm(this.chainId)) {
+      const multicallerClient = new MultiCallerClient(this.logger);
+      txnsToSend.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+      const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [this.chainId]);
+      return txnReceipts[this.chainId];
+    }
+    const txnSignatures = [];
+    for (const solanaTransaction of txnsToSend) {
+      txnSignatures.push(await sendAndConfirmSolanaTransaction(solanaTransaction, getSvmProvider()));
+    }
+    return txnSignatures;
   }
 
   async getL2PendingWithdrawalAmount(
