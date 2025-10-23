@@ -171,9 +171,11 @@ export function getCctpDestinationChainFromDomain(domain: number, productionNetw
   // determine whether to use the Test or Production networks.
   const networks = productionNetworks ? PRODUCTION_NETWORKS : TEST_NETWORKS;
   const otherNetworks = productionNetworks ? TEST_NETWORKS : PRODUCTION_NETWORKS;
-  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain);
+  const chainId = Object.keys(networks).find((key) => networks[key].cctpDomain.toString() === domain.toString());
   if (!isDefined(chainId)) {
-    const chainId = Object.keys(otherNetworks).find((key) => otherNetworks[key].cctpDomain.toString() === domain);
+    const chainId = Object.keys(otherNetworks).find(
+      (key) => otherNetworks[key].cctpDomain.toString() === domain.toString()
+    );
     if (!isDefined(chainId)) {
       throw new Error(`No chainId found for domain: ${domain}`);
     }
