@@ -46,8 +46,12 @@ export function castSpokePoolName(networkId: number): string {
       return "SvmSpoke";
     case CHAIN_IDs.SONEIUM:
       return "Cher_SpokePool";
-    case CHAIN_IDs.UNICHAIN || CHAIN_IDs.UNICHAIN_SEPOLIA:
-      return "DoctorWho_SpokePool";
+    case CHAIN_IDs.REDSTONE:
+    case CHAIN_IDs.UNICHAIN:
+    case CHAIN_IDs.ZORA:
+    case CHAIN_IDs.BASE:
+    case CHAIN_IDs.MODE:
+      return "OP_SpokePool";
     default:
       networkName = getNetworkName(networkId);
   }

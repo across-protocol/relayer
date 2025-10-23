@@ -3,12 +3,13 @@ import {
   BigNumber,
   Contract,
   EventSearchConfig,
-  Provider,
   Signer,
   EvmAddress,
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  SVMProvider,
+  SolanaTransaction,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
@@ -17,16 +18,25 @@ export abstract class BaseL2BridgeAdapter {
   protected l1Bridge: Contract;
   protected readonly hubPoolAddress: EvmAddress;
   protected readonly spokePoolAddress: Address;
+  // Whether either of these two are defined is determined at construction.
+  // The solana bridge defines `svmProvider` while the EVM bridges define `l2Signer`.
+  protected readonly l2Signer: Signer | undefined;
+  protected readonly svmProvider: SVMProvider | undefined;
 
   constructor(
     protected l2chainId: number,
     protected hubChainId: number,
-    protected l2Signer: Signer,
-    protected l1Provider: Provider | Signer,
+    protected l2SignerOrSvmProvider: Signer | SVMProvider,
+    protected l1Signer: Signer,
     protected l1Token: EvmAddress
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
     this.spokePoolAddress = getSpokePoolAddress(l2chainId);
+    if (l2SignerOrSvmProvider instanceof Signer) {
+      this.l2Signer = l2SignerOrSvmProvider satisfies Signer;
+    } else {
+      this.svmProvider = l2SignerOrSvmProvider satisfies SVMProvider;
+    }
   }
 
   abstract constructWithdrawToL1Txns(
@@ -35,7 +45,7 @@ export abstract class BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber,
     optionalParams?: TransferTokenParams
-  ): Promise<AugmentedTransaction[]>;
+  ): Promise<AugmentedTransaction[] | SolanaTransaction[]>;
 
   abstract getL2PendingWithdrawalAmount(
     l2EventSearchConfig: EventSearchConfig,

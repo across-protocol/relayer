@@ -15,7 +15,7 @@ export async function runRefiller(_logger: winston.Logger, baseSigner: Signer): 
   try {
     logger[startupLogLevel(config)]({ at: "Refiller#index", message: "Refiller started ⛽️", config });
     const start = Date.now();
-    await refiller.refillNativeTokenBalances();
+    await refiller.refillBalances();
 
     await clients.multiCallerClient.executeTxnQueues();
 
