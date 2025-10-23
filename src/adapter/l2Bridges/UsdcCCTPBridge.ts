@@ -17,14 +17,17 @@ import {
   getTokenInfo,
   getV2DepositForBurnMaxFee,
   getCctpV2TokenMessenger,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { TransferTokenParams } from "../utils";
 
+/**
+ * This adapter uses CCTP V2 to bridge USDC between L2's.
+ */
 export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
-  private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: EvmAddress;
 
