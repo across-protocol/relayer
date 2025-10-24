@@ -21,11 +21,12 @@ import {
   getSpokePool,
   getRedisCache,
   Logger,
+  Provider,
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
 import { postEvents, removeEvent } from "./util/ipc";
-import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
+import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
@@ -33,6 +34,7 @@ const PROGRAM = "RelayerSpokePoolListener";
 const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
 
 let providers: ReturnType<typeof resolveProviders>;
+let spokePool: Contract;
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
@@ -74,15 +76,22 @@ function resolveProviders(chainId: number, quorum = 1) {
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
- * @param eventNames The array of events to be queried.
+ * @param address A contract address to query.
+ * @param eventSignatures An array of event signatures to be queried.
+ * @param provider An Ethers provider instance.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
-  const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
+async function scrapeEvents(
+  address: string,
+  eventSignatures: string[],
+  provider: Provider,
+  opts: ScraperOpts
+): Promise<void> {
+  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
+
   const events = await Promise.all(
-    eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
+    eventSignatures.map((sig) => _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger))
   );
 
   if (!stop) {
@@ -171,15 +180,14 @@ async function run(argv: string[]): Promise<void> {
   const at = `${PROGRAM}::run`;
 
   const minimistOpts = {
-    string: ["lookback", "relayer", "spokepool"],
+    string: ["lookback", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainid: chainId } = args);
-  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
+  const { lookback, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
@@ -213,7 +221,7 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
-  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  spokePool = getSpokePool(chainId, spokePoolAddr);
   if (!isDefined(spokePoolAddr)) {
     ({ address: spokePoolAddr } = spokePool);
   }
@@ -223,7 +231,6 @@ async function run(argv: string[]): Promise<void> {
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
-    filterArgs: getEventFilterArgs(relayer),
     quorum,
   };
 
@@ -250,8 +257,11 @@ async function run(argv: string[]): Promise<void> {
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
+
     const _spokePool = spokePool.connect(quorumProvider);
-    await scrapeEvents(_spokePool, events, opts);
+    const { address, interface: abi, provider } = _spokePool;
+    const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
+    await scrapeEvents(address, signatures, provider, opts);
   }
 
   // Events to listen for.
