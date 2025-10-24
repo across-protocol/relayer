@@ -33,6 +33,7 @@ const PROGRAM = "RelayerSpokePoolListener";
 const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
 
 let providers: ReturnType<typeof resolveProviders>;
+let spokePool: Contract;
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
@@ -80,9 +81,14 @@ function resolveProviders(chainId: number, quorum = 1) {
  * @returns void
  */
 async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
-  const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
+  const { address, interface: abi, provider } = spokePool;
+  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
+
   const events = await Promise.all(
-    eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
+    eventNames.map((eventName) => {
+      const event = abi.getEvent(eventName).format(ethersUtils.FormatTypes.full);
+      return _scrapeEvents(provider, address, event, { ...opts, toBlock }, logger);
+    })
   );
 
   if (!stop) {
@@ -213,7 +219,7 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
-  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  spokePool = getSpokePool(chainId, spokePoolAddr);
   if (!isDefined(spokePoolAddr)) {
     ({ address: spokePoolAddr } = spokePool);
   }

@@ -1,23 +1,7 @@
 import assert from "assert";
-import { Contract, EventFilter } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, Profiler, winston } from "../../../utils";
+import { Contract, utils as ethersUtils } from "ethers";
+import { getNetworkName, isDefined, paginatedEventQuery, Profiler, Provider, winston } from "../../../utils";
 import { Log, ScraperOpts } from "../../types";
-
-/**
- * Given an event name and contract, return the corresponding Ethers EventFilter object.
- * @param contract Ethers Contract instance.
- * @param eventName The name of the event to be filtered.
- * @param filterArgs Optional filter arguments to be applied.
- * @returns An Ethers EventFilter instance.
- */
-export function getEventFilter(contract: Contract, eventName: string, filterArgs?: string[]): EventFilter {
-  const filter = contract.filters[eventName];
-  if (!isDefined(filter)) {
-    throw new Error(`Event ${eventName} not defined for contract`);
-  }
-
-  return isDefined(filterArgs) ? filter(...filterArgs) : filter();
-}
 
 /**
  * Get a general event filter mapping to be used for filtering SpokePool contract events.
@@ -36,14 +20,16 @@ export function getEventFilterArgs(relayer?: string): { [event: string]: (null |
 /**
  * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
  * parent process (if defined).
- * @param spokePool Ethers Contract instance.
- * @param eventName The name of the event to be filtered.
+ * @param provider Ethers RPC provider instance.
+ * @param address Contract address to filter on.
+ * @param event The event descriptor to filter for.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
 export async function scrapeEvents(
-  spokePool: Contract,
-  eventName: string,
+  provider: Provider,
+  address: string,
+  event: string,
   opts: ScraperOpts & { toBlock: number },
   logger?: winston.Logger
 ): Promise<Log[]> {
@@ -51,22 +37,27 @@ export async function scrapeEvents(
     logger,
     at: "scrapeEvents",
   });
-  const { lookback, deploymentBlock, filterArgs, maxBlockRange, toBlock } = opts;
-  const { chainId } = await spokePool.provider.getNetwork();
+  const { lookback, deploymentBlock, maxBlockRange, toBlock } = opts;
+  const { chainId } = await provider.getNetwork();
   const chain = getNetworkName(chainId);
 
   const fromBlock = Math.max(toBlock - (lookback ?? deploymentBlock), deploymentBlock);
   assert(toBlock > fromBlock, `${toBlock} > ${fromBlock}`);
   const searchConfig = { from: fromBlock, to: toBlock, maxLookBack: maxBlockRange };
 
+  const eventFrag = ethersUtils.Fragment.from(event);
+  assert(ethersUtils.EventFragment.isEventFragment(eventFrag), `Invalid event descriptor (${event})`);
+
+  const abi = new ethersUtils.Interface([event]);
+  const contract = new Contract(address, abi);
+  const [filter] = Object.values(contract.filters);
+
   const mark = profiler.start("paginatedEventQuery");
-  const filter = getEventFilter(spokePool, eventName, filterArgs[eventName]);
-  const events = await paginatedEventQuery(spokePool, filter, searchConfig);
+  const events = await paginatedEventQuery(contract.connect(provider), filter(), searchConfig);
   mark.stop({
-    message: `Scraped ${events.length} ${chain} ${eventName} events.`,
+    message: `Scraped ${events.length} ${chain} ${eventFrag.name} events.`,
     numEvents: events.length,
     chain,
-    eventName,
     searchConfig,
   });
 
