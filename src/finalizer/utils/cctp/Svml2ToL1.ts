@@ -22,7 +22,7 @@ import {
 import { AttestedCCTPDeposit, getCCTPV1Deposits, getCctpReceiveMessageCallData } from "../../../utils/CCTPUtils";
 import { bridgeTokensToHubPool } from "./svmUtils";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
-import { CCTPMessageStatus } from "../../../common";
+import { utils } from "@across-protocol/sdk";
 
 /**
  * Finalizes CCTP V1 token and message relays originating on an SVM L2 and destined to Ethereum, where the L2 is indicated
@@ -74,7 +74,7 @@ export async function cctpV1SvmL2toL1Finalizer(
   );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingDeposits,
-    (message: { status: CCTPMessageStatus }) => message.status
+    (message: { status: utils.CCTPMessageStatus }) => message.status
   );
   const pending = outstandingDeposits
     .filter(({ status }) => status === "pending")
