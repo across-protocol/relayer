@@ -3,11 +3,11 @@ import { HubPoolClient } from "../clients";
 import { PendingRootBundle, PoolRebalanceLeaf, RelayerRefundLeaf, SlowFillLeaf } from "../interfaces";
 import {
   BigNumber,
+  bnZero,
   MerkleTree,
   convertFromWei,
   formatFeePct,
   shortenHexString,
-  shortenHexStrings,
   toBN,
   winston,
   assert,
@@ -74,75 +74,83 @@ export function generateMarkdownForRootBundle(
 
   const convertTokenListFromWei = (chainId: number, tokenAddresses: Address[], weiVals: string[]) => {
     return tokenAddresses.map((token, index) => {
-      try {
-        const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
-        return convertFromWei(weiVals[index], decimals);
-      } catch (error) {
-        hubPoolClient.logger.debug({
-          at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenListFromWei",
-          message: `Error getting token info for address ${token} on chain ${chainId}`,
-          error,
-        });
-        return weiVals[index].toString();
-      }
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(token, chainId);
+      return convertFromWei(weiVals[index], decimals);
     });
   };
-  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) => {
-    try {
-      return hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
-    } catch (error) {
-      hubPoolClient.logger.debug({
-        at: "PoolRebalanceUtils#generateMarkdownForRootBundle#convertTokenAddressToSymbol",
-        message: `Error getting token info for address ${tokenAddress} on chain ${chainId}`,
-        error,
-      });
-      return "UNKNOWN TOKEN";
-    }
-  };
+
+  const convertTokenAddressToSymbol = (chainId: number, tokenAddress: Address) =>
+    hubPoolClient.getTokenInfoForAddress(tokenAddress, chainId).symbol;
+
   const convertL1TokenAddressesToSymbols = (l1Tokens: EvmAddress[]) => {
     return l1Tokens.map((l1Token) => {
       return convertTokenAddressToSymbol(hubPoolChainId, l1Token);
     });
   };
+
+  const tokenPad = 5;
+  const amountPad = 18;
+  const balancePad = 18;
+  const feePad = 18;
   let poolRebalanceLeavesPretty = "";
-  poolRebalanceLeaves.forEach((leaf, index) => {
-    // Shorten keys for ease of reading from Slack.
-    delete leaf.leafId;
-    leaf.groupId = leaf.groupIndex;
-    delete leaf.groupIndex;
-    leaf.bundleLpFees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
-    leaf.runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
-    leaf.netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
-    leaf.l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
-    poolRebalanceLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+  poolRebalanceLeaves.forEach((leaf, leafId) => {
+    const { chainId, groupIndex: groupId } = leaf;
+    const l1Tokens = convertL1TokenAddressesToSymbols(leaf.l1Tokens);
+    const fees = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.bundleLpFees);
+    const runningBalances = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.runningBalances);
+    const netSendAmounts = convertTokenListFromWei(hubPoolChainId, leaf.l1Tokens, leaf.netSendAmounts);
+
+    poolRebalanceLeavesPretty += "```";
+    poolRebalanceLeavesPretty += `${getNetworkName(chainId)} (${leafId}-${groupId}):\n`;
+    poolRebalanceLeavesPretty += `${"".padStart(tokenPad, " ")}`;
+    poolRebalanceLeavesPretty += `\t${"balance".padStart(balancePad)}`;
+    poolRebalanceLeavesPretty += `\t${"netSendAmount".padStart(amountPad, " ")}`;
+    poolRebalanceLeavesPretty += `\t${"fees".padStart(feePad, " ")}`;
+
+    l1Tokens.forEach((l1Token, idx) => {
+      const netSendAmount = netSendAmounts[idx];
+      const runningBalance = runningBalances[idx];
+      const fee = fees[idx];
+      poolRebalanceLeavesPretty += `\n${(l1Token + ":").padStart(tokenPad, " ")}`;
+      poolRebalanceLeavesPretty += `\t${runningBalance.padStart(balancePad, " ")}`;
+      poolRebalanceLeavesPretty += `\t${netSendAmount.padStart(amountPad, " ")}`;
+      poolRebalanceLeavesPretty += `\t${fee.padStart(feePad, " ")}`;
+      poolRebalanceLeavesPretty += "\n";
+    });
+    poolRebalanceLeavesPretty += "```\n";
   });
 
   let relayerRefundLeavesPretty = "";
-  relayerRefundLeaves.forEach((leaf, index) => {
-    // Shorten keys for ease of reading from Slack.
-    delete leaf.leafId;
-    try {
-      leaf.amountToReturn = convertFromWei(
-        leaf.amountToReturn,
-        hubPoolClient.getTokenInfoForAddress(leaf.l2TokenAddress, leaf.chainId).decimals
-      );
-    } catch (error) {
-      hubPoolClient.logger.debug({
-        at: "PoolRebalanceUtils#generateMarkdownForRootBundle",
-        message: `Error getting token info for address ${leaf.l2TokenAddress} on chain ${leaf.chainId}`,
-        error,
-      });
-      leaf.amountToReturn = leaf.amountToReturn.toString();
-    }
-    leaf.refundAmounts = convertTokenListFromWei(
-      leaf.chainId,
-      Array(leaf.refundAmounts.length).fill(leaf.l2TokenAddress),
+  relayerRefundLeaves.forEach((leaf) => {
+    const { chainId, l2TokenAddress } = leaf;
+    const l2Token = convertTokenAddressToSymbol(chainId, l2TokenAddress);
+    const refundAddresses = leaf.refundAddresses.map((addr) => shortenHexString(addr.toNative(), 14));
+    const refundAmounts = convertTokenListFromWei(
+      chainId,
+      Array(leaf.refundAmounts.length).fill(l2TokenAddress),
       leaf.refundAmounts
     );
-    leaf.l2Token = convertTokenAddressToSymbol(leaf.chainId, leaf.l2TokenAddress);
-    delete leaf.l2TokenAddress;
-    leaf.refundAddresses = shortenHexStrings(leaf.refundAddresses.map((refundAddress) => refundAddress.toBytes32()));
-    relayerRefundLeavesPretty += `\n\t\t\t${index}: ${JSON.stringify(leaf)}`;
+
+    relayerRefundLeavesPretty += "```\n";
+    relayerRefundLeavesPretty += `${getNetworkName(chainId)} ${l2Token}:`;
+    if (leaf.amountToReturn.gt(bnZero)) {
+      const { decimals } = hubPoolClient.getTokenInfoForAddress(l2TokenAddress, chainId);
+      const amountToReturn = convertFromWei(leaf.amountToReturn, decimals);
+      relayerRefundLeavesPretty += ` (return ${amountToReturn})`;
+    }
+    const nCols = 2;
+    const nRows = Math.ceil(refundAddresses.length / nCols);
+    for (let row = 0; row < nRows; ++row) {
+      relayerRefundLeavesPretty += "\n\t";
+      for (let col = 0; col < nCols; ++col) {
+        const idx = row + nRows * col;
+        if (idx >= refundAddresses.length) {
+          break;
+        }
+        relayerRefundLeavesPretty += `\t${refundAddresses[idx]}: ${refundAmounts[idx].padStart(14, " ")}`;
+      }
+    }
+    relayerRefundLeavesPretty += "```\n";
   });
 
   let slowRelayLeavesPretty = "";
@@ -167,8 +175,8 @@ export function generateMarkdownForRootBundle(
     // @todo: When v2 types are removed, update the slowFill definition to be more precise about the member fields.
     const slowFill = {
       // Shorten select keys for ease of reading from Slack.
-      depositor: shortenHexString(leaf.relayData.depositor.toBytes32()),
-      recipient: shortenHexString(leaf.relayData.recipient.toBytes32()),
+      depositor: shortenHexString(leaf.relayData.depositor.toNative()),
+      recipient: shortenHexString(leaf.relayData.recipient.toNative()),
       originChainId: leaf.relayData.originChainId.toString(),
       destinationChainId: destinationChainId.toString(),
       depositId: leaf.relayData.depositId.toString(),
@@ -187,13 +195,11 @@ export function generateMarkdownForRootBundle(
     : "No slow relay leaves";
   return (
     "\n" +
-    `\t*Bundle blocks*:${bundleBlockRangePretty}\n` +
-    "\t*PoolRebalance*:\n" +
-    `\t\troot:${shortenHexString(poolRebalanceRoot)}...\n` +
-    `\t\tleaves:${poolRebalanceLeavesPretty}\n` +
-    "\t*RelayerRefund*\n" +
-    `\t\troot:${shortenHexString(relayerRefundRoot)}...\n` +
-    `\t\tleaves:${relayerRefundLeavesPretty}\n` +
+    `\t*Bundle blocks*: ${bundleBlockRangePretty}\n` +
+    `\t*PoolRebalance*: ${shortenHexString(poolRebalanceRoot, 20)}...\n` +
+    `${poolRebalanceLeavesPretty}\n` +
+    `\t*RelayerRefund*: ${shortenHexString(relayerRefundRoot, 20)}\n` +
+    `\t\t${relayerRefundLeavesPretty}\n` +
     "\t*SlowRelay*\n" +
     `\t${slowRelayMsg}`
   );
