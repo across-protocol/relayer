@@ -21,6 +21,7 @@ import {
   getSpokePool,
   getRedisCache,
   Logger,
+  Provider,
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
@@ -75,20 +76,22 @@ function resolveProviders(chainId: number, quorum = 1) {
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
- * @param eventNames The array of events to be queried.
+ * @param address A contract address to query.
+ * @param eventSignatures An array of event signatures to be queried.
+ * @param provider An Ethers provider instance.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
-  const { address, interface: abi, provider } = spokePool;
+async function scrapeEvents(
+  address: string,
+  eventSignatures: string[],
+  provider: Provider,
+  opts: ScraperOpts
+): Promise<void> {
   const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
 
   const events = await Promise.all(
-    eventNames.map((eventName) => {
-      const event = abi.getEvent(eventName).format(ethersUtils.FormatTypes.full);
-      return _scrapeEvents(provider, address, event, { ...opts, toBlock }, logger);
-    })
+    eventSignatures.map((sig) => _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger))
   );
 
   if (!stop) {
@@ -254,8 +257,11 @@ async function run(argv: string[]): Promise<void> {
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
+
     const _spokePool = spokePool.connect(quorumProvider);
-    await scrapeEvents(_spokePool, events, opts);
+    const { address, interface: abi, provider } = _spokePool;
+    const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
+    await scrapeEvents(address, signatures, provider, opts);
   }
 
   // Events to listen for.
