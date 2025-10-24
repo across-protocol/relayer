@@ -56,8 +56,6 @@ export async function scrapeEvents(
   const events = await paginatedEventQuery(contract.connect(provider), filter(), searchConfig);
   mark.stop({
     message: `Scraped ${events.length} ${chain} ${eventFrag.name} events.`,
-    numEvents: events.length,
-    chain,
     searchConfig,
   });
 
