@@ -1,21 +1,7 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { getNetworkName, isDefined, paginatedEventQuery, Profiler, Provider, winston } from "../../../utils";
+import { getNetworkName, paginatedEventQuery, Profiler, Provider, winston } from "../../../utils";
 import { Log, ScraperOpts } from "../../types";
-
-/**
- * Get a general event filter mapping to be used for filtering SpokePool contract events.
- * This is currently only useful for filtering the relayer address on FilledRelay events.
- * @param relayer Optional relayer address to filter on.
- * @returns An argument array for input to an Ethers EventFilter.
- */
-export function getEventFilterArgs(relayer?: string): { [event: string]: (null | string)[] } {
-  const FilledRelay = !isDefined(relayer)
-    ? undefined
-    : [null, null, null, null, null, null, null, null, null, null, relayer];
-
-  return { FilledRelay };
-}
 
 /**
  * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the

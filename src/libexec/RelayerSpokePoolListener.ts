@@ -25,7 +25,7 @@ import {
 } from "../utils";
 import { ScraperOpts } from "./types";
 import { postEvents, removeEvent } from "./util/ipc";
-import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
+import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
@@ -177,15 +177,14 @@ async function run(argv: string[]): Promise<void> {
   const at = `${PROGRAM}::run`;
 
   const minimistOpts = {
-    string: ["lookback", "relayer", "spokepool"],
+    string: ["lookback", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainid: chainId } = args);
-  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
+  const { lookback, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
@@ -229,7 +228,6 @@ async function run(argv: string[]): Promise<void> {
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
-    filterArgs: getEventFilterArgs(relayer),
     quorum,
   };
 
