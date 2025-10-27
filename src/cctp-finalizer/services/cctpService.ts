@@ -2,23 +2,25 @@ import { ethers } from "ethers";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
 import {
   winston,
-  getProvider,
   getCctpDestinationChainFromDomain,
-  runTransaction,
-  getCctpV2MessageTransmitter,
   getCctpDomainForChainId,
   PUBLIC_NETWORKS,
   chainIsProd,
+  chainIsSvm,
   _fetchAttestationsForTxn,
   getCctpV2TokenMessenger,
 } from "../../utils";
+import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
+import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
 
 export class CCTPService {
   private privateKey: string;
+  private svmPrivateKey?: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
     this.privateKey = process.env.PRIVATE_KEY!;
+
     this.logger =
       logger ||
       winston.createLogger({
@@ -26,6 +28,14 @@ export class CCTPService {
         format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
         transports: [new winston.transports.Console()],
       });
+
+    if (process.env.SVM_PRIVATE_KEY) {
+      try {
+        this.svmPrivateKey = Uint8Array.from(JSON.parse(process.env.SVM_PRIVATE_KEY));
+      } catch (error) {
+        this.logger.warn({ at: "CCTPService#constructor", message: "Failed to parse SVM private key", error });
+      }
+    }
   }
 
   async processBurnTransaction(message: PubSubMessage): Promise<ProcessBurnTransactionResponse> {
@@ -73,7 +83,8 @@ export class CCTPService {
           destinationChainId = providedDestinationChainId;
         } else {
           // Need to fetch burn transaction to decode destination chain ID
-          const sourceProvider = await this.getProviderWithFallback(sourceChainId);
+          const rpcUrl = this.getRpcUrlForChain(sourceChainId);
+          const sourceProvider = getEvmProvider(rpcUrl);
           const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
 
           if (!burnTx) {
@@ -118,7 +129,8 @@ export class CCTPService {
         }
 
         // Get burn transaction details
-        const sourceProvider = await this.getProviderWithFallback(sourceChainId);
+        const rpcUrl = this.getRpcUrlForChain(sourceChainId);
+        const sourceProvider = getEvmProvider(rpcUrl);
         const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
 
         if (!burnTx) {
@@ -178,17 +190,23 @@ export class CCTPService {
 
   private async checkIfAlreadyProcessed(chainId: number, message: string): Promise<boolean> {
     try {
-      const provider = await this.getProviderWithFallback(chainId);
-      const { address, abi } = getCctpV2MessageTransmitter(chainId);
-      const contract = new ethers.Contract(address!, abi, provider);
+      if (chainIsSvm(chainId)) {
+        if (!this.svmPrivateKey) {
+          this.logger.warn({
+            at: "CCTPService#checkIfAlreadyProcessed",
+            message: "SVM private key not available, cannot check if message processed on Solana",
+          });
+          return false;
+        }
 
-      const messageBytes = ethers.utils.arrayify(message);
-      const nonceBytes = messageBytes.slice(12, 44);
-      const nonce = ethers.utils.hexlify(nonceBytes);
-
-      const usedNonce = await contract.usedNonces(nonce);
-      // usedNonces returns a BigNumber: 0 for false, 1 for true
-      return usedNonce.gt(0);
+        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const svmProvider = getSvmProvider(rpcUrl);
+        return await checkIfAlreadyProcessedSvm(message, this.svmPrivateKey, svmProvider, this.logger);
+      } else {
+        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const provider = getEvmProvider(rpcUrl);
+        return await checkIfAlreadyProcessedEvm(chainId, message, provider);
+      }
     } catch (error) {
       this.logger.warn({
         at: "CCTPService#checkIfAlreadyProcessed",
@@ -200,12 +218,6 @@ export class CCTPService {
   }
 
   private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
-    const provider = await this.getProviderWithFallback(chainId);
-    const signer = new ethers.Wallet(this.privateKey, provider);
-
-    const { address, abi } = getCctpV2MessageTransmitter(chainId);
-    const contract = new ethers.Contract(address!, abi, signer);
-
     const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
@@ -213,21 +225,30 @@ export class CCTPService {
     });
 
     try {
-      const mintTx = await runTransaction(this.logger, contract, "receiveMessage", [
-        attestation.message,
-        attestation.attestation,
-      ]);
+      if (chainIsSvm(chainId)) {
+        if (!this.svmPrivateKey) {
+          return {
+            success: false,
+            error: "SVM private key not configured for Solana CCTP finalization",
+          };
+        }
 
-      this.logger.info({
-        at: "CCTPService#processMint",
-        message: "Mint transaction confirmed",
-        txHash: mintTx.hash,
-      });
-
-      return {
-        success: true,
-        mintTxHash: mintTx.hash,
-      };
+        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const svmProvider = getSvmProvider(rpcUrl);
+        const result = await processMintSvm(attestation, this.svmPrivateKey, svmProvider, this.logger);
+        return {
+          success: true,
+          mintTxHash: result.txHash,
+        };
+      } else {
+        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const provider = getEvmProvider(rpcUrl);
+        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger);
+        return {
+          success: true,
+          mintTxHash: result.txHash,
+        };
+      }
     } catch (error) {
       this.logger.error({
         at: "CCTPService#processMint",
@@ -245,23 +266,6 @@ export class CCTPService {
     return ["complete", "done", "succeeded"].includes(status);
   }
 
-  private async getProviderWithFallback(chainId: number): Promise<ethers.providers.JsonRpcProvider> {
-    try {
-      return await getProvider(chainId, this.logger);
-    } catch (error) {
-      // Fallback to simple ethers provider if Redis is unavailable
-      this.logger.warn({
-        at: "CCTPService#getProviderWithFallback",
-        message: "Redis unavailable, using simple ethers provider",
-        chainId,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-
-      const rpcUrl = this.getRpcUrlForChain(chainId);
-      return new ethers.providers.JsonRpcProvider(rpcUrl);
-    }
-  }
-
   private getRpcUrlForChain(chainId: number): string {
     const rpcUrlMap: { [chainId: number]: string } = {
       // Production networks
@@ -274,6 +278,7 @@ export class CCTPService {
       59144: process.env.LINEA_RPC_URL!,
       480: process.env.ZKSYNC_RPC_URL!,
       999: process.env.POLYGON_ZKEVM_RPC_URL!,
+      34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,
       11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL!,
@@ -282,6 +287,7 @@ export class CCTPService {
       80002: process.env.POLYGON_AMOY_RPC_URL!,
       1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
       998: process.env.POLYGON_ZKEVM_SEPOLIA_RPC_URL!,
+      133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
     };
 
     const rpcUrl = rpcUrlMap[chainId];
