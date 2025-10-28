@@ -744,7 +744,6 @@ const resolveBridgeDelay = () => {
     [CHAIN_IDs.ZK_SYNC]: bridgeFamilies[ChainFamily.ZK_STACK],
   };
 
-
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS)
       .map(([_chainId, { family }]) => {
