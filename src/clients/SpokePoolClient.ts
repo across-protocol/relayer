@@ -12,19 +12,6 @@ export type IndexerOpts = {
   path?: string;
 };
 
-type SpokePoolEventRemoved = {
-  event: string;
-};
-
-type SpokePoolEventsAdded = {
-  blockNumber: number;
-  currentTime: number;
-  nEvents: number; // Number of events.
-  data: string;
-};
-
-export type SpokePoolClientMessage = SpokePoolEventsAdded | SpokePoolEventRemoved;
-
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
  * The SDK exports both the EVMSpokePoolClient and SVMSpokePoolClient types. They have different properties
