@@ -3,7 +3,6 @@ import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
 import { BaseError, Block, createPublicClient, http, Log as viemLog, webSocket } from "viem";
 import * as chains from "viem/chains";
-import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
@@ -21,22 +20,23 @@ import {
   getSpokePool,
   getRedisCache,
   Logger,
+  Provider,
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
 import { postEvents, removeEvent } from "./util/ipc";
-import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
+import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const PROGRAM = "RelayerSpokePoolListener";
-const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
+const abortController = new AbortController();
 
 let providers: ReturnType<typeof resolveProviders>;
+let spokePool: Contract;
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
-let stop = false;
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -74,18 +74,25 @@ function resolveProviders(chainId: number, quorum = 1) {
 
 /**
  * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
- * @param eventNames The array of events to be queried.
+ * @param address A contract address to query.
+ * @param eventSignatures An array of event signatures to be queried.
+ * @param provider An Ethers provider instance.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
-  const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
+async function scrapeEvents(
+  address: string,
+  eventSignatures: string[],
+  provider: Provider,
+  opts: ScraperOpts
+): Promise<void> {
+  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
+
   const events = await Promise.all(
-    eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
+    eventSignatures.map((sig) => _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger))
   );
 
-  if (!stop) {
+  if (!abortController.signal.aborted) {
     postEvents(toBlock, currentTime, events.flat());
   }
 }
@@ -108,7 +115,7 @@ function subNewHeads(eventMgr: EventManager): void {
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
     const events = eventMgr.tick();
     if (!postEvents(blockNumber, currentTime, events)) {
-      stop = true;
+      abortController.abort();
     }
   };
 
@@ -171,15 +178,14 @@ async function run(argv: string[]): Promise<void> {
   const at = `${PROGRAM}::run`;
 
   const minimistOpts = {
-    string: ["lookback", "relayer", "spokepool"],
+    string: ["lookback", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainid: chainId } = args);
-  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
+  const { lookback, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
@@ -213,7 +219,7 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
-  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  spokePool = getSpokePool(chainId, spokePoolAddr);
   if (!isDefined(spokePoolAddr)) {
     ({ address: spokePoolAddr } = spokePool);
   }
@@ -223,7 +229,6 @@ async function run(argv: string[]): Promise<void> {
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
-    filterArgs: getEventFilterArgs(relayer),
     quorum,
   };
 
@@ -231,12 +236,12 @@ async function run(argv: string[]): Promise<void> {
 
   process.on("SIGHUP", () => {
     logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    stop = true;
+    abortController.abort();
   });
 
   process.on("disconnect", () => {
     logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    stop = true;
+    abortController.abort();
   });
 
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and deduplication.
@@ -250,8 +255,11 @@ async function run(argv: string[]): Promise<void> {
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
+
     const _spokePool = spokePool.connect(quorumProvider);
-    await scrapeEvents(_spokePool, events, opts);
+    const { address, interface: abi, provider } = _spokePool;
+    const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
+    await scrapeEvents(address, signatures, provider, opts);
   }
 
   // Events to listen for.
@@ -264,9 +272,7 @@ async function run(argv: string[]): Promise<void> {
   subNewHeads(eventMgr);
   subEvents(eventMgr, spokePool, events);
 
-  do {
-    await sdkUtils.delay(INDEXER_POLLING_PERIOD);
-  } while (!stop);
+  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
 }
 
 if (require.main === module) {
