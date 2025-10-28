@@ -46,6 +46,7 @@ import {
   polygonFinalizer,
   scrollFinalizer,
   zkSyncFinalizer,
+  oftRetryFinalizer,
 } from "./utils";
 import { FinalizerConfig } from "./config";
 
@@ -124,6 +125,11 @@ function generateChainConfig(): void {
     // Autoconfigure CCTP finalisation. SVM is currently limited to v1.
     if (cctpDomain !== CCTP_NO_DOMAIN && family !== ChainFamily.SVM) {
       config.finalizeOnAny.push(cctpV2Finalizer);
+    }
+
+    // Also include OFT retry finalization logic for all EVM networks.
+    if (chainIsEvm(chainId)) {
+      config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
 }
