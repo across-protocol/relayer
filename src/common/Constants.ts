@@ -730,27 +730,31 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 };
 
 // Expected worst-case time for message from L1 to propagate to L2 in seconds
-export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
-  [CHAIN_IDs.ARBITRUM]: 20 * 60,
-  [CHAIN_IDs.BASE]: 20 * 60,
-  [CHAIN_IDs.BLAST]: 20 * 60,
-  [CHAIN_IDs.UNICHAIN]: 20 * 60,
-  [CHAIN_IDs.INK]: 20 * 60,
-  [CHAIN_IDs.LENS]: 60 * 60,
-  [CHAIN_IDs.LINEA]: 60 * 60,
-  [CHAIN_IDs.LISK]: 20 * 60,
-  [CHAIN_IDs.MODE]: 20 * 60,
-  [CHAIN_IDs.OPTIMISM]: 20 * 60,
-  [CHAIN_IDs.PLASMA]: 60 * 60,
-  [CHAIN_IDs.POLYGON]: 60 * 60,
-  [CHAIN_IDs.REDSTONE]: 20 * 60,
-  [CHAIN_IDs.SCROLL]: 60 * 60,
-  [CHAIN_IDs.SOLANA]: 60 * 30,
-  [CHAIN_IDs.SONEIUM]: 20 * 60,
-  [CHAIN_IDs.WORLD_CHAIN]: 20 * 60,
-  [CHAIN_IDs.ZK_SYNC]: 60 * 60,
-  [CHAIN_IDs.ZORA]: 20 * 60,
+const resolveBridgeDelay = () => {
+  const defaultBridgeDelay = 60 * 60;
+
+  const bridgeFamilies = {
+    [ChainFamily.OP_STACK]: 20 * 60,
+    [ChainFamily.ORBIT]: 40 * 60,
+    [ChainFamily.ZK_STACK]: 60 * 60,
+  };
+
+  const bridges = {
+    [CHAIN_IDs.ARBITRUM]: bridgeFamilies[ChainFamily.ORBIT],
+    [CHAIN_IDs.ZK_SYNC]: bridgeFamilies[ChainFamily.ZK_STACK],
+  };
+
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS)
+      .map(([_chainId, { family }]) => {
+        const chainId = Number(_chainId);
+        const bridgeDelay = bridges[chainId] ?? bridgeFamilies[family] ?? defaultBridgeDelay;
+        return [chainId, bridgeDelay];
+      })
+  );
 };
+export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
   [CHAIN_IDs.BASE]: {
