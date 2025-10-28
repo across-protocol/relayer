@@ -1,13 +1,12 @@
 import { ethers } from "ethers";
+import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
 import {
   winston,
   getCctpDestinationChainFromDomain,
-  getCctpDomainForChainId,
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
-  _fetchAttestationsForTxn,
   getCctpV2TokenMessenger,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
@@ -102,24 +101,19 @@ export class CCTPService {
           message: "Fetching attestation from API",
         });
 
-        // Get source chain CCTP domain
-        const sourceCctpDomain = getCctpDomainForChainId(sourceChainId);
-
         // Fetch attestation
-        const attestationResponse = await _fetchAttestationsForTxn(
-          sourceCctpDomain,
-          burnTransactionHash,
-          chainIsProd(sourceChainId)
-        );
+        const attestationResponse = await utils.fetchCctpV2Attestations([burnTransactionHash], sourceChainId);
 
-        if (!attestationResponse.messages?.length) {
+        const attestations = attestationResponse[burnTransactionHash];
+
+        if (!attestations?.messages?.length) {
           return {
             success: false,
             error: "No attestation found for the burn transaction",
           };
         }
 
-        attestation = attestationResponse.messages[0];
+        attestation = attestations.messages[0];
 
         if (!this.isAttestationReady(attestation.status!)) {
           return {

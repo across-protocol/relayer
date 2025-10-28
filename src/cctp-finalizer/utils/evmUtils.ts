@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
-import { winston, runTransaction, getCctpV2MessageTransmitter, _hasCCTPMessageBeenProcessedEvm } from "../../utils";
+import { utils } from "@across-protocol/sdk";
+import { winston, runTransaction, getCctpV2MessageTransmitter } from "../../utils";
 
 /**
  * Gets EVM provider from RPC URL
@@ -23,7 +24,7 @@ export async function checkIfAlreadyProcessedEvm(
   const nonceBytes = messageBytes.slice(12, 44);
   const nonce = ethers.utils.hexlify(nonceBytes);
 
-  return await _hasCCTPMessageBeenProcessedEvm(nonce, contract);
+  return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
 }
 
 /**
