@@ -745,12 +745,11 @@ const resolveBridgeDelay = () => {
   };
 
   return Object.fromEntries(
-    Object.entries(PUBLIC_NETWORKS)
-      .map(([_chainId, { family }]) => {
-        const chainId = Number(_chainId);
-        const bridgeDelay = bridges[chainId] ?? bridgeFamilies[family] ?? defaultBridgeDelay;
-        return [chainId, bridgeDelay];
-      })
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const bridgeDelay = bridges[chainId] ?? bridgeFamilies[family] ?? defaultBridgeDelay;
+      return [chainId, bridgeDelay];
+    })
   );
 };
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
