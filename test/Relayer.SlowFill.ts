@@ -194,8 +194,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], weth, 10);
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_1.address), await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_2.address), await l1Token.symbol());
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
@@ -241,7 +241,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spyLogIncludes(
         spy,
         -10,
-        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1337 would also not be profitable."
+        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1342 would also not be profitable."
       )
     ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;

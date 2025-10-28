@@ -36,6 +36,8 @@ export function castSpokePoolName(networkId: number): string {
     case CHAIN_IDs.ARBITRUM:
       return "Arbitrum_SpokePool";
     case CHAIN_IDs.BSC:
+    case CHAIN_IDs.HYPEREVM:
+    case CHAIN_IDs.PLASMA:
       return "Universal_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";
@@ -44,8 +46,12 @@ export function castSpokePoolName(networkId: number): string {
       return "SvmSpoke";
     case CHAIN_IDs.SONEIUM:
       return "Cher_SpokePool";
-    case CHAIN_IDs.UNICHAIN || CHAIN_IDs.UNICHAIN_SEPOLIA:
-      return "DoctorWho_SpokePool";
+    case CHAIN_IDs.REDSTONE:
+    case CHAIN_IDs.UNICHAIN:
+    case CHAIN_IDs.ZORA:
+    case CHAIN_IDs.BASE:
+    case CHAIN_IDs.MODE:
+      return "OP_SpokePool";
     default:
       networkName = getNetworkName(networkId);
   }

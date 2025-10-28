@@ -1,14 +1,76 @@
-import Binance, { HttpMethod, type Binance as BinanceApi } from "binance-api-node";
+import Binance, {
+  HttpMethod,
+  DepositHistoryResponse,
+  WithdrawHistoryResponse,
+  type Binance as BinanceApi,
+} from "binance-api-node";
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
+
+// Known transient errors the Binance API returns. If a response is one of these errors, then the API call should be retried.
+const KNOWN_BINANCE_ERROR_REASONS = [
+  "Timestamp for this request is outside of the recvWindow",
+  "Too many requests; current request has limited",
+  "TypeError: fetch failed",
+];
 
 type WithdrawalQuota = {
   wdQuota: number;
   usedWdQuota: number;
 };
+
+// Alias for Binance network symbols.
+export const BINANCE_NETWORKS: { [chainId: number]: string } = {
+  [CHAIN_IDs.ARBITRUM]: "ARBITRUM",
+  [CHAIN_IDs.BASE]: "BASE",
+  [CHAIN_IDs.BSC]: "BSC",
+  [CHAIN_IDs.MAINNET]: "ETH",
+  [CHAIN_IDs.OPTIMISM]: "OPTIMISM",
+  [CHAIN_IDs.ZK_SYNC]: "ZKSYNCERA",
+};
+
+// A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
+// token.
+type Coin = {
+  symbol: string;
+  balance: string;
+  networkList: Network[];
+};
+
+// Network represents basic information corresponding to a Binance supported deposit/withdrawal network. It is always associated with a coin.
+type Network = {
+  name: string;
+  coin: string;
+  withdrawMin: string;
+  withdrawMax: string;
+  contractAddress: string;
+};
+
+// A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
+type BinanceDeposit = {
+  // The amount of `coin` transferred in this interaction.
+  amount: number;
+  // The coin used in this interaction (i.e. the token symbol).
+  coin: string;
+  // The network on which this interaction took place.
+  network: string;
+  // The transaction hash of the deposit.
+  txId: string;
+  // The status of the deposit/withdrawal.
+  status?: number;
+};
+
+// A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
+type BinanceWithdrawal = BinanceDeposit & {
+  // The recipient of `coin` on the destination network.
+  recipient: string;
+};
+
+// ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
+type ParsedAccountCoins = Coin[];
 
 /**
  * Returns an API client to interface with Binance
@@ -66,4 +128,97 @@ export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promis
     wdQuota: unparsedQuota["wdQuota"],
     usedWdQuota: unparsedQuota["usedWdQuota"],
   };
+}
+
+/**
+ * Gets all binance deposits for the Binance account starting from `startTime`-present.
+ * @returns An array of parsed binance deposits.
+ */
+export async function getBinanceDeposits(
+  binanceApi: BinanceApi,
+  startTime: number,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<BinanceDeposit[]> {
+  let depositHistory: DepositHistoryResponse;
+  try {
+    depositHistory = await binanceApi.depositHistory({ startTime });
+  } catch (_err) {
+    const err = _err.toString();
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+      const delaySeconds = 2 ** nRetries + Math.random();
+      await delay(delaySeconds);
+      return getBinanceDeposits(binanceApi, startTime, ++nRetries, maxRetries);
+    }
+    throw err;
+  }
+  return Object.values(depositHistory).map((deposit) => {
+    return {
+      amount: Number(deposit.amount),
+      coin: deposit.coin,
+      network: deposit.network,
+      txId: deposit.txId,
+      status: deposit.status,
+    } satisfies BinanceDeposit;
+  });
+}
+
+/**
+ * Gets all Binance withdrawals of a specific coin starting from `startTime`-present.
+ * @returns An array of parsed binance withdrawals.
+ */
+export async function getBinanceWithdrawals(
+  binanceApi: BinanceApi,
+  coin: string,
+  startTime: number,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<BinanceWithdrawal[]> {
+  let withdrawHistory: WithdrawHistoryResponse;
+  try {
+    withdrawHistory = await binanceApi.withdrawHistory({ coin, startTime });
+  } catch (_err) {
+    const err = _err.toString();
+    if (KNOWN_BINANCE_ERROR_REASONS.some((errorReason) => err.includes(errorReason)) && nRetries < maxRetries) {
+      const delaySeconds = 2 ** nRetries + Math.random();
+      await delay(delaySeconds);
+      return getBinanceWithdrawals(binanceApi, coin, startTime, ++nRetries, maxRetries);
+    }
+    throw err;
+  }
+  return Object.values(withdrawHistory).map((withdrawal) => {
+    return {
+      amount: Number(withdrawal.amount),
+      recipient: withdrawal.address,
+      coin,
+      txId: withdrawal.txId,
+      network: withdrawal.network,
+      status: withdrawal.status,
+    } satisfies BinanceWithdrawal;
+  });
+}
+
+/**
+ * The call to accountCoins returns an opaque `unknown` object with extraneous information. This function
+ * parses the unknown into a readable object to be used by the finalizers.
+ * @returns A typed `AccountCoins` response.
+ */
+export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
+  const coins = Object.values(await binanceApi["accountCoins"]());
+  return coins.map((coin) => {
+    const networkList = coin["networkList"]?.map((network) => {
+      return {
+        name: network["network"],
+        coin: network["coin"],
+        withdrawMin: network["withdrawMin"],
+        withdrawMax: network["withdrawMax"],
+        contractAddress: network["contractAddress"],
+      } as Network;
+    });
+    return {
+      symbol: coin["coin"],
+      balance: coin["free"],
+      networkList,
+    } as Coin;
+  });
 }

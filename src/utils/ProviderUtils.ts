@@ -3,7 +3,7 @@ import { providers as sdkProviders } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import winston from "winston";
 import { CHAIN_CACHE_FOLLOW_DISTANCE, DEFAULT_NO_TTL_DISTANCE } from "../common";
-import { delay, getOriginFromURL, Logger, SVMProvider } from "./";
+import { delay, getNetworkName, getOriginFromURL, Logger, SVMProvider } from "./";
 import { getRedisCache } from "./RedisUtils";
 import { isDefined } from "./TypeGuards";
 import * as viem from "viem";
@@ -174,6 +174,7 @@ export async function getProvider(
 
   // Custom delay + logging for RPC rate-limiting.
   let rateLimitLogCounter = 0;
+  const chain = getNetworkName(chainId);
   const rpcRateLimited =
     ({ nodeMaxConcurrency, logger }) =>
     async (attempt: number, url: string): Promise<boolean> => {
@@ -185,7 +186,7 @@ export async function getProvider(
       if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
-          message: `Got rate-limit (429) response on attempt ${attempt}.`,
+          message: `Got rate-limit (429) response on ${chain} attempt ${attempt}.`,
           rpc: getOriginFromURL(url),
           retryAfter: `${delayMs} ms`,
           workers: nodeMaxConcurrency,

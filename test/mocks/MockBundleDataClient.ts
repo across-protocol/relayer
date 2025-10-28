@@ -8,14 +8,6 @@ export class MockBundleDataClient extends BundleDataClient {
   private nextBundleRefunds: CombinedRefunds = {};
   private matchingFillEvents: Record<string, FillWithBlock> = {};
 
-  async getPendingRefundsFromValidBundles(): Promise<CombinedRefunds[]> {
-    return [this.pendingBundleRefunds];
-  }
-
-  async getNextBundleRefunds(): Promise<CombinedRefunds[]> {
-    return [this.nextBundleRefunds];
-  }
-
   setReturnedPendingBundleRefunds(refunds: CombinedRefunds): void {
     this.pendingBundleRefunds = refunds;
   }

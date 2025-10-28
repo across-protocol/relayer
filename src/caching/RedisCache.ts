@@ -15,9 +15,8 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
   private redisClient: RedisClient | undefined;
 
   /**
-   * The constructor takes in the redisUrl and an optional logger.
-   * @param redisUrl The URL of the redis server to connect to.
-   * @param logger The logger to use to log debug messages.
+   * The constructor takes in the redisClient.
+   * @param redisClient The redis client to use for caching.
    */
   constructor(redisClient: RedisClient) {
     this.redisClient = redisClient;
@@ -26,6 +25,10 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
   public async get<T>(key: string): Promise<T | undefined> {
     // Get the value from redis.
     return this.redisClient.get(key) as T;
+  }
+
+  public async ttl(key: string): Promise<number | undefined> {
+    return this.redisClient.ttl(key);
   }
 
   public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {

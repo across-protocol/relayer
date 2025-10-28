@@ -94,14 +94,15 @@ export class MockAdapterManager extends AdapterManager {
     }
   }
 
-  getTotalPendingWithdrawalAmount(
+  async getTotalPendingWithdrawalAmount(
     lookbackPeriodSeconds: number,
     chainsToEvaluate: number[]
   ): Promise<{ [chainId: number]: BigNumber }> {
+    const pendingL2WithdrawalAmount = await this.getL2PendingWithdrawalAmount(lookbackPeriodSeconds);
     return Promise.resolve(
       Object.fromEntries(
         chainsToEvaluate.map((chainId) => {
-          return [chainId, bnZero];
+          return [chainId, pendingL2WithdrawalAmount];
         })
       )
     );

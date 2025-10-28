@@ -1,5 +1,5 @@
 import * as utils from "@across-protocol/contracts/dist/test-utils";
-import { SpyTransport, bigNumberFormatter } from "@uma/logger";
+import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
@@ -50,7 +50,7 @@ export {
   lastSpyLogLevel,
   spyLogIncludes,
   spyLogLevel,
-} from "@uma/logger";
+} from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
 export const {
   ethers,
@@ -482,7 +482,7 @@ export function buildV3SlowRelayLeaves(deposits: Deposit[], lpFeePct: BigNumber)
 }
 
 // We use the offset input to bypass the bundleClient's cache key, which is the bundle block range. So, to make sure
-// that the client requeries fresh blockchain state, we need to slightly offset the block range to produce a different
+// that the client re-queries fresh blockchain state, we need to slightly offset the block range to produce a different
 // cache key.
 export function getDefaultBlockRange(toBlockOffset: number): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[1] + toBlockOffset]);
@@ -490,18 +490,6 @@ export function getDefaultBlockRange(toBlockOffset: number): number[][] {
 
 export function getDisabledBlockRanges(): number[][] {
   return DEFAULT_BLOCK_RANGE_FOR_CHAIN.map((range) => [range[0], range[0]]);
-}
-
-export function createRefunds(
-  outputToken: string,
-  refundAmount: BigNumber,
-  repaymentToken: string
-): { [repaymentToken: string]: { [outputToken: string]: BigNumber } } {
-  return {
-    [toBytes32(repaymentToken)]: {
-      [toBytes32(outputToken)]: refundAmount,
-    },
-  };
 }
 
 // A helper function to parse key - value map into a Fill object

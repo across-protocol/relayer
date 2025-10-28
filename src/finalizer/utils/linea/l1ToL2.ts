@@ -15,9 +15,8 @@ import {
   assert,
   isEVMSpokePoolClient,
   EvmAddress,
-  Address,
 } from "../../../utils";
-import { CrossChainMessage, FinalizerPromise } from "../../types";
+import { CrossChainMessage, FinalizerPromise, AddressesToFinalize } from "../../types";
 import {
   determineMessageType,
   findMessageFromTokenBridge,
@@ -53,10 +52,12 @@ export async function lineaL1ToL2Finalizer(
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
-  _senderAddresses: Address[]
+  _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(l1SpokePoolClient) && isEVMSpokePoolClient(l2SpokePoolClient));
-  const senderAddresses = _senderAddresses.map((address) => address.toEvmAddress());
+  const senderAddresses = Array.from(_senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toEvmAddress());
   const [l1ChainId] = [hubPoolClient.chainId, hubPoolClient.hubPool.address];
   if (l1ChainId !== CHAIN_IDs.MAINNET) {
     throw new Error("Finalizations for Linea testnet is not supported.");

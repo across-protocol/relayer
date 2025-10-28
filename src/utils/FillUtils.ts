@@ -1,6 +1,7 @@
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { CHAIN_IDs, EMPTY_MESSAGE } from "../utils";
+import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -81,10 +82,23 @@ export function depositForcesOriginChainRepayment(
  * be filled or ignored given current inventory allocation levels.
  */
 export function repaymentChainCanBeQuicklyRebalanced(
-  deposit: Pick<DepositWithBlock, "originChainId">,
+  repaymentChainId: number,
+  repaymentToken: Address,
   hubPoolClient: HubPoolClient
 ): boolean {
-  return [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(deposit.originChainId);
+  const originChainIsCctpEnabled =
+    sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
+  const originChainIsOFTEnabled =
+    sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative());
+  return (
+    originChainIsCctpEnabled ||
+    originChainIsOFTEnabled ||
+    // We assume that all repayments sent to Mainnet and BSC can be quickly rebalanced to a different chain using
+    // canonical bridges out of L1 or the Binance API respectively.
+    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(repaymentChainId)
+  );
 }
 
 export function getAllUnfilledDeposits(

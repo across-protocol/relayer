@@ -1,45 +1,5 @@
 pragma solidity ^0.8.0;
 
-contract CctpTokenMessenger {
-    event DepositForBurn(
-        uint64 indexed nonce,
-        address indexed burnToken,
-        uint256 amount,
-        address indexed depositor,
-        bytes32 mintRecipient,
-        uint32 destinationDomain,
-        bytes32 destinationTokenMessenger,
-        bytes32 destinationCaller
-    );
-    event MintAndWithdraw(address indexed mintRecipient, uint256 amount, address indexed mintToken);
-
-    function emitDepositForBurn(
-        uint64 nonce,
-        address burnToken,
-        uint256 amount,
-        address depositor,
-        bytes32 mintRecipient,
-        uint32 destinationDomain,
-        bytes32 destinationTokenMessenger,
-        bytes32 destinationCaller
-    ) external {
-        emit DepositForBurn(
-            nonce,
-            burnToken,
-            amount,
-            depositor,
-            mintRecipient,
-            destinationDomain,
-            destinationTokenMessenger,
-            destinationCaller
-        );
-    }
-
-    function emitMintAndWithdraw(address mintRecipient, uint256 amount, address mintToken) external {
-        emit MintAndWithdraw(mintRecipient, amount, mintToken);
-    }
-}
-
 contract CctpV2TokenMessenger {
     event DepositForBurn(
         address indexed burnToken,
@@ -53,7 +13,12 @@ contract CctpV2TokenMessenger {
         uint32 indexed minFinalityThreshold,
         bytes hookData
     );
-    event MintAndWithdraw(address indexed mintRecipient, uint256 amount, address indexed mintToken);
+    event MintAndWithdraw(
+        address indexed mintRecipient,
+        uint256 amount,
+        address indexed mintToken,
+        uint256 feeCollected
+    );
 
     function emitDepositForBurn(
         address burnToken,
@@ -78,8 +43,13 @@ contract CctpV2TokenMessenger {
         );
     }
 
-    function emitMintAndWithdraw(address mintRecipient, uint256 amount, address mintToken) external {
-        emit MintAndWithdraw(mintRecipient, amount, mintToken);
+    function emitMintAndWithdraw(
+        address mintRecipient,
+        uint256 amount,
+        address mintToken,
+        uint256 feeCollected
+    ) external {
+        emit MintAndWithdraw(mintRecipient, amount, mintToken, feeCollected);
     }
 }
 
