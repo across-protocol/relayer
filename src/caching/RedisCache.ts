@@ -1,9 +1,9 @@
 import { interfaces, constants } from "@across-protocol/sdk";
-import { isDefined, RedisClient } from "../utils";
+import { isDefined } from "../utils";
 import { createClient } from "redis4";
 import winston from "winston";
 
-export type _RedisClient = ReturnType<typeof createClient>;
+export type RedisClient = ReturnType<typeof createClient>;
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -13,7 +13,7 @@ export type _RedisClient = ReturnType<typeof createClient>;
  */
 export class RedisCache implements interfaces.CachingMechanismInterface {
   constructor(
-    private readonly client: _RedisClient,
+    private readonly client: RedisClient,
     private readonly namespace?: string,
     private readonly logger?: winston.Logger
   ) {
@@ -68,10 +68,10 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     return 1;
   }
 
-  async duplicate(): Promise<RedisClient> {
+  async duplicate(): Promise<RedisCache> {
     const newClient = this.client.duplicate();
     await newClient.connect();
-    return new RedisClient(newClient, this.namespace, this.logger);
+    return new RedisCache(newClient, this.namespace, this.logger);
   }
 
   async disconnect(): Promise<void> {
@@ -85,7 +85,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
  * @param client The redis client to disconnect from.
  * @param logger An optional logger to use to log the disconnect.
  */
-export async function disconnectRedisClient(client: _RedisClient, logger?: winston.Logger): Promise<void> {
+export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
   let disconnectSuccessful = true;
   try {
     await client.disconnect();

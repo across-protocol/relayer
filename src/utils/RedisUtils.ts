@@ -4,7 +4,7 @@ import { createClient } from "redis4";
 import winston from "winston";
 import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
-import { disconnectRedisClient, RedisCache } from "../caching/RedisCache";
+import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk";
 import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
@@ -12,8 +12,6 @@ dotenv.config();
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
   ? String(process.env.GLOBAL_CACHE_NAMESPACE)
   : undefined;
-
-export type _RedisClient = ReturnType<typeof createClient>;
 
 // Avoid caching calls that are recent enough to be affected by things like reorgs.
 // Current time must be >= 15 minutes past the event timestamp for it to be stable enough to cache.
@@ -24,9 +22,9 @@ export const REDIS_URL = process.env.REDIS_URL || REDIS_URL_DEFAULT;
 // Make the redis client for a particular url essentially a singleton.
 const redisClients: { [url: string]: RedisCache } = {};
 
-export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisClient | undefined> {
+async function _getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<RedisCache | undefined> {
   if (!redisClients[url]) {
-    let redisClient: _RedisClient | undefined = undefined;
+    let redisClient: RedisClient | undefined = undefined;
     const reconnectStrategy = (retries: number): number | Error => {
       // Set a maximum retry limit to prevent infinite reconnection attempts
       const MAX_RETRIES = 10;
@@ -84,10 +82,7 @@ export async function getRedisCache(
     return undefined;
   }
 
-  const client = await getRedis(logger, url);
-  if (client) {
-    return new RedisCache(client);
-  }
+  return await _getRedis(logger, url);
 }
 
 export async function getRedisPubSub(
@@ -99,7 +94,7 @@ export async function getRedisPubSub(
     return undefined;
   }
 
-  const client = await getRedis(logger, url);
+  const client = await _getRedis(logger, url);
   if (client) {
     // since getRedis returns the same client instance for the same url,
     // we need to duplicate it before creating a new RedisPubSub instance
@@ -132,7 +127,7 @@ export async function setDeposit(
 }
 
 export async function getDeposit(key: string, redisClient: RedisCache): Promise<Deposit | undefined> {
-  const depositRaw = await redisClient.get(key);
+  const depositRaw = await redisClient.get<string>(key);
   if (depositRaw) {
     return JSON.parse(depositRaw, objectWithBigNumberReviver);
   }
