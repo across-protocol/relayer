@@ -14,18 +14,18 @@ import {
 } from "../utils";
 
 export class Disputer {
-  private bondToken: Contract;
-  private provider: Provider;
-  private txnClient: TransactionClient;
-  private bondMultiplier: { min: number; target: number };
-  private chain: string;
+  protected bondToken: Contract;
+  protected provider: Provider;
+  protected txnClient: TransactionClient;
+  protected bondMultiplier: { min: number; target: number };
+  protected chain: string;
 
   constructor(
-    private readonly chainId: number,
-    private readonly logger: winston.Logger,
-    private readonly hubPool: Contract,
-    private readonly signer: Signer,
-    private readonly simulate = true
+    protected readonly chainId: number,
+    protected readonly logger: winston.Logger,
+    protected readonly hubPool: Contract,
+    protected readonly signer: Signer,
+    protected readonly simulate = true
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
@@ -42,7 +42,7 @@ export class Disputer {
     // - bondAmount
     // - native balance
     const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
-    this.bondToken = WETH9.connect(bondToken, this.provider);
+    this.bondToken = WETH9.connect(bondToken, this.signer);
 
     const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
 
@@ -63,28 +63,28 @@ export class Disputer {
     // Ensure allowances are in place.
     const allowance = await this.allowance();
     const minAllowance = bondAmount.mul(this.bondMultiplier.target);
-    if (allowance.lt(minAllowance) && !this.simulate) {
+    if (allowance.lt(minAllowance)) {
       await this.approve();
     }
   }
 
-  private async balance(): Promise<BigNumber> {
+  protected async balance(): Promise<BigNumber> {
     const disputer = await this.signer.getAddress();
     return this.bondToken.balanceOf(disputer);
   }
 
-  private async allowance(): Promise<BigNumber> {
+  protected async allowance(): Promise<BigNumber> {
     const signer = await this.signer.getAddress();
     return this.bondToken.allowance(signer, this.hubPool.address);
   }
 
-  private async approve(amount = bnUint256Max): Promise<void> {
+  protected async approve(amount = bnUint256Max): Promise<void> {
     const { chainId, bondToken, hubPool } = this;
     const txn = {
       chainId,
       contract: bondToken,
       method: "approve",
-      args: [hubPool.toNative(), amount],
+      args: [hubPool.address, amount],
       message: "Approved HubPool to spend bondToken.",
       amount,
       unpermissioned: false,
@@ -95,7 +95,7 @@ export class Disputer {
     await this.submit(txn);
   }
 
-  private async mintBond(amount: BigNumber): Promise<void> {
+  protected async mintBond(amount: BigNumber): Promise<void> {
     const { chainId, bondToken } = this;
     const txn = {
       chainId,
@@ -117,7 +117,7 @@ export class Disputer {
     const txn = {
       chainId,
       contract: hubPool,
-      method: "dispute1",
+      method: "dispute",
       args: [],
       message: "Disputed HubPool root bundle proposal.",
       unpermissioned: false,
@@ -128,7 +128,7 @@ export class Disputer {
     return this.submit(txn);
   }
 
-  private async submit(txn: AugmentedTransaction, maxTries = 3): Promise<TransactionReceipt | undefined> {
+  protected async submit(txn: AugmentedTransaction, maxTries = 3): Promise<TransactionReceipt | undefined> {
     const { txnClient, chainId } = this;
 
     if (this.simulate) {
@@ -137,7 +137,7 @@ export class Disputer {
     }
 
     let txnReceipt: TransactionReceipt;
-    let error: unknown;
+    let cause: unknown;
     let tries = 0;
 
     do {
@@ -146,10 +146,10 @@ export class Disputer {
         txnReceipt = await txnResponse.wait();
         return txnReceipt;
       } catch (err: unknown) {
-        error = err;
+        cause = err;
       }
     } while (!isDefined(txnReceipt) && ++tries < maxTries);
 
-    throw new Error(`Unable to submit transaction on ${this.chain}`, { cause: error });
+    throw new Error(`Unable to submit transaction on ${this.chain}`, { cause });
   }
 }
