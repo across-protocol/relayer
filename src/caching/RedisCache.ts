@@ -18,7 +18,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface, interfa
     private readonly logger?: winston.Logger
   ) {
     this.logger?.debug({
-      at: "RedisClient#constructor",
+      at: "RedisCache#constructor",
       message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
     });
   }
@@ -51,7 +51,7 @@ export class RedisCache implements interfaces.CachingMechanismInterface, interfa
     } else {
       if (expirySeconds <= 0) {
         this.logger?.warn({
-          at: "RedisClient#setRedisKey",
+          at: "RedisCache#set",
           message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
         });
       }
@@ -93,7 +93,7 @@ export async function disconnectRedisClient(client: RedisClient, logger?: winsto
   }
   const url = client.options.url ?? "unknown";
   logger?.debug({
-    at: "RedisClient#disconnect",
+    at: "RedisCache#disconnect",
     message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
   });
 }

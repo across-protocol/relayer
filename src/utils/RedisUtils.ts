@@ -5,7 +5,6 @@ import winston from "winston";
 import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
-import { constants } from "@across-protocol/sdk";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -101,15 +100,6 @@ export async function getRedisPubSub(
   }
 }
 
-export async function setRedisKey(
-  key: string,
-  val: string,
-  redisClient: RedisCache,
-  expirySeconds = constants.DEFAULT_CACHING_TTL
-): Promise<void> {
-  await redisClient.set(key, val, expirySeconds);
-}
-
 export function getRedisDepositKey(depositOrFill: Deposit | Fill): string {
   return `deposit_${depositOrFill.originChainId}_${depositOrFill.depositId.toString()}`;
 }
@@ -121,7 +111,7 @@ export async function setDeposit(
   expirySeconds = 0
 ): Promise<void> {
   if (shouldCache(deposit.quoteTimestamp, currentChainTime)) {
-    await setRedisKey(getRedisDepositKey(deposit), JSON.stringify(deposit), redisClient, expirySeconds);
+    await redisClient.set(getRedisDepositKey(deposit), JSON.stringify(deposit), expirySeconds);
   }
 }
 
