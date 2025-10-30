@@ -1,5 +1,9 @@
 import { interfaces, constants } from "@across-protocol/sdk";
-import { RedisClient, setRedisKey } from "../utils";
+import { isDefined } from "../utils";
+import { createClient } from "redis4";
+import winston from "winston";
+
+export type RedisClient = ReturnType<typeof createClient>;
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -7,42 +11,89 @@ import { RedisClient, setRedisKey } from "../utils";
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
-export class RedisCache implements interfaces.CachingMechanismInterface {
-  /**
-   * The redisClient is the redis client that is used to communicate with the redis server.
-   * It is instantiated lazily when the `instantiate` method is called.
-   */
-  private redisClient: RedisClient | undefined;
-
-  /**
-   * The constructor takes in the redisClient.
-   * @param redisClient The redis client to use for caching.
-   */
-  constructor(redisClient: RedisClient) {
-    this.redisClient = redisClient;
+export class RedisCache implements interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
+  constructor(
+    private readonly client: RedisClient,
+    private readonly namespace?: string,
+    private readonly logger?: winston.Logger
+  ) {
+    this.logger?.debug({
+      at: "RedisCache#constructor",
+      message: isDefined(namespace) ? `Created redis client with namespace ${namespace}` : "Created redis client.",
+    });
   }
 
-  public async get<T>(key: string): Promise<T | undefined> {
-    // Get the value from redis.
-    return this.redisClient.get(key) as T;
+  private getNamespacedKey(key: string): string {
+    return isDefined(this.namespace) ? `${this.namespace}:${key}` : key;
   }
 
-  public async ttl(key: string): Promise<number | undefined> {
-    return this.redisClient.ttl(key);
+  get url(): string {
+    return this.client.options.url;
   }
 
-  public async set<T>(key: string, value: T, ttl: number = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
-    // Call the setRedisKey function to set the value in redis.
-    await setRedisKey(key, String(value), this.redisClient, ttl);
-    // Return key to indicate that the value was set successfully.
-    return key;
+  async get<T>(key: string): Promise<T | undefined> {
+    return this.client.get(this.getNamespacedKey(key)) as T;
   }
 
-  public async pub(channel: string, message: string): Promise<number> {
-    return await this.redisClient.pub(channel, message);
+  async ttl(key: string): Promise<number | undefined> {
+    return this.client.ttl(this.getNamespacedKey(key));
   }
 
-  public async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
-    return await this.redisClient.sub(channel, listener);
+  async set<T>(key: string, val: T, expirySeconds = constants.DEFAULT_CACHING_TTL): Promise<string | undefined> {
+    // Apply namespace to key.
+    key = this.getNamespacedKey(key);
+    if (expirySeconds === Number.POSITIVE_INFINITY) {
+      // No TTL
+      return await this.client.set(key, String(val));
+    } else if (expirySeconds > 0) {
+      // EX: Expire key after expirySeconds.
+      return await this.client.set(key, String(val), { EX: expirySeconds });
+    } else {
+      if (expirySeconds <= 0) {
+        this.logger?.warn({
+          at: "RedisCache#set",
+          message: `Tried to set key ${key} with expirySeconds = ${expirySeconds}. This shouldn't be allowed.`,
+        });
+      }
+      return await this.client.set(key, String(val));
+    }
   }
+
+  pub(channel: string, message: string): Promise<number> {
+    return this.client.publish(channel, message);
+  }
+
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
+    await this.client.subscribe(channel, listener);
+  }
+
+  async duplicate(): Promise<RedisCache> {
+    const newClient = this.client.duplicate();
+    await newClient.connect();
+    return new RedisCache(newClient, this.namespace, this.logger);
+  }
+
+  async disconnect(): Promise<void> {
+    await disconnectRedisClient(this.client, this.logger);
+  }
+}
+
+/**
+ * An internal function to disconnect from a redis client. This function is designed to NOT throw an error if the
+ * disconnect fails.
+ * @param client The redis client to disconnect from.
+ * @param logger An optional logger to use to log the disconnect.
+ */
+export async function disconnectRedisClient(client: RedisClient, logger?: winston.Logger): Promise<void> {
+  let disconnectSuccessful = true;
+  try {
+    await client.disconnect();
+  } catch (_e) {
+    disconnectSuccessful = false;
+  }
+  const url = client.options.url ?? "unknown";
+  logger?.debug({
+    at: "RedisCache#disconnect",
+    message: `Disconnected from redis server at ${url} successfully? ${disconnectSuccessful}`,
+  });
 }
