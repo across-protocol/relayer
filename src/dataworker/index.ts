@@ -29,7 +29,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { CachingMechanismInterface, PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
+import { PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
 import { Disputer } from "./Disputer";
 
 config();
