@@ -401,7 +401,7 @@ export function generateValidationKey(
     "proposer" | "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp"
   >
 ): string {
-  const fields = ["proposer", "poolRebalanceRoot", "relayerRefundRoot", "slowRelayRoot"];
+  const fields = ["proposer", "poolRebalanceRoot", "relayerRefundRoot", "slowRelayRoot", "challengePeriodEndTimestamp"];
   return "across-validations-" + fields.map((field) => proposal[field.toString()]).join("-");
 }
 
