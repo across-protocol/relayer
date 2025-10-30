@@ -63,10 +63,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.80":
-  version "4.3.80"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.80.tgz#d2c43574be4734c14e3eab9dd66b53acd3359bfc"
-  integrity sha512-ofSE9VAk4ZA4kM86Iqrh4KocTOJ8BlhfRZABfGL7Gc80TjSO2Ht2tImN79kF93Ip9cV+prmJRgTMUZTXS6m2DQ==
+"@across-protocol/sdk@4.3.81":
+  version "4.3.81"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.81.tgz#74b88ff7e36fc0052010acfc3215bfbb1a00378a"
+  integrity sha512-kDVGxTTM68es7v1fCkZ/LwVH+ydM8cktpZXyRSjQkh/vKg30cJqQ93y4jAnnIG2zSHXRgmQe1srq/N2yUVncPg==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.83"
@@ -476,6 +476,15 @@
   integrity sha512-hrlQOIi7hAfzsMqlGSFyVucrx38O+j6wiGOf//H2ecvIEqYN4ADBSS2iLMh5UFyDunCNniUIPk/q3riFv45xRA==
   dependencies:
     colorspace "1.1.x"
+    enabled "2.0.x"
+    kuler "^2.0.0"
+
+"@dabh/diagnostics@^2.0.8":
+  version "2.0.8"
+  resolved "https://registry.yarnpkg.com/@dabh/diagnostics/-/diagnostics-2.0.8.tgz#ead97e72ca312cf0e6dd7af0d300b58993a31a5e"
+  integrity sha512-R4MSXTVnuMzGD7bzHdW2ZhhdPC/igELENcq5IjEverBvq5hn1SXCWcsi6eSsdWP0/Ur+SItRRjAktmdoX/8R/Q==
+  dependencies:
+    "@so-ric/colorspace" "^1.1.6"
     enabled "2.0.x"
     kuler "^2.0.0"
 
@@ -2531,6 +2540,39 @@
     path-browserify "^1.0.0"
     url "^0.11.0"
 
+"@risk-labs/logger@^1.3.7":
+  version "1.3.7"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.7.tgz#2dc38e73aee8d009283d581fbde438f33fb2f118"
+  integrity sha512-fQMKaP/6hcUe9ocEBcA0LLraKO+RO3giJ1RSXfeOcCllFIHWavJeMEmCAej1EurSFeqr1BsucCm2tqRizMhjGg==
+  dependencies:
+    "@google-cloud/logging-winston" "^4.1.1"
+    "@google-cloud/trace-agent" "^5.1.6"
+    "@pagerduty/pdjs" "^2.2.4"
+    axios "^1.12.2"
+    discord.js "^14.11.0"
+    dotenv "^9.0.0"
+    minimist "^1.2.0"
+    node-pagerduty "^1.2.0"
+    redis "^4.6.13"
+    superstruct "^2.0.2"
+    winston "^3.17.0"
+    winston-transport "^4.9.0"
+
+"@risk-labs/serverless-orchestration@^1.0.5":
+  version "1.0.5"
+  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.0.5.tgz#2da3601ef1d1418a54160036bbc655d45603744d"
+  integrity sha512-Y75JStykqhPupKDzfWWt5cJI7ksADcCTYJY1N+amXxT2X419NvE9TZVrUyHCUN+07MpQ2GW+rD2tilDJqfRJRA==
+  dependencies:
+    "@awaitjs/express" "^0.3.0"
+    "@google-cloud/datastore" "^7.0.0"
+    "@google-cloud/storage" "^6.4.2"
+    "@risk-labs/logger" "^1.3.7"
+    express "^4.17.1"
+    fetch-retry "^5.0.3"
+    google-auth-library "^8.5.1"
+    node-fetch "^2.3.0"
+    viem "^2.37.2"
+
 "@safe-global/protocol-kit@^6.1.1":
   version "6.1.1"
   resolved "https://registry.yarnpkg.com/@safe-global/protocol-kit/-/protocol-kit-6.1.1.tgz#f9c262f7b9fbafa0f58e2e9185b3e4cb28d43e26"
@@ -2793,6 +2835,14 @@
   version "0.7.1"
   resolved "https://registry.yarnpkg.com/@sinonjs/text-encoding/-/text-encoding-0.7.1.tgz#8da5c6530915653f3a1f38fd5f101d8c3f8079c5"
   integrity sha512-+iTbntw2IZPb/anVDbypzfQa+ay64MW0Zo8aJ8gZPWMMK6/OubMVb6lUPMagqjOPnmtauXnFCACVl3O7ogjeqQ==
+
+"@so-ric/colorspace@^1.1.6":
+  version "1.1.6"
+  resolved "https://registry.yarnpkg.com/@so-ric/colorspace/-/colorspace-1.1.6.tgz#62515d8b9f27746b76950a83bde1af812d91923b"
+  integrity sha512-/KiKkpHNOBgkFJwu9sh48LkHSMYGyuTcSFK/qMBdnOAlrRJzRSXAOFB5qwzaVQuDl8wAvHVMkaASQDReTahxuw==
+  dependencies:
+    color "^5.0.2"
+    text-hex "1.0.x"
 
 "@solana-developers/helpers@^2.4.0":
   version "2.8.1"
@@ -4215,25 +4265,6 @@
     "@uniswap/v3-core" "^1.0.0-rc.2"
     "@uniswap/v3-periphery" "^1.0.0-beta.23"
 
-"@uma/logger@^1.3.3":
-  version "1.3.3"
-  resolved "https://registry.yarnpkg.com/@uma/logger/-/logger-1.3.3.tgz#93a6139629fdb92001dfcc4b2ab651f8934ee8ca"
-  integrity sha512-Yc7byg42K8f2kFaRti2djdp+Pi0WA0gs5HogFRrxN5FVC7tdsv+R7p4sVJvv8QbB2mmyh4qnITTBPOK5K0EZHw==
-  dependencies:
-    "@google-cloud/logging-winston" "^4.1.1"
-    "@google-cloud/trace-agent" "^5.1.6"
-    "@pagerduty/pdjs" "^2.2.4"
-    bn.js "^4.11.9"
-    discord.js "^14.11.0"
-    dotenv "^9.0.0"
-    minimist "^1.2.0"
-    node-pagerduty "^1.2.0"
-    redis "^4.6.13"
-    superstruct "^1.0.3"
-    web3 "^1.6.0"
-    winston "^3.2.1"
-    winston-transport "^4.3.0"
-
 "@uma/merkle-distributor@^1.3.38":
   version "1.3.40"
   resolved "https://registry.yarnpkg.com/@uma/merkle-distributor/-/merkle-distributor-1.3.40.tgz#70ba0ebf0fe923851786396bcb9a59a5a931127b"
@@ -4247,21 +4278,6 @@
     ipfs-http-client "^49.0.2"
     mocha "^8.3.0"
     node-fetch "^2.6.1"
-
-"@uma/serverless-orchestration@^2.17.2":
-  version "2.17.2"
-  resolved "https://registry.yarnpkg.com/@uma/serverless-orchestration/-/serverless-orchestration-2.17.2.tgz#e75a7d170d48d3a3c165d728f62c47a6eed3f832"
-  integrity sha512-6RXl1Geb3lOaloQqpQna3SvjyMf7+txG/UMVp1VGgQKCbD0jTOERfnzRkJZ26y/2gU15zSfHYjVOARl+cGWBFw==
-  dependencies:
-    "@awaitjs/express" "^0.3.0"
-    "@google-cloud/datastore" "^7.0.0"
-    "@google-cloud/storage" "^6.4.2"
-    "@uma/logger" "^1.3.3"
-    express "^4.17.1"
-    fetch-retry "^5.0.3"
-    google-auth-library "^8.5.1"
-    node-fetch "^2.3.0"
-    viem "^2.37.2"
 
 "@ungap/promise-all-settled@1.1.2":
   version "1.1.2"
@@ -4995,6 +5011,15 @@ axios@^0.27.2:
   dependencies:
     follow-redirects "^1.14.9"
     form-data "^4.0.0"
+
+axios@^1.12.2:
+  version "1.12.2"
+  resolved "https://registry.yarnpkg.com/axios/-/axios-1.12.2.tgz#6c307390136cf7a2278d09cec63b136dfc6e6da7"
+  integrity sha512-vMJzPewAlRyOgxV2dU0Cuz2O8zzzx9VYtbJOaBgXFeLc4IV/Eg50n4LowmehOOR61S8ZMpc2K5Sa7g6A4jfkUw==
+  dependencies:
+    follow-redirects "^1.15.6"
+    form-data "^4.0.4"
+    proxy-from-env "^1.1.0"
 
 axios@^1.6.1:
   version "1.7.9"
@@ -6133,6 +6158,13 @@ color-convert@^2.0.1:
   dependencies:
     color-name "~1.1.4"
 
+color-convert@^3.0.1:
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/color-convert/-/color-convert-3.1.2.tgz#cef9e0fd4cb90b07c14697b3fa70af9d7f4870f1"
+  integrity sha512-UNqkvCDXstVck3kdowtOTWROIJQwafjOfXSmddoDrXo4cewMKmusCeF22Q24zvjR8nwWib/3S/dfyzPItPEiJg==
+  dependencies:
+    color-name "^2.0.0"
+
 color-name@1.1.3:
   version "1.1.3"
   resolved "https://registry.yarnpkg.com/color-name/-/color-name-1.1.3.tgz#a7d0558bd89c42f795dd42328f740831ca53bc25"
@@ -6143,6 +6175,11 @@ color-name@^1.0.0, color-name@~1.1.4:
   resolved "https://registry.yarnpkg.com/color-name/-/color-name-1.1.4.tgz#c2a09a87acbde69543de6f63fa3995c826c536a2"
   integrity sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==
 
+color-name@^2.0.0:
+  version "2.0.2"
+  resolved "https://registry.yarnpkg.com/color-name/-/color-name-2.0.2.tgz#85054825a23e6d6f81d3503f660c4c4a2a15f04f"
+  integrity sha512-9vEt7gE16EW7Eu7pvZnR0abW9z6ufzhXxGXZEVU9IqPdlsUiMwJeJfRtq0zePUmnbHGT9zajca7mX8zgoayo4A==
+
 color-string@^1.6.0:
   version "1.9.0"
   resolved "https://registry.yarnpkg.com/color-string/-/color-string-1.9.0.tgz#63b6ebd1bec11999d1df3a79a7569451ac2be8aa"
@@ -6150,6 +6187,13 @@ color-string@^1.6.0:
   dependencies:
     color-name "^1.0.0"
     simple-swizzle "^0.2.2"
+
+color-string@^2.0.0:
+  version "2.1.2"
+  resolved "https://registry.yarnpkg.com/color-string/-/color-string-2.1.2.tgz#db1dd52414cc9037ada8fa7d936b8e9f6c3366c9"
+  integrity sha512-RxmjYxbWemV9gKu4zPgiZagUxbH3RQpEIO77XoSSX0ivgABDZ+h8Zuash/EMFLTI4N9QgFPOJ6JQpPZKFxa+dA==
+  dependencies:
+    color-name "^2.0.0"
 
 color-support@^1.1.2:
   version "1.1.3"
@@ -6163,6 +6207,14 @@ color@^3.1.3:
   dependencies:
     color-convert "^1.9.3"
     color-string "^1.6.0"
+
+color@^5.0.2:
+  version "5.0.2"
+  resolved "https://registry.yarnpkg.com/color/-/color-5.0.2.tgz#712ec894007ab27b37207732d182784e001b4a3d"
+  integrity sha512-e2hz5BzbUPcYlIRHo8ieAhYgoajrJr+hWoceg6E345TPsATMUKqDgzt8fSXZJJbxfpiPzkWyphz8yn8At7q3fA==
+  dependencies:
+    color-convert "^3.0.1"
+    color-string "^2.0.0"
 
 colors@1.4.0, colors@^1.1.2:
   version "1.4.0"
@@ -7271,6 +7323,16 @@ es-set-tostringtag@^2.0.1:
     get-intrinsic "^1.1.3"
     has "^1.0.3"
     has-tostringtag "^1.0.0"
+
+es-set-tostringtag@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz#f31dbbe0c183b00a6d26eb6325c810c0fd18bd4d"
+  integrity sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==
+  dependencies:
+    es-errors "^1.3.0"
+    get-intrinsic "^1.2.6"
+    has-tostringtag "^1.0.2"
+    hasown "^2.0.2"
 
 es-shim-unscopables@^1.0.0:
   version "1.0.0"
@@ -8495,6 +8557,17 @@ form-data@^4.0.0:
     combined-stream "^1.0.8"
     mime-types "^2.1.12"
 
+form-data@^4.0.4:
+  version "4.0.4"
+  resolved "https://registry.yarnpkg.com/form-data/-/form-data-4.0.4.tgz#784cdcce0669a9d68e94d11ac4eea98088edd2c4"
+  integrity sha512-KrGhL9Q4zjj0kiUt5OO4Mr/A/jlI2jDYs5eHBpYHPcBEVSiipAvn2Ko2HnPe20rmcuuvMHNdZFp+4IlGTMF0Ow==
+  dependencies:
+    asynckit "^0.4.0"
+    combined-stream "^1.0.8"
+    es-set-tostringtag "^2.1.0"
+    hasown "^2.0.2"
+    mime-types "^2.1.12"
+
 form-data@~2.3.2:
   version "2.3.3"
   resolved "https://registry.yarnpkg.com/form-data/-/form-data-2.3.3.tgz#dcce52c05f644f298c6a7ab936bd724ceffbf3a6"
@@ -8808,7 +8881,7 @@ get-intrinsic@^1.2.4:
     has-symbols "^1.0.3"
     hasown "^2.0.0"
 
-get-intrinsic@^1.3.0:
+get-intrinsic@^1.2.6, get-intrinsic@^1.3.0:
   version "1.3.0"
   resolved "https://registry.yarnpkg.com/get-intrinsic/-/get-intrinsic-1.3.0.tgz#743f0e3b6964a93a5491ed1bffaae054d7f98d01"
   integrity sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==
@@ -9514,6 +9587,13 @@ has-tostringtag@^1.0.0:
   integrity sha512-kFjcSNhnlGV1kyoGk7OXKSawH5JOb/LzUc5w9B02hOTO0dfFRjbHQKvg1d6cf3HbeUmtU9VbbV3qzZ2Teh97WQ==
   dependencies:
     has-symbols "^1.0.2"
+
+has-tostringtag@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/has-tostringtag/-/has-tostringtag-1.0.2.tgz#2cdc42d40bef2e5b4eeab7c01a73c54ce7ab5abc"
+  integrity sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==
+  dependencies:
+    has-symbols "^1.0.3"
 
 has-unicode@^2.0.0, has-unicode@^2.0.1:
   version "2.0.1"
@@ -17196,23 +17276,6 @@ winston-transport@^4.9.0:
     readable-stream "^3.6.2"
     triple-beam "^1.3.0"
 
-winston@^3.10.0, winston@^3.2.1:
-  version "3.10.0"
-  resolved "https://registry.yarnpkg.com/winston/-/winston-3.10.0.tgz#d033cb7bd3ced026fed13bf9d92c55b903116803"
-  integrity sha512-nT6SIDaE9B7ZRO0u3UvdrimG0HkB7dSTAgInQnNR2SOPJ4bvq5q79+pXLftKmP52lJGW15+H5MCK0nM9D3KB/g==
-  dependencies:
-    "@colors/colors" "1.5.0"
-    "@dabh/diagnostics" "^2.0.2"
-    async "^3.2.3"
-    is-stream "^2.0.0"
-    logform "^2.4.0"
-    one-time "^1.0.0"
-    readable-stream "^3.4.0"
-    safe-stable-stringify "^2.3.1"
-    stack-trace "0.0.x"
-    triple-beam "^1.3.0"
-    winston-transport "^4.5.0"
-
 winston@^3.12.0:
   version "3.17.0"
   resolved "https://registry.yarnpkg.com/winston/-/winston-3.17.0.tgz#74b8665ce9b4ea7b29d0922cfccf852a08a11423"
@@ -17229,6 +17292,40 @@ winston@^3.12.0:
     stack-trace "0.0.x"
     triple-beam "^1.3.0"
     winston-transport "^4.9.0"
+
+winston@^3.17.0:
+  version "3.18.3"
+  resolved "https://registry.yarnpkg.com/winston/-/winston-3.18.3.tgz#93ac10808c8e1081d723bc8811cd2f445ddfdcd1"
+  integrity sha512-NoBZauFNNWENgsnC9YpgyYwOVrl2m58PpQ8lNHjV3kosGs7KJ7Npk9pCUE+WJlawVSe8mykWDKWFSVfs3QO9ww==
+  dependencies:
+    "@colors/colors" "^1.6.0"
+    "@dabh/diagnostics" "^2.0.8"
+    async "^3.2.3"
+    is-stream "^2.0.0"
+    logform "^2.7.0"
+    one-time "^1.0.0"
+    readable-stream "^3.4.0"
+    safe-stable-stringify "^2.3.1"
+    stack-trace "0.0.x"
+    triple-beam "^1.3.0"
+    winston-transport "^4.9.0"
+
+winston@^3.2.1:
+  version "3.10.0"
+  resolved "https://registry.yarnpkg.com/winston/-/winston-3.10.0.tgz#d033cb7bd3ced026fed13bf9d92c55b903116803"
+  integrity sha512-nT6SIDaE9B7ZRO0u3UvdrimG0HkB7dSTAgInQnNR2SOPJ4bvq5q79+pXLftKmP52lJGW15+H5MCK0nM9D3KB/g==
+  dependencies:
+    "@colors/colors" "1.5.0"
+    "@dabh/diagnostics" "^2.0.2"
+    async "^3.2.3"
+    is-stream "^2.0.0"
+    logform "^2.4.0"
+    one-time "^1.0.0"
+    readable-stream "^3.4.0"
+    safe-stable-stringify "^2.3.1"
+    stack-trace "0.0.x"
+    triple-beam "^1.3.0"
+    winston-transport "^4.5.0"
 
 word-wrap@^1.2.3, word-wrap@~1.2.3:
   version "1.2.4"
