@@ -9,6 +9,7 @@ import {
 import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 import {
   PoolRebalanceLeaf,
+  ProposedRootBundle,
   Refund,
   RelayerRefundLeaf,
   RelayerRefundLeafWithGroup,
@@ -392,6 +393,16 @@ export function _getRefundLeaves(
     relayerRefundLeaves.push(newLeaf);
   }
   return relayerRefundLeaves;
+}
+
+export function generateValidationKey(
+  proposal: Pick<
+    ProposedRootBundle,
+    "proposer" | "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp"
+  >
+): string {
+  const fields = ["proposer", "poolRebalanceRoot", "relayerRefundRoot", "slowRelayRoot"];
+  return "across-validations-" + fields.map((field) => proposal[field.toString()]).join("-");
 }
 
 /**

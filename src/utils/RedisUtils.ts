@@ -39,6 +39,24 @@ export class RedisClient {
     return this.client.get(this.getNamespacedKey(key));
   }
 
+  decr(key: string): Promise<number> {
+    return this.decrBy(key, 1);
+  }
+
+  decrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.client.decrBy(key, amount);
+  }
+
+  incr(key: string): Promise<number> {
+    return this.incrBy(key, 1);
+  }
+
+  incrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.client.incrBy(key, amount);
+  }
+
   async ttl(key: string): Promise<number | undefined> {
     return this.client.ttl(this.getNamespacedKey(key));
   }
@@ -143,10 +161,12 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   return redisClients[url];
 }
 
-export async function getRedisCache(
-  logger?: winston.Logger,
-  url?: string
-): Promise<CachingMechanismInterface | undefined> {
+interface RedisCacheInterface extends CachingMechanismInterface {
+  incr(key: string): Promise<number>;
+  incrBy(key: string, amount: number): Promise<number>;
+}
+
+export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;

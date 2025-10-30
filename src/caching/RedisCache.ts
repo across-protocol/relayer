@@ -1,5 +1,13 @@
+import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
 import { RedisClient, setRedisKey } from "../utils";
+
+interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
+  decr(key: string): Promise<number>;
+  decrBy(key: string, amount: number): Promise<number>;
+  incr(key: string): Promise<number>;
+  incrBy(key: string, amount: number): Promise<number>;
+}
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
@@ -7,7 +15,7 @@ import { RedisClient, setRedisKey } from "../utils";
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
-export class RedisCache implements interfaces.CachingMechanismInterface {
+export class RedisCache implements RedisCacheInterface {
   /**
    * The redisClient is the redis client that is used to communicate with the redis server.
    * It is instantiated lazily when the `instantiate` method is called.
@@ -36,6 +44,24 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     await setRedisKey(key, String(value), this.redisClient, ttl);
     // Return key to indicate that the value was set successfully.
     return key;
+  }
+
+  public decr(key: string): Promise<number> {
+    return this.decrBy(key, 1);
+  }
+
+  public decrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.redisClient.decrBy(key, amount);
+  }
+
+  public incr(key: string): Promise<number> {
+    return this.incrBy(key, 1);
+  }
+
+  public incrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.redisClient.incrBy(key, amount);
   }
 
   public async pub(channel: string, message: string): Promise<number> {
