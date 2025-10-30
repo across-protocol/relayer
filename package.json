@@ -7,12 +7,12 @@
   "license": "AGPL-3.0-only",
   "private": true,
   "engines": {
-    "node": ">=20.19.2"
+    "node": ">=22.18.0"
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.83",
     "@across-protocol/contracts": "^4.1.11",
-    "@across-protocol/sdk": "4.3.80",
+    "@across-protocol/sdk": "4.3.81",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
@@ -32,8 +32,8 @@
     "@solana-program/system": "^0.7.0",
     "@solana-program/token": "^0.5.0",
     "@solana/kit": "^2.1.0",
-    "@uma/logger": "^1.3.3",
-    "@uma/serverless-orchestration": "^2.17.2",
+    "@risk-labs/logger": "^1.3.7",
+    "@risk-labs/serverless-orchestration": "^1.0.5",
     "axios": "^1.7.4",
     "binance-api-node": "0.12.7",
     "dotenv": "^16.3.1",
@@ -48,7 +48,7 @@
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
     "viem": "^2.33.1",
-    "winston": "^3.10.0",
+    "winston": "^3.17.0",
     "zksync-ethers": "^5.7.2"
   },
   "files": [
