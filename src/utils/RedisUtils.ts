@@ -6,7 +6,6 @@ import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } fr
 import dotenv from "dotenv";
 import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
 import { constants } from "@across-protocol/sdk";
-import { RedisPubSub } from "../caching/RedisPubSub";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -98,7 +97,7 @@ export async function getRedisPubSub(
   if (client) {
     // since getRedis returns the same client instance for the same url,
     // we need to duplicate it before creating a new RedisPubSub instance
-    return new RedisPubSub(await client.duplicate());
+    return await client.duplicate();
   }
 }
 

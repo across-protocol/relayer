@@ -11,7 +11,7 @@ export type RedisClient = ReturnType<typeof createClient>;
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
-export class RedisCache implements interfaces.CachingMechanismInterface {
+export class RedisCache implements interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
   constructor(
     private readonly client: RedisClient,
     private readonly namespace?: string,
@@ -63,9 +63,8 @@ export class RedisCache implements interfaces.CachingMechanismInterface {
     return this.client.publish(channel, message);
   }
 
-  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<number> {
+  async sub(channel: string, listener: (message: string, channel: string) => void): Promise<void> {
     await this.client.subscribe(channel, listener);
-    return 1;
   }
 
   async duplicate(): Promise<RedisCache> {
