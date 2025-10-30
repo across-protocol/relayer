@@ -37,6 +37,7 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
+import SRC_OFT_PERIPHERY_ABI from "./abi/SrcOftPeriphery.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -493,6 +494,10 @@ export const CONTRACT_ADDRESSES: {
     erc20GatewayRouter: {
       address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    srcOftPeriphery: {
+      address: "0x1235Ac1010FeeC8ae22744f323416cBBE37feDbE",
+      abi: SRC_OFT_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {

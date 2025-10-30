@@ -49,7 +49,7 @@ export async function oftRetryFinalizer(
   );
   logger.debug({
     at: `Finalizer#OftRetryFinalizer:${spokePoolClient.chainId}`,
-    message: `Detected ${unprocessedMessages.length} retryable messages for origin ${spokePoolClient.chainId}`,
+    message: `Detected ${unprocessedMessages.length} LZ retryable messages for origin ${spokePoolClient.chainId}`,
     statusesGrouped,
   });
 
