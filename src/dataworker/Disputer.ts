@@ -11,7 +11,6 @@ import {
   Provider,
   TransactionReceipt,
   winston,
-  ZERO_BYTES,
 } from "../utils";
 
 export class Disputer {
