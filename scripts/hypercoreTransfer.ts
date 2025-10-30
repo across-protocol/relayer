@@ -155,7 +155,7 @@ export async function run(): Promise<void> {
 
   // 4c. Allow sending USDT from EVM to Spot via the MulticallHandler on EVM.
   // @dev I've noticed from experience that this fails if the sender of the spot balance to the user, i.e. the
-  // the MulticallHander, is a brand new contract that has never held a USDT balance before, and I've gotten it to
+  // the MulticallHandler, is a brand new contract that has never held a USDT balance before, and I've gotten it to
   // work by transferring USDT to it. I'm not sure exactly why this worked in the past but FYI.
   if (args.delegateSendToCore) {
     console.group(
