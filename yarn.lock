@@ -2540,10 +2540,10 @@
     path-browserify "^1.0.0"
     url "^0.11.0"
 
-"@risk-labs/logger@^1.3.8":
-  version "1.3.8"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.8.tgz#85bf29e8ab8773a26cea29a5b1aecd2fb4a709d2"
-  integrity sha512-S+c42bnpjlSJ/bD4V4tGQabRvao40v1LoaQ5miRIYpYFnRLSBB1wPJGQoPTI3R7raZjxFupQYaX8Ache68vk0A==
+"@risk-labs/logger@^1.3.10-alpha.6":
+  version "1.3.10-alpha.6"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.10-alpha.6.tgz#aeac860df15ad38a6d3b0871c0553ddd55b7ed50"
+  integrity sha512-1beODPEypK7LpzeYV9QnNEjQPxmwjLbMLYp+fjS5AlEVwwdwcyy/2nUjyzBp821dBhlgwA1E/bZdYzGSeWrVXw==
   dependencies:
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
@@ -2558,10 +2558,10 @@
     winston "^3.17.0"
     winston-transport "^4.9.0"
 
-"@risk-labs/logger@^1.3.9":
-  version "1.3.9"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.9.tgz#2f545047b136dcba343422c5aa264896b6031a90"
-  integrity sha512-lQRBLwTZk9h+4ujbp2EphQNh1zLFpf4diNqv5rEAaarvgnUDGGIDFQGwSTKKIc+8UYOoTFqwiEgrDqcsw4hzPA==
+"@risk-labs/logger@^1.3.8":
+  version "1.3.8"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.8.tgz#85bf29e8ab8773a26cea29a5b1aecd2fb4a709d2"
+  integrity sha512-S+c42bnpjlSJ/bD4V4tGQabRvao40v1LoaQ5miRIYpYFnRLSBB1wPJGQoPTI3R7raZjxFupQYaX8Ache68vk0A==
   dependencies:
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
