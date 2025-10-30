@@ -653,7 +653,7 @@ export class Dataworker {
       const redis = await getRedisCache(this.logger);
       const validations = redis ? await redis.incr(rootBundleKey) : 1;
       const message = "Registered successful validation.";
-      this.logger.debug({ at: "Dataworker#validate",  message, rootBundleKey, validations });
+      this.logger.debug({ at: "Dataworker#validate", message, rootBundleKey, validations });
     } else {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
       // can get dataworker running ASAP.
