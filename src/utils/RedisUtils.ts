@@ -15,6 +15,13 @@ const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
 
 export type _RedisClient = ReturnType<typeof createClient>;
 
+export interface RedisCacheInterface extends CachingMechanismInterface {
+  decr(key: string): Promise<number>;
+  decrBy(key: string, amount: number): Promise<number>;
+  incr(key: string): Promise<number>;
+  incrBy(key: string, amount: number): Promise<number>;
+}
+
 export class RedisClient {
   constructor(
     private readonly client: _RedisClient,
@@ -159,11 +166,6 @@ export async function getRedis(logger?: winston.Logger, url = REDIS_URL): Promis
   }
 
   return redisClients[url];
-}
-
-interface RedisCacheInterface extends CachingMechanismInterface {
-  incr(key: string): Promise<number>;
-  incrBy(key: string, amount: number): Promise<number>;
 }
 
 export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {

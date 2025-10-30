@@ -651,7 +651,7 @@ export class Dataworker {
     if (valid) {
       const rootBundleKey = generateValidationKey(pendingRootBundle);
       const redis = await getRedisCache(this.logger);
-      const validations = await redis.incr(rootBundleKey);
+      const validations = redis ? await redis.incr(rootBundleKey) : 1;
       const message = "Registered successful validation.";
       this.logger.debug({ at: "Dataworker#validate",  message, rootBundleKey, validations });
     } else {

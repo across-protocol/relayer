@@ -1,13 +1,6 @@
 import assert from "assert";
-import { interfaces, constants } from "@across-protocol/sdk";
-import { RedisClient, setRedisKey } from "../utils";
-
-interface RedisCacheInterface extends interfaces.CachingMechanismInterface {
-  decr(key: string): Promise<number>;
-  decrBy(key: string, amount: number): Promise<number>;
-  incr(key: string): Promise<number>;
-  incrBy(key: string, amount: number): Promise<number>;
-}
+import { constants } from "@across-protocol/sdk";
+import { RedisCacheInterface, RedisClient, setRedisKey } from "../utils";
 
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
