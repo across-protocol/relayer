@@ -2,9 +2,9 @@ import { assert, toBN, BigNumberish, isDefined } from "./";
 import { REDIS_URL_DEFAULT } from "../common/Constants";
 import { createClient } from "redis4";
 import winston from "winston";
-import { Deposit, Fill, CachingMechanismInterface, PubSubMechanismInterface } from "../interfaces";
+import { Deposit, Fill, PubSubMechanismInterface } from "../interfaces";
 import dotenv from "dotenv";
-import { disconnectRedisClient, RedisCache, RedisClient } from "../caching/RedisCache";
+import { disconnectRedisClient, RedisCache, RedisCacheInterface, RedisClient } from "../caching/RedisCache";
 dotenv.config();
 
 const globalNamespace: string | undefined = process.env.GLOBAL_CACHE_NAMESPACE
@@ -71,10 +71,7 @@ async function _getRedis(logger?: winston.Logger, url = REDIS_URL): Promise<Redi
   return redisClients[url];
 }
 
-export async function getRedisCache(
-  logger?: winston.Logger,
-  url?: string
-): Promise<CachingMechanismInterface | undefined> {
+export async function getRedisCache(logger?: winston.Logger, url?: string): Promise<RedisCacheInterface | undefined> {
   // Don't permit redis to be used in test.
   if (isDefined(process.env.RELAYER_TEST)) {
     return undefined;

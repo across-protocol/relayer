@@ -1,3 +1,4 @@
+import assert from "assert";
 import { interfaces, constants } from "@across-protocol/sdk";
 import { isDefined } from "../utils";
 import { createClient } from "redis4";
@@ -5,13 +6,20 @@ import winston from "winston";
 
 export type RedisClient = ReturnType<typeof createClient>;
 
+export interface RedisCacheInterface extends interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
+  decr(key: string): Promise<number>;
+  decrBy(key: string, amount: number): Promise<number>;
+  incr(key: string): Promise<number>;
+  incrBy(key: string, amount: number): Promise<number>;
+}
+
 /**
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
  * Across SDK to cache data that is expensive to compute or retrieve from the blockchain. It
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
  * drop-in in the SDK without the SDK needing to reason about the implementation details.
  */
-export class RedisCache implements interfaces.CachingMechanismInterface, interfaces.PubSubMechanismInterface {
+export class RedisCache implements RedisCacheInterface {
   constructor(
     private readonly client: RedisClient,
     private readonly namespace?: string,
@@ -57,6 +65,24 @@ export class RedisCache implements interfaces.CachingMechanismInterface, interfa
       }
       return await this.client.set(key, String(val));
     }
+  }
+
+  decr(key: string): Promise<number> {
+    return this.decrBy(key, 1);
+  }
+
+  decrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.client.decrBy(key, amount);
+  }
+
+  incr(key: string): Promise<number> {
+    return this.incrBy(key, 1);
+  }
+
+  incrBy(key: string, amount: number): Promise<number> {
+    assert(amount >= 0);
+    return this.client.incrBy(key, amount);
   }
 
   pub(channel: string, message: string): Promise<number> {
