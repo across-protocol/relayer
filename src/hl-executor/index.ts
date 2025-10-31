@@ -15,7 +15,7 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
   try {
     logger[startupLogLevel(config)]({
       at: "HyperliquidExecutor#index",
-      message: "HyperliquidExecutor started ⛽️",
+      message: "HyperliquidExecutor started",
       config,
     });
     const start = Date.now();
