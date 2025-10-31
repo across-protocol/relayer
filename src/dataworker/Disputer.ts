@@ -54,6 +54,7 @@ export class Disputer {
       if (nativeBalance.lte(mintAmount)) {
         const nativeAmount = formatEther(mintAmount);
         if (!this.simulate) {
+          // @todo: Should alert if cannot mint, but should not error if there is sufficient to dispute.
           throw new Error(`Insufficient native token balance to mint ${nativeAmount} bond tokens`);
         }
       }
@@ -116,8 +117,8 @@ export class Disputer {
     const { chainId, hubPool } = this;
     const txn = {
       chainId,
-      contract: hubPool,
-      method: "dispute",
+      contract: hubPool.connect(this.signer),
+      method: "disputeRootBundle",
       args: [],
       message: "Disputed HubPool root bundle proposal.",
       unpermissioned: false,
