@@ -437,17 +437,22 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
     // @todo Validate that currentTime is not too different from host time.
     const challengeRemaining = proposal.challengePeriodEndTimestamp - currentTime;
     if (challengeRemaining <= 0) {
+      logger.debug({ at, message: "Proposal challenge window has elapsed, nothing to do..." });
       return;
     }
 
     const validations = await getValidations();
-    if (challengeRemaining < challengeLimit && validations < minValidations) {
+    if (challengeRemaining <= challengeLimit && validations < minValidations) {
       const dispute = await disputer.dispute();
       const message = enabled
         ? "Submitted HubPool root bundle dispute."
         : "Suppressed HubPool root bundle dispute due to configuration.";
       const txn = isDefined(dispute) ? blockExplorerLink(dispute.transactionHash, hubChainId) : undefined;
-      logger.alert({ at, message, proposal, txn });
+      logger.error({ at, message, proposal, txn });
+    } else {
+      const waiting = challengeRemaining - challengeLimit;
+      const message = `Must wait an additional ${waiting} seconds before evaluating disputer attestations.`;
+      logger.debug({ at, message, challengeLimit, validations, minValidations });
     }
   } finally {
     await disconnectRedisClients(logger);
