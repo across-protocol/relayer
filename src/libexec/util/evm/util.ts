@@ -4,13 +4,13 @@ import { getNetworkName, paginatedEventQuery, Profiler, Provider, winston } from
 import { Log, ScraperOpts } from "../../types";
 
 /**
- * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
- * parent process (if defined).
+ * Scrape events from a contract for a given event signature within a specified block range.
  * @param provider Ethers RPC provider instance.
  * @param address Contract address to filter on.
  * @param event The event descriptor to filter for.
- * @param opts Options to configure event scraping behaviour.
- * @returns void
+ * @param opts Options to configure event scraping behaviour, including the target block number.
+ * @param logger Optional Winston logger instance.
+ * @returns Promise resolving to an array of log entries.
  */
 export async function scrapeEvents(
   provider: Provider,
