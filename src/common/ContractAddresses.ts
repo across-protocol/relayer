@@ -301,11 +301,11 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    destOftHandler: {
+    dstOftMessenger: {
       address: "0x2beF20D17a17f6903017d27D1A35CC9Dc72b0888",
       abi: HYPEREVM_HANDLER_ABI,
     },
-    destCctpHandler: {
+    dstCctpMessenger: {
       address: "", // @todo
       abi: HYPEREVM_HANDLER_ABI,
     },

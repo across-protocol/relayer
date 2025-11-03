@@ -58,15 +58,15 @@ export class HyperliquidExecutor {
       Object.entries(l2ProvidersByChain)
         .map(([chainId, provider]) => {
           const srcCctpMessenger = CONTRACT_ADDRESSES[chainId]?.srcCctpMessenger;
-          if (isDefined(srcCctpMessenger.address)) {
+          if (isDefined(srcCctpMessenger?.address)) {
             return [chainId, new Contract(srcCctpMessenger.address, srcCctpMessenger.abi, provider)];
           }
           return undefined;
         })
         .filter(isDefined)
     );
-    const { address: oftAddress, abi } = CONTRACT_ADDRESSES[this.chainId].destOftMessenger;
-    const { address: cctpAddress } = CONTRACT_ADDRESSES[this.chainId].destCctpMessenger;
+    const { address: oftAddress, abi } = CONTRACT_ADDRESSES[this.chainId].dstOftMessenger;
+    const { address: cctpAddress } = CONTRACT_ADDRESSES[this.chainId].dstCctpMessenger;
     this.dstOftMessenger = new Contract(oftAddress, abi, l2ProvidersByChain[this.chainId]);
     this.dstCctpMessenger = new Contract(cctpAddress, abi, l2ProvidersByChain[this.chainId]);
   }
