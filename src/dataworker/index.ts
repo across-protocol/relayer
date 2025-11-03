@@ -1,5 +1,6 @@
 import { TokenClient } from "../clients";
 import {
+  blockExplorerLink,
   CHAIN_IDs,
   EvmAddress,
   SvmAddress,
@@ -441,7 +442,12 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
 
     const validations = await getValidations();
     if (challengeRemaining < challengeLimit && validations < minValidations) {
-      await disputer.dispute();
+      const dispute = await disputer.dispute();
+      const message = enabled
+        ? "Submitted HubPool root bundle dispute."
+        : "Suppressed HubPool root bundle dispute due to configuration.";
+      const txn = isDefined(dispute) ? blockExplorerLink(dispute.transactionHash, hubChainId) : undefined;
+      logger.alert({ at, message, proposal, txn });
     }
   } finally {
     await disconnectRedisClients(logger);

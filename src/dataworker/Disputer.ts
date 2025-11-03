@@ -69,17 +69,17 @@ export class Disputer {
     }
   }
 
-  protected async balance(): Promise<BigNumber> {
+  async balance(): Promise<BigNumber> {
     const disputer = await this.signer.getAddress();
     return this.bondToken.balanceOf(disputer);
   }
 
-  protected async allowance(): Promise<BigNumber> {
+  async allowance(): Promise<BigNumber> {
     const signer = await this.signer.getAddress();
     return this.bondToken.allowance(signer, this.hubPool.address);
   }
 
-  protected async approve(amount = bnUint256Max): Promise<void> {
+  async approve(amount = bnUint256Max): Promise<TransactionReceipt | undefined> {
     const { chainId, bondToken, hubPool } = this;
     const txn = {
       chainId,
@@ -93,10 +93,10 @@ export class Disputer {
       nonMulticall: true,
     };
 
-    await this.submit(txn);
+    return this.submit(txn);
   }
 
-  protected async mintBond(amount: BigNumber): Promise<void> {
+  async mintBond(amount: BigNumber): Promise<TransactionReceipt | undefined> {
     const { chainId, bondToken } = this;
     const txn = {
       chainId,
@@ -110,10 +110,10 @@ export class Disputer {
       nonMulticall: true,
     };
 
-    await this.submit(txn);
+    return this.submit(txn);
   }
 
-  dispute(): Promise<TransactionReceipt> {
+  dispute(): Promise<TransactionReceipt | undefined> {
     const { chainId, hubPool } = this;
     const txn = {
       chainId,

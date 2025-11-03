@@ -2,7 +2,6 @@ import { Disputer } from "../src/dataworker/Disputer";
 import { bnUint256Max, bnZero, bnOne, toBNWei, ZERO_BYTES } from "../src/utils";
 import { setupUmaEcosystem } from "./fixtures/UmaEcosystemFixture";
 import {
-  BigNumber,
   Contract,
   createSpyLogger,
   deployAndConfigureHubPool,
@@ -13,24 +12,6 @@ import {
   winston,
 } from "./utils";
 
-class TestDisputer extends Disputer {
-  allowance(): Promise<BigNumber> {
-    return super.allowance();
-  }
-
-  balance(): Promise<BigNumber> {
-    return super.balance();
-  }
-
-  approve(amount: BigNumber): Promise<void> {
-    return super.approve(amount);
-  }
-
-  mintBond(amount: BigNumber): Promise<void> {
-    return super.mintBond(amount);
-  }
-}
-
 describe("Disputer: Watchdog", async function () {
   let chainId: number;
   const simulate = false;
@@ -39,7 +20,7 @@ describe("Disputer: Watchdog", async function () {
   let hubPool: Contract, bondToken: Contract;
   let owner: SignerWithAddress, signer: SignerWithAddress;
   let logger: winston.Logger;
-  let disputer: TestDisputer;
+  let disputer: Disputer;
   let signerAddr: string;
 
   beforeEach(async function () {
@@ -61,7 +42,7 @@ describe("Disputer: Watchdog", async function () {
     await hubPool.setBond(bondToken.address, bondAmount);
 
     // Approve bondToken on itself to appease `setupTokensForWallet()`.
-    disputer = new TestDisputer(chainId, logger, hubPool, signer, simulate);
+    disputer = new Disputer(chainId, logger, hubPool, signer, simulate);
     await disputer.init();
   });
 
