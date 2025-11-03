@@ -19,6 +19,7 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
       config,
     });
     const start = Date.now();
+    await executor.shuffleOrders();
 
     await clients.multiCallerClient.executeTxnQueues();
 

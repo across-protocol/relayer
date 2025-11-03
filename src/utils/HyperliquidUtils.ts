@@ -29,6 +29,14 @@ export async function getL2Book(
   return await _callWithRetry(infoClient.l2Book.bind(infoClient), [params], nRetries, maxRetries);
 }
 
+export async function getSpotMeta(
+  infoClient: hl.InfoClient,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.SpotMetaResponse> {
+  return await _callWithRetry(infoClient.spotMeta.bind(infoClient), [], nRetries, maxRetries);
+}
+
 export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,
