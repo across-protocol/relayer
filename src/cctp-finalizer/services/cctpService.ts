@@ -45,6 +45,7 @@ export class CCTPService {
         message: cctpMessage,
         attestation: cctpAttestation,
         destinationChainId: providedDestinationChainId,
+        signature,
       } = message;
 
       this.logger.info({
@@ -150,7 +151,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation);
+      return await this.processMint(destinationChainId, attestation, signature);
     } catch (error) {
       this.logger.error({
         at: "CCTPService#processBurnTransaction",
@@ -211,7 +212,11 @@ export class CCTPService {
     }
   }
 
-  private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
+  private async processMint(
+    chainId: number,
+    attestation: any,
+    signature?: string
+  ): Promise<ProcessBurnTransactionResponse> {
     const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
@@ -237,7 +242,7 @@ export class CCTPService {
       } else {
         const rpcUrl = this.getRpcUrlForChain(chainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger);
+        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger, signature);
         return {
           success: true,
           mintTxHash: result.txHash,
@@ -271,7 +276,7 @@ export class CCTPService {
       130: process.env.ARBITRUM_NOVA_RPC_URL!,
       59144: process.env.LINEA_RPC_URL!,
       480: process.env.ZKSYNC_RPC_URL!,
-      999: process.env.POLYGON_ZKEVM_RPC_URL!,
+      999: process.env.HYPEREVM_RPC_URL!,
       34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,
@@ -280,7 +285,7 @@ export class CCTPService {
       84532: process.env.BASE_SEPOLIA_RPC_URL!,
       80002: process.env.POLYGON_AMOY_RPC_URL!,
       1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
-      998: process.env.POLYGON_ZKEVM_SEPOLIA_RPC_URL!,
+      998: process.env.HYPEREVM_TESTNET_RPC_URL!,
       133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
     };
 
