@@ -13,9 +13,10 @@ import {
   getHlInfoClient,
   getSpotMeta,
   getOpenOrders,
+  getDstOftHandler,
+  getDstCctpHandler,
 } from "../utils";
 import { MultiCallerClient } from "../clients";
-import { CONTRACT_ADDRESSES } from "../common";
 import { RedisCache } from "../caching/RedisCache";
 
 export interface HyperliquidExecutorClients {
@@ -46,10 +47,8 @@ export class HyperliquidExecutor {
     this.baseSigner = this.clients.hubPoolClient.hubPool.signer;
 
     // These must be defined.
-    const { address: oftAddress, abi } = CONTRACT_ADDRESSES[this.chainId].dstOftMessenger;
-    const { address: cctpAddress } = CONTRACT_ADDRESSES[this.chainId].dstCctpMessenger;
-    this.dstOftMessenger = new Contract(oftAddress, abi, this.clients.dstProvider);
-    this.dstCctpMessenger = new Contract(cctpAddress, abi, this.clients.dstProvider);
+    this.dstOftMessenger = getDstOftHandler().connect(this.clients.dstProvider);
+    this.dstCctpMessenger = getDstCctpHandler().connect(this.clients.dstProvider);
 
     this.infoClient = getHlInfoClient();
   }

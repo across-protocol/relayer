@@ -37,7 +37,6 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
-import HYPEREVM_HANDLER_ABI from "./abi/HyperEvmHandler.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -300,14 +299,6 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
-    },
-    dstOftMessenger: {
-      address: "0x2beF20D17a17f6903017d27D1A35CC9Dc72b0888",
-      abi: HYPEREVM_HANDLER_ABI,
-    },
-    dstCctpMessenger: {
-      address: "0xae56583Ec24102aF3D265d3CeA6341830eD56636",
-      abi: HYPEREVM_HANDLER_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
