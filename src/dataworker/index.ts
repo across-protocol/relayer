@@ -423,7 +423,7 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
   logger.debug({ at, message: "Starting Disputer Watchdog." });
 
   try {
-    await disputer.init();
+    await disputer.validate();
     const redis = await getRedisCache(logger);
 
     const { currentTime, currentBlock, ...proposal } = await getProposal(provider, hubChainId);
@@ -451,7 +451,10 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
       logger.error({ at, message, proposal, txn });
     } else {
       const waiting = challengeRemaining - challengeLimit;
-      const message = `Must wait an additional ${waiting} seconds before evaluating disputer attestations.`;
+      const message =
+        waiting > 0
+          ? `Must wait an additional ${waiting} seconds before evaluating validator attestations.`
+          : "Current proposal has sufficient validator attestations.";
       logger.debug({ at, message, challengeLimit, validations, minValidations });
     }
   } finally {

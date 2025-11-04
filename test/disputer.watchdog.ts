@@ -35,28 +35,12 @@ describe("Disputer: Watchdog", async function () {
 
     bondToken = await (await getContractFactory("BondToken", owner)).deploy(hubPool.address);
     await bondToken.setProposer(signerAddr, true);
-    // await bondToken.addMember(TokenRolesEnum.MINTER, owner.address);
-
     await umaEcosystem.collateralWhitelist.addToWhitelist(bondToken.address);
     await umaEcosystem.store.setFinalFee(bondToken.address, { rawValue: toBNWei("0.1") });
     await hubPool.setBond(bondToken.address, bondAmount);
 
-    // Approve bondToken on itself to appease `setupTokensForWallet()`.
     disputer = new Disputer(chainId, logger, hubPool, signer, simulate);
-    await disputer.init();
-  });
-
-  it("Disputer::allowance", async function () {
-    let allowance = await bondToken.allowance(signerAddr, hubPool.address);
-    expect(allowance.eq(bnUint256Max)).to.be.true;
-
-    allowance = await disputer.allowance();
-    expect(allowance.eq(bnUint256Max)).to.be.true;
-
-    await disputer.approve(bnZero);
-
-    allowance = await disputer.allowance();
-    expect(allowance.eq(bnZero)).to.be.true;
+    await disputer.validate();
   });
 
   it("Disputer::mintBond", async function () {
@@ -70,6 +54,19 @@ describe("Disputer: Watchdog", async function () {
     await disputer.mintBond(bnOne);
     balance = await bondToken.balanceOf(signerAddr);
     expect(balance.eq(bnOne)).to.be.true;
+  });
+
+  it("Disputer::allowance", async function () {
+    let allowance = await bondToken.allowance(signerAddr, hubPool.address);
+    expect(allowance.eq(bnUint256Max)).to.be.true;
+
+    allowance = await disputer.allowance();
+    expect(allowance.eq(bnUint256Max)).to.be.true;
+
+    await disputer.approve(bnZero);
+
+    allowance = await disputer.allowance();
+    expect(allowance.eq(bnZero)).to.be.true;
   });
 
   it("Disputer::approve", async function () {

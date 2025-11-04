@@ -15,35 +15,47 @@ import {
 
 export class Disputer {
   protected bondToken: Contract;
+  protected bondAmount: BigNumber;
+  protected bondMultiplier: { min: number; target: number };
   protected provider: Provider;
   protected txnClient: TransactionClient;
-  protected bondMultiplier: { min: number; target: number };
   protected chain: string;
+  private initPromise: Promise<void>;
 
   constructor(
     protected readonly chainId: number,
     protected readonly logger: winston.Logger,
     protected readonly hubPool: Contract,
-    protected readonly signer: Signer,
+    readonly signer: Signer,
     protected readonly simulate = true
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
+    this.signer = signer.provider
+      ? signer
+      : signer.connect(hubPool.provider);
     this.bondMultiplier = {
       min: 4,
       target: 8,
     };
     this.txnClient = new TransactionClient(this.logger);
+
+    const initPromise = async () => {
+      // @todo: Optimise all calls here by using Multicall3 to query:
+      // - bondToken
+      // - bondAmount
+      // - native balance
+      const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
+      this.bondToken = WETH9.connect(bondToken, this.signer);
+      this.bondAmount = bondAmount;
+    };
+    this.initPromise = initPromise();
   }
 
-  async init(): Promise<void> {
-    // @todo: Optimise all calls here by using Multicall3 to query:
-    // - bondToken
-    // - bondAmount
-    // - native balance
-    const [bondToken, bondAmount] = await Promise.all([this.hubPool.bondToken(), this.hubPool.bondAmount()]);
-    this.bondToken = WETH9.connect(bondToken, this.signer);
+  async validate(): Promise<void> {
+    await this.initPromise;
 
+    const { bondAmount, logger } = this;
     const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
 
     // Balance checks.
@@ -51,14 +63,16 @@ export class Disputer {
     const mintAmount = minBondAmount.sub(balance);
     if (mintAmount.gt(bnZero)) {
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
-      if (nativeBalance.lte(mintAmount)) {
-        const nativeAmount = formatEther(mintAmount);
-        if (!this.simulate) {
-          // @todo: Should alert if cannot mint, but should not error if there is sufficient to dispute.
-          throw new Error(`Insufficient native token balance to mint ${nativeAmount} bond tokens`);
+      if (nativeBalance.gt(mintAmount)) {
+        await this.mintBond(mintAmount);
+      } else {
+        const fmtAmount = formatEther(mintAmount);
+        const message = `Insufficient native token balance to mint ${fmtAmount} bond tokens.`;
+        if (!this.simulate && balance.lt(bondAmount)) {
+          throw new Error(message);
         }
+        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount });
       }
-      await this.mintBond(mintAmount);
     }
 
     // Ensure allowances are in place.
@@ -126,14 +140,20 @@ export class Disputer {
       nonMulticall: true,
     };
 
-    return this.submit(txn);
+    try {
+      return this.submit(txn);
+    } catch (err) {
+      this.logger.error({ at: "Disputer::dispute", message: "Failed to submit HubPool dispute.", err });
+    }
+
+    return Promise.resolve(undefined);
   }
 
   protected async submit(txn: AugmentedTransaction, maxTries = 3): Promise<TransactionReceipt | undefined> {
-    const { txnClient, chainId } = this;
+    const { chainId, logger, txnClient } = this;
 
     if (this.simulate) {
-      this.logger.warn({ at: "Disputer::submit", message: `Suppressing ${txn.method} transaction.` });
+      logger.warn({ at: "Disputer::submit", message: `Suppressing ${txn.method} transaction.` });
       return Promise.resolve(undefined);
     }
 
