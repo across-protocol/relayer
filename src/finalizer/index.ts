@@ -127,8 +127,8 @@ function generateChainConfig(): void {
       config.finalizeOnAny.push(cctpV2Finalizer);
     }
 
-    // Also include OFT retry finalization logic for all EVM networks.
-    if (chainIsEvm(chainId)) {
+    // @todo Once contracts are linked, change this to add all chains w/ OFT enabled.
+    if (chainId === CHAIN_IDs.ARBITRUM) {
       config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
