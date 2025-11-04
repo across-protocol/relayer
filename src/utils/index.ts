@@ -79,3 +79,4 @@ export * from "./CCTPUtils";
 export * from "./RetryUtils";
 export * from "./BinanceUtils";
 export * from "./OFTUtils";
+export * from "./HyperliquidUtils";
