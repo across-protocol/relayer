@@ -31,6 +31,7 @@ export class Disputer {
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
+    // signer.connect() is unsupported in test.
     this.signer = signer.provider
       ? signer
       : signer.connect(hubPool.provider);
