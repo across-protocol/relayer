@@ -107,7 +107,7 @@ export class HyperliquidExecutor {
       chainId: this.chainId,
       method: "submitLimitOrderFromBot",
       args: [finalToken.toNative(), price, size, cloid],
-      message: "Submitted limit order to Hypercore.",
+      message: `Submitted limit order of ${l2TokenInfo.symbol} -> ${finalTokenInfo.symbol} to Hypercore.`,
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
     });
@@ -148,9 +148,10 @@ export class HyperliquidExecutor {
 
   private _getTokenInfo(token: EvmAddress, chainId: number) {
     const tokenInfo = getTokenInfo(token, chainId);
-    if (tokenInfo.symbol === "USDT") {
-      tokenInfo.symbol = "USDT0";
-    }
-    return tokenInfo;
+    const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
+    return {
+      ...tokenInfo,
+      symbol: updatedSymbol,
+    };
   }
 }
