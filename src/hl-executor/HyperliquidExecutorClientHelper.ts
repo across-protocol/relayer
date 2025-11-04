@@ -1,7 +1,7 @@
 import winston from "winston";
 import { HyperliquidExecutorClients } from "./HyperliquidExecutor";
 import { constructClients, getEnabledChainsInBlockRange, updateClients } from "../common";
-import { Signer, mapAsync, getProvider } from "../utils";
+import { Signer, mapAsync, getProvider, chainIsCCTPEnabled, chainIsOFTEnabled } from "../utils";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
 
 export async function constructHyperliquidExecutorClients(
@@ -25,7 +25,7 @@ export async function constructHyperliquidExecutorClients(
     configStoreClient,
     config.spokePoolChainsOverride,
     latestMainnetBlock
-  );
+  ).filter((chainId) => chainIsCCTPEnabled(chainId) || chainIsOFTEnabled(chainId));
   const l2ProvidersByChain = Object.fromEntries(
     await mapAsync(enabledChains, async (chainId) => [chainId, await getProvider(chainId)])
   );

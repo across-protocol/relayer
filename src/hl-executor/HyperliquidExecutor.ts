@@ -70,6 +70,7 @@ export class HyperliquidExecutor {
         })
         .filter(isDefined)
     );
+    // These must be defined.
     const { address: oftAddress, abi } = CONTRACT_ADDRESSES[this.chainId].dstOftMessenger;
     const { address: cctpAddress } = CONTRACT_ADDRESSES[this.chainId].dstCctpMessenger;
     this.dstOftMessenger = new Contract(oftAddress, abi, l2ProvidersByChain[this.chainId]);

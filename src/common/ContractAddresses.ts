@@ -306,7 +306,7 @@ export const CONTRACT_ADDRESSES: {
       abi: HYPEREVM_HANDLER_ABI,
     },
     dstCctpMessenger: {
-      address: "", // @todo
+      address: "0xae56583Ec24102aF3D265d3CeA6341830eD56636",
       abi: HYPEREVM_HANDLER_ABI,
     },
   },
