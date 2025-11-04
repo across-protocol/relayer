@@ -1,4 +1,5 @@
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
+import * as beta from "@across-protocol/contracts-beta";
 import {
   CHAIN_IDs,
   getNetworkName,
@@ -88,4 +89,17 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
   } catch (error) {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
+}
+
+// The DstOft/Cctp handler contracts only exist on HyperEVM.
+export function getDstOftHandler(): Contract {
+  const factoryName = "DstOFTHandler";
+  const artifact = beta[`${factoryName}__factory`];
+  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
+}
+
+export function getDstCctpHandler(): Contract {
+  const factoryName = "SponsoredCCTPDstPeriphery";
+  const artifact = beta[`${factoryName}__factory`];
+  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
 }
