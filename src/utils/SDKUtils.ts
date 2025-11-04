@@ -104,8 +104,6 @@ export const {
   convertFillParamsToNative,
   chunk,
   chainIsL1,
-  chainIsCCTPEnabled,
-  chainIsOFTEnabled,
 } = sdk.utils;
 
 export const {

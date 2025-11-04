@@ -16,7 +16,7 @@ import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
-import { runHyperliquidExecutor } from "./src/hl-executor";
+import { runHyperliquidExecutor } from "./src/hyperliquid";
 
 let logger: typeof Logger;
 let cmd: string;

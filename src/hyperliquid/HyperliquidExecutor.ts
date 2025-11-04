@@ -22,7 +22,7 @@ export interface HyperliquidExecutorClients {
   // We can further constrain the HubPoolClient type since we don't call any functions on it.
   hubPoolClient: { hubPool: Contract; chainId: number };
   multiCallerClient: MultiCallerClient;
-  l2ProvidersByChain: { [chainId: number]: Provider };
+  dstProvider: Provider;
 }
 
 /**
@@ -30,8 +30,6 @@ export interface HyperliquidExecutorClients {
 export class HyperliquidExecutor {
   private redisCache: RedisCache;
   private baseSigner: Signer;
-  private srcOftMessengers: { [chainId: number]: Contract };
-  private srcCctpMessengers: { [chainId: number]: Contract };
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
   private hlPairs: { [pair: string]: string } = {};
@@ -47,34 +45,11 @@ export class HyperliquidExecutor {
   ) {
     this.baseSigner = this.clients.hubPoolClient.hubPool.signer;
 
-    const { l2ProvidersByChain } = clients;
-    this.srcOftMessengers = Object.fromEntries(
-      Object.entries(l2ProvidersByChain)
-        .map(([chainId, provider]) => {
-          const srcOftMessenger = CONTRACT_ADDRESSES[chainId]?.srcOftMessenger;
-          if (isDefined(srcOftMessenger?.address)) {
-            return [chainId, new Contract(srcOftMessenger.address, srcOftMessenger.abi, provider)];
-          }
-          return undefined;
-        })
-        .filter(isDefined)
-    );
-    this.srcCctpMessengers = Object.fromEntries(
-      Object.entries(l2ProvidersByChain)
-        .map(([chainId, provider]) => {
-          const srcCctpMessenger = CONTRACT_ADDRESSES[chainId]?.srcCctpMessenger;
-          if (isDefined(srcCctpMessenger?.address)) {
-            return [chainId, new Contract(srcCctpMessenger.address, srcCctpMessenger.abi, provider)];
-          }
-          return undefined;
-        })
-        .filter(isDefined)
-    );
     // These must be defined.
     const { address: oftAddress, abi } = CONTRACT_ADDRESSES[this.chainId].dstOftMessenger;
     const { address: cctpAddress } = CONTRACT_ADDRESSES[this.chainId].dstCctpMessenger;
-    this.dstOftMessenger = new Contract(oftAddress, abi, l2ProvidersByChain[this.chainId]);
-    this.dstCctpMessenger = new Contract(cctpAddress, abi, l2ProvidersByChain[this.chainId]);
+    this.dstOftMessenger = new Contract(oftAddress, abi, this.clients.dstProvider);
+    this.dstCctpMessenger = new Contract(cctpAddress, abi, this.clients.dstProvider);
 
     this.infoClient = getHlInfoClient();
   }
