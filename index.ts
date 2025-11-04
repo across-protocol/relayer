@@ -11,7 +11,7 @@ import {
   stringifyThrownValue,
 } from "./src/utils";
 import { runRelayer, runRebalancer } from "./src/relayer";
-import { runDataworker } from "./src/dataworker";
+import { runDataworker, runDisputerWatchdog } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
@@ -23,6 +23,7 @@ let cmd: string;
 
 const CMDS = {
   dataworker: runDataworker,
+  "disputer-watchdog": runDisputerWatchdog,
   finalizer: runFinalizer,
   help: help,
   monitor: runMonitor,
