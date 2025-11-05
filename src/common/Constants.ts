@@ -7,7 +7,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
-  Provider,
   ZERO_ADDRESS,
   bnUint32Max,
   EvmAddress,
@@ -49,6 +48,7 @@ import {
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
+  SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
 } from "../adapter/l2Bridges";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
 import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
@@ -408,6 +408,14 @@ type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
   logger: winston.Logger
 ) => T;
 
+type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
+  l2chainId: number,
+  hubChainId: number,
+  l2SignerOrProvider: any,
+  l1Signer: Signer,
+  l1Token: EvmAddress
+) => T;
+
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
 const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
@@ -444,17 +452,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
 };
 export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
-export const CANONICAL_L2_BRIDGE: {
-  [chainId: number]: {
-    new (
-      l2chainId: number,
-      hubChainId: number,
-      l2Signer: Signer,
-      l1Provider: Provider | Signer,
-      l1Token?: EvmAddress
-    ): BaseL2BridgeAdapter;
-  };
-} = {
+export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
   [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
@@ -590,19 +588,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
 };
 
-export const CUSTOM_L2_BRIDGE: {
-  [chainId: number]: {
-    [tokenAddress: string]: {
-      new (
-        l2chainId: number,
-        hubChainId: number,
-        l2Signer: Signer,
-        l1Provider: Provider | Signer,
-        l1Token?: EvmAddress
-      ): BaseL2BridgeAdapter;
-    };
-  };
-} = {
+export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
@@ -659,6 +645,9 @@ export const CUSTOM_L2_BRIDGE: {
   },
   [CHAIN_IDs.BSC]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+  },
+  [CHAIN_IDs.SOLANA]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -741,27 +730,29 @@ export const SCROLL_CUSTOM_GATEWAY: { [chainId: number]: { l1: string; l2: strin
 };
 
 // Expected worst-case time for message from L1 to propagate to L2 in seconds
-export const EXPECTED_L1_TO_L2_MESSAGE_TIME = {
-  [CHAIN_IDs.ARBITRUM]: 20 * 60,
-  [CHAIN_IDs.BASE]: 20 * 60,
-  [CHAIN_IDs.BLAST]: 20 * 60,
-  [CHAIN_IDs.UNICHAIN]: 20 * 60,
-  [CHAIN_IDs.INK]: 20 * 60,
-  [CHAIN_IDs.LENS]: 60 * 60,
-  [CHAIN_IDs.LINEA]: 60 * 60,
-  [CHAIN_IDs.LISK]: 20 * 60,
-  [CHAIN_IDs.MODE]: 20 * 60,
-  [CHAIN_IDs.OPTIMISM]: 20 * 60,
-  [CHAIN_IDs.PLASMA]: 60 * 60,
-  [CHAIN_IDs.POLYGON]: 60 * 60,
-  [CHAIN_IDs.REDSTONE]: 20 * 60,
-  [CHAIN_IDs.SCROLL]: 60 * 60,
-  [CHAIN_IDs.SOLANA]: 60 * 30,
-  [CHAIN_IDs.SONEIUM]: 20 * 60,
-  [CHAIN_IDs.WORLD_CHAIN]: 20 * 60,
-  [CHAIN_IDs.ZK_SYNC]: 60 * 60,
-  [CHAIN_IDs.ZORA]: 20 * 60,
+const resolveBridgeDelay = () => {
+  const defaultBridgeDelay = 60 * 60;
+
+  const bridgeFamilies = {
+    [ChainFamily.OP_STACK]: 20 * 60,
+    [ChainFamily.ORBIT]: 40 * 60,
+    [ChainFamily.ZK_STACK]: 60 * 60,
+  };
+
+  const bridges = {
+    [CHAIN_IDs.ARBITRUM]: bridgeFamilies[ChainFamily.ORBIT],
+    [CHAIN_IDs.ZK_SYNC]: bridgeFamilies[ChainFamily.ZK_STACK],
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const bridgeDelay = bridges[chainId] ?? bridgeFamilies[family] ?? defaultBridgeDelay;
+      return [chainId, bridgeDelay];
+    })
+  );
 };
+export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
   [CHAIN_IDs.BASE]: {
@@ -1074,7 +1065,3 @@ export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
     tradeType: "exactOutput",
   },
 };
-
-export type CCTPMessageStatus = "finalized" | "ready" | "pending";
-export const CCTPV2_FINALITY_THRESHOLD_STANDARD = 2000;
-export const CCTPV2_FINALITY_THRESHOLD_FAST = 1000;

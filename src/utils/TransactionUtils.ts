@@ -23,7 +23,6 @@ import {
 } from "../utils";
 import {
   CompilableTransactionMessage,
-  KeyPairSigner,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
   type MicroLamports,
@@ -40,6 +39,8 @@ export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
+
+export type SolanaTransaction = CompilableTransactionMessage;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -222,8 +223,7 @@ export async function sendRawTransaction(
 }
 
 export async function sendAndConfirmSolanaTransaction(
-  _unsignedTransaction: CompilableTransactionMessage,
-  signer: KeyPairSigner,
+  _unsignedTransaction: SolanaTransaction,
   provider: SVMProvider,
   cycles = 25,
   pollingDelay = 600 // 1.5 slots on Solana.

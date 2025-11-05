@@ -3,6 +3,7 @@
  * go through the relatively longer process of constructing full bundle data from scratch, like the BundleDataClient.
  */
 
+import { SpokePoolManager } from ".";
 import { SpokePoolClientsByChain } from "../interfaces";
 import { assert, BigNumber, isDefined, winston } from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
@@ -11,14 +12,17 @@ import { HubPoolClient } from "./HubPoolClient";
 export class BundleDataApproxClient {
   private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
+  private readonly spokePoolManager: SpokePoolManager;
 
   constructor(
-    private readonly spokePoolClients: SpokePoolClientsByChain,
+    spokePoolClients: SpokePoolClientsByChain,
     private readonly hubPoolClient: HubPoolClient,
     private readonly chainIdList: number[],
     private readonly l1Tokens: Address[],
     private readonly logger: winston.Logger
-  ) {}
+  ) {
+    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+  }
 
   // Return sum of refunds for all fills sent after the fromBlocks.
   // Makes a simple assumption that all fills that were sent after the last executed bundle
@@ -31,7 +35,7 @@ export class BundleDataApproxClient {
     const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
     for (const chainId of this.chainIdList) {
       refundsForChain[chainId] ??= {};
-      const spokePoolClient = this.spokePoolClients[chainId];
+      const spokePoolClient = this.spokePoolManager.getClient(chainId);
       if (!isDefined(spokePoolClient)) {
         continue;
       }
@@ -72,7 +76,8 @@ export class BundleDataApproxClient {
   protected getUnexecutedBundleStartBlocks(): { [chainId: number]: number } {
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
-        const spokePoolClient = this.spokePoolClients[chainId];
+        const spokePoolClient = this.spokePoolManager.getClient(chainId);
+        assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
         // Step 1: Find the last RelayedRootBundle event that was relayed to this chain. Assume this contains refunds
         // from the last executed bundle for this chain and these refunds were executed.
         const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().at(-1);
@@ -114,8 +119,8 @@ export class BundleDataApproxClient {
   ): { [chainId: number]: BigNumber } {
     const depositsForChain: { [chainId: number]: BigNumber } = {};
     for (const chainId of this.chainIdList) {
-      const spokePoolClient = this.spokePoolClients[chainId];
       depositsForChain[chainId] ??= bnZero;
+      const spokePoolClient = this.spokePoolManager.getClient(chainId);
       if (!isDefined(spokePoolClient)) {
         continue;
       }
