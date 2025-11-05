@@ -202,12 +202,13 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         const { depositId } = event.args;
         assert(isDefined(depositId));
 
-        const result = Object.entries(this.depositHashes).find(([, deposit]) => deposit.txnRef === transactionHash);
-        if (isDefined(result)) {
-          const [depositKey, deposit] = result;
-          delete this.depositHashes[depositKey];
-          removed = true;
-          this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+        const deposits = Object.entries(this.depositHashes).filter(([, deposit]) => deposit.txnRef === transactionHash);
+        if (deposits.length > 0) {
+          deposits.forEach(([depositKey, deposit]) => {
+            delete this.depositHashes[depositKey];
+            removed = true;
+            this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+          });
         } else {
           this.logger.warn({
             at,
