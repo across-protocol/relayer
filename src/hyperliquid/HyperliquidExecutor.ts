@@ -146,6 +146,27 @@ export class HyperliquidExecutor {
     });
   }
 
+  private async finalizeLimitOrders(finalToken: EvmAddress, quoteNonces: string[], limitOrderOuts: BigNumber[]) {
+    // @todo: Limit order outs must be the amoutn of final tokens received after limit orders are executed
+    // and base token is swapped for final token. Instead of caller passing in limit order outputs, we could make
+    // them pass in the SwapFlowInitialized event. However, the question remains how many output tokens are attributed
+    // to each swap order, especially if multiple swap orders are batched together.
+
+    const l2TokenInfo = this._getTokenInfo(finalToken, this.chainId);
+    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+
+    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOuts}`;
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: dstHandler,
+      chainId: this.chainId,
+      method: "finalizeSwapFlows",
+      args: [finalToken.toNative(), quoteNonces, limitOrderOuts],
+      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
+      mrkdwn,
+      nonMulticall: true, // Cannot multicall this since it is a permissioned action.
+    });
+  }
+
   private _getTokenInfo(token: EvmAddress, chainId: number) {
     const tokenInfo = getTokenInfo(token, chainId);
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
