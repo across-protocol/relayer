@@ -1569,7 +1569,7 @@ export class Relayer {
     gasPrice: BigNumber
   ): string {
     let mrkdwn =
-      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, gasPrice, totalUserFeePct) +
+      this.constructBaseFillMarkdown(deposit, realizedLpFeePct, totalUserFeePct, gasPrice) +
       ` Relayer repayment: ${getNetworkName(repaymentChainId)}.`;
 
     if (isDepositSpedUp(deposit)) {

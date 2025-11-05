@@ -21,6 +21,40 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.83.tgz#7eef532ea6aea5ae1e7c8a967d788e968c90b7e6"
   integrity sha512-DHTcNLApU77sXM9ITh1pjjhXWy1B+1CEzkLU1vk/iA4+9xRBoLvGlxRKvdsgNsyoqmtMkQoB8BiiD+0t2aAe2Q==
 
+"@across-protocol/contracts-beta@npm:@across-protocol/contracts@4.1.12-beta.4":
+  version "4.1.12-beta.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.12-beta.4.tgz#93736ae48972ecf1f52310d94ca41f058fdb46de"
+  integrity sha512-SIwpe5vxZhj4ydcuvThB1DoX2Qfy4RmSDfECf2rZFL46BJfDy1DnCnqRUWj+TQoG/H11Myfc5fh00ZMvXiXRfg==
+  dependencies:
+    "@across-protocol/constants" "^3.1.77"
+    "@coral-xyz/anchor" "^0.31.1"
+    "@defi-wonderland/smock" "^2.3.4"
+    "@eth-optimism/contracts" "^0.5.40"
+    "@ethersproject/abstract-provider" "5.7.0"
+    "@ethersproject/abstract-signer" "5.7.0"
+    "@ethersproject/bignumber" "5.7.0"
+    "@openzeppelin/contracts" "5.5.0"
+    "@openzeppelin/contracts-upgradeable" "5.5.0"
+    "@openzeppelin/contracts-upgradeable-v4" "npm:@openzeppelin/contracts-upgradeable@4.9.6"
+    "@openzeppelin/contracts-v4" "npm:@openzeppelin/contracts@4.9.6"
+    "@openzeppelin/foundry-upgrades" "^0.4.0"
+    "@safe-global/protocol-kit" "^6.1.1"
+    "@scroll-tech/contracts" "^0.1.0"
+    "@solana-developers/helpers" "^2.4.0"
+    "@solana-program/address-lookup-table" "^0.7.0"
+    "@solana-program/token" "^0.5.1"
+    "@solana/kit" "^2.1.0"
+    "@solana/spl-token" "^0.4.6"
+    "@solana/web3.js" "1.98.2"
+    "@types/yargs" "^17.0.33"
+    "@uma/common" "^2.37.3"
+    "@uma/contracts-node" "^0.4.17"
+    axios "^1.7.4"
+    bs58 "^6.0.0"
+    prettier-plugin-rust "^0.1.9"
+    yargs "^17.7.2"
+    zksync-web3 "^0.14.3"
+
 "@across-protocol/contracts@^0.1.4":
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-0.1.4.tgz#64b3d91e639d2bb120ea94ddef3d160967047fa5"
@@ -30,10 +64,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/contracts@^4.1.11":
-  version "4.1.11"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.11.tgz#6194ca1d3a78edbbbcd6a047f2ade9bbc911e536"
-  integrity sha512-ErLVNzMgF9H7XkMRtI4fQQ4/IVaO4GAj/FShUxqSHLspcEGreeeyxRj5hfPsALOPQdGvMiT1iJmx7I0oVi1P4w==
+"@across-protocol/contracts@^4.1.12":
+  version "4.1.12"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.12.tgz#dbf0d4f105884f2cd5a25280f0aac635b8505a5c"
+  integrity sha512-+d1xTLBxGNHDMuZDMaZPunDb46SYzAsIfqrwK6252cP0+9dG7XFX+6hBXpeqyytp7ESe+W8UgpGQdSCxXAdhkw==
   dependencies:
     "@across-protocol/constants" "^3.1.77"
     "@coral-xyz/anchor" "^0.31.1"
@@ -63,14 +97,14 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.81":
-  version "4.3.81"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.81.tgz#74b88ff7e36fc0052010acfc3215bfbb1a00378a"
-  integrity sha512-kDVGxTTM68es7v1fCkZ/LwVH+ydM8cktpZXyRSjQkh/vKg30cJqQ93y4jAnnIG2zSHXRgmQe1srq/N2yUVncPg==
+"@across-protocol/sdk@4.3.87":
+  version "4.3.87"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.87.tgz#d5cce44e36337d871669db2d79abcec63831768a"
+  integrity sha512-ABb2GfxnmdtWJj2eR6xxllSstTjm2hkAtrjYNtD2b1EczvSHPlLsGf+cyEmRbtnp+dCIcl6qD6yMEjoueN4MkA==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.83"
-    "@across-protocol/contracts" "^4.1.11"
+    "@across-protocol/contracts" "^4.1.12"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
@@ -1589,10 +1623,26 @@
     tweetnacl "^1.0.3"
     tweetnacl-util "^0.15.1"
 
+"@msgpack/msgpack@^3.1.2":
+  version "3.1.2"
+  resolved "https://registry.yarnpkg.com/@msgpack/msgpack/-/msgpack-3.1.2.tgz#fdd25cc2202297519798bbaf4689152ad9609e19"
+  integrity sha512-JEW4DEtBzfe8HvUYecLU9e6+XJnKDlUAIve8FvPzF3Kzs6Xo/KuZkZJsDH0wJXl/qEZbeeE7edxDNY3kMs39hQ==
+
 "@multiformats/base-x@^4.0.1":
   version "4.0.1"
   resolved "https://registry.yarnpkg.com/@multiformats/base-x/-/base-x-4.0.1.tgz#95ff0fa58711789d53aefb2590a8b7a4e715d121"
   integrity sha512-eMk0b9ReBbV23xXU693TAIrLyeO5iTgBZGSJfpqriG8UkYvr/hC9u9pyMlAakDNHWmbhMZCDs6KQO0jzKD8OTw==
+
+"@nktkas/hyperliquid@^0.25.4":
+  version "0.25.4"
+  resolved "https://registry.yarnpkg.com/@nktkas/hyperliquid/-/hyperliquid-0.25.4.tgz#1d29e85e4ef6e6d02fffcb15293c582757948620"
+  integrity sha512-o2qGBfB+8pRwfx1ypug7pH70utIwiNt2efsgRqWHjjvd/ZAj10o9et9i9QsFuQMywif2QuFCPfWYHoSF8YQZqg==
+  dependencies:
+    "@msgpack/msgpack" "^3.1.2"
+    "@noble/hashes" "^2.0.0"
+    "@noble/secp256k1" "^3.0.0"
+    typescript-event-target "1.1.1"
+    valibot "1.1.0"
 
 "@noble/ciphers@^1.3.0":
   version "1.3.0"
@@ -1671,10 +1721,20 @@
   resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-1.8.0.tgz#cee43d801fcef9644b11b8194857695acd5f815a"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
 
+"@noble/hashes@^2.0.0":
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-2.0.1.tgz#fc1a928061d1232b0a52bb754393c37a5216c89e"
+  integrity sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==
+
 "@noble/secp256k1@1.5.5", "@noble/secp256k1@~1.5.2":
   version "1.5.5"
   resolved "https://registry.yarnpkg.com/@noble/secp256k1/-/secp256k1-1.5.5.tgz#315ab5745509d1a8c8e90d0bdf59823ccf9bcfc3"
   integrity sha512-sZ1W6gQzYnu45wPrWx8D3kwI2/U29VYTx9OjbDAd7jwRItJ0cSTMPRL/C8AWZFn9kWFLQGqEXVEE86w4Z8LpIQ==
+
+"@noble/secp256k1@^3.0.0":
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/@noble/secp256k1/-/secp256k1-3.0.0.tgz#29711361db8f37b1b7e0b8d80c933013fc887475"
+  integrity sha512-NJBaR352KyIvj3t6sgT/+7xrNyF9Xk9QlLSIqUGVUYlsnDTAUqY8LOmwpcgEx4AMJXRITQ5XEVHD+mMaPfr3mg==
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"
@@ -2267,10 +2327,25 @@
     hex2dec "^1.0.1"
     uuid "^8.0.0"
 
+"@openzeppelin/contracts-upgradeable-v4@npm:@openzeppelin/contracts-upgradeable@4.9.6":
+  version "4.9.6"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.9.6.tgz#38b21708a719da647de4bb0e4802ee235a0d24df"
+  integrity sha512-m4iHazOsOCv1DgM7eD7GupTJ+NFVujRZt1wzddDPSVGpWdKq1SKkla5htKG7+IS4d2XOCtzkUNwRZ7Vq5aEUMA==
+
 "@openzeppelin/contracts-upgradeable@4.9.6", "@openzeppelin/contracts-upgradeable@^4.8.1":
   version "4.9.6"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-4.9.6.tgz#38b21708a719da647de4bb0e4802ee235a0d24df"
   integrity sha512-m4iHazOsOCv1DgM7eD7GupTJ+NFVujRZt1wzddDPSVGpWdKq1SKkla5htKG7+IS4d2XOCtzkUNwRZ7Vq5aEUMA==
+
+"@openzeppelin/contracts-upgradeable@5.5.0":
+  version "5.5.0"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts-upgradeable/-/contracts-upgradeable-5.5.0.tgz#e35b3ededa5ccc13205c2b42e2058cd5cb7d424a"
+  integrity sha512-Va5hKG5oaK0EE5bXTVWugcGimMHazxL+SL523dH6WVbGiuLXwuWr9oxtLyPHQSVGtgmlIgtKNR5V+OUpCIUwFQ==
+
+"@openzeppelin/contracts-v4@npm:@openzeppelin/contracts@4.9.6":
+  version "4.9.6"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.9.6.tgz#2a880a24eb19b4f8b25adc2a5095f2aa27f39677"
+  integrity sha512-xSmezSupL+y9VkHZJGDoCBpmnB2ogM13ccaYDWqJTfS3dbuHkgjuwDFUmaFauBCboQMGB/S5UqUl2y54X99BmA==
 
 "@openzeppelin/contracts@3.4.1-solc-0.7-2":
   version "3.4.1-solc-0.7-2"
@@ -2291,6 +2366,11 @@
   version "4.9.6"
   resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-4.9.6.tgz#2a880a24eb19b4f8b25adc2a5095f2aa27f39677"
   integrity sha512-xSmezSupL+y9VkHZJGDoCBpmnB2ogM13ccaYDWqJTfS3dbuHkgjuwDFUmaFauBCboQMGB/S5UqUl2y54X99BmA==
+
+"@openzeppelin/contracts@5.5.0":
+  version "5.5.0"
+  resolved "https://registry.yarnpkg.com/@openzeppelin/contracts/-/contracts-5.5.0.tgz#24e8a2f9598de484dcb223512af656edf52bc0e8"
+  integrity sha512-R8hq4zmKKWP2c7OxeRgAcjZwvF5W0Qq2OIX7degrtdM52Q9xYr4MLJdUAVPKGUewNJ1qo+M6YiZLLnNUnjP/gg==
 
 "@openzeppelin/contracts@^4.2.0", "@openzeppelin/contracts@^4.7.3", "@openzeppelin/contracts@^4.8.1":
   version "4.9.3"
@@ -16266,6 +16346,11 @@ typeorm@^0.3.20:
     uuid "^11.1.0"
     yargs "^17.7.2"
 
+typescript-event-target@1.1.1:
+  version "1.1.1"
+  resolved "https://registry.yarnpkg.com/typescript-event-target/-/typescript-event-target-1.1.1.tgz#20a6d491b77d2e37dc432c5394ab74c0d7065539"
+  integrity sha512-dFSOFBKV6uwaloBCCUhxlD3Pr/P1a/tJdcmPrTXCHlEFD3faj0mztjcGn6VBAhQ0/Bdy8K3VWrrqwbt/ffsYsg==
+
 typescript@^5.9:
   version "5.9.2"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.9.2.tgz#d93450cddec5154a2d5cabe3b8102b83316fb2a6"
@@ -16548,6 +16633,11 @@ v8-compile-cache@^2.0.3:
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/v8-compile-cache/-/v8-compile-cache-2.3.0.tgz#2de19618c66dc247dcfb6f99338035d8245a2cee"
   integrity sha512-l8lCEmLcLYZh4nbunNZvQCJc5pv7+RCwa8q/LdUx8u7lsWvPDKmpodJAJNwkAhJC//dFY48KuIEmjtd4RViDrA==
+
+valibot@1.1.0:
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/valibot/-/valibot-1.1.0.tgz#873bb1af9e1577391690307bfe0520bd1360ec2d"
+  integrity sha512-Nk8lX30Qhu+9txPYTwM0cFlWLdPFsFr6LblzqIySfbZph9+BFsAHsNvHOymEviUepeIW6KFHzpX8TKhbptBXXw==
 
 validate-npm-package-license@^3.0.1, validate-npm-package-license@^3.0.4:
   version "3.0.4"
