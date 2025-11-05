@@ -4,12 +4,13 @@ import { Profiler, winston } from "../../../utils";
 import { ScraperOpts } from "../../types";
 
 /**
- * Given a SpokePool contract instance and an event name, scrape all corresponding events and submit them to the
- * parent process (if defined).
- * @param spokePool Ethers Contract instance.
+ * Scrape events from a SVM CPI events client for a given event name within a specified block range.
+ * @param chain Chain name identifier.
+ * @param eventsClient SVM CPI events client instance.
  * @param eventName The name of the event to be filtered.
- * @param opts Options to configure event scraping behaviour.
- * @returns void
+ * @param opts Options to configure event scraping behaviour, including the target block number.
+ * @param logger Winston logger instance.
+ * @returns Promise resolving to an array of events with data.
  */
 export async function scrapeEvents(
   chain: string,
