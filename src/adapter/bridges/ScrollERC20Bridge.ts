@@ -12,6 +12,7 @@ import {
   compareAddressesSimple,
   TOKEN_SYMBOLS_MAP,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, SCROLL_CUSTOM_GATEWAY } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
@@ -29,13 +30,14 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
   protected readonly scrollGasPriceOracle: Contract;
 
   protected readonly scrollGatewayRouter;
-  protected readonly hubPoolAddress;
   constructor(
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].scrollGatewayRouter;
     const l2Abi = CONTRACT_ADDRESSES[l2chainId].scrollGatewayRouter.abi;
@@ -51,8 +53,6 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
     this.scrollGatewayRouter = new Contract(l1Address, l1Abi, l1Signer);
     this.scrollGasPriceOracle = new Contract(gasPriceOracleAddress, gasPriceOracleAbi, l1Signer);
-
-    this.hubPoolAddress = CONTRACT_ADDRESSES[hubChainId].hubPool.address;
   }
 
   async constructL1ToL2Txn(
@@ -84,7 +84,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toNative();
+    const monitoredFromAddress: string = isL2Contract ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l1Bridge = this.getL1Bridge();
     const events = await paginatedEventQuery(
@@ -109,7 +109,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
     const isL2Contract = await isContractDeployedToAddress(toAddress.toNative(), this.l2Bridge.provider);
-    const monitoredFromAddress = isL2Contract ? this.hubPoolAddress : fromAddress.toNative();
+    const monitoredFromAddress: string = isL2Contract ? this.hubPoolAddress.toNative() : fromAddress.toNative();
 
     const l2Bridge = this.getL2Bridge();
     const events = await paginatedEventQuery(

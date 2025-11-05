@@ -46,7 +46,15 @@ describe("ProfitClient: Price Retrieval", async () => {
 
     mainnetTokens.forEach((token) => hubPoolClient.addL1Token(token));
     const relayerAddress = toAddressType(randomAddress(), hubPoolClient.chainId);
-    profitClient = new ProfitClientWithMockPriceClient(spyLogger, hubPoolClient, {}, [], relayerAddress, bnZero);
+    profitClient = new ProfitClientWithMockPriceClient(
+      spyLogger,
+      hubPoolClient,
+      {},
+      [],
+      relayerAddress,
+      relayerAddress,
+      bnZero
+    );
   });
 
   it("Correctly fetches token prices", async () => {

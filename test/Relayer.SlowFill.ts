@@ -183,6 +183,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
+        sendingMessageRelaysEnabled: {},
         loggingInterval: -1,
       } as unknown as RelayerConfig
     );
@@ -193,8 +194,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_1, relayer, [erc20_1, erc20_2], weth, 10);
     await setupTokensForWallet(spokePool_2, relayer, [erc20_1, erc20_2], weth, 10);
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, await l1Token.symbol());
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_1.address), await l1Token.symbol());
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_2.address), await l1Token.symbol());
 
     await l1Token.approve(hubPool.address, amountToLp);
     await hubPool.addLiquidity(l1Token.address, amountToLp);
@@ -236,7 +237,13 @@ describe("Relayer: Initiates slow fill requests", async function () {
     const txn = await spokePool_1.provider.getTransaction(txnHashes[0]);
     const { name: method } = spokePool_1.interface.parseTransaction(txn);
     expect(method).to.equal("requestSlowFill");
-    expect(spyLogIncludes(spy, -5, "Insufficient balance to fill all deposits")).to.be.true;
+    expect(
+      spyLogIncludes(
+        spy,
+        -10,
+        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1342 would also not be profitable."
+      )
+    ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;
 
     // Verify that the slowFill request was received by the destination SpokePoolClient.
@@ -248,6 +255,8 @@ describe("Relayer: Initiates slow fill requests", async function () {
     for (const receipts of Object.values(txnReceipts)) {
       expect((await receipts).length).to.equal(0);
     }
-    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.true;
+    // We do not want to rebalance to a chain when the fill for which we are rebalancing is unprofitable.
+    // This means we should _not_ log the token shortfall.
+    expect(lastSpyLogIncludes(spy, "Insufficient balance to fill all deposits")).to.be.false;
   });
 });

@@ -55,9 +55,11 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients } = relayerClients;
+  const { spokePoolClients, inventoryClient } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
+  const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
+  let inventoryInit = false;
 
   try {
     for (let run = 1; !stop; ++run) {
@@ -68,9 +70,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       const ready = await relayer.update();
       const activeRelayer = redis ? await redis.get(botIdentifier) : undefined;
 
-      // If there is another active relayer, allow up to 120 seconds for this instance to be ready.
-      // If this instance can't update, throw an error (for now).
-      if (!ready && activeRelayer) {
+      // If there is another active relayer, allow up to maxStartupDelay seconds for this instance to be ready.
+      // If one or more chains are still not updated by this point, proceed anyway.
+      if (!ready && activeRelayer && !activeRelayerUpdated) {
         if (run * pollingDelay < maxStartupDelay) {
           const runTime = Math.round((performance.now() - tLoopStart.startTime) / 1000);
           const delta = pollingDelay - runTime;
@@ -79,10 +81,17 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           continue;
         }
 
-        const badChains = Object.values(spokePoolClients)
+        const degraded = Object.values(spokePoolClients)
           .filter(({ isUpdated }) => !isUpdated)
           .map(({ chainId }) => getNetworkName(chainId));
-        throw new Error(`Unable to start relayer due to chains ${badChains.join(", ")}`);
+        logger.warn({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
+      }
+
+      // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
+      if (!inventoryInit && inventoryManagement) {
+        inventoryClient.setBundleData();
+        await inventoryClient.update(relayer.inventoryChainIds);
+        inventoryInit = true;
       }
 
       // Signal to any existing relayer that a handover is underway, or alternatively
@@ -150,4 +159,45 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   }
 
   mark.stop({ message: "Relayer instance completed." });
+}
+
+export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const personality = "Rebalancer";
+  const at = `${personality}::run`;
+
+  logger = _logger;
+  const config = new RelayerConfig(process.env);
+
+  // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
+  const { addressFilter: _addressFilter, ...loggedConfig } = config;
+  logger.debug({ at, message: `${personality} started 🏃‍♂️`, loggedConfig });
+  const clients = await constructRelayerClients(logger, config, baseSigner);
+
+  const { inventoryClient } = clients;
+  const inventoryManagement = clients.inventoryClient.isInventoryManagementEnabled();
+  if (!inventoryManagement) {
+    logger.debug({ at, message: "Inventory management disabled, nothing to do." });
+    return;
+  }
+  inventoryClient.setBundleData();
+
+  const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
+
+  try {
+    await rebalancer.init();
+    await rebalancer.update();
+    await inventoryClient.update(rebalancer.inventoryChainIds);
+    await rebalancer.checkForUnfilledDepositsAndFill(false, true);
+
+    if (config.sendingTransactionsEnabled) {
+      await inventoryClient.setTokenApprovals();
+    }
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
+    await inventoryClient.withdrawExcessBalances();
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `${personality} instance completed.` });
+  }
 }

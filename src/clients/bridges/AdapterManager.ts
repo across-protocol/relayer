@@ -14,25 +14,23 @@ import {
   isDefined,
   winston,
   Signer,
-  getL2TokenAddresses,
   TransactionResponse,
   assert,
-  Profiler,
   EvmAddress,
-  toAddressType,
   TOKEN_EQUIVALENCE_REMAPPING,
   getRemoteTokenForL1Token,
   getTokenInfo,
   isEVMSpokePoolClient,
   Address,
   isSVMSpokePoolClient,
+  bnZero,
 } from "../../utils";
-import { SpokePoolClient, HubPoolClient } from "../";
+import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { BaseChainAdapter } from "../../adapter";
+import { TransferTokenParams } from "../../adapter/utils";
 
 export class AdapterManager {
-  private profiler: InstanceType<typeof Profiler>;
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -40,17 +38,20 @@ export class AdapterManager {
   // manager will attempt to wrap ETH on into WETH. This list also includes chains like Arbitrum where the relayer is
   // expected to receive ETH as a gas refund from an L1 to L2 deposit that was intended to rebalance inventory.
   private chainsToWrapEtherOn = [...spokesThatHoldNativeTokens, CHAIN_IDs.ARBITRUM, CHAIN_IDs.MAINNET];
-
+  readonly spokePoolManager: SpokePoolManager;
   constructor(
     readonly logger: winston.Logger,
-    readonly spokePoolClients: { [chainId: number]: SpokePoolClient },
+    spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
     readonly monitoredAddresses: Address[]
   ) {
     if (!spokePoolClients) {
       return;
     }
-    const spokePoolAddresses = Object.values(spokePoolClients).map((client) => client.spokePoolAddress);
+    this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+    const spokePoolAddresses = Object.values(this.spokePoolManager.getSpokePoolClients()).map(
+      (client) => client.spokePoolAddress
+    );
 
     // The adapters are only set up to monitor EOA's and the HubPool and SpokePool address, so remove
     // spoke pool addresses from other chains.
@@ -58,7 +59,7 @@ export class AdapterManager {
       return monitoredAddresses.filter(
         (address) =>
           EvmAddress.from(this.hubPoolClient.hubPool.address).eq(address) ||
-          this.spokePoolClients[chainId].spokePoolAddress.eq(address) ||
+          this.spokePoolManager.getClient(chainId)?.spokePoolAddress.eq(address) ||
           !spokePoolAddresses.some((spokePoolAddress) => spokePoolAddress.eq(address))
       );
     };
@@ -72,7 +73,7 @@ export class AdapterManager {
 
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]?.map((symbol) => {
-          const spokePoolClient = spokePoolClients[chainId];
+          const spokePoolClient = this.spokePoolManager.getClient(chainId);
           let l2SignerOrProvider;
           if (isEVMSpokePoolClient(spokePoolClient)) {
             l2SignerOrProvider = spokePoolClient.spokePool.signer;
@@ -86,7 +87,8 @@ export class AdapterManager {
             hubChainId,
             l1Signer,
             l2SignerOrProvider,
-            EvmAddress.from(l1Token)
+            EvmAddress.from(l1Token),
+            logger
           );
           return [l1Token, bridge];
         }) ?? []
@@ -96,10 +98,12 @@ export class AdapterManager {
       if (chainId === hubChainId) {
         return {};
       }
-      const spokePoolClient = spokePoolClients[chainId];
-      let l2Signer;
+      const spokePoolClient = this.spokePoolManager.getClient(chainId);
+      let l2SignerOrSvmProvider;
       if (isEVMSpokePoolClient(spokePoolClient)) {
-        l2Signer = spokePoolClient.spokePool.signer;
+        l2SignerOrSvmProvider = spokePoolClient.spokePool.signer;
+      } else if (isSVMSpokePoolClient(spokePoolClient)) {
+        l2SignerOrSvmProvider = spokePoolClient.svmEventsClient.getRpc();
       }
       return Object.fromEntries(
         SUPPORTED_TOKENS[chainId]
@@ -109,16 +113,22 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(chainId, hubChainId, l2Signer, l1Signer, EvmAddress.from(l1Token));
+            const bridge = new bridgeConstructor(
+              chainId,
+              hubChainId,
+              l2SignerOrSvmProvider,
+              l1Signer,
+              EvmAddress.from(l1Token)
+            );
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
       );
     };
-    Object.values(this.spokePoolClients).map(({ chainId }) => {
+    Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
       // Instantiate a generic adapter and supply all network-specific configurations.
       this.adapters[chainId] = new BaseChainAdapter(
-        spokePoolClients,
+        this.spokePoolManager.getSpokePoolClients(),
         chainId,
         hubChainId,
         filterMonitoredAddresses(chainId),
@@ -128,10 +138,6 @@ export class AdapterManager {
         constructL2Bridges(chainId),
         DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
       );
-    });
-    this.profiler = new Profiler({
-      logger: this.logger,
-      at: "AdapterManager",
     });
     logger.debug({
       at: "AdapterManager#constructor",
@@ -173,17 +179,19 @@ export class AdapterManager {
     l1Token: EvmAddress,
     amount: BigNumber,
     simMode = false,
-    l2Token?: Address
+    l2Token?: Address,
+    optionalParams?: TransferTokenParams
   ): Promise<TransactionResponse> {
     this.logger.debug({
       at: "AdapterManager",
       message: "Sending token cross-chain",
+      optionalParams,
       chainId,
       l1Token: l1Token.toNative(),
       amount,
     });
     l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
-    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode);
+    return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode, optionalParams);
   }
 
   withdrawTokenFromL2(
@@ -191,7 +199,8 @@ export class AdapterManager {
     chainId: number | string,
     l2Token: Address,
     amount: BigNumber,
-    simMode = false
+    simMode = false,
+    optionalParams?: TransferTokenParams
   ): Promise<string[]> {
     chainId = Number(chainId);
     this.logger.debug({
@@ -201,7 +210,7 @@ export class AdapterManager {
       l2Token: l2Token.toNative(),
       amount,
     });
-    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode);
+    const txnReceipts = this.adapters[chainId].withdrawTokenFromL2(address, l2Token, amount, simMode, optionalParams);
     return txnReceipts;
   }
 
@@ -215,6 +224,40 @@ export class AdapterManager {
     return await this.adapters[chainId].getL2PendingWithdrawalAmount(lookbackPeriodSeconds, fromAddress, l2Token);
   }
 
+  async getTotalPendingWithdrawalAmount(
+    lookbackPeriodSeconds: number,
+    l2ChainIds: number[],
+    fromAddress: Address,
+    l1Token: EvmAddress
+  ): Promise<{ [l2ChainId: number]: BigNumber }> {
+    const l1TokenInfo = getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const totalBalance: { [l2ChainId: number]: BigNumber } = {};
+    await Promise.all(
+      l2ChainIds.map(async (chainId) => {
+        totalBalance[chainId] = bnZero;
+        if (!this.l2TokenExistForL1Token(l1Token, chainId)) {
+          return;
+        }
+        if (chainId === this.hubPoolClient.chainId) {
+          return;
+        }
+        if (!fromAddress.isValidOn(chainId)) {
+          return;
+        }
+        const l2Token = this.l2TokenForL1Token(l1Token, chainId);
+        const l2TokenInfo = getTokenInfo(l2Token, chainId);
+        const l2ToL1DecimalConverter = utils.ConvertDecimals(l2TokenInfo.decimals, l1TokenInfo.decimals);
+        const pendingAmount = await this.adapters[chainId].getL2PendingWithdrawalAmount(
+          lookbackPeriodSeconds,
+          fromAddress,
+          l2Token
+        );
+        totalBalance[chainId] = l2ToL1DecimalConverter(pendingAmount);
+      })
+    );
+    return totalBalance;
+  }
+
   // Check how many native tokens are on the target chain and if the number of tokens is above the wrap threshold, execute a wrap. Note that this only
   // needs to be done on chains where rebalancing the native token from L1 to L2 results in the relayer receiving the unwrapped native token
   // (not the ERC20), or if the relayer expects to be sent the native token perhaps as a gas refund from an original L1 to L2
@@ -223,7 +266,7 @@ export class AdapterManager {
   // inventory from L1 to ZkSync via the AtomicDepositor.
   async wrapNativeTokenIfAboveThreshold(inventoryConfig: InventoryConfig, simMode = false): Promise<void> {
     await utils.mapAsync(
-      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolClients[chainId])),
+      this.chainsToWrapEtherOn.filter((chainId) => isDefined(this.spokePoolManager.getClient(chainId))),
       async (chainId) => {
         const wrapThreshold =
           inventoryConfig?.wrapEtherThresholdPerChain?.[chainId] ?? inventoryConfig.wrapEtherThreshold;
@@ -238,7 +281,8 @@ export class AdapterManager {
   }
 
   getSigner(chainId: number): Signer {
-    const spokePoolClient = this.spokePoolClients[chainId];
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
     return spokePoolClient.spokePool.signer;
   }
@@ -253,16 +297,11 @@ export class AdapterManager {
       if (!l2TokenForL1Token) {
         throw new Error(`No L2 token found for L1 token ${l1Token} on chain ${chainId}`);
       }
-      if (!l2TokenForL1Token.eq(toAddressType(getL2TokenAddresses(l1Token.toEvmAddress())[chainId], chainId))) {
-        throw new Error(
-          `Token address mismatch (${l2TokenForL1Token} != ${getL2TokenAddresses(l1Token.toEvmAddress())[chainId]})`
-        );
-      }
       return l2TokenForL1Token;
     } catch (error) {
       this.logger.error({
         at: "AdapterManager",
-        message: "Implementor attempted to get a l2 token address for an L1 token that does not exist in the routings!",
+        message: "Implementer attempted to get a l2 token address for an L1 token that does not exist in the routings!",
         l1Token,
         chainId,
         error,

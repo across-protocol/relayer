@@ -18,8 +18,9 @@ import {
   assert,
   isEVMSpokePoolClient,
   toAddressType,
+  createFormatFunction,
 } from "../../../utils";
-import { FinalizerPromise, CrossChainMessage } from "../../types";
+import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../../types";
 import { TokensBridged } from "../../../interfaces";
 import {
   initLineaSdk,
@@ -30,9 +31,11 @@ import {
   getL1MessageServiceContractFromL1ClaimingService,
   getL2MessageServiceContractFromL1ClaimingService,
   getL2MessagingBlockAnchoredFromMessageSentEvent,
+  findMessageSentEvents,
+  findTokenBridgeEvents,
 } from "./common";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../../../common";
-import { arch } from "@across-protocol/sdk";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../../../common";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   L1ClaimingService,
   SparseMerkleTreeFactory,
@@ -124,7 +127,7 @@ async function getFinalizationMessagingInfo(
       treeDepth = BigNumber.from(parsedLog.args.treeDepth).toNumber();
       l2MerkleRoots.push(parsedLog.args.l2MerkleRoot);
     } else if (topic === L2_MESSAGING_BLOCK_ANCHORED_EVENT_SIGNATURE) {
-      blocksNumber.push(parsedLog.args.l2Block);
+      blocksNumber.push(BigNumber.from(parsedLog.args.l2Block).toNumber());
     }
   }
   if (l2MerkleRoots.length === 0) {
@@ -162,20 +165,32 @@ export async function lineaL2ToL1Finalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  _senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const [l1ChainId, l2ChainId] = [hubPoolClient.chainId, spokePoolClient.chainId];
-  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId);
+  const lineaSdk = initLineaSdk(l1ChainId, l2ChainId, signer);
   const l2Contract = lineaSdk.getL2Contract();
   const l1Contract = lineaSdk.getL1Contract();
   const l1ClaimingService = lineaSdk.getL1ClaimingService(l1Contract.contractAddress);
   // We need a longer lookback period for L1 to ensure we find all L1 events containing finalized
   // L2 block heights.
-  const { fromBlock: l1FromBlock, toBlock: l1ToBlock } = await getBlockRangeByHoursOffsets(l1ChainId, 24 * 14, 0);
+  const { fromBlock: l1FromBlock, toBlock: l1ToBlock } = await getBlockRangeByHoursOffsets(
+    logger,
+    l1ChainId,
+    24 * 14,
+    0
+  );
   // Optimize block range for querying relevant source events on L2.
   // Linea L2->L1 messages are claimable after 6 - 32 hours
-  const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(l2ChainId, 24 * 8, 6);
+  const { fromBlock: l2FromBlock, toBlock: l2ToBlock } = await getBlockRangeByHoursOffsets(
+    logger,
+    l2ChainId,
+    24 * 8,
+    6
+  );
   const l1SearchConfig = {
     from: l1FromBlock,
     to: l1ToBlock,
@@ -213,6 +228,49 @@ export async function lineaL2ToL1Finalizer(
         !l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP["USDC"].addresses[l2ChainId], l2ChainId))
     );
 
+  // Append raw MessageSent events for custom sender addresses to TokensBridged events
+  const senderAddresses = Array.from(_senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toEvmAddress())
+    .filter((sender) => sender !== spokePoolClient.spokePool.address && sender !== hubPoolClient.hubPool.address);
+  const l2TokenBridge = new Contract(
+    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.address,
+    CONTRACT_ADDRESSES[l2ChainId].lineaL2TokenBridge.abi,
+    l2Provider
+  );
+  const l2MessageServiceContract = getL2MessageServiceContractFromL1ClaimingService(
+    lineaSdk.getL1ClaimingService(),
+    l2Provider
+  );
+  const [wethAndRelayEvents, tokenBridgeEvents] = await Promise.all([
+    findMessageSentEvents(l2MessageServiceContract, senderAddresses, l2SearchConfig),
+    findTokenBridgeEvents(l2TokenBridge, senderAddresses, l2SearchConfig),
+  ]);
+  wethAndRelayEvents.forEach((event) => {
+    l2SrcEvents.push({
+      l2TokenAddress: sdkUtils.EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[l2ChainId]),
+      txnRef: event.transactionHash,
+      blockNumber: event.blockNumber,
+      txnIndex: event.parsed.transactionIndex,
+      logIndex: event.logIndex,
+      amountToReturn: BigNumber.from(event.parsed.args._value),
+      chainId: l2ChainId,
+      leafId: 0,
+    });
+  });
+  tokenBridgeEvents.forEach((event) => {
+    l2SrcEvents.push({
+      l2TokenAddress: sdkUtils.EvmAddress.from(event.args.token),
+      txnRef: event.transactionHash,
+      blockNumber: event.blockNumber,
+      txnIndex: event.transactionIndex,
+      logIndex: event.logIndex,
+      amountToReturn: event.args.amount,
+      chainId: l2ChainId,
+      leafId: 0,
+    });
+  });
+
   // Get Linea's MessageSent events for each src event
   const uniqueTxHashes = Array.from(new Set(l2SrcEvents.map(({ txnRef }) => txnRef)));
   const relevantMessages = (
@@ -248,7 +306,7 @@ export async function lineaL2ToL1Finalizer(
         l2SearchConfig,
         l1SearchConfig
       );
-      return l1ClaimingService.l1Contract.contract.populateTransaction.claimMessageWithProof({
+      return l1ClaimingService.l1Contract.contract.claimMessageWithProof({
         from: message.messageSender,
         to: message.destination,
         fee: message.fee,
@@ -296,9 +354,14 @@ export async function lineaL2ToL1Finalizer(
     },
     notReceivedTxns: await mapAsync(unknown, async ({ message, tokensBridged }) => {
       const withdrawalBlock = tokensBridged.blockNumber;
+      const l2TokenInfo = getTokenInfo(tokensBridged.l2TokenAddress, tokensBridged.chainId);
+      const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+      const amountToReturn = formatter(tokensBridged.amountToReturn);
       return {
         txnHash: message.txHash,
         withdrawalBlock,
+        token: l2TokenInfo.symbol,
+        amountToReturn,
         maturedHours:
           (averageBlockTimeSeconds.average * (spokePoolClient.latestHeightSearched - withdrawalBlock)) / 60 / 60,
       };

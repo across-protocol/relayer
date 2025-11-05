@@ -48,7 +48,8 @@ export class TokenTransferClient {
     const chainIds = Object.keys(this.providerByChainIds).map(Number);
     for (const chainId of chainIds) {
       const tokenContracts = tokenContractsByChainId[chainId];
-      for (const monitoredAddress of this.monitoredAddresses) {
+      const evmMonitoredAddresses = this.monitoredAddresses.filter((address) => address.isEVM());
+      for (const monitoredAddress of evmMonitoredAddresses) {
         const transferEventsList = await Promise.all(
           tokenContracts.map((tokenContract) =>
             this.querySendAndReceiveEvents(tokenContract, monitoredAddress, searchConfigByChainIds[chainId])

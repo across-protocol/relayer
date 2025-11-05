@@ -1,5 +1,17 @@
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
-import { CHAIN_IDs, getNetworkName, Contract, Signer, getDeployedAddress, getDeployedBlockNumber } from ".";
+import * as beta from "@across-protocol/contracts-beta";
+import {
+  CHAIN_IDs,
+  getNetworkName,
+  Contract,
+  Signer,
+  getDeployedAddress,
+  getDeployedBlockNumber,
+  EvmAddress,
+  chainIsEvm,
+  SvmAddress,
+  Address,
+} from ".";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
@@ -25,6 +37,8 @@ export function castSpokePoolName(networkId: number): string {
     case CHAIN_IDs.ARBITRUM:
       return "Arbitrum_SpokePool";
     case CHAIN_IDs.BSC:
+    case CHAIN_IDs.HYPEREVM:
+    case CHAIN_IDs.PLASMA:
       return "Universal_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";
@@ -33,8 +47,12 @@ export function castSpokePoolName(networkId: number): string {
       return "SvmSpoke";
     case CHAIN_IDs.SONEIUM:
       return "Cher_SpokePool";
-    case CHAIN_IDs.UNICHAIN || CHAIN_IDs.UNICHAIN_SEPOLIA:
-      return "DoctorWho_SpokePool";
+    case CHAIN_IDs.REDSTONE:
+    case CHAIN_IDs.UNICHAIN:
+    case CHAIN_IDs.ZORA:
+    case CHAIN_IDs.BASE:
+    case CHAIN_IDs.MODE:
+      return "OP_SpokePool";
     default:
       networkName = getNetworkName(networkId);
   }
@@ -49,6 +67,16 @@ export function getSpokePool(chainId: number, address?: string): Contract {
   return new Contract(address ?? getDeployedAddress("SpokePool", chainId), artifact.abi);
 }
 
+export function getSpokePoolAddress(chainId: number): Address {
+  const evmChain = chainIsEvm(chainId);
+  const addr = getDeployedAddress(evmChain ? "SpokePool" : "SvmSpoke", chainId, true);
+  return evmChain ? EvmAddress.from(addr) : SvmAddress.from(addr);
+}
+
+export function getHubPoolAddress(chainId: number): EvmAddress {
+  return EvmAddress.from(getDeployedAddress("HubPool", chainId, true));
+}
+
 export function getParamType(contractName: string, functionName: string, paramName: string): string {
   const artifact = typechain[`${[contractName]}__factory`];
   const fragment = artifact.abi.find((fragment: { name: string }) => fragment.name === functionName);
@@ -61,4 +89,17 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
   } catch (error) {
     throw new Error(`Could not find deployment block for contract ${contractName} on ${networkId}`);
   }
+}
+
+// The DstOft/Cctp handler contracts only exist on HyperEVM.
+export function getDstOftHandler(): Contract {
+  const factoryName = "DstOFTHandler";
+  const artifact = beta[`${factoryName}__factory`];
+  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
+}
+
+export function getDstCctpHandler(): Contract {
+  const factoryName = "SponsoredCCTPDstPeriphery";
+  const artifact = beta[`${factoryName}__factory`];
+  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
 }

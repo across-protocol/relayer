@@ -10,6 +10,7 @@ import {
   EVMBlockFinder,
   isDefined,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -22,7 +23,14 @@ export class LineaWethBridge extends BaseBridgeAdapter {
   // We by default do not include a fee for Linea bridges.
   protected bridgeFee = 0;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    _l1Token: EvmAddress,
+    readonly logger: winston.Logger
+  ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaMessageService;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].l2MessageService;
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
@@ -86,8 +94,8 @@ export class LineaWethBridge extends BaseBridgeAdapter {
     ]);
 
     const [l1FromBlock, l1ToBlock] = [
-      await getBlockForTimestamp(this.hubChainId, fromBlock.timestamp, this.blockFinder),
-      await getBlockForTimestamp(this.hubChainId, toBlock.timestamp, this.blockFinder),
+      await getBlockForTimestamp(this.logger, this.hubChainId, fromBlock.timestamp, this.blockFinder),
+      await getBlockForTimestamp(this.logger, this.hubChainId, toBlock.timestamp, this.blockFinder),
     ];
     const l1SearchConfig = {
       from: l1FromBlock,

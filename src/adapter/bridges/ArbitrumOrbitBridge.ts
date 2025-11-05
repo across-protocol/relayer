@@ -13,6 +13,7 @@ import {
   bnZero,
   CHAIN_IDs,
   EvmAddress,
+  winston,
 } from "../../utils";
 import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
@@ -22,14 +23,12 @@ import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20Gateway
 
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
-  [CHAIN_IDs.ALEPH_ZERO]: toWei(0.45),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toWei(0.013),
 };
 
 const maxFeePerGas: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toBN(20e9),
-  [CHAIN_IDs.ALEPH_ZERO]: toBN(24e10),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toBN(20e9),
 };
@@ -48,7 +47,9 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
   ) {
     const { address: gatewayAddress, abi: gatewayRouterAbi } =
       CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];

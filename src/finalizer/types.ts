@@ -33,6 +33,8 @@ export type FinalizerPromise = {
   crossChainMessages: CrossChainMessage[];
 };
 
+export type AddressesToFinalize = Map<Address, string[]>;
+
 export interface ChainFinalizer {
   (
     logger: winston.Logger,
@@ -40,7 +42,15 @@ export interface ChainFinalizer {
     hubPoolClient: HubPoolClient,
     l2SpokePoolClient: SpokePoolClient,
     l1SpokePoolClient: SpokePoolClient,
-    l1ToL2AddressesToFinalize: Address[]
+    l1ToL2AddressesToFinalize: AddressesToFinalize // Map from token address to associated token symbols to finalize for that address.
+  ): Promise<FinalizerPromise>;
+}
+
+export interface Finalizer {
+  (
+    logger: winston.Logger,
+    sourceSpokePoolClient: SpokePoolClient,
+    addressesToFinalize: AddressesToFinalize
   ): Promise<FinalizerPromise>;
 }
 
