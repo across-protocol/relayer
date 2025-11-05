@@ -148,8 +148,13 @@ export class HyperliquidExecutor {
 
   private async finalizeLimitOrders(finalToken: EvmAddress, quoteNonces: string[], minOutAmountsToSend: BigNumber[]) {
     // `minOutAmountsToSend` is the minimum amount of final tokens to send for each swap order. These are set in the
-    // the SwapFlowInitialized events for each quoteNonce. If the actual amount received on the SwapHandler is 
+    // the SwapFlowInitialized events for each quoteNonce. If the actual amount received on the SwapHandler is
     // less than this amount, then the HyperCoreFlowExecutor should sponsor that difference.
+
+    // @todo: How to determine which quoteNonces have been executed. The easiest option is to
+    // query the SwapFlowInitialized events for each quoteNonce and see if there is > `minAmountToSend` of `finalToken` in
+    // the dstHandler. The trick is determining which quoteNonces should be finalized first. Either by size or
+    // oldest time.
     const l2TokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
