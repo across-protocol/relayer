@@ -9,13 +9,13 @@ import {
   CHAIN_IDs,
   EventSearchConfig,
   Provider,
-  Contract,
   paginatedEventQuery,
   spreadEventWithBlockNumber,
+  getSrcOftPeriphery,
 } from ".";
 import { BytesLike } from "ethers";
 import axios from "axios";
-import { EVM_OFT_MESSENGERS, CONTRACT_ADDRESSES } from "../common";
+import { EVM_OFT_MESSENGERS } from "../common";
 import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
@@ -72,14 +72,6 @@ export function getEndpointId(chainId: number): number {
 export function getChainIdFromEndpointId(eid: number): number {
   const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
   return Number(chainId);
-}
-
-/**
- * @param chainId The network ID corresponding to the OFT periphery contract.
- * @returns The chain ID's deployed OFT contract details.
- */
-export function getSrcOftPeriphery(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId].srcOftPeriphery;
 }
 
 /**
@@ -168,8 +160,7 @@ export async function getSrcOftMessages(
   searchConfig: EventSearchConfig,
   srcProvider: Provider
 ): Promise<LzBridgeEvent[]> {
-  const { address, abi } = getSrcOftPeriphery(srcChainId);
-  const srcOft = new Contract(address, abi, srcProvider);
+  const srcOft = getSrcOftPeriphery(srcChainId).connect(srcProvider);
 
   const messageInitiatedEvents = await paginatedEventQuery(srcOft, srcOft.filters.SponsoredOFTSend(), searchConfig);
   return messageInitiatedEvents.map(spreadEventWithBlockNumber);
