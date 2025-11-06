@@ -46,25 +46,33 @@ export async function processMintEvm(
   let contract: ethers.Contract;
   let receiveMessageArgs: unknown[];
 
-  if (isHyperEVM) {
-    // Use SponsoredCCTPDstPeriphery for HyperEVM chains
+  const isHyperCoreDestination = isHyperEVM && signature;
+
+  if (isHyperCoreDestination) {
+    // Use SponsoredCCTPDstPeriphery for HyperCore destinations (both sponsored and non-sponsored flows)
     const { address, abi } = CONTRACT_ADDRESSES[chainId].sponsoredCCTPDstPeriphery;
     if (!address) {
       throw new Error(`SponsoredCCTPDstPeriphery address not configured for chain ${chainId}`);
     }
     contract = new ethers.Contract(address, abi, signer);
-    receiveMessageArgs = [attestation.message, attestation.attestation, signature || "0x"];
+    receiveMessageArgs = [attestation.message, attestation.attestation, signature];
     logger.info({
       at: "evmUtils#processMintEvm",
-      message: "Using SponsoredCCTPDstPeriphery contract",
+      message: "Using SponsoredCCTPDstPeriphery contract for HyperCore destination",
       chainId,
       contractAddress: address,
     });
   } else {
-    // Use standard MessageTransmitter for other chains
+    // Use standard MessageTransmitter for non-HyperCore destinations
     const { address, abi } = getCctpV2MessageTransmitter(chainId);
     contract = new ethers.Contract(address!, abi, signer);
     receiveMessageArgs = [attestation.message, attestation.attestation];
+    logger.info({
+      at: "evmUtils#processMintEvm",
+      message: "Using standard MessageTransmitter contract",
+      chainId,
+      contractAddress: address,
+    });
   }
 
   const mintTx = await runTransaction(logger, contract, "receiveMessage", receiveMessageArgs);
