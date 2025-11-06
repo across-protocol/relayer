@@ -11,18 +11,19 @@ import {
   stringifyThrownValue,
 } from "./src/utils";
 import { runRelayer, runRebalancer } from "./src/relayer";
-import { runDataworker } from "./src/dataworker";
+import { runDataworker, runDisputerWatchdog } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
-import { runHyperliquidExecutor } from "./src/hl-executor";
+import { runHyperliquidExecutor } from "./src/hyperliquid";
 
 let logger: typeof Logger;
 let cmd: string;
 
 const CMDS = {
   dataworker: runDataworker,
+  "disputer-watchdog": runDisputerWatchdog,
   finalizer: runFinalizer,
   help: help,
   monitor: runMonitor,
