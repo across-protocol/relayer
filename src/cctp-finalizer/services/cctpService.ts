@@ -1,13 +1,7 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
-import {
-  winston,
-  getCctpDestinationChainFromDomain,
-  PUBLIC_NETWORKS,
-  chainIsProd,
-  chainIsSvm,
-} from "../../utils";
+import { winston, getCctpDestinationChainFromDomain, PUBLIC_NETWORKS, chainIsProd, chainIsSvm } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
 
