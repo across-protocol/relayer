@@ -7,7 +7,6 @@ import {
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
-  getCctpV2TokenMessenger,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
