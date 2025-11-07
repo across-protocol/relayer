@@ -103,3 +103,9 @@ export function getDstCctpHandler(): Contract {
   const artifact = beta[`${factoryName}__factory`];
   return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
 }
+
+export function getSrcOftPeriphery(chainId: number): Contract {
+  const factoryName = "SponsoredOFTSrcPeriphery";
+  const artifact = beta[`${factoryName}__factory`];
+  return new Contract(beta.getDeployedAddress(factoryName, chainId), artifact.abi);
+}
