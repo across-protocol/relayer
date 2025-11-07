@@ -18,6 +18,7 @@ import {
   getOpenOrders,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  forEachAsync,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { MultiCallerClient, EventListener } from "../clients";
@@ -83,9 +84,9 @@ export class HyperliquidExecutor {
 
   public async initialize(): Promise<void> {
     const spotMeta = await getSpotMeta(this.infoClient);
-    this.config.supportedTokens.forEach((supportedToken) => {
+    await forEachAsync(this.config.supportedTokens, async (supportedToken) => {
       const counterpartTokens = this.config.supportedTokens.filter((token) => token !== supportedToken);
-      counterpartTokens.forEach((counterpartToken) => {
+      await forEachAsync(counterpartTokens, async (counterpartToken) => {
         const baseToken = spotMeta.tokens.find((token) => token.name === supportedToken);
         const finalToken = spotMeta.tokens.find((token) => token.name === counterpartToken);
         // The token does not exist in the spot list, so no pair will exist.
@@ -98,11 +99,14 @@ export class HyperliquidExecutor {
         if (!isDefined(pair)) {
           return;
         }
-        const swapHandler = baseToken.name === "USDT0" ? this.dstOftMessenger.address : this.dstCctpMessenger.address; // @todo
         const baseTokenAddress =
           baseToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[baseToken.name].addresses[this.chainId];
         const finalTokenAddress =
           finalToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[finalToken.name].addresses[this.chainId];
+
+        const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;
+        const swapHandler = await dstHandler.predictSwapHandler(finalTokenAddress);
+
         const pairId = `${baseToken.name}-${finalToken.name}`;
         this.pairs[pairId] = {
           name: pair.name,
@@ -185,7 +189,7 @@ export class HyperliquidExecutor {
       getL2Book(this.infoClient, { coin: pair.name }),
     ]);
     const { baseToken, finalToken } = pair;
-    const { decimals } = getTokenInfo(baseToken, this.chainId);
+    const { decimals } = this._getTokenInfo(baseToken, this.chainId);
 
     const existingOrder = openOrders[0];
     const bestAsk = Number(l2Book.levels[1][0].px);
@@ -259,7 +263,15 @@ export class HyperliquidExecutor {
   }
 
   private _getTokenInfo(token: EvmAddress, chainId: number) {
-    const tokenInfo = getTokenInfo(token, chainId);
+    let tokenInfo;
+    try {
+      tokenInfo = getTokenInfo(token, chainId);
+    } catch {
+      tokenInfo = {
+        symbol: "UNKNOWN",
+        decimals: 8,
+      };
+    }
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
     return {
       ...tokenInfo,
