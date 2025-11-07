@@ -8,17 +8,17 @@ import {
   CHAIN_IDs,
   getTokenInfo,
   EvmAddress,
-  BigNumber,
   getHlInfoClient,
   getSpotMeta,
   getDstOftHandler,
   getL2Book,
   getDstCctpHandler,
-  spreadEventWithBlockNumber,
   getOpenOrders,
   TOKEN_SYMBOLS_MAP,
   bnZero,
+  BigNumber,
   forEachAsync,
+  ConvertDecimals,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { MultiCallerClient, EventListener } from "../clients";
@@ -49,6 +49,8 @@ export type Pair = {
   finalToken: EvmAddress;
 };
 
+const BASE_TOKENS = ["USDT0", "USDC"];
+
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
  * swap handler contracts to users on Hypercore.
@@ -60,6 +62,7 @@ export class HyperliquidExecutor {
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
   private infoClient;
+  private handledEvents: Set<string> = new Set<string>();
 
   private tasks: Promise<TaskResult>[] = [];
   private taskResolver;
@@ -84,7 +87,7 @@ export class HyperliquidExecutor {
 
   public async initialize(): Promise<void> {
     const spotMeta = await getSpotMeta(this.infoClient);
-    await forEachAsync(this.config.supportedTokens, async (supportedToken) => {
+    await forEachAsync(BASE_TOKENS, async (supportedToken) => {
       const counterpartTokens = this.config.supportedTokens.filter((token) => token !== supportedToken);
       await forEachAsync(counterpartTokens, async (counterpartToken) => {
         const baseToken = spotMeta.tokens.find((token) => token.name === supportedToken);
@@ -122,7 +125,13 @@ export class HyperliquidExecutor {
 
   public startListeners(): void {
     const handleSwapFlowInitiated = (log: Log) => {
-      const swapFlowInitiated = spreadEventWithBlockNumber(log) as SwapFlowInitialized;
+      const swapFlowInitiated = log.args as SwapFlowInitialized;
+      // If we handled the event already, then ignore it.
+      if (this.handledEvents.has(swapFlowInitiated.quoteNonce)) {
+        return;
+      }
+      this.handledEvents.add(swapFlowInitiated.quoteNonce);
+
       this.logger.debug({
         at: "HyperliquidExecutor#handleSwapFlowInitiated",
         message: "Observed new order event",
@@ -136,7 +145,7 @@ export class HyperliquidExecutor {
       this.pairUpdates[pairId] = log.blockNumber;
 
       // Update tasks to place a new limit order.
-      this.updateTasks(this.updateOrderAmount(pair, swapFlowInitiated.evmAmountIn));
+      this.updateTasks(this.updateOrderAmount(pair, BigNumber.from(swapFlowInitiated.evmAmountIn)));
     };
 
     // Handle events coming from all destination handlers.
@@ -175,6 +184,9 @@ export class HyperliquidExecutor {
         message: "Finished processing task",
         taskResult,
       });
+      if (this.clients.multiCallerClient.transactionCount() !== 0) {
+        await this.clients.multiCallerClient.executeTxnQueues();
+      }
     }
   }
 
@@ -193,11 +205,13 @@ export class HyperliquidExecutor {
 
     const existingOrder = openOrders[0];
     const bestAsk = Number(l2Book.levels[1][0].px);
+    const priceXe8 = Math.floor(bestAsk * 10 ** 8);
     // The swap handler should only have orders placed on the associated pair.
     // `sz` represents the remaining, unfilled quantity.
     const existingAmountPlaced = BigNumber.from(openOrders[0]?.sz ?? 0);
     const existingAmountPlacedQuantums = existingAmountPlaced.mul(10 ** decimals);
     const newAmountToPlace = orderAmount.add(existingAmountPlacedQuantums);
+    const sizeXe8 = ConvertDecimals(decimals, 8)(newAmountToPlace);
 
     const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
     // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
@@ -207,7 +221,7 @@ export class HyperliquidExecutor {
       // If the existing order is undefined and there is no new amount to place, then there is nothing actionable for us to do on this update.
       return { actionable: false, mrkdwn: "No order updates required" };
     }
-    this.placeOrder(baseToken, finalToken, bestAsk, newAmountToPlace, oid);
+    this.placeOrder(baseToken, finalToken, priceXe8, sizeXe8, oid);
     return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${newAmountToPlace}.` };
   }
 

@@ -1,15 +1,12 @@
-import { SortableEvent } from "./";
-import { BigNumber } from "../utils";
-
-export interface SwapFlowInitialized extends SortableEvent {
+export interface SwapFlowInitialized {
   quoteNonce: string;
-  inalRecipient: string;
+  finalRecipient: string;
   finalToken: string;
   // In baseToken
-  evmAmountIn: BigNumber;
-  bridgingFeesIncurred: BigNumber;
+  evmAmountIn: BigInt;
+  bridgingFeesIncurred: BigInt;
   // In finalToken
-  coreAmountIn: BigNumber;
-  minAmountToSend: BigNumber;
-  maxAmountToSend: BigNumber;
+  coreAmountIn: BigInt;
+  minAmountToSend: BigInt;
+  maxAmountToSend: BigInt;
 }
