@@ -16,6 +16,8 @@ import {
   getDstCctpHandler,
   spreadEventWithBlockNumber,
   getOpenOrders,
+  TOKEN_SYMBOLS_MAP,
+  bnZero,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { MultiCallerClient, EventListener } from "../clients";
@@ -42,6 +44,8 @@ export type TaskResult = {
 export type Pair = {
   name: string;
   swapHandler: EvmAddress;
+  baseToken: EvmAddress;
+  finalToken: EvmAddress;
 };
 
 /**
@@ -95,11 +99,18 @@ export class HyperliquidExecutor {
           return;
         }
         const swapHandler = baseToken.name === "USDT0" ? this.dstOftMessenger.address : this.dstCctpMessenger.address; // @todo
-        this.pairs[`${baseToken.name}-${finalToken.name}`] = {
+        const baseTokenAddress =
+          baseToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[baseToken.name].addresses[this.chainId];
+        const finalTokenAddress =
+          finalToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[finalToken.name].addresses[this.chainId];
+        const pairId = `${baseToken.name}-${finalToken.name}`;
+        this.pairs[pairId] = {
           name: pair.name,
           swapHandler: EvmAddress.from(swapHandler),
+          baseToken: EvmAddress.from(baseTokenAddress),
+          finalToken: EvmAddress.from(finalTokenAddress),
         };
-        this.pairUpdates[pair.name] = 0;
+        this.pairUpdates[pairId] = 0;
       });
     });
     this.initialized = true;
@@ -115,12 +126,13 @@ export class HyperliquidExecutor {
       });
       const baseToken = this.dstOftMessenger.address === log.address ? "USDT0" : "USDC";
       const finalToken = getTokenInfo(EvmAddress.from(swapFlowInitiated.finalToken), this.chainId).symbol;
-      const pair = this.pairs[`${baseToken}-${finalToken}`];
+      const pairId = `${baseToken}-${finalToken}`;
+      const pair = this.pairs[pairId];
 
-      this.pairUpdates[pair.name] = log.blockNumber;
+      this.pairUpdates[pairId] = log.blockNumber;
 
       // Update tasks to place a new limit order.
-      this.updateTasks(this.placeNewOrderOnPair(pair, swapFlowInitiated));
+      this.updateTasks(this.updateOrderAmount(pair, swapFlowInitiated.evmAmountIn));
     };
 
     // Handle events coming from all destination handlers.
@@ -132,7 +144,7 @@ export class HyperliquidExecutor {
 
     // Handle new block events.
     const handleNewBlock = (blockNumber: number) => {
-      Object.entries(this.pairUpdates).forEach(([pair, updateBlock]) => {
+      Object.entries(this.pairUpdates).forEach(([pairId, updateBlock]) => {
         if (blockNumber - updateBlock < this.reviewInterval) {
           return;
         }
@@ -141,12 +153,12 @@ export class HyperliquidExecutor {
           message: "Reviewing active orders",
           lastReview: updateBlock,
           currentReviewBlock: blockNumber,
-          pair,
+          pairId,
         });
 
         // Update tasks to refresh limit orders.
-        this.updateTasks(this.refreshOrdersOnPair(pair));
-        this.pairUpdates[pair] = blockNumber;
+        this.updateTasks(this.updateOrderAmount(this.pairs[pairId], bnZero)); // Placing an order with an order amount of zero just refreshes the order at the bestAsk.
+        this.pairUpdates[pairId] = blockNumber;
       });
     };
     this.eventListener.onBlock(handleNewBlock);
@@ -166,68 +178,54 @@ export class HyperliquidExecutor {
     this.active = false;
   }
 
-  private async placeNewOrderOnPair(pair: Pair, swapInitiatedEvent: SwapFlowInitialized): Promise<TaskResult> {
+  private async updateOrderAmount(pair: Pair, orderAmount: BigNumber): Promise<TaskResult> {
     // Get the existing orders on the pair and the l2Book.
     const [openOrders, l2Book] = await Promise.all([
       getOpenOrders(this.infoClient, { user: pair.swapHandler.toNative() }),
       getL2Book(this.infoClient, { coin: pair.name }),
     ]);
+    const { baseToken, finalToken } = pair;
+    const { decimals } = getTokenInfo(baseToken, this.chainId);
 
-    // Calculate the amount to place.
-    swapInitiatedEvent;
-    // @todo
-    return { actionable: true, mrkdwn: "UNIMPLEMENTED" };
-  }
+    const existingOrder = openOrders[0];
+    const bestAsk = Number(l2Book.levels[1][0].px);
+    // The swap handler should only have orders placed on the associated pair.
+    // `sz` represents the remaining, unfilled quantity.
+    const existingAmountPlaced = BigNumber.from(openOrders[0]?.sz ?? 0);
+    const existingAmountPlacedQuantums = existingAmountPlaced.mul(10 ** decimals);
+    const newAmountToPlace = orderAmount.add(existingAmountPlacedQuantums);
 
-  private async refreshOrdersOnPair(pairName: string): Promise<TaskResult> {
-    const pair = Object.values(this.pairs).find((_pair) => _pair.name === pairName);
-
-    // Check open orders for the swap handler and the current state of the orderbook.
-    const [openOrders, l2Book] = await Promise.all([
-      getOpenOrders(this.infoClient, { user: pair.swapHandler.toNative() }),
-      getL2Book(this.infoClient, { coin: pair.name }),
-    ]);
-
-    // If we do not need to replace an order since the order on the book is still at the ask level, then there
-    // is nothing actionable for this update.
-    const bestAsk = l2Book.levels[1][0]; // Best ask is the first element in the ask array.
-    if (openOrders.length === 0 || openOrders.every((order) => order.limitPx === bestAsk.px)) {
-      return {
-        actionable: false,
-        mrkdwn: `Nothing to do: total open orders: ${openOrders.length}, current best ask: ${bestAsk}`,
-      };
+    const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
+    // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
+    if (isDefined(existingOrder)) {
+      this.cancelLimitOrderByCloid(baseToken, finalToken, existingOrder.oid);
+    } else if (newAmountToPlace.eq(bnZero)) {
+      // If the existing order is undefined and there is no new amount to place, then there is nothing actionable for us to do on this update.
+      return { actionable: false, mrkdwn: "No order updates required" };
     }
-
-    // Otherwise, we need to replace the existing order with a new order at the current ask price.
-    // @todo
-    return { actionable: true, mrkdwn: "UNIMPLEMENTED" };
+    this.placeOrder(baseToken, finalToken, bestAsk, newAmountToPlace, oid);
+    return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${newAmountToPlace}.` };
   }
 
   // Onchain function wrappers.
-  private async placeOrder(
-    baseToken: EvmAddress,
-    finalToken: EvmAddress,
-    price: number,
-    size: number,
-    cloid: BigNumber
-  ) {
+  private placeOrder(baseToken: EvmAddress, finalToken: EvmAddress, price: number, size: BigNumber, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n cloid: ${cloid}`;
+    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
       method: "submitLimitOrderFromBot",
-      args: [finalToken.toNative(), price, size, cloid],
+      args: [finalToken.toNative(), price, size, oid],
       message: `Submitted limit order of ${l2TokenInfo.symbol} -> ${finalTokenInfo.symbol} to Hypercore.`,
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
     });
   }
 
-  private async sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
+  private sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
@@ -243,18 +241,18 @@ export class HyperliquidExecutor {
     });
   }
 
-  private async cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, cloid: BigNumber) {
+  private cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo}\n finalToken: ${finalTokenInfo.symbol}\n cloid: ${cloid}`;
+    const mrkdwn = `baseToken: ${l2TokenInfo}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
       method: "cancelLimitOrderByCloid",
-      args: [finalToken.toNative(), cloid],
-      message: `Cancelled limit order ${cloid}.`,
+      args: [finalToken.toNative(), oid],
+      message: `Cancelled limit order ${oid}.`,
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
     });
@@ -267,10 +265,6 @@ export class HyperliquidExecutor {
       ...tokenInfo,
       symbol: updatedSymbol,
     };
-  }
-
-  private _sortTokenSymbols(_tokenA: string, _tokenB: string): [string, string] {
-    return _tokenA > _tokenB ? [_tokenA, _tokenB] : [_tokenB, _tokenA];
   }
 
   // Task utilities
