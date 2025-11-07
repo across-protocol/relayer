@@ -184,7 +184,7 @@ export class Monitor {
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
           ${blockExplorerLink(l1TokenUtilization.l1Token.toEvmAddress(), l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
-          ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
+          ${createFormatFunction(0, 2)(utilizationString)}% utilization!`;
         this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
