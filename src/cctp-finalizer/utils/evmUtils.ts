@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
-import { winston, runTransaction, getCctpV2MessageTransmitter } from "../../utils";
+import { winston, runTransaction, getCctpV2MessageTransmitter, CHAIN_IDs } from "../../utils";
+import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 
 /**
  * Gets EVM provider from RPC URL
@@ -35,16 +36,46 @@ export async function processMintEvm(
   attestation: { message: string; attestation: string },
   provider: ethers.providers.JsonRpcProvider,
   privateKey: string,
-  logger: winston.Logger
+  logger: winston.Logger,
+  signature?: string
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
-  const { address, abi } = getCctpV2MessageTransmitter(chainId);
-  const contract = new ethers.Contract(address!, abi, signer);
 
-  const mintTx = await runTransaction(logger, contract, "receiveMessage", [
-    attestation.message,
-    attestation.attestation,
-  ]);
+  const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
+
+  let contract: ethers.Contract;
+  let receiveMessageArgs: unknown[];
+
+  const isHyperCoreDestination = isHyperEVM && signature;
+
+  if (isHyperCoreDestination) {
+    // Use SponsoredCCTPDstPeriphery for HyperCore destinations (both sponsored and non-sponsored flows)
+    const { address, abi } = CONTRACT_ADDRESSES[chainId].sponsoredCCTPDstPeriphery;
+    if (!address) {
+      throw new Error(`SponsoredCCTPDstPeriphery address not configured for chain ${chainId}`);
+    }
+    contract = new ethers.Contract(address, abi, signer);
+    receiveMessageArgs = [attestation.message, attestation.attestation, signature];
+    logger.info({
+      at: "evmUtils#processMintEvm",
+      message: "Using SponsoredCCTPDstPeriphery contract for HyperCore destination",
+      chainId,
+      contractAddress: address,
+    });
+  } else {
+    // Use standard MessageTransmitter for non-HyperCore destinations
+    const { address, abi } = getCctpV2MessageTransmitter(chainId);
+    contract = new ethers.Contract(address!, abi, signer);
+    receiveMessageArgs = [attestation.message, attestation.attestation];
+    logger.info({
+      at: "evmUtils#processMintEvm",
+      message: "Using standard MessageTransmitter contract",
+      chainId,
+      contractAddress: address,
+    });
+  }
+
+  const mintTx = await runTransaction(logger, contract, "receiveMessage", receiveMessageArgs);
 
   const mintTxReceipt = await mintTx.wait();
 
