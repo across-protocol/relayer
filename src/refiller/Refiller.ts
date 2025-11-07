@@ -282,7 +282,7 @@ export class Refiller {
     l2Provider: Provider
   ): Promise<void> {
     const { chainId, token, account, target, trigger, refillPeriod = 10 * 60 } = refillBalanceData;
-    assert(!chainIsL1(chainId), "Cannot refil mainnet non-native token balance.");
+    assert(!chainIsL1(chainId), "Cannot refill mainnet non-native token balance.");
     const redisKey = `refill:${account.toNative()}->${chainId}-${token.toNative()}`;
     const isRefillProcessed = await this._isRefillProcessed(redisKey);
     if (isRefillProcessed) {
