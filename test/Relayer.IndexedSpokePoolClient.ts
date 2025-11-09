@@ -6,7 +6,7 @@ import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
 import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
-import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
+import { ListenerMessage } from "../src/libexec/types";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
 type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
@@ -99,7 +99,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
    * instance is immediately accessible and the message handler callback is called directly.
    */
   const postEvents = (blockNumber: number, currentTime: number, events: Log[]): void => {
-    const message: SpokePoolClientMessage = {
+    const message: ListenerMessage = {
       blockNumber,
       currentTime,
       nEvents: events.length,
