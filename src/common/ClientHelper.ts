@@ -126,7 +126,7 @@ export async function constructSpokePoolClientsWithLookback(
   // disputing valid bundles.
 
   if (!hubPoolClient.isUpdated) {
-    throw new Error("Config store client must be updated before constructing spoke pool clients");
+    throw new Error("HubPoolClient must be updated before constructing spoke pool clients");
   }
 
   const hubPoolChainId = hubPoolClient.chainId;
