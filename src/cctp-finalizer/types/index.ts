@@ -10,6 +10,7 @@ export interface PubSubMessage {
   message?: string;
   attestation?: string;
   destinationChainId?: number;
+  signature?: string;
 }
 
 export interface ChainConfig {

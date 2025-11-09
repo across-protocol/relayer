@@ -1,14 +1,7 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
-import {
-  winston,
-  getCctpDestinationChainFromDomain,
-  PUBLIC_NETWORKS,
-  chainIsProd,
-  chainIsSvm,
-  getCctpV2TokenMessenger,
-} from "../../utils";
+import { winston, getCctpDestinationChainFromDomain, PUBLIC_NETWORKS, chainIsProd, chainIsSvm } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
 
@@ -45,6 +38,7 @@ export class CCTPService {
         message: cctpMessage,
         attestation: cctpAttestation,
         destinationChainId: providedDestinationChainId,
+        signature,
       } = message;
 
       this.logger.info({
@@ -72,28 +66,15 @@ export class CCTPService {
           attestation: cctpAttestation,
         };
 
-        // If destination chain ID is also provided, use it
         if (providedDestinationChainId) {
           this.logger.info({
             at: "CCTPService#processBurnTransaction",
-            message: "Using provided destination chain ID, skipping burn transaction fetch",
+            message: "Using provided destination chain ID",
             destinationChainId: providedDestinationChainId,
           });
           destinationChainId = providedDestinationChainId;
         } else {
-          // Need to fetch burn transaction to decode destination chain ID
-          const rpcUrl = this.getRpcUrlForChain(sourceChainId);
-          const sourceProvider = getEvmProvider(rpcUrl);
-          const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
-
-          if (!burnTx) {
-            return {
-              success: false,
-              error: "Could not fetch burn transaction details",
-            };
-          }
-
-          destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
+          destinationChainId = this.getDestinationChainIdFromMessage(cctpMessage, sourceChainId);
         }
       } else {
         this.logger.info({
@@ -122,20 +103,11 @@ export class CCTPService {
           };
         }
 
-        // Get burn transaction details
-        const rpcUrl = this.getRpcUrlForChain(sourceChainId);
-        const sourceProvider = getEvmProvider(rpcUrl);
-        const burnTx = await sourceProvider.getTransaction(burnTransactionHash);
-
-        if (!burnTx) {
-          return {
-            success: false,
-            error: "Could not fetch burn transaction details",
-          };
+        if (providedDestinationChainId) {
+          destinationChainId = providedDestinationChainId;
+        } else {
+          destinationChainId = this.getDestinationChainIdFromMessage(attestation.message, sourceChainId);
         }
-
-        // Decode transaction to get destination domain
-        destinationChainId = this.getDestinationChainId(burnTx, sourceChainId);
       }
 
       // Check if already processed
@@ -150,7 +122,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation);
+      return await this.processMint(destinationChainId, attestation, signature);
     } catch (error) {
       this.logger.error({
         at: "CCTPService#processBurnTransaction",
@@ -164,17 +136,17 @@ export class CCTPService {
     }
   }
 
-  private getDestinationChainId(burnTx: ethers.providers.TransactionResponse, sourceChainId: number): number {
-    // Get the ABI (we'll use mainnet for the ABI)
-    const { abi } = getCctpV2TokenMessenger(1);
-    const tokenMessengerInterface = new ethers.utils.Interface(abi!);
-    const decodedCall = tokenMessengerInterface.parseTransaction({ data: burnTx.data });
+  private getDestinationChainIdFromMessage(message: string, sourceChainId: number): number {
+    // Bytes 0-3: version, Bytes 4-7: source domain, Bytes 8-11: destination domain (uint32)
+    const messageBytes = ethers.utils.arrayify(message);
+    const destinationDomainBytes = messageBytes.slice(8, 12);
+    const destinationDomainId = ethers.BigNumber.from(destinationDomainBytes).toNumber();
 
-    if (!decodedCall || decodedCall.name !== "depositForBurn") {
-      throw new Error("Transaction is not a CCTP depositForBurn call");
-    }
-
-    const destinationDomainId = Number(decodedCall.args.destinationDomain);
+    this.logger.info({
+      at: "CCTPService#getDestinationChainIdFromMessage",
+      message: "Decoded destination domain from CCTP message",
+      destinationDomainId,
+    });
 
     // Map domain to chain ID
     const destinationChainId = getCctpDestinationChainFromDomain(destinationDomainId, chainIsProd(sourceChainId));
@@ -211,7 +183,11 @@ export class CCTPService {
     }
   }
 
-  private async processMint(chainId: number, attestation: any): Promise<ProcessBurnTransactionResponse> {
+  private async processMint(
+    chainId: number,
+    attestation: any,
+    signature?: string
+  ): Promise<ProcessBurnTransactionResponse> {
     const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
@@ -237,7 +213,7 @@ export class CCTPService {
       } else {
         const rpcUrl = this.getRpcUrlForChain(chainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger);
+        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger, signature);
         return {
           success: true,
           mintTxHash: result.txHash,
@@ -271,7 +247,7 @@ export class CCTPService {
       130: process.env.ARBITRUM_NOVA_RPC_URL!,
       59144: process.env.LINEA_RPC_URL!,
       480: process.env.ZKSYNC_RPC_URL!,
-      999: process.env.POLYGON_ZKEVM_RPC_URL!,
+      999: process.env.HYPEREVM_RPC_URL!,
       34268394551451: process.env.SOLANA_RPC_URL!,
       // Test networks
       11155111: process.env.SEPOLIA_RPC_URL!,
@@ -280,7 +256,7 @@ export class CCTPService {
       84532: process.env.BASE_SEPOLIA_RPC_URL!,
       80002: process.env.POLYGON_AMOY_RPC_URL!,
       1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
-      998: process.env.POLYGON_ZKEVM_SEPOLIA_RPC_URL!,
+      998: process.env.HYPEREVM_TESTNET_RPC_URL!,
       133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
     };
 
