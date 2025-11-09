@@ -52,7 +52,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
       data: ethersUtils.id(`EventManager-random-txndata-${randomNumber()}`),
       topics: [makeTopic()],
       args: [] as Result,
-      blockHash: makeHash(),
+      blockHash: makeHash(blockNumber),
       event,
     };
   };
@@ -181,14 +181,10 @@ describe("IndexedSpokePoolClient: Update", async function () {
   });
 
   it("Correctly removes all pending events for a given blockHash", async function () {
-    const rawEvents: Log[] = [];
+    const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
-      rawEvents.push(getDepositEvent(blockNumber++));
+      events.push(getDepositEvent(blockNumber));
     }
-
-    // Modify all events to share the same blockHash.
-    const events = rawEvents.slice(1).map((event) => ({ ...event, blockHash: rawEvents[0].blockHash }));
-    sortEventsAscendingInPlace(events);
 
     postEvents(blockNumber, currentTime, events);
 
