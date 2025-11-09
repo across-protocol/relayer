@@ -225,7 +225,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     expect(droppedDeposit).to.not.exist;
   });
 
-  it("Correctly removes multiple deposits within the same transaction after update", async function () {
+  it("Correctly removes multiple deposits within the same transactionHash after update", async function () {
     const events: Log[] = [];
     const deposit = getDepositEvent(blockNumber);
     const { transactionHash } = deposit;
