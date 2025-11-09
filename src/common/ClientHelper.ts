@@ -41,7 +41,7 @@ export interface Clients {
   arweaveClient: caching.ArweaveClient;
 }
 
-async function getSpokePoolSigners(
+export async function getSpokePoolSigners(
   baseSigner: Signer,
   spokePoolChains: number[]
 ): Promise<{ [chainId: number]: Signer }> {
@@ -85,7 +85,14 @@ export async function resolveSpokePoolActivationBlock(
   const { timestamp } = await hubPoolClient.hubPool.provider.getBlock(mainnetActivationBlock);
   const spokePool = chainIsSvm(chainId) ? "SvmSpoke" : "SpokePool";
   const hints = { lowBlock: getDeploymentBlockNumber(spokePool, chainId) };
-  const activationBlock = await getBlockForTimestamp(chainId, timestamp, blockFinder, redis, hints);
+  const activationBlock = await getBlockForTimestamp(
+    hubPoolClient.logger,
+    chainId,
+    timestamp,
+    blockFinder,
+    redis,
+    hints
+  );
 
   const cacheAfter = 5 * 24 * 3600; // 5 days
   if (isDefined(redis) && getCurrentTime() - timestamp > cacheAfter) {
@@ -119,7 +126,7 @@ export async function constructSpokePoolClientsWithLookback(
   // disputing valid bundles.
 
   if (!hubPoolClient.isUpdated) {
-    throw new Error("Config store client must be updated before constructing spoke pool clients");
+    throw new Error("HubPoolClient must be updated before constructing spoke pool clients");
   }
 
   const hubPoolChainId = hubPoolClient.chainId;
@@ -130,7 +137,7 @@ export async function constructSpokePoolClientsWithLookback(
   // BlockFinder estimates are likely to be OK - avoid overriding them with hints.
   const blockFinder = undefined;
   const redis = await getRedisCache(logger);
-  const fromBlock_1 = await getBlockForTimestamp(hubPoolChainId, lookback, blockFinder, redis);
+  const fromBlock_1 = await getBlockForTimestamp(logger, hubPoolChainId, lookback, blockFinder, redis);
   enabledChains ??= getEnabledChainsInBlockRange(configStoreClient, config.spokePoolChainsOverride, fromBlock_1);
   assert(enabledChains.length > 0, "No SpokePool chains configured");
 
@@ -141,9 +148,11 @@ export async function constructSpokePoolClientsWithLookback(
       enabledChains.map(async (chainId) => {
         if (chainId === hubPoolChainId) {
           return [chainId, fromBlock_1];
+        } else if (isDefined(config.fromBlockOverride[chainId])) {
+          return [chainId, config.fromBlockOverride[chainId]];
         } else {
-          const blockFinder = await getBlockFinder(chainId);
-          return [chainId, await getBlockForTimestamp(chainId, lookback, blockFinder, redis)];
+          const blockFinder = await getBlockFinder(logger, chainId);
+          return [chainId, await getBlockForTimestamp(logger, chainId, lookback, blockFinder, redis)];
         }
       })
     )
@@ -167,7 +176,7 @@ export async function constructSpokePoolClientsWithLookback(
  * process.env.SPOKE_POOL_CHAINS_OVERRIDE to force certain spoke pool clients to be constructed.
  * @returns number[] List of enabled spoke pool chains.
  */
-function getEnabledChainsInBlockRange(
+export function getEnabledChainsInBlockRange(
   configStoreClient: clients.AcrossConfigStoreClient,
   spokePoolChainsOverride: number[],
   mainnetStartBlock: number,
@@ -245,13 +254,13 @@ export async function constructSpokePoolClientsWithStartBlocks(
     await Promise.all(
       enabledChains.map(async (chainId) => {
         // Allow caller to hardcode the spoke pool client end blocks.
-        if (isDefined(toBlockOverride[chainId])) {
-          return [chainId, toBlockOverride[chainId]];
+        if (isDefined(config.toBlockOverride[chainId])) {
+          return [chainId, config.toBlockOverride[chainId]];
         }
         if (chainId === hubPoolClient.chainId) {
           return [chainId, hubPoolBlock.number];
         } else {
-          const toBlock = await getBlockForTimestamp(chainId, hubPoolBlock.timestamp, blockFinder, redis);
+          const toBlock = await getBlockForTimestamp(logger, chainId, hubPoolBlock.timestamp, blockFinder, redis);
           return [chainId, toBlock];
         }
       })
@@ -319,7 +328,7 @@ export async function getSpokePoolClientsForContract(
         chainId,
         BigInt(registrationBlock),
         spokePoolClientSearchSettings,
-        getSvmProvider()
+        getSvmProvider(await getRedisCache())
       );
     }
   });

@@ -1,5 +1,7 @@
 import { TokenClient } from "../clients";
 import {
+  blockExplorerLink,
+  CHAIN_IDs,
   EvmAddress,
   SvmAddress,
   winston,
@@ -11,13 +13,16 @@ import {
   disconnectRedisClients,
   isDefined,
   getSvmSignerFromEvmSigner,
-  getRedisCache,
   waitForPubSub,
   averageBlockTime,
+  getRedisCache,
+  getRedisPubSub,
+  Provider,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
 import { DataworkerConfig } from "./DataworkerConfig";
+import { generateValidationKey } from "./DataworkerUtils";
 import {
   constructDataworkerClients,
   constructSpokePoolClientsForFastDataworker,
@@ -25,7 +30,8 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { PendingRootBundle, BundleData } from "../interfaces";
+import { PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
+import { Disputer } from "./Disputer";
 
 config();
 let logger: winston.Logger;
@@ -80,23 +86,47 @@ function resolvePersonality(config: DataworkerConfig): string {
   return "Dataworker"; // unknown
 }
 
+/**
+ * Query the details of a proposal at a given block/tag.
+ * @param provider Ethers provider instance.
+ * @param chainId HubPool chain ID.
+ * @param blockTag Block/tag to query at.
+ */
+async function getProposal(
+  provider: Provider,
+  chainId = CHAIN_IDs.MAINNET,
+  blockTag: number | "latest" = "latest"
+): Promise<
+  Pick<
+    ProposedRootBundle,
+    "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp" | "proposer"
+  > & { currentTime: number; currentBlock: number }
+> {
+  const { number: currentBlock, timestamp: currentTime } = await provider.getBlock(blockTag);
+  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+
+  const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, proposer, challengePeriodEndTimestamp } =
+    await hubPool.rootBundleProposal({ blockTag: currentBlock });
+
+  return {
+    currentTime,
+    currentBlock,
+    poolRebalanceRoot,
+    relayerRefundRoot,
+    slowRelayRoot,
+    challengePeriodEndTimestamp,
+    proposer: EvmAddress.from(proposer),
+  };
+}
+
 async function getChallengeRemaining(
   chainId: number,
   challengeBuffer: number,
   logger: winston.Logger
 ): Promise<number> {
   const provider = await getProvider(chainId);
-  const latestBlock = await provider.getBlockNumber();
-  const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
+  const { currentBlock, currentTime, ...proposal } = await getProposal(provider, chainId);
 
-  const [proposal, currentTime] = await Promise.all([
-    hubPool.rootBundleProposal({
-      blockTag: latestBlock,
-    }),
-    hubPool.getCurrentTime({
-      blockTag: latestBlock,
-    }),
-  ]);
   const { challengePeriodEndTimestamp } = proposal;
   const challengeRemaining = Math.max(challengePeriodEndTimestamp + challengeBuffer - currentTime, 0);
   logger.debug({
@@ -105,8 +135,8 @@ async function getChallengeRemaining(
     challengeRemaining,
     challengeBuffer,
     challengePeriodEndTimestamp,
+    currentBlock,
     currentTime,
-    blockTag: latestBlock,
   });
 
   return challengeRemaining;
@@ -151,7 +181,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
   let proposedBundleData: BundleData | undefined = undefined;
   let poolRebalanceLeafExecutionCount = 0;
 
-  const redis = await getRedisCache(logger);
+  const pubSub = await getRedisPubSub(logger);
   try {
     // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
     const { addressFilter: _addressFilter, ...loggedConfig } = config;
@@ -287,7 +317,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       // - We need to check whether we have an enqueued transaction in the multiCallerClient. Having no transaction there indicates that the executor/proposer instance
       //   exited early for a valid reason (such as insufficient lookback), so there would be no reason to await submitting a transaction.
       const hasTransactionQueued = clients.multiCallerClient.transactionCount() !== 0;
-      if ((config.l1ExecutorEnabled || config.proposerEnabled) && redis && runIdentifier && hasTransactionQueued) {
+      if ((config.l1ExecutorEnabled || config.proposerEnabled) && pubSub && runIdentifier && hasTransactionQueued) {
         const challengeBuffer = Number(process.env.L1_EXECUTOR_CHALLENGE_BUFFER ?? 24); // Default to 24 seconds or 2 blocks.
         let updatedChallengeRemaining = await getChallengeRemaining(config.hubPoolChainId, challengeBuffer, logger);
         // If the updated challenge remaining is greater than the challenge remaining we observed at the start, then this indicates that during the runtime of this bot,
@@ -304,7 +334,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         let counter = 0;
 
         // publish so that other instances can see that we're running
-        await redis.pub(botIdentifier, runIdentifier);
+        await pubSub.pub(botIdentifier, runIdentifier);
         logger.debug({
           at: "Dataworker#index",
           message: `Published signal to ${botIdentifier} instances.`,
@@ -316,7 +346,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
             message: `Waiting for updated challenge remaining ${updatedChallengeRemaining}`,
           });
           const handover = await waitForPubSub(
-            redis,
+            pubSub,
             botIdentifier,
             runIdentifier,
             (updatedChallengeRemaining + adjustedL1BlockTime) * 1000
@@ -346,7 +376,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
               at: "Dataworker#index",
               message: "Waiting for the l1 executor to execute pool rebalance roots.",
             });
-            const handover = await waitForPubSub(redis, botIdentifier, runIdentifier, l1BlockTime * 1000);
+            const handover = await waitForPubSub(pubSub, botIdentifier, runIdentifier, l1BlockTime * 1000);
             if (handover) {
               logger.debug({
                 at: "Dataworker#index",
@@ -373,5 +403,62 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     }
   } finally {
     await disconnectRedisClients(logger);
+  }
+}
+
+export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer): Promise<void> {
+  const personality = "Disputer Watchdog";
+  const at = "runDisputerWatchDog";
+  const config = new DataworkerConfig(process.env);
+  const { hubPoolChainId: hubChainId, sendingTransactionsEnabled: enabled } = config;
+
+  const { DISPUTER_WATCHDOG_MIN_ATTESTATIONS = "3", DISPUTER_WATCHDOG_CHALLENGE_LIMIT = "600" } = process.env; // @todo Watchdog config.
+  const minValidations = Number(DISPUTER_WATCHDOG_MIN_ATTESTATIONS);
+  const challengeLimit = Number(DISPUTER_WATCHDOG_CHALLENGE_LIMIT);
+
+  const provider = await getProvider(hubChainId, logger);
+  const hubPool = getDeployedContract("HubPool", hubChainId).connect(provider);
+  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled);
+
+  logger.debug({ at, message: "Starting Disputer Watchdog." });
+
+  try {
+    await disputer.validate();
+    const redis = await getRedisCache(logger);
+
+    const { currentTime, currentBlock, ...proposal } = await getProposal(provider, hubChainId);
+
+    const getValidations = async () => {
+      const key = generateValidationKey(proposal);
+      const result = await redis.get<string>(key);
+      return Number(result) || 0; // Revert to 0 on isNaN(result)
+    };
+
+    // @todo Validate that currentTime is not too different from host time.
+    const challengeRemaining = proposal.challengePeriodEndTimestamp - currentTime;
+    if (challengeRemaining <= 0) {
+      logger.debug({ at, message: "Proposal challenge window has elapsed, nothing to do..." });
+      return;
+    }
+
+    const validations = await getValidations();
+    if (challengeRemaining <= challengeLimit && validations < minValidations) {
+      const dispute = await disputer.dispute();
+      const message = enabled
+        ? "Submitted HubPool root bundle dispute."
+        : "Suppressed HubPool root bundle dispute due to configuration.";
+      const txn = isDefined(dispute) ? blockExplorerLink(dispute.transactionHash, hubChainId) : undefined;
+      logger.error({ at, message, proposal, txn });
+    } else {
+      const waiting = challengeRemaining - challengeLimit;
+      const message =
+        waiting > 0
+          ? `Must wait an additional ${waiting} seconds before evaluating validator attestations.`
+          : "Current proposal has sufficient validator attestations.";
+      logger.debug({ at, message, challengeLimit, validations, minValidations });
+    }
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `Completed ${personality} run.` });
   }
 }

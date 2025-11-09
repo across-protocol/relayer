@@ -25,6 +25,11 @@ export {
 
 export { getL2TokenAllowanceFromCache, setL2TokenAllowanceInCache } from "../clients/bridges/utils";
 
+export interface TransferTokenParams {
+  // Send tokens to target chain using faster mode of transfer. Used by USDC CCTP bridge.
+  fastMode: boolean;
+}
+
 export function aboveAllowanceThreshold(allowance: BigNumber): boolean {
   return allowance.gte(toBN(MAX_SAFE_ALLOWANCE).div(2));
 }

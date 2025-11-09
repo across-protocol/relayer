@@ -10,7 +10,6 @@ import {
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
-  Address,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -61,9 +60,7 @@ export async function heliosL1toL2Finalizer(
   _signer: Signer,
   hubPoolClient: HubPoolClient,
   l2SpokePoolClient: SpokePoolClient,
-  l1SpokePoolClient: SpokePoolClient,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _senderAddresses: Address[]
+  l1SpokePoolClient: SpokePoolClient
 ): Promise<FinalizerPromise> {
   assert(
     isEVMSpokePoolClient(l2SpokePoolClient) && isEVMSpokePoolClient(l1SpokePoolClient),
@@ -149,14 +146,14 @@ async function identifyRequiredActions(
   l1ChainId: number,
   l2ChainId: number
 ): Promise<HeliosAction[]> {
-  // --- Substep 1: Query and Filter L1 Events (similar to getRelevantL1Events) ---
+  // --- Substep 1: Query and Filter L1 Events ---
   const relevantStoredCallDataEvents = await getRelevantL1Events(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
+    l2SpokePoolClient,
     l1ChainId,
-    l2ChainId,
-    l2SpokePoolClient.spokePool.address
+    l2ChainId
   );
 
   // --- Substep 2: Query L2 Verification Events (StorageSlotVerified) ---
@@ -250,8 +247,8 @@ async function shouldGenerateKeepAliveAction(
     }
   }
 
-  const l2BlockFinder = await getBlockFinder(l2ChainId);
-  const l2Block24hAgo = await getBlockForTimestamp(l2ChainId, timestamp24hAgo, l2BlockFinder);
+  const l2BlockFinder = await getBlockFinder(logger, l2ChainId);
+  const l2Block24hAgo = await getBlockForTimestamp(logger, l2ChainId, timestamp24hAgo, l2BlockFinder);
 
   if (latestHeadUpdateBlockNumber < l2Block24hAgo) {
     logger.info({
@@ -408,15 +405,15 @@ async function getRelevantL1Events(
   _logger: winston.Logger,
   hubPoolClient: HubPoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
+  l2SpokePoolClient: EVMSpokePoolClient,
   l1ChainId: number,
-  _l2ChainId: number,
-  l2SpokePoolAddress: string
+  l2ChainId: number
 ): Promise<StoredCallDataEvent[]> {
   const l1Provider = hubPoolClient.hubPool.provider;
   const hubPoolStoreContract = getHubPoolStoreContract(l1ChainId, l1Provider);
 
   /**
-   * @dev We artificially shorten the lookback time peiod for L1 events by a factor of 2. We want to avoid race conditions where
+   * @dev We artificially shorten the lookback time period for L1 events by a factor of 2. We want to avoid race conditions where
    * we see an old event on L1, but not look back far enough on L2 to see that the event has been executed successfully.
    */
   const toBlock = l1SpokePoolClient.latestHeightSearched;
@@ -433,10 +430,18 @@ async function getRelevantL1Events(
 
   const events: StoredCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as StoredCallDataEvent);
 
+  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, l2SpokePoolClient.spokePoolAddress);
+  assert(
+    spokeActivationBlock !== undefined,
+    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${l2SpokePoolClient.spokePoolAddress.toNative()}
+    \nIs this address correct?`
+  );
+  const spokePoolAddressStr = l2SpokePoolClient.spokePoolAddress.toEvmAddress();
   const relevantStoredCallDataEvents = events.filter(
     (event) =>
-      compareAddressesSimple(event.target, l2SpokePoolAddress) ||
-      compareAddressesSimple(event.target, ethers.constants.AddressZero)
+      event.blockNumber >= spokeActivationBlock &&
+      (compareAddressesSimple(event.target, spokePoolAddressStr) ||
+        compareAddressesSimple(event.target, ethers.constants.AddressZero))
   );
 
   return relevantStoredCallDataEvents;
@@ -701,8 +706,8 @@ function addUpdateAndExecuteTxns(
     unpermissioned: true,
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
-    // todo? this hardcoded gas limit of 2 mil could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: BigNumber.from(2000000),
+    // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
+    gasLimit: BigNumber.from(500000),
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);

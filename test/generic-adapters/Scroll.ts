@@ -1,10 +1,10 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
+import { ZERO_ADDRESS } from "../../src/utils";
 import { ScrollERC20Bridge } from "../../src/adapter/bridges";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
-import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES } from "../../src/common";
 
 describe("Cross Chain Adapter: Scroll", async function () {
@@ -248,8 +248,8 @@ class MockBaseChainAdapter extends BaseChainAdapter {
   async updateSpokePoolClients() {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
-    const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
+    const blockNumber = await this.spokePoolManager.getClient(this.hubChainId)?.spokePool.provider.getBlockNumber();
+    this.spokePoolManager.getClient(this.hubChainId).latestHeightSearched = blockNumber;
+    this.spokePoolManager.getClient(this.chainId).latestHeightSearched = blockNumber;
   }
 }

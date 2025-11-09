@@ -4,10 +4,9 @@ import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32 } from "../utils";
 import { utils } from "@across-protocol/sdk";
-import { ZERO_ADDRESS } from "@uma/common";
 import { CONTRACT_ADDRESSES, SUPPORTED_TOKENS } from "../../src/common";
 import { EVMBlockFinder, toBN, EvmAddress } from "../../src/utils/SDKUtils";
-import { getCctpDomainForChainId } from "../../src/utils";
+import { getCctpDomainForChainId, ZERO_ADDRESS } from "../../src/utils";
 
 describe("Cross Chain Adapter: Linea", async function () {
   let adapter: BaseChainAdapter;
@@ -184,7 +183,7 @@ describe("Cross Chain Adapter: Linea", async function () {
     it("return only relevant L1 bridge init events", async () => {
       await cctpBridgeContract.emitDepositForBurn(
         l1USDCToken,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.LINEA),
@@ -193,16 +192,16 @@ describe("Cross Chain Adapter: Linea", async function () {
       );
       await cctpBridgeContract.emitDepositForBurn(
         l1USDCToken,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.LINEA),
         ethers.utils.hexZeroPad(cctpBridgeContract.address, 32),
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
-      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2USDCToken);
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2USDCToken, 1); // 1 token to receive, 1 token to pay for fee
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1USDCToken)]);
-      expect(outstandingTransfers[monitoredEoa][l1USDCToken][l2USDCToken].totalAmount).to.equal(toBN(1));
+      expect(outstandingTransfers[monitoredEoa][l1USDCToken][l2USDCToken].totalAmount).to.equal(toBN(2));
     });
   });
   describe("ERC20", function () {
@@ -298,8 +297,8 @@ class MockBaseChainAdapter extends BaseChainAdapter {
   async updateSpokePoolClients() {
     // Since we are simulating getting outstanding transfers, we need to manually overwrite the config in
     // the adapter so that getOutstandingCrossChainTransfers won't throw an error.
-    const blockNumber = await this.spokePoolClients[this.hubChainId].spokePool.provider.getBlockNumber();
-    this.spokePoolClients[this.hubChainId].latestHeightSearched = blockNumber;
-    this.spokePoolClients[this.chainId].latestHeightSearched = blockNumber;
+    const blockNumber = await this.spokePoolManager.getClient(this.hubChainId)?.spokePool.provider.getBlockNumber();
+    this.spokePoolManager.getClient(this.hubChainId).latestHeightSearched = blockNumber;
+    this.spokePoolManager.getClient(this.chainId).latestHeightSearched = blockNumber;
   }
 }

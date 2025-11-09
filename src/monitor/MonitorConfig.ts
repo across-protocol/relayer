@@ -2,25 +2,23 @@ import winston from "winston";
 import { CommonConfig, ProcessEnv } from "../common";
 import {
   CHAIN_IDs,
-  ethers,
   getNativeTokenAddressForChain,
   isDefined,
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
-  EvmAddress,
 } from "../utils";
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
   balancesEnabled: boolean;
-  refillBalancesEnabled: boolean;
   reportEnabled: boolean;
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
   spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
+  closePDAsEnabled: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -38,14 +36,6 @@ export class MonitorConfig extends CommonConfig {
   readonly knownV1Addresses: Address[];
   readonly bundlesCount: number;
   readonly botModes: BotModes;
-  readonly refillEnabledBalances: {
-    chainId: number;
-    isHubPool: boolean;
-    account: Address;
-    token: Address;
-    target: number;
-    trigger: number;
-  }[] = [];
   readonly monitoredBalances: {
     chainId: number;
     warnThreshold: number | null;
@@ -72,35 +62,37 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
-      REFILL_BALANCES,
-      REFILL_BALANCES_ENABLED,
       STUCK_REBALANCES_ENABLED,
       REPORT_SPOKE_POOL_BALANCES,
       MONITORED_SPOKE_POOL_CHAINS,
       MONITORED_TOKEN_SYMBOLS,
       MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
+      MONITOR_USE_FOLLOW_DISTANCE,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
+      CLOSE_PDAS_ENABLED,
     } = env;
 
     this.botModes = {
       balancesEnabled: BALANCES_ENABLED === "true",
-      refillBalancesEnabled: REFILL_BALANCES_ENABLED === "true",
       reportEnabled: MONITOR_REPORT_ENABLED === "true",
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
       spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
+      closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
     };
 
+    if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
+      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
+    }
+
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
-
-    // Used to monitor balances, activities, etc. from the specified relayers.
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
     this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
@@ -113,38 +105,6 @@ export class MonitorConfig extends CommonConfig {
     });
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
-    // Used to send tokens if available in wallet to balances under target balances.
-    if (REFILL_BALANCES) {
-      this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger }) => {
-          if (Number.isNaN(target) || target <= 0) {
-            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
-          }
-          if (Number.isNaN(trigger) || trigger <= 0) {
-            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
-          }
-          if (trigger >= target) {
-            throw new Error("trigger must be < target");
-          }
-          return {
-            // Required fields:
-            chainId,
-            account: toAddressType(account, chainId),
-            target,
-            trigger,
-            // Optional fields that will set to defaults:
-            isHubPool: Boolean(isHubPool),
-            // Fields that are always set to defaults:
-            token: getNativeTokenAddressForChain(chainId),
-          };
-        }
-      );
-    }
-
-    // Should only have 1 HubPool.
-    if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {
-      throw new Error("REFILL_BALANCES should only have 1 account marked isHubPool as true");
-    }
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
@@ -183,12 +143,12 @@ export class MonitorConfig extends CommonConfig {
             parsedWarnThreshold = Number(warnThreshold);
           }
 
-          const isNativeToken = !token || token === getNativeTokenAddressForChain(chainId);
+          const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
           return {
-            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : EvmAddress.from(token),
+            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
             errorThreshold: parsedErrorThreshold,
             warnThreshold: parsedWarnThreshold,
-            account: EvmAddress.from(ethers.utils.getAddress(account)),
+            account: toAddressType(account, chainId),
             chainId: parseInt(chainId),
           };
         }
@@ -211,5 +171,8 @@ export class MonitorConfig extends CommonConfig {
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
   const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => toAddressType(ethers.utils.getAddress(address), CHAIN_IDs.MAINNET));
+  return rawAddresses.map((address) => {
+    const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
+    return toAddressType(address, chainId);
+  });
 };

@@ -11,7 +11,9 @@ import {
   assert,
   EvmAddress,
   Address,
+  winston,
 } from "../../utils";
+import { TransferTokenParams } from "../utils";
 
 export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
   protected cctpBridge: BaseBridgeAdapter;
@@ -22,14 +24,17 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    logger: winston.Logger
   ) {
     const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](
       l2chainId,
       hubChainId,
       l1Signer,
       l2SignerOrProvider,
-      l1Token
+      l1Token,
+      logger
     );
 
     super(l2chainId, hubChainId, l1Signer, [
@@ -37,7 +42,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
-    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider);
+    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
     this.canonicalBridge = canonicalBridge;
   }
 
@@ -51,10 +56,11 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     toAddress: Address,
     l1Token: EvmAddress,
     l2Token: Address,
-    amount: BigNumber
+    amount: BigNumber,
+    optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     assert(compareAddressesSimple(l1Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]));
-    return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount);
+    return this.getRouteForL2Token(l2Token).constructL1ToL2Txn(toAddress, l1Token, l2Token, amount, optionalParams);
   }
 
   async queryL1BridgeInitiationEvents(

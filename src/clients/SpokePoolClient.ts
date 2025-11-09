@@ -3,17 +3,7 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import {
-  Address,
-  chainIsSvm,
-  getNetworkName,
-  isDefined,
-  winston,
-  getRelayEventKey,
-  getMessageHash,
-  spreadEventWithBlockNumber,
-  toAddressType,
-} from "../utils";
+import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -21,22 +11,6 @@ export type SpokePoolClient = clients.SpokePoolClient;
 export type IndexerOpts = {
   path?: string;
 };
-
-type BlockUpdate = {
-  blockNumber: number;
-  currentTime: number;
-};
-
-type SpokePoolEventsAdded = {
-  nEvents: number; // Number of events.
-  data: string;
-};
-
-type SpokePoolEventRemoved = {
-  event: string;
-};
-
-export type SpokePoolClientMessage = BlockUpdate | SpokePoolEventsAdded | SpokePoolEventRemoved;
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -241,30 +215,22 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       // _unsafe_ to do ad-hoc, since it may interfere with some ongoing relayer computations relying on the
       // depositHashes object. If that's an acceptable risk then it might be preferable to simply assert().
       if (eventName === "FundsDeposited") {
-        const { depositId, destinationChainId } = event.args;
+        const { depositId } = event.args;
         assert(isDefined(depositId));
 
-        const spreadEvent = spreadEventWithBlockNumber(event) as DepositWithBlock & {
-          inputToken: string;
-          outputToken: string;
-          depositor: string;
-          recipient: string;
-          exclusiveRelayer: string;
-        };
-
-        const depositEvent = {
-          ...spreadEvent,
-          inputToken: toAddressType(spreadEvent.inputToken, this.chainId),
-          outputToken: toAddressType(spreadEvent.outputToken, destinationChainId),
-          depositor: toAddressType(spreadEvent.depositor, this.chainId),
-          recipient: toAddressType(spreadEvent.recipient, destinationChainId),
-          exclusiveRelayer: toAddressType(spreadEvent.exclusiveRelayer, destinationChainId),
-          messageHash: getMessageHash(event.args.message),
-        };
-        const depositHash = getRelayEventKey(depositEvent);
-        if (isDefined(this.depositHashes[depositHash])) {
-          delete this.depositHashes[depositHash];
-          this.logger.warn({ at, message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event.`, event });
+        const deposits = Object.entries(this.depositHashes).filter(([, deposit]) => deposit.txnRef === transactionHash);
+        if (deposits.length > 0) {
+          deposits.forEach(([depositKey, deposit]) => {
+            delete this.depositHashes[depositKey];
+            removed = true;
+            this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+          });
+        } else {
+          this.logger.warn({
+            at,
+            message: `Searched for ${this.#chain} deposit ${depositId} but didn't find it.`,
+            transactionHash,
+          });
         }
       } else if (eventName === "EnabledDepositRoute") {
         // These are hard to back out because they're not stored with transaction information. They should be extremely
@@ -274,6 +240,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       } else {
         // Retaining any remaining event types should be non-critical for relayer operation. They may
         // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
+        removed = true;
         const message = `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`;
         this.logger.debug({ at, message, transactionHash, blockHash });
       }

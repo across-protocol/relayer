@@ -1,7 +1,7 @@
 import assert from "assert";
 import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
-import { arch } from "@across-protocol/sdk";
+import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import { Log } from "../interfaces";
 import * as utils from "../../scripts/utils";
@@ -32,6 +32,7 @@ type EventWithData = arch.svm.EventWithData;
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const abortController = new AbortController();
 
+const PROGRAM = "RelayerSpokePoolListenerSVM";
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
@@ -70,10 +71,10 @@ function logFromEvent(event: Pick<EventWithData, "slot" | "program" | "signature
 }
 
 /**
- * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
+ * Aggregate utils/scrapeEvents for a series of event names and submit them to the parent process.
+ * @param eventsClient SVM CPI events client instance.
  * @param eventNames The array of events to be queried.
- * @param opts Options to configure event scraping behaviour.
+ * @param opts Options to configure event scraping behaviour, including the target block number.
  * @returns void
  */
 async function scrapeEvents(
@@ -83,7 +84,7 @@ async function scrapeEvents(
 ): Promise<void> {
   const provider = eventsClient.getRpc();
   const [{ timestamp: currentTime }, ...events] = await Promise.all([
-    arch.svm.getNearestSlotTime(provider),
+    arch.svm.getNearestSlotTime(provider, { commitment: "confirmed" }, logger),
     ...eventNames.map((eventName) => _scrapeEvents(chain, eventsClient, eventName, { ...opts, to: opts.to }, logger)),
   ]);
 
@@ -97,7 +98,7 @@ async function scrapeEvents(
 /**
  * Given a SpokePool eventsClient instance and an array of event names, subscribe to all future event emissions.
  * Periodically transmit received events to the parent process (if defined).
- * @param eventMgr Event manager instancea.
+ * @param eventMgr Event manager instance.
  * @param eventsClient eventsClient instance.
  * @param eventNames Event names to listen for.
  * @param quorum Minimum quorum requirement for events.
@@ -109,25 +110,43 @@ async function listen(
   eventNames: string[],
   quorum = 1
 ): Promise<void> {
+  const at = "RelayerSpokePoolListenerSVM::listen";
+
   const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  const nProviders = urls.length;
+  let nProviders = urls.length;
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
 
   const eventAuthority = await arch.svm.getEventAuthority(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const config = { commitment: "confirmed" } as const;
   const { signal: abortSignal } = abortController;
-  const providers = urls.map((url) => createSolanaRpcSubscriptions(url));
 
-  const readSlot = async (provider: WSProvider) => {
+  // Default keepalive interval is 5s but this can cause premature hangup.
+  // See https://github.com/anza-xyz/agave/issues/7022
+  const intervalMs = 30_000;
+  const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
+
+  const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
-    for await (const update of subscription) {
-      const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
-      const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
+    try {
+      for await (const update of subscription) {
+        const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
+        const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
 
-      if (!postBlock(Number(slot), currentTime)) {
-        abortController.abort();
+        if (!postBlock(Number(slot), currentTime)) {
+          abortController.abort();
+        }
       }
+    } catch (err: unknown) {
+      const message = "Caught error on Solana provider.";
+      if (arch.svm.isSolanaError(err)) {
+        logger.warn({ at, message, provider: providerName, cause: err.cause });
+      } else {
+        const cause = typeguards.isError(err) ? err.message : "unknown cause";
+        logger.warn({ at, message, provider: providerName, cause });
+      }
+
+      abortController.abort();
     }
   };
 
@@ -136,29 +155,50 @@ async function listen(
       .logsNotifications({ mentions: [address(eventAuthority)] }, config)
       .subscribe({ abortSignal });
 
-    for await (const log of subscription) {
-      const { signature } = log.value;
-      const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
+    try {
+      for await (const log of subscription) {
+        const { signature } = log.value;
+        const rawEvents = await eventsClient.readEventsFromSignature(signature, "confirmed");
 
-      const events = rawEvents
-        .filter(({ name }) => eventNames.includes(name))
-        .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
+        const events = rawEvents
+          .filter(({ name }) => eventNames.includes(name))
+          .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-      const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
-      if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
+        const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
+        if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
+          if (!postEvents(quorumEvents)) {
+            abortController.abort();
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const message = "Caught error on Solana provider.";
+      if (arch.svm.isSolanaError(err)) {
+        logger.warn({ at, message, provider: providerName, cause: err.cause });
+      } else {
+        const cause = typeguards.isError(err) ? err.message : "unknown cause";
+        logger.warn({ at, message, provider: providerName, cause });
+      }
+
+      if (!abortController.signal.aborted && --nProviders < quorum) {
+        logger.warn({ at, message: `Insufficient ${chain} providers to continue.`, quorum, nProviders });
         abortController.abort();
       }
     }
   };
 
   const providerNames = urls.map(getOriginFromURL);
-  await Promise.all([readSlot(providers[0]), ...providers.map((provider, i) => readEvent(provider, providerNames[i]))]);
+  await Promise.all([
+    readSlot(providers[0], providerNames[0]),
+    ...providers.map((provider, i) => readEvent(provider, providerNames[i])),
+  ]);
 }
 
 /**
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
+  const at = `${PROGRAM}::run`;
   const minimistOpts = {
     string: ["lookback", "spokepool"],
   };
@@ -174,9 +214,13 @@ async function run(argv: string[]): Promise<void> {
 
   chain = getNetworkName(chainId);
 
-  const provider = getSvmProvider();
+  const provider = getSvmProvider(await getRedisCache());
   const blockFinder = undefined;
-  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(provider);
+  const { slot: latestSlot, timestamp: now } = await arch.svm.getNearestSlotTime(
+    provider,
+    { commitment: "confirmed" },
+    logger
+  );
 
   const deploymentBlock = getDeploymentBlockNumber("SvmSpoke", chainId);
   let startSlot = latestSlot;
@@ -191,11 +235,11 @@ async function run(argv: string[]): Promise<void> {
     startSlot = BigInt(
       Math.max(
         deploymentBlock,
-        await getBlockForTimestamp(chainId, Number(now - BigInt(lookback)), blockFinder, await getRedisCache())
+        await getBlockForTimestamp(logger, chainId, Number(now - BigInt(lookback)), blockFinder, await getRedisCache())
       )
     );
   } else {
-    logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
+    logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
@@ -204,15 +248,15 @@ async function run(argv: string[]): Promise<void> {
     lookback: Number(latestSlot - startSlot),
   };
 
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
+  logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
     abortController.abort();
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
     abortController.abort();
   });
 
@@ -223,13 +267,14 @@ async function run(argv: string[]): Promise<void> {
   }
 
   const events = ["FundsDeposited", "FilledRelay"];
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
+  logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
   const eventMgr = new EventManager(logger, chainId, quorum);
 
   await listen(eventMgr, eventsClient, events, quorum);
 }
 
 if (require.main === module) {
+  const at = PROGRAM;
   logger = Logger;
 
   run(process.argv.slice(2))
@@ -237,12 +282,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolListener", message: `${chain} listener exited with error.`, error });
+      logger.error({ at, message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
+      logger.debug({ at, message: `Exiting ${chain} listener.` });
       exit(Number(process.exitCode));
     });
 }

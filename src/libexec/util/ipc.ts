@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { isDefined, sortEventsAscending } from "../../utils";
-import { Log, SpokePoolClientMessage } from "./../types";
+import { Log, ListenerMessage } from "./../types";
 
 /**
  * Post a block update to the parent process (if defined).
@@ -15,7 +15,7 @@ export function postBlock(blockNumber: number, currentTime: number): boolean {
     return true;
   }
 
-  const message: SpokePoolClientMessage = {
+  const message: ListenerMessage = {
     blockNumber,
     currentTime,
   };
@@ -36,7 +36,7 @@ export function postEvents(events: Log[]): boolean {
   }
 
   events = sortEventsAscending(events);
-  const message: SpokePoolClientMessage = {
+  const message: ListenerMessage = {
     nEvents: events.length,
     data: JSON.stringify(events, sdkUtils.jsonReplacerWithBigNumbers),
   };
@@ -50,14 +50,14 @@ export function postEvents(events: Log[]): boolean {
  * @returns void
  */
 export function removeEvent(event: Log): boolean {
-  const message: SpokePoolClientMessage = {
+  const message: ListenerMessage = {
     event: JSON.stringify(event, sdkUtils.jsonReplacerWithBigNumbers),
   };
 
   return post(message);
 }
 
-function post(message: SpokePoolClientMessage): boolean {
+function post(message: ListenerMessage): boolean {
   if (!isDefined(process.send)) {
     return;
   }

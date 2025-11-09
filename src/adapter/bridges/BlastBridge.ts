@@ -1,4 +1,13 @@
-import { Contract, BigNumber, paginatedEventQuery, EventSearchConfig, Signer, Provider, EvmAddress } from "../../utils";
+import {
+  Contract,
+  BigNumber,
+  paginatedEventQuery,
+  EventSearchConfig,
+  Signer,
+  Provider,
+  EvmAddress,
+  winston,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
@@ -6,7 +15,16 @@ import { processEvent } from "../utils";
 export class BlastBridge extends BaseBridgeAdapter {
   private readonly l2Gas = 200000;
 
-  constructor(l2chainId: number, hubChainId: number, l1Signer: Signer, l2SignerOrProvider: Signer | Provider) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: Signer,
+    l2SignerOrProvider: Signer | Provider,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _l1Token: EvmAddress,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _logger: winston.Logger
+  ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].blastBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].blastBridge;
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);

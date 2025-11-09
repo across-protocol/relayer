@@ -11,7 +11,6 @@ import {
   sinon,
   smock,
   spyLogIncludes,
-  toBN,
   toWei,
   winston,
 } from "./utils";
@@ -19,7 +18,7 @@ import {
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
 import { InventoryConfig } from "../src/interfaces";
-import { MockAdapterManager, MockBundleDataClient, MockHubPoolClient, MockTokenClient } from "./mocks/";
+import { MockAdapterManager, MockHubPoolClient, MockTokenClient } from "./mocks/";
 import {
   bnZero,
   CHAIN_IDs,
@@ -38,7 +37,6 @@ import { utils as sdkUtils } from "@across-protocol/sdk";
 const toMegaWei = (num: string | number | BigNumber) => parseUnits(num.toString(), 6);
 
 let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
-let bundleDataClient: MockBundleDataClient;
 let owner: SignerWithAddress, spy: sinon.SinonSpy, spyLogger: winston.Logger;
 let inventoryClient: InventoryClient; // tested
 let crossChainTransferClient: CrossChainTransferClient;
@@ -110,14 +108,13 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     hubPoolClient = new MockHubPoolClient(spyLogger, hubPool, configStoreClient);
     enabledChainIds.forEach((chainId) => {
-      hubPoolClient.mapTokenInfo(l2TokensForWeth[chainId], "WETH", 18);
-      hubPoolClient.mapTokenInfo(l2TokensForUsdc[chainId], "USDC", 6);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForWeth[chainId], chainId), "WETH", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(l2TokensForUsdc[chainId], chainId), "USDC", 6);
     });
     await hubPoolClient.update();
 
     adapterManager = new MockAdapterManager(null, null, null, null);
     tokenClient = new MockTokenClient(null, null, null, null);
-    bundleDataClient = new MockBundleDataClient(null, null, null, null);
 
     crossChainTransferClient = new CrossChainTransferClient(spyLogger, enabledChainIds, adapterManager);
 
@@ -128,7 +125,6 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       tokenClient,
       enabledChainIds,
       hubPoolClient,
-      bundleDataClient,
       adapterManager,
       crossChainTransferClient
     );
@@ -262,28 +258,31 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     expect(tokenClient.getBalance(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON)).eq(toWei(10))).to.be.true; // Starting balance.
 
     // Construct a token shortfall of 18.
-    const shortfallAmount = toWei(18);
+    const shortfallAmount1 = toWei(10);
+    const shortfallAmount2 = toWei(8);
     tokenClient.setTokenShortFallData(
       POLYGON,
       toAddressType(l2TokensForWeth[POLYGON], POLYGON),
-      [6969],
-      shortfallAmount
+      [BigNumber.from(6969), BigNumber.from(6970)],
+      [shortfallAmount1, shortfallAmount2]
     );
     await inventoryClient.update();
+
+    // There should be a rebalance sent for each shortfall.
 
     // If we now consider how much should be sent over the bridge. The spoke pool, considering the shortfall, has an
     // allocation of -5.3%. The target is, however, 5% of the total supply. factoring in the overshoot parameter we
     // should see a transfer of 5 + 2 - (-5.3)=12.3% of total inventory. This should be an amount of 0.1233*150=18.49.
-    const expectedBridgedAmount = toBN("18499999999999999950");
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
     expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
-    expect(lastSpyLogIncludes(spy, "18.49 WETH rebalanced")).to.be.true; // expected bridge amount rounded for logs.
-    expect(lastSpyLogIncludes(spy, "This meets target allocation of 7.00%")).to.be.true; // config from client.
+    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
 
     // Note that there should be some additional state updates that we should check. In particular the token balance
     // on L1 should have been decremented by the amount sent over the bridge and the Inventory client should be tracking
     // the cross-chain transfers.
+    const expectedBridgedAmount = toWei(10).add(toWei(8));
     expect(tokenClient.getBalance(MAINNET, EvmAddress.from(mainnetWeth)).eq(toWei(100).sub(expectedBridgedAmount))).to
       .be.true;
     expect(
@@ -294,10 +293,33 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       )
     ).to.equal(expectedBridgedAmount);
 
-    // The mock adapter manager should have been called with the expected transaction.
-    expect(adapterManager.tokensSentCrossChain[POLYGON][mainnetWeth].amount.eq(expectedBridgedAmount)).to.be.true;
+    // Now, mock funds having entered the canonical bridge. If we only mock enough to cover one shortfall,
+    // then we should see a rebalance for the other.
+    adapterManager.setMockedOutstandingCrossChainTransfers(
+      POLYGON,
+      EvmAddress.from(owner.address),
+      EvmAddress.from(mainnetWeth),
+      shortfallAmount1 // 10 WETH
+    );
 
-    // Now, mock these funds having entered the canonical bridge.
+    // Send tokens out of the relayer's balance so we can send a follow up rebalance without getting tripped up
+    // by the balance check.
+    mainnetWethContract.balanceOf
+      .whenCalledWith(owner.address)
+      .returns(initialAllocation[MAINNET][mainnetWeth].sub(expectedBridgedAmount));
+
+    // There should be one rebalance:
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "10.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.false;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    mainnetWethContract.balanceOf
+      .whenCalledWith(owner.address)
+      .returns(initialAllocation[MAINNET][mainnetWeth].sub(expectedBridgedAmount).sub(shortfallAmount2));
+
+    // Now, mock enough funds to cover the total shortfall.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
       EvmAddress.from(owner.address),
@@ -305,42 +327,25 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       expectedBridgedAmount
     );
 
-    // Now that funds are "in the bridge" re-running the rebalance should not execute any transactions as the util
-    // should consider the funds in transit as part of the balance and therefore should not send more.
+    // There should be no rebalances:
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"outstandingTransfers":"18.49"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"actualBalanceOnChain":"10.00"')).to.be.true;
-    expect(spyLogIncludes(spy, -2, '"virtualBalanceOnChain":"28.49"')).to.be.true;
 
-    // Now mock that funds have finished coming over the bridge and check behavior is as expected.
-    // Zero the transfer. mock conclusion.
+    // Ok, now try mocking some pending transfers such that part of the larger transfer is already covered by
+    // pending transfers.
     adapterManager.setMockedOutstandingCrossChainTransfers(
       POLYGON,
       EvmAddress.from(owner.address),
       EvmAddress.from(mainnetWeth),
-      bnZero
+      shortfallAmount2.add(toWei(1))
     );
-    // Balance after the relay concludes should be initial + bridged amount as 10+17.9=27.9
-    const expectedPostRelayBalance = toWei(10).add(expectedBridgedAmount);
-    tokenClient.setTokenData(
-      POLYGON,
-      toAddressType(l2TokensForWeth[POLYGON], POLYGON),
-      expectedPostRelayBalance,
-      bnZero
-    );
-    // The token shortfall should now no longer be an issue. This means we can fill the relay of 18 size now.
-    tokenClient.setTokenShortFallData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), [6969], bnZero);
-    tokenClient.decrementLocalBalance(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), shortfallAmount); // mock the relay actually filling.
-
     await inventoryClient.update();
     await inventoryClient.rebalanceInventoryIfNeeded();
-    expect(lastSpyLogIncludes(spy, "No rebalances required")).to.be.true;
-    // We should see a log for chain Arbitrum that shows the actual balance after the relay concluded and the share.
-    // actual balance should be listed above at 945. share should be 945/(13500) =0.7 (initial total - withdrawAmount).
-    // expect(spyLogIncludes(spy, -2, `"${ARBITRUM}":{"actualBalanceOnChain":"945.00"`)).to.be.true;
-    // expect(spyLogIncludes(spy, -2, `"proRataShare":"7.00%"`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Executed Inventory rebalances")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Rebalances sent to Polygon")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "1.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "8.00 WETH rebalanced to cover total chain shortfall of 18.00 WETH")).to.be.true;
   });
 
   it("Refuses to send rebalance when ERC20 balance changes", async function () {
@@ -386,7 +391,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
   describe("Withdraws excess balance from L2 to L1", function () {
     const testChain = OPTIMISM;
     const testL1Token = mainnetUsdc;
-    const testL2Token = l2TokensForUsdc[testChain];
+    const testL2Token = toAddressType(l2TokensForUsdc[testChain], testChain);
     const targetOverageBuffer = toWei("2");
     beforeEach(function () {
       inventoryConfig.tokenConfig[testL1Token][testChain].withdrawExcessPeriod = 7200;
@@ -407,7 +412,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // equal to the current cumulative balance so the chain allocation gets set close to 50%.
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const increaseBalanceAmount = currentCumulativeBalance;
-      tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const currentChainBalance = inventoryClient.getBalanceOnChain(testChain, EvmAddress.from(testL1Token));
       const currentAllocationPct = currentChainBalance.mul(toWei(1)).div(currentCumulativeBalance);
@@ -420,7 +425,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       const expectedWithdrawalAmount = expectedWithdrawalPct.mul(currentCumulativeBalance).div(toWei(1));
       expect(adapterManager.withdrawalsRequired[0].amountToWithdraw).eq(expectedWithdrawalAmount);
       expect(adapterManager.withdrawalsRequired[0].l2ChainId).eq(testChain);
-      expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token);
+      expect(adapterManager.withdrawalsRequired[0].l2Token.toNative()).eq(testL2Token.toNative());
       expect(adapterManager.withdrawalsRequired[0].address.toNative()).eq(owner.address);
     });
 
@@ -433,7 +438,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // We set the token balance on the L2 chain using 18 decimals rather than 6:
       let currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
       const increaseBalanceAmount = l2TokenConverter(currentCumulativeBalance);
-      tokenClient.setTokenData(testChain, toAddressType(testL2Token, hubPoolClient.chainId), increaseBalanceAmount);
+      tokenClient.setTokenData(testChain, testL2Token, increaseBalanceAmount);
       currentCumulativeBalance = inventoryClient.getCumulativeBalance(EvmAddress.from(testL1Token));
 
       // Current allocation computations should still be able to be performed correctly:
@@ -489,8 +494,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       inventoryConfig.tokenConfig[mainnetUsdc] = usdcConfig;
 
       enabledChainIds.forEach((chainId) => {
-        hubPoolClient.mapTokenInfo(nativeUSDC[chainId], "USDC", 6);
-        hubPoolClient.mapTokenInfo(bridgedUSDC[chainId], "USDC", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(nativeUSDC[chainId], chainId), "USDC", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[chainId], chainId), "USDC", 6);
       });
     });
 
@@ -549,7 +554,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
     it("Correctly normalizes remote token balance to L1 token decimals", async function () {
       // Let's pretend that the Optimism USDC version uses 18 decimals instead of 6, like the L1 token decimals:
       const testChain = CHAIN_IDs.OPTIMISM;
-      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
         EvmAddress.from(mainnetUsdc),
@@ -576,7 +581,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
 
     it("Correctly normalizes shortfalls to L1 token decimals", async function () {
       const testChain = CHAIN_IDs.OPTIMISM;
-      hubPoolClient.mapTokenInfo(bridgedUSDC[testChain], "USDC", 18);
+      hubPoolClient.mapTokenInfo(toAddressType(bridgedUSDC[testChain], testChain), "USDC", 18);
       let bridgedBalance = inventoryClient.getBalanceOnChain(
         testChain,
         EvmAddress.from(mainnetUsdc),
@@ -600,8 +605,8 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       tokenClient.setTokenShortFallData(
         testChain,
         toAddressType(bridgedUSDC[testChain], testChain),
-        [6969],
-        shortfallAmount
+        [BigNumber.from(6969)],
+        [shortfallAmount]
       );
       await inventoryClient.update();
 
@@ -721,7 +726,7 @@ describe("InventoryClient: Rebalancing inventory", async function () {
       // Unset all bridged USDC allocations.
       for (const chainId of [OPTIMISM, POLYGON, BASE, ARBITRUM]) {
         const l2Token = bridgedUSDC[chainId];
-        hubPoolClient.mapTokenInfo(l2Token, "USDC.e", 6);
+        hubPoolClient.mapTokenInfo(toAddressType(l2Token, chainId), "USDC.e", 6);
         delete inventoryConfig.tokenConfig[mainnetUsdc][l2Token];
       }
 

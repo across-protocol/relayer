@@ -3,9 +3,8 @@ import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
-import { ZERO_ADDRESS } from "@uma/common";
 import { SUPPORTED_TOKENS } from "../../src/common";
-import { getCctpDomainForChainId, EvmAddress, ZERO_BYTES } from "../../src/utils";
+import { getCctpDomainForChainId, EvmAddress, ZERO_ADDRESS, ZERO_BYTES } from "../../src/utils";
 
 const logger = createSpyLogger().spyLogger;
 const searchConfig = {
@@ -52,7 +51,7 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
     const spokePool = await (await getContractFactory("MockSpokePool", deployer)).deploy(ZERO_ADDRESS);
 
     erc20BridgeContract = await (await getContractFactory("ArbitrumERC20Bridge", deployer)).deploy();
-    cctpBridgeContract = await (await getContractFactory("CctpTokenMessenger", deployer)).deploy();
+    cctpBridgeContract = await (await getContractFactory("CctpV2TokenMessenger", deployer)).deploy();
 
     const l2SpokePoolClient = new EVMSpokePoolClient(logger, spokePool, null, CHAIN_IDs.ARBITRUM, 0, {
       from: 0,
@@ -162,12 +161,9 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
 
   describe("CCTP", () => {
     it("return only relevant L1 bridge init events", async () => {
-      const processedNonce = 1;
-      const unprocessedNonce = 2;
       await cctpBridgeContract.emitDepositForBurn(
-        processedNonce,
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
@@ -175,9 +171,8 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
       await cctpBridgeContract.emitDepositForBurn(
-        unprocessedNonce,
         l1UsdcAddress,
-        1,
+        2,
         monitoredEoa,
         ethers.utils.hexZeroPad(monitoredEoa, 32),
         getCctpDomainForChainId(CHAIN_IDs.ARBITRUM),
@@ -185,9 +180,9 @@ describe("Cross Chain Adapter: Arbitrum", async function () {
         ethers.utils.hexZeroPad(monitoredEoa, 32)
       );
 
-      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress);
+      await cctpBridgeContract.emitMintAndWithdraw(monitoredEoa, 1, l2UsdcAddress, 1); // 1 token to receive, 1 token to pay for fee
       const outstandingTransfers = await adapter.getOutstandingCrossChainTransfers([toAddress(l1UsdcAddress)]);
-      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(1));
+      expect(outstandingTransfers[monitoredEoa][l1UsdcAddress][l2UsdcAddress].totalAmount).to.equal(toBN(2));
     });
   });
 });

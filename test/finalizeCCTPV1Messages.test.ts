@@ -6,11 +6,11 @@ import { expect } from "chai";
 import { arch, clients } from "@across-protocol/sdk";
 import { createDefaultSolanaClient, encodePauseDepositsMessageBody } from "./utils/svm/utils";
 import { signer } from "./Solana.setup";
-import { finalizeCCTPV1MessagesSVM, cctpL1toL2Finalizer } from "../src/finalizer/utils/cctp";
-import { AttestedCCTPMessage } from "../src/utils/CCTPUtils";
+import { finalizeCCTPV1MessagesSVM } from "../src/finalizer/utils/cctp/svmUtils";
+import { cctpV1L1toSvmL2Finalizer } from "../src/finalizer/utils/cctp/l1ToSvmL2";
+import { AttestedCCTPMessage, ZERO_ADDRESS, EvmAddress } from "../src/utils";
 import { FinalizerPromise } from "../src/finalizer/types";
 import { createSpyLogger, ethers, getContractFactory } from "./utils";
-import { ZERO_ADDRESS } from "@uma/common";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import sinon from "sinon";
 import * as CCTPUtils from "../src/utils/CCTPUtils";
@@ -20,6 +20,9 @@ import * as svmSignerUtils from "../src/utils/SvmSignerUtils";
 interface ExtendedSolanaClient extends ReturnType<typeof createDefaultSolanaClient> {
   chainId: number;
 }
+
+const addressesToFinalize = new Map<Address, string[]>();
+addressesToFinalize.set(EvmAddress.from("0x1234567890123456789012345678901234567890"), []);
 
 // Helper function for the new tests
 const getAttestedMessage = async (
@@ -311,8 +314,8 @@ describe("finalizeCCTPV1Messages", () => {
     // Create a test message
 
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
-    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+    sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
+    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
@@ -345,13 +348,13 @@ describe("finalizeCCTPV1Messages", () => {
         createDefaultSolanaClient().rpc // eventSearchConfig
       );
 
-      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
-        ["0x1234567890123456789012345678901234567890"] as any
+        addressesToFinalize
       );
 
       // Verify the result structure
@@ -376,8 +379,8 @@ describe("finalizeCCTPV1Messages", () => {
     // It tests cctpL1toL2Finalizer function.
     // Create a test message
     const testMessages = await getAttestedMessage(encodePauseDepositsMessageBody(true), 200, 0, 5);
-    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(testMessages);
-    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+    sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(testMessages);
+    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
@@ -410,13 +413,13 @@ describe("finalizeCCTPV1Messages", () => {
         createDefaultSolanaClient().rpc // eventSearchConfig
       );
 
-      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer,
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
-        ["0x1234567890123456789012345678901234567890"] as any
+        addressesToFinalize
       );
 
       // Verify the result structure
@@ -439,8 +442,8 @@ describe("finalizeCCTPV1Messages", () => {
   it("should handle empty message list", async () => {
     // This test is trying to handle empty message list.
     // It tests cctpL1toL2Finalizer function.
-    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves([]);
-    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+    sinon.stub(CCTPUtils, "getCctpV1Messages").resolves([]);
+    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
@@ -473,13 +476,13 @@ describe("finalizeCCTPV1Messages", () => {
       );
 
       // Call the finalizer
-      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
-        ["0x1234567890123456789012345678901234567890"] as any
+        addressesToFinalize
       );
 
       // Verify the result structure
@@ -507,8 +510,8 @@ describe("finalizeCCTPV1Messages", () => {
 
     const mixedMessages = [...depositMessage, ...tokenlessMessage];
 
-    sinon.stub(CCTPUtils, "getAttestedCCTPMessages").resolves(mixedMessages);
-    sinon.stub(CCTPUtils, "getCctpMessageTransmitter").returns({
+    sinon.stub(CCTPUtils, "getCctpV1Messages").resolves(mixedMessages);
+    sinon.stub(CCTPUtils, "getCctpV1MessageTransmitter").returns({
       address: "CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd",
     });
     sinon.stub(svmSignerUtils, "getKitKeypairFromEvmSigner").resolves(signer);
@@ -542,13 +545,13 @@ describe("finalizeCCTPV1Messages", () => {
       );
 
       // Call the finalizer
-      const result: FinalizerPromise = await cctpL1toL2Finalizer(
+      const result: FinalizerPromise = await cctpV1L1toSvmL2Finalizer(
         spyLogger,
         hubPoolClient.hubPool.signer, // Use a proper Wallet for testing
         hubPoolClient as any, // Cast to local HubPoolClient type
         l2SpokePoolClient,
         evmSpokePoolClient,
-        ["0x1234567890123456789012345678901234567890"] as any
+        addressesToFinalize
       );
 
       // Verify the result structure

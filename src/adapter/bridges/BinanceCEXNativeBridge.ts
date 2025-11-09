@@ -1,4 +1,4 @@
-import { Contract, BigNumber, Signer, Provider, EvmAddress, assert, bnZero } from "../../utils";
+import { Contract, BigNumber, Signer, Provider, EvmAddress, assert, bnZero, winston } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails } from "./BaseBridgeAdapter";
 import { BinanceCEXBridge } from "./";
@@ -11,10 +11,11 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     hubChainId: number,
     l1Signer: Signer,
     l2SignerOrProvider: Signer | Provider,
-    l1Token: EvmAddress
+    l1Token: EvmAddress,
+    logger: winston.Logger
   ) {
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
-    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
 
     const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
       CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor;

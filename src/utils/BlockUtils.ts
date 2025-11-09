@@ -1,5 +1,5 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
-import { isDefined, type LatestBlockhash } from "./";
+import { isDefined, winston, type LatestBlockhash } from "./";
 import {
   BlockFinderHints,
   EVMBlockFinder,
@@ -22,13 +22,13 @@ let svmBlockFinder: SVMBlockFinder;
  * @param chainId
  * @returns
  */
-export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder<utils.Block>> {
+export async function getBlockFinder(logger: winston.Logger, chainId: number): Promise<utils.BlockFinder<utils.Block>> {
   if (chainIsEvm(chainId)) {
     evmBlockFinders[chainId] ??= new EVMBlockFinder(await getProvider(chainId));
     return evmBlockFinders[chainId];
   }
-  const provider = getSvmProvider();
-  svmBlockFinder ??= new SVMBlockFinder(provider);
+  const provider = getSvmProvider(await getRedisCache());
+  svmBlockFinder ??= new SVMBlockFinder(provider, [], logger);
   return svmBlockFinder;
 }
 
@@ -42,13 +42,14 @@ export async function getBlockFinder(chainId: number): Promise<utils.BlockFinder
  * @returns Block number for the requested timestamp.
  */
 export async function getBlockForTimestamp(
+  logger: winston.Logger,
   chainId: number,
   timestamp: number,
   blockFinder?: utils.BlockFinder<utils.Block>,
   redisCache?: interfaces.CachingMechanismInterface,
   hints: BlockFinderHints = {}
 ): Promise<number> {
-  blockFinder ??= await getBlockFinder(chainId);
+  blockFinder ??= await getBlockFinder(logger, chainId);
   redisCache ??= await getRedisCache();
   return utils.getCachedBlockForTimestamp(chainId, timestamp, blockFinder, redisCache, hints);
 }
@@ -78,7 +79,13 @@ export async function getTimestampsForBundleStartBlocks(
           return [chainId, (await spokePoolClient.spokePool.getCurrentTime({ blockTag: startAt })).toNumber()];
         } else if (isSVMSpokePoolClient(spokePoolClient)) {
           const provider = spokePoolClient.svmEventsClient.getRpc();
-          const { timestamp } = await arch.svm.getNearestSlotTime(provider, { slot: BigInt(startAt) });
+          const { timestamp } = await arch.svm.getNearestSlotTime(
+            provider,
+            {
+              slot: BigInt(startAt),
+            },
+            spokePoolClient.logger
+          );
           return [chainId, timestamp];
         }
       })
