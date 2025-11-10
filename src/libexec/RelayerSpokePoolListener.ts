@@ -86,10 +86,20 @@ async function scrapeEvents(
   provider: Provider,
   opts: ScraperOpts
 ): Promise<void> {
+  const at = `${PROGRAM}::scrapeEvents`;
   const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
 
   const events = (
-    await Promise.all(eventSignatures.map((sig) => _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger)))
+    await Promise.all(
+      eventSignatures.map(async (sig) => {
+        try {
+          return await _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger);
+        } catch {
+          logger.warn({ at, message: `Failed to scrape ${chain} events.`, event: sig });
+          return Promise.resolve([]);
+        }
+      })
+    )
   ).flat();
 
   if (!abortController.signal.aborted) {
