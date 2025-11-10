@@ -204,7 +204,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
       events.push(getDepositEvent(blockNumber));
     }
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
 
     const [droppedEvent] = events;
     removeEvent(droppedEvent);
@@ -249,7 +250,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
     await spokePoolClient.update();
 
     let deposits = spokePoolClient.getDeposits();
