@@ -119,7 +119,7 @@ async function scrapeEvents(
  * @param eventMgr Event Manager instance.
  * @returns void
  */
-function subNewHeads(eventMgr: EventManager): void {
+function subNewHeads(): void {
   const at = `${PROGRAM}::newHeads`;
 
   // On each new block, submit any "finalised" events.
@@ -291,7 +291,7 @@ async function run(argv: string[]): Promise<void> {
 
   logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
 
-  subNewHeads(eventMgr);
+  subNewHeads();
   subEvents(eventMgr, spokePool, events);
 
   return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
