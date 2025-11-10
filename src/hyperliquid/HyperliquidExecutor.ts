@@ -21,11 +21,11 @@ import {
   ConvertDecimals,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
-import { MultiCallerClient, EventListener } from "../clients";
+import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
   // We can further constrain the HubPoolClient type since we don't call any functions on it.
-  hubPoolClient: { hubPool: Contract; chainId: number };
+  hubPoolClient: HubPoolClient;
   multiCallerClient: MultiCallerClient;
   dstProvider: Provider;
 }
@@ -78,8 +78,9 @@ export class HyperliquidExecutor {
     readonly clients: HyperliquidExecutorClients
   ) {
     // These must be defined.
-    this.dstOftMessenger = getDstOftHandler().connect(this.clients.dstProvider);
-    this.dstCctpMessenger = getDstCctpHandler().connect(this.clients.dstProvider);
+    const signer = clients.hubPoolClient.hubPool.signer;
+    this.dstOftMessenger = getDstOftHandler().connect(signer.connect(this.clients.dstProvider));
+    this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
 
     this.infoClient = getHlInfoClient();
     this.eventListener = new EventListener(CHAIN_IDs.HYPEREVM, this.logger, 1);
@@ -256,6 +257,7 @@ export class HyperliquidExecutor {
       message: "Sent sponsored funds to the swap handler.",
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
+      unpermissioned: false,
     });
   }
 
