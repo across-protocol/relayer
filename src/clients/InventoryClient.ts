@@ -45,6 +45,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { RedisCacheInterface } from "../caching/RedisCache";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
@@ -102,6 +103,22 @@ export class InventoryClient {
       Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
       this.logger
     );
+  }
+
+  /**
+   * Export Inventory state to Redis
+   * @param redis Redis cache interface
+   */
+  async export(redis: RedisCacheInterface): Promise<void> {
+    // not implemented yet
+  }
+
+  /**
+   * Imports Inventory state from Redis
+   * @param redis Redis cache interface
+   */
+  async import(redis: RedisCacheInterface): Promise<void> {  // @TODO: Should this be a static method???
+    // not implemented yet
   }
 
   /**
