@@ -9,6 +9,11 @@ import { assert, BigNumber, isDefined, winston } from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
+type BundleState = {
+  upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } };
+  upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
+};
+
 export class BundleDataApproxClient {
   private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } = undefined;
@@ -22,6 +27,25 @@ export class BundleDataApproxClient {
     private readonly logger: winston.Logger
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
+  }
+
+  /**
+   * Export current BundleData(Approx)Client state.
+   * @returns BundleData(Approx)Client state. This can be subsequently ingested by BundleDataApproxClient.import().
+   */
+  export(): BundleState {
+    const { upcomingDeposits, upcomingRefunds } = this;
+    return { upcomingDeposits, upcomingRefunds };
+  }
+
+  /**
+   * Import BundleData(Approx)Client state.
+   * @returns void
+   */
+  import(state: BundleState) {
+    const { upcomingDeposits, upcomingRefunds } = state;
+    this.upcomingDeposits = upcomingDeposits;
+    this.upcomingRefunds = upcomingRefunds;
   }
 
   // Return sum of refunds for all fills sent after the fromBlocks.
