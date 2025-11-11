@@ -46,6 +46,7 @@ import lodash from "lodash";
 import { SLOW_WITHDRAWAL_CHAINS } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { RedisCacheInterface } from "../caching/RedisCache";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };

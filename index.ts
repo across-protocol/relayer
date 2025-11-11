@@ -17,6 +17,7 @@ import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor } from "./src/hyperliquid";
+import { runInventoryManager } from "./src/inventory-manager";
 
 let logger: typeof Logger;
 let cmd: string;
@@ -31,6 +32,7 @@ const CMDS = {
   relayer: runRelayer,
   rebalancer: runRebalancer,
   hlExecutor: runHyperliquidExecutor,
+  inventoryManager: runInventoryManager,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {
