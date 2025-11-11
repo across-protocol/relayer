@@ -34,5 +34,6 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
   await inventoryClient.update(config.spokePoolChainsOverride);
 
   const exportedState = inventoryClient.export();
+  console.log(JSON.stringify(exportedState, null, 2)); // @TODO: lint fix, remove later
   // await redis.set("inventory_state", JSON.stringify(exportedState));
 }
