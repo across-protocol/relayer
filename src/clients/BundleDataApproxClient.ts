@@ -40,9 +40,10 @@ export class BundleDataApproxClient {
 
   /**
    * Import BundleData(Approx)Client state.
+   * @params state BundleData(Approx)Client state, previously exported.
    * @returns void
    */
-  import(state: BundleDataState) {
+  import(state: BundleDataState): void {
     const { upcomingDeposits, upcomingRefunds } = state;
     this.upcomingDeposits = upcomingDeposits;
     this.upcomingRefunds = upcomingRefunds;
