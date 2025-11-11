@@ -17,6 +17,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
   const config = new InventoryManagerConfig(process.env);
 
   const redis = await getRedisCache(logger);
+  void redis; // @TODO: lint fix, remove later
 
   const clients = await constructInventoryManagerClients(logger, config, baseSigner);
 
@@ -24,7 +25,6 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
 
   await updateSpokePoolClients(spokePoolClients, [
     "FundsDeposited",
-    "RequestedSpeedUpDeposit",
     "FilledRelay",
     "RelayedRootBundle",
     "ExecutedRelayerRefundRoot",
@@ -32,5 +32,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
 
   await inventoryClient.update(config.spokePoolChainsOverride);
 
-  await inventoryClient.export(redis);
+  const exportedState = inventoryClient.export();
+  void exportedState;
+  // await redis.set("inventory_state", JSON.stringify(exportedState));
 }
