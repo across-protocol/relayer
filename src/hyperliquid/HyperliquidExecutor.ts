@@ -19,8 +19,13 @@ import {
   BigNumber,
   forEachAsync,
   ConvertDecimals,
+  EventSearchConfig,
+  paginatedEventQuery,
+  getBlockForTimestamp,
+  getSpotClearinghouseState,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
+import { CONTRACT_ADDRESSES, CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
@@ -46,7 +51,9 @@ export type Pair = {
   name: string;
   swapHandler: EvmAddress;
   baseToken: EvmAddress;
+  baseTokenId: number;
   finalToken: EvmAddress;
+  finalTokenId: number;
 };
 
 const BASE_TOKENS = ["USDT0", "USDC"];
@@ -63,6 +70,7 @@ export class HyperliquidExecutor {
   private eventListener: EventListener;
   private infoClient;
   private handledEvents: Set<string> = new Set<string>();
+  private dstSearchConfig: EventSearchConfig;
 
   private tasks: Promise<TaskResult>[] = [];
   private taskResolver;
@@ -116,12 +124,53 @@ export class HyperliquidExecutor {
           name: pair.name,
           swapHandler: EvmAddress.from(swapHandler),
           baseToken: EvmAddress.from(baseTokenAddress),
+          baseTokenId: baseToken.index,
           finalToken: EvmAddress.from(finalTokenAddress),
+          finalTokenId: finalToken.index,
         };
         this.pairUpdates[pairId] = 0;
       });
     });
+    const toBlock = await this.clients.dstProvider.getBlock("latest");
+    const fromBlock = await getBlockForTimestamp(this.logger, this.chainId, toBlock.timestamp - this.config.lookback);
+    this.dstSearchConfig = {
+      to: toBlock.number,
+      from: fromBlock,
+      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[this.chainId],
+    };
     this.initialized = true;
+  }
+
+  public async finalizeSwapFlows(): Promise<void> {
+    await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
+      const [baseTokenSymbol, finalTokenSymbol] = pairId.split("-");
+      const [inputSpotBalance, _outputSpotBalance, outstandingOrders] = await Promise.all([
+        this.querySpotBalance(baseTokenSymbol, pair.swapHandler),
+        this.querySpotBalance(finalTokenSymbol, pair.swapHandler),
+        this.getOutstandingOrdersOnPair(pair),
+      ]);
+      let outputSpotBalance = _outputSpotBalance;
+      const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
+      const totalInputBalanceInRange = outstandingOrders.reduce((sum, order) => sum.add(order.evmAmountIn), bnZero);
+      const totalInputBalanceInRangeCore = ConvertDecimals(inputTokenDecimals, 8)(totalInputBalanceInRange);
+      const swappedInputAmount = totalInputBalanceInRangeCore.sub(inputSpotBalance);
+
+      const quoteNonces = [];
+      const outputAmounts = [];
+      outstandingOrders.forEach((outstandingOrder) => {
+        const convertedInputAmount = ConvertDecimals(inputTokenDecimals, 8)(outstandingOrder.evmAmountIn);
+        const limitOrderOut = outputSpotBalance.mul(convertedInputAmount).div(swappedInputAmount);
+        if (limitOrderOut.lte(outputSpotBalance)) {
+          quoteNonces.push(outstandingOrder.quoteNonce);
+          outputAmounts.push(limitOrderOut);
+          outputSpotBalance = outputSpotBalance.sub(limitOrderOut);
+        }
+      });
+      if (quoteNonces.length !== 0) {
+        this.finalizeLimitOrders(pair.baseToken, pair.finalToken, quoteNonces, outputAmounts);
+      }
+    });
+    await this.clients.multiCallerClient.executeTxnQueues();
   }
 
   public startListeners(): void {
@@ -205,7 +254,7 @@ export class HyperliquidExecutor {
     const { decimals } = this._getTokenInfo(baseToken, this.chainId);
 
     const existingOrder = openOrders[0];
-    const bestAsk = Number(l2Book.levels[1][0].px);
+    const bestAsk = Number(l2Book.levels[0][0].px);
     const priceXe8 = Math.floor(bestAsk * 10 ** 8);
     // The swap handler should only have orders placed on the associated pair.
     // `sz` represents the remaining, unfilled quantity.
@@ -244,6 +293,49 @@ export class HyperliquidExecutor {
     });
   }
 
+  private finalizeLimitOrders(
+    baseToken: EvmAddress,
+    finalToken: EvmAddress,
+    quoteNonces: string[],
+    limitOrderOutputs: BigNumber[]
+  ) {
+    // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
+    const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
+    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+
+    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: dstHandler,
+      chainId: this.chainId,
+      method: "finalizeSwapFlows",
+      args: [finalToken.toNative(), quoteNonces, limitOrderOutputs],
+      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
+      mrkdwn,
+      nonMulticall: true, // Cannot multicall this since it is a permissioned action.
+      unpermissioned: false,
+    });
+  }
+
+  private async querySpotBalance(tokenSymbol: string, owner: EvmAddress): Promise<BigNumber> {
+    const { balances } = await getSpotClearinghouseState(this.infoClient, { user: owner.toNative() });
+    const balance = balances.find((balance) => balance.coin === tokenSymbol);
+    if (isDefined(balance)) {
+      return BigNumber.from(Math.floor(Number(balance.total) * 10 ** 8));
+    }
+    return bnZero;
+  }
+
+  private async querySpotBalanceFromEvm(hyperEvmTokenId: number, owner: EvmAddress): Promise<BigNumber> {
+    const { address: coreReader } = CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].coreReader;
+    const rawCalldata = ethersUtils.defaultAbiCoder.encode(["address", "uint256"], [owner.toNative(), hyperEvmTokenId]);
+
+    const rawDataCall = await this.clients.dstProvider.call({
+      to: coreReader,
+      data: rawCalldata,
+    });
+    return BigNumber.from(`0x${rawDataCall.slice(-64)}`);
+  }
+
   private sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
@@ -276,6 +368,28 @@ export class HyperliquidExecutor {
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
     });
+  }
+
+  private async getOutstandingOrdersOnPair(pair: Pair): Promise<SwapFlowInitialized[]> {
+    const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
+    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const [orderInitializedEvents, orderFinalizedEvents] = await Promise.all([
+      paginatedEventQuery(
+        dstHandler,
+        dstHandler.filters.SwapFlowInitialized(undefined, undefined, pair.finalToken.toNative()),
+        this.dstSearchConfig
+      ),
+      paginatedEventQuery(
+        dstHandler,
+        dstHandler.filters.SwapFlowFinalized(undefined, undefined, pair.finalToken.toNative()),
+        this.dstSearchConfig
+      ),
+    ]);
+    return orderInitializedEvents
+      .filter(
+        (initEvent) => !orderFinalizedEvents.map(({ args }) => args.quoteNonce).includes(initEvent.args.quoteNonce)
+      )
+      .map(({ args }) => args as SwapFlowInitialized);
   }
 
   private _getTokenInfo(token: EvmAddress, chainId: number) {

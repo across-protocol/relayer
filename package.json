@@ -80,6 +80,7 @@
     "run-refiller": "node ./dist/index.js --refiller",
     "run-finalizer": "node ./dist/index.js --finalizer",
     "run-hlExecutor": "node ./dist/index.js --hlExecutor",
+    "run-hlFinalizer": "node ./dist/index.js --hlFinalizer",
     "relay": "node ./dist/index.js --relayer",
     "deposit": "yarn ts-node ./scripts/spokepool.ts deposit",
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",

@@ -305,6 +305,9 @@ export const CONTRACT_ADDRESSES: {
       address: undefined, // TODO: Deploy and add mainnet address
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
+    coreReader: {
+      address: "0x0000000000000000000000000000000000000801",
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {

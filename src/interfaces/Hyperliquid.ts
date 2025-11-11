@@ -1,12 +1,14 @@
+import { BigNumber } from "../utils";
+
 export interface SwapFlowInitialized {
   quoteNonce: string;
   finalRecipient: string;
   finalToken: string;
   // In baseToken
-  evmAmountIn: BigInt;
-  bridgingFeesIncurred: BigInt;
+  evmAmountIn: BigNumber;
+  bridgingFeesIncurred: BigNumber;
   // In finalToken
-  coreAmountIn: BigInt;
-  minAmountToSend: BigInt;
-  maxAmountToSend: BigInt;
+  coreAmountIn: BigNumber;
+  minAmountToSend: BigNumber;
+  maxAmountToSend: BigNumber;
 }
