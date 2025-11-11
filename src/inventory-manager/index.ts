@@ -1,10 +1,4 @@
-import {
-  config,
-  getRedisCache,
-  Profiler,
-  Signer,
-  winston,
-} from "../utils";
+import { config, getRedisCache, Profiler, Signer, winston } from "../utils";
 import { InventoryManagerConfig } from "./InventoryManagerConfig";
 import { constructInventoryManagerClients } from "./InvenotryClientHelper";
 import { updateSpokePoolClients } from "../common";
@@ -16,6 +10,8 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     at: "Relayer#run",
     logger: _logger,
   });
+
+  void profiler;
 
   logger = _logger;
   const config = new InventoryManagerConfig(process.env);
@@ -36,6 +32,5 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
 
   await inventoryClient.update(config.spokePoolChainsOverride);
 
-  await inventoryClient.export(redis)
+  await inventoryClient.export(redis);
 }
-

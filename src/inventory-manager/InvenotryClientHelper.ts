@@ -1,12 +1,6 @@
 import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
-import {
-  EVMSpokePoolClient,
-  SVMSpokePoolClient,
-  HubPoolClient,
-  InventoryClient,
-  TokenClient,
-} from "../clients";
+import { EVMSpokePoolClient, SVMSpokePoolClient, HubPoolClient, InventoryClient, TokenClient } from "../clients";
 import { SpokeListener, SpokePoolClient, IndexerOpts } from "../clients/SpokePoolClient";
 import {
   Clients,
