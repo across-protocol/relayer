@@ -1,7 +1,22 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined, CHAIN_IDs } from ".";
+import {
+  BigNumber,
+  BigNumberish,
+  EvmAddress,
+  PUBLIC_NETWORKS,
+  assert,
+  isDefined,
+  CHAIN_IDs,
+  EventSearchConfig,
+  Provider,
+  paginatedEventQuery,
+  spreadEventWithBlockNumber,
+  getSrcOftPeriphery,
+} from ".";
 import { BytesLike } from "ethers";
-import { EVM_OFT_MESSENGERS } from "../common/Constants";
+import axios from "axios";
+import { EVM_OFT_MESSENGERS } from "../common";
+import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -18,6 +33,25 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
+export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+
+export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
+
+export type LzBridgeEvent = SortableEvent;
+
+type TransactionOutcome = {
+  txHash: string;
+  txError: string;
+  blockHash: string;
+  blockNumber: string;
+  revertReason: string;
+};
+
+type Pathway = {
+  srcEid: number;
+  dstEid: number;
+};
+
 /**
  * @returns Endpoint Id for a given chain
  * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID
@@ -28,6 +62,16 @@ export function getEndpointId(chainId: number): number {
     throw new Error(`No OFT domain found for chainId: ${chainId}`);
   }
   return eid;
+}
+
+/**
+ * @param endpoint ID The OFT endpoint ID for the given chain.
+ * @returns The endpoint's corresponding chain ID.
+ * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID.
+ */
+export function getChainIdFromEndpointId(eid: number): number {
+  const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
+  return Number(chainId);
 }
 
 /**
@@ -91,4 +135,33 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
     composeMsg: "0x",
     oftCmd: "0x",
   };
+}
+
+/**
+ * @notice Fetches destination chain transaction details for a outbound message.
+ * @param txHash Transaction hash of the outbound message on the origin chain.
+ * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
+ */
+export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails> {
+  const httpResponse = await axios.get<LzTransactionDetails>(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
+  const txDetails = httpResponse.data;
+  return txDetails;
+}
+
+/**
+ * @notice Fetches OFT messages initiated from a srcOft contract
+ * @param srcChainId Chain ID corresponding to the deployed srcOftMessenger.
+ * @param searchConfig Event search config to use on srcChainId.
+ * @param srcProvider ethers Provider instance for the srcChainId.
+ * @returns A list of SortableEvents corresponding to bridge events on srcChainId.
+ */
+export async function getSrcOftMessages(
+  srcChainId: number,
+  searchConfig: EventSearchConfig,
+  srcProvider: Provider
+): Promise<LzBridgeEvent[]> {
+  const srcOft = getSrcOftPeriphery(srcChainId).connect(srcProvider);
+
+  const messageInitiatedEvents = await paginatedEventQuery(srcOft, srcOft.filters.SponsoredOFTSend(), searchConfig);
+  return messageInitiatedEvents.map(spreadEventWithBlockNumber);
 }
