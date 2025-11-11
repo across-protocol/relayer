@@ -9,7 +9,7 @@ import { assert, BigNumber, isDefined, winston } from "../utils";
 import { Address, bnZero, getL1TokenAddress } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
-type BundleState = {
+export type BundleDataState = {
   upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } };
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
@@ -33,7 +33,7 @@ export class BundleDataApproxClient {
    * Export current BundleData(Approx)Client state.
    * @returns BundleData(Approx)Client state. This can be subsequently ingested by BundleDataApproxClient.import().
    */
-  export(): BundleState {
+  export(): BundleDataState {
     const { upcomingDeposits, upcomingRefunds } = this;
     return { upcomingDeposits, upcomingRefunds };
   }
@@ -42,7 +42,7 @@ export class BundleDataApproxClient {
    * Import BundleData(Approx)Client state.
    * @returns void
    */
-  import(state: BundleState) {
+  import(state: BundleDataState) {
     const { upcomingDeposits, upcomingRefunds } = state;
     this.upcomingDeposits = upcomingDeposits;
     this.upcomingRefunds = upcomingRefunds;
