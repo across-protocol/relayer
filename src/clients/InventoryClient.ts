@@ -38,7 +38,8 @@ import {
   forEachAsync,
   max,
 } from "../utils";
-import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
+import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
+import { HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
@@ -61,6 +62,11 @@ export type Rebalance = {
 };
 
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
+
+type InventoryClientState = {
+  bundleDataState: BundleDataState;
+  pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
+};
 
 export class InventoryClient {
   private logDisabledManagement = false;
@@ -102,6 +108,33 @@ export class InventoryClient {
       Array.from(allL1Tokens.values()).map((l1Token) => EvmAddress.from(l1Token)),
       this.logger
     );
+  }
+
+  /**
+   * Export current InventoryClient state.
+   * @returns InventoryClient state. This can be subsequently ingested by InventoryClient.import().
+   */
+  export(): InventoryClientState {
+    const { upcomingDeposits, upcomingRefunds } = this.bundleDataApproxClient.export();
+    const state = {
+      bundleDataState: {
+        upcomingDeposits,
+        upcomingRefunds,
+      },
+      pendingL2Withdrawals: this.pendingL2Withdrawals,
+    };
+
+    return state;
+  }
+
+  /**
+   * Import InventoryClient state.
+   * @returns void
+   */
+  import(state: InventoryClientState) {
+    const { bundleDataState, pendingL2Withdrawals } = state;
+    this.bundleDataApproxClient.import(bundleDataState);
+    this.pendingL2Withdrawals = pendingL2Withdrawals;
   }
 
   /**
