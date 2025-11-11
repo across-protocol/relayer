@@ -30,9 +30,9 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     "ExecutedRelayerRefundRoot",
   ]);
 
+  inventoryClient.setBundleData();
   await inventoryClient.update(config.spokePoolChainsOverride);
 
   const exportedState = inventoryClient.export();
-  void exportedState;
   // await redis.set("inventory_state", JSON.stringify(exportedState));
 }
