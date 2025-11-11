@@ -146,6 +146,23 @@ export class HyperliquidExecutor {
     });
   }
 
+  private async finalizeLimitOrders(finalToken: EvmAddress, quoteNonces: string[], limitOrderOutputs: BigNumber[]) {
+    // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
+    const l2TokenInfo = this._getTokenInfo(finalToken, this.chainId);
+    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+
+    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: dstHandler,
+      chainId: this.chainId,
+      method: "finalizeSwapFlows",
+      args: [finalToken.toNative(), quoteNonces, limitOrderOutputs],
+      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
+      mrkdwn,
+      nonMulticall: true, // Cannot multicall this since it is a permissioned action.
+    });
+  }
+
   private _getTokenInfo(token: EvmAddress, chainId: number) {
     const tokenInfo = getTokenInfo(token, chainId);
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
