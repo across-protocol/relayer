@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.77.tgz#0d57db8676a7eaf4541b2cc9143d95e8d753c0af"
   integrity sha512-zRRTFAKhLgAA1QBJsbG5KautFczW0NV0N2hPW8dIn3cyC+pvYBU8FBb3gQ2Vp9b++kg1Gk1rSpMVMKKnjUBtOA==
 
-"@across-protocol/constants@^3.1.83":
-  version "3.1.83"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.83.tgz#7eef532ea6aea5ae1e7c8a967d788e968c90b7e6"
-  integrity sha512-DHTcNLApU77sXM9ITh1pjjhXWy1B+1CEzkLU1vk/iA4+9xRBoLvGlxRKvdsgNsyoqmtMkQoB8BiiD+0t2aAe2Q==
+"@across-protocol/constants@^3.1.86":
+  version "3.1.86"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.86.tgz#82b7ae792f4b46a752679a5b0fcb1c0b4eb8049e"
+  integrity sha512-2AwW4CXQ+4GUJRj9i/hx3afB3prurZN/Gzye9eQUQYNyFD3xJ30u+CLstwJxfTm4KZX9qKxg4WjvppA6+0Cg9w==
 
 "@across-protocol/contracts-beta@npm:@across-protocol/contracts@4.1.12-beta.7":
   version "4.1.12-beta.7"
@@ -97,13 +97,13 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.87":
-  version "4.3.87"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.87.tgz#d5cce44e36337d871669db2d79abcec63831768a"
-  integrity sha512-ABb2GfxnmdtWJj2eR6xxllSstTjm2hkAtrjYNtD2b1EczvSHPlLsGf+cyEmRbtnp+dCIcl6qD6yMEjoueN4MkA==
+"@across-protocol/sdk@4.3.90":
+  version "4.3.90"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.90.tgz#4448d608beaab960ecacad719044e2cf163a3940"
+  integrity sha512-i9kIcucoCjB6WTvZv117HKvg7LGtfR9Zi6EeJa807UxGVgEHdcboblv+ERQaf9miZPGVRDY9kPRm/S6yIwC6yw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.83"
+    "@across-protocol/constants" "^3.1.86"
     "@across-protocol/contracts" "^4.1.12"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
@@ -1503,6 +1503,11 @@
     protobufjs "^7.2.4"
     yargs "^17.7.2"
 
+"@henrygd/semaphore@0.1.0":
+  version "0.1.0"
+  resolved "https://registry.yarnpkg.com/@henrygd/semaphore/-/semaphore-0.1.0.tgz#92edf8e441b4f565d046d5de8c8d92437b5df26d"
+  integrity sha512-5wRPsfP9iWnOTFRd7QKdHlWTgY9xw9GAHSkQP/Q05ZTKUBdfTj44BhsnADPfvBoUQVGDtP2Nd0UShVdeTLuLwA==
+
 "@humanwhocodes/config-array@^0.5.0":
   version "0.5.0"
   resolved "https://registry.yarnpkg.com/@humanwhocodes/config-array/-/config-array-0.5.0.tgz#1407967d4c6eecd7388f83acf1eaf4d0c6e58ef9"
@@ -1633,13 +1638,14 @@
   resolved "https://registry.yarnpkg.com/@multiformats/base-x/-/base-x-4.0.1.tgz#95ff0fa58711789d53aefb2590a8b7a4e715d121"
   integrity sha512-eMk0b9ReBbV23xXU693TAIrLyeO5iTgBZGSJfpqriG8UkYvr/hC9u9pyMlAakDNHWmbhMZCDs6KQO0jzKD8OTw==
 
-"@nktkas/hyperliquid@^0.25.4":
-  version "0.25.4"
-  resolved "https://registry.yarnpkg.com/@nktkas/hyperliquid/-/hyperliquid-0.25.4.tgz#1d29e85e4ef6e6d02fffcb15293c582757948620"
-  integrity sha512-o2qGBfB+8pRwfx1ypug7pH70utIwiNt2efsgRqWHjjvd/ZAj10o9et9i9QsFuQMywif2QuFCPfWYHoSF8YQZqg==
+"@nktkas/hyperliquid@^0.25.9":
+  version "0.25.9"
+  resolved "https://registry.yarnpkg.com/@nktkas/hyperliquid/-/hyperliquid-0.25.9.tgz#69b8bef3065322ea5346f67067a43077e64f89e1"
+  integrity sha512-rNqRG4LWeCmnWUNV5XQAl+XLH7uzShvwXj3Z7JsWC45QgU8RlSv/MODUP9CE3Xv/avXWkEEhwy/BkLQkN85s+g==
   dependencies:
+    "@henrygd/semaphore" "0.1.0"
     "@msgpack/msgpack" "^3.1.2"
-    "@noble/hashes" "^2.0.0"
+    "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "^3.0.0"
     typescript-event-target "1.1.1"
     valibot "1.1.0"
@@ -1721,7 +1727,7 @@
   resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-1.8.0.tgz#cee43d801fcef9644b11b8194857695acd5f815a"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
 
-"@noble/hashes@^2.0.0":
+"@noble/hashes@^2.0.1":
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-2.0.1.tgz#fc1a928061d1232b0a52bb754393c37a5216c89e"
   integrity sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==

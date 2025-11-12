@@ -10,7 +10,7 @@ import {
   waitForLogger,
   stringifyThrownValue,
 } from "./src/utils";
-import { runRelayer, runRebalancer } from "./src/relayer";
+import { runRelayer, runRebalancer, runInventoryManager } from "./src/relayer";
 import { runDataworker, runDisputerWatchdog } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
@@ -32,6 +32,7 @@ const CMDS = {
   rebalancer: runRebalancer,
   hlExecutor: runHyperliquidExecutor,
   hlFinalizer: runHyperliquidFinalizer,
+  inventoryManager: runInventoryManager,
 };
 
 export async function run(args: { [k: string]: boolean | string }): Promise<void> {

@@ -23,6 +23,7 @@ import {
   paginatedEventQuery,
   getBlockForTimestamp,
   getSpotClearinghouseState,
+  getChainQuorum,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CONTRACT_ADDRESSES, CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
@@ -57,6 +58,7 @@ export type Pair = {
 };
 
 const BASE_TOKENS = ["USDT0", "USDC"];
+const abortController = new AbortController();
 
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
@@ -76,8 +78,6 @@ export class HyperliquidExecutor {
   private taskResolver;
 
   public initialized = false;
-  public active = true;
-  private reviewInterval = 10;
   private chainId = CHAIN_IDs.HYPEREVM;
 
   public constructor(
@@ -91,7 +91,7 @@ export class HyperliquidExecutor {
     this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
 
     this.infoClient = getHlInfoClient();
-    this.eventListener = new EventListener(CHAIN_IDs.HYPEREVM, this.logger, 1);
+    this.eventListener = new EventListener(this.chainId, this.logger, getChainQuorum(this.chainId));
   }
 
   public async initialize(): Promise<void> {
@@ -138,6 +138,21 @@ export class HyperliquidExecutor {
       from: fromBlock,
       maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[this.chainId],
     };
+    process.on("SIGHUP", () => {
+      this.logger.debug({
+        at: "HyperliquidExecutor#initialize",
+        message: "Received SIGHUP on HyperliquidExecutor. stopping...",
+      });
+      abortController.abort();
+    });
+
+    process.on("disconnect", () => {
+      this.logger.debug({
+        at: "HyperliquidExecutor#initialize",
+        message: "HyperliquidExecutor disconnected, stopping...",
+      });
+      abortController.abort();
+    });
     this.initialized = true;
   }
 
@@ -208,7 +223,7 @@ export class HyperliquidExecutor {
     // Handle new block events.
     const handleNewBlock = (blockNumber: number) => {
       Object.entries(this.pairUpdates).forEach(([pairId, updateBlock]) => {
-        if (blockNumber - updateBlock < this.reviewInterval) {
+        if (blockNumber - updateBlock < this.config.reviewInterval) {
           return;
         }
         this.logger.debug({
@@ -238,10 +253,6 @@ export class HyperliquidExecutor {
         await this.clients.multiCallerClient.executeTxnQueues();
       }
     }
-  }
-
-  public deactivate() {
-    this.active = false;
   }
 
   private async updateOrderAmount(pair: Pair, orderAmount: BigNumber): Promise<TaskResult> {
@@ -290,29 +301,6 @@ export class HyperliquidExecutor {
       message: `Submitted limit order of ${l2TokenInfo.symbol} -> ${finalTokenInfo.symbol} to Hypercore.`,
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
-    });
-  }
-
-  private finalizeLimitOrders(
-    baseToken: EvmAddress,
-    finalToken: EvmAddress,
-    quoteNonces: string[],
-    limitOrderOutputs: BigNumber[]
-  ) {
-    // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
-    const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
-    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
-
-    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
-    this.clients.multiCallerClient.enqueueTransaction({
-      contract: dstHandler,
-      chainId: this.chainId,
-      method: "finalizeSwapFlows",
-      args: [finalToken.toNative(), quoteNonces, limitOrderOutputs],
-      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
-      mrkdwn,
-      nonMulticall: true, // Cannot multicall this since it is a permissioned action.
-      unpermissioned: false,
     });
   }
 
@@ -392,16 +380,30 @@ export class HyperliquidExecutor {
       .map(({ args }) => args as SwapFlowInitialized);
   }
 
+  private finalizeLimitOrders(
+    baseToken: EvmAddress,
+    finalToken: EvmAddress,
+    quoteNonces: string[],
+    limitOrderOutputs: BigNumber[]
+  ) {
+    // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
+    const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
+    const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+
+    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: dstHandler,
+      chainId: this.chainId,
+      method: "finalizeSwapFlows",
+      args: [finalToken.toNative(), quoteNonces, limitOrderOutputs],
+      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
+      mrkdwn,
+      nonMulticall: true, // Cannot multicall this since it is a permissioned action.
+    });
+  }
+
   private _getTokenInfo(token: EvmAddress, chainId: number) {
-    let tokenInfo;
-    try {
-      tokenInfo = getTokenInfo(token, chainId);
-    } catch {
-      tokenInfo = {
-        symbol: "UNKNOWN",
-        decimals: 8,
-      };
-    }
+    const tokenInfo = getTokenInfo(token, chainId);
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
     return {
       ...tokenInfo,
@@ -418,7 +420,7 @@ export class HyperliquidExecutor {
   }
 
   private async *resolveNextTask() {
-    while (this.active) {
+    while (!abortController.signal.aborted) {
       await this.waitForNextTask();
 
       // Yield the first task to complete in the array of tasks and remove that promise from the list of outstanding tasks.
