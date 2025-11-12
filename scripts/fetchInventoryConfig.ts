@@ -38,7 +38,7 @@ async function fetchFileFromGitHub(
   repo: string,
   path: string,
   token: string,
-  branch = "main"
+  branch = "master"
 ): Promise<string> {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
   const headers = {
@@ -61,7 +61,7 @@ async function run(): Promise<number> {
   const githubOwner = process.env.GITHUB_REPO_OWNER;
   const githubRepo = process.env.GITHUB_REPO_NAME;
   const githubFilePath = process.env.GITHUB_FILE_PATH;
-  const githubBranch = process.env.GITHUB_BRANCH || "main";
+  const githubBranch = process.env.GITHUB_BRANCH || "master";
 
   // Validate required environment variables
   if (!githubToken) {
