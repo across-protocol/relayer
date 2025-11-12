@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { InventoryClientState } from "../clients";
-import { config, disconnectRedisClients, getRedisCache, Signer, winston } from "../utils";
+import { config, disconnectRedisClients, getRedisCache, isDefined, Signer, winston } from "../utils";
 import { InventoryManagerConfig } from "./InventoryManagerConfig";
 import { constructInventoryManagerClients } from "./InvenotryClientHelper";
 import { updateSpokePoolClients } from "../common";
@@ -45,9 +45,13 @@ async function setInventoryState(redis: RedisCache, topic: string, state: Invent
   const value = JSON.stringify(state, sdkUtils.jsonReplacerWithBigNumbers);
   await redis.set(topic, value);
 }
-async function getInventoryState(redis: RedisCache): Promise<InventoryClientState> {
-  const state = await redis.get(INVENTORY_TOPIC);
-  assert(typeof state === "string");
+
+async function getInventoryState(redis: RedisCache, topic: string): Promise<InventoryClientState | undefined> {
+  const state = await redis.get<string>(topic);
+  if (!isDefined(state)) {
+    return undefined;
+  }
+
   const processedState = JSON.parse(state, sdkUtils.jsonReviverWithBigNumbers);
   return processedState;
 }
