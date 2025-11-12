@@ -3348,7 +3348,7 @@ export class Dataworker {
       const programAddress = mintInfo.programAddress;
       recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
         payer: kitKeypair,
-        owner: statePda,
+        owner: recipient,
         mint: l2TokenAddress,
         ata: recipientTokenAccount,
         systemProgram: SYSTEM_PROGRAM_ADDRESS,
