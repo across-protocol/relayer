@@ -1,7 +1,7 @@
 import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { InventoryClientState } from "../clients";
-import { config, getRedisCache, Profiler, Signer, winston } from "../utils";
+import { config, disconnectRedisClients, getRedisCache, Signer, winston } from "../utils";
 import { InventoryManagerConfig } from "./InventoryManagerConfig";
 import { constructInventoryManagerClients } from "./InvenotryClientHelper";
 import { updateSpokePoolClients } from "../common";
@@ -17,23 +17,29 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
 
   logger = _logger;
   const config = new InventoryManagerConfig(process.env);
-  const redis = await getRedisCache(logger);
 
-  const clients = await constructInventoryManagerClients(logger, config, baseSigner);
-  const { spokePoolClients, inventoryClient } = clients;
+  try {
+    const redis = await getRedisCache(logger);
 
-  await updateSpokePoolClients(spokePoolClients, [
-    "FundsDeposited",
-    "FilledRelay",
-    "RelayedRootBundle",
-    "ExecutedRelayerRefundRoot",
-  ]);
+    const clients = await constructInventoryManagerClients(logger, config, baseSigner);
+    const { spokePoolClients, inventoryClient } = clients;
 
-  inventoryClient.setBundleData();
-  await inventoryClient.update(config.spokePoolChainsOverride);
+    await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "FilledRelay",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
 
-  const inventory = inventoryClient.export();
-  await setInventoryState(redis, INVENTORY_TOPIC, inventory);
+    inventoryClient.setBundleData();
+    await inventoryClient.update(config.spokePoolChainsOverride);
+
+    const inventory = inventoryClient.export();
+    await setInventoryState(redis, INVENTORY_TOPIC, inventory);
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `${personality} instance completed.` });
+  }
 }
 
 async function setInventoryState(redis: RedisCache, topic: string, state: InventoryClientState): Promise<void> {
