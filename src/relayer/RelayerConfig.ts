@@ -46,6 +46,8 @@ export class RelayerConfig extends CommonConfig {
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
+  readonly useInventoryManager: boolean;
+  readonly inventoryTopic: string;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: Address[];
   // Following distances in blocks to guarantee finality on each chain.
@@ -91,6 +93,8 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
+      INVENTORY_TOPIC = "across-relayer-inventory",
+      USE_INVENTORY_MANAGER = "true",
     } = env;
     super(env);
 
@@ -117,6 +121,9 @@ export class RelayerConfig extends CommonConfig {
     this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
     this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL);
     this.maintenanceInterval = Number(RELAYER_MAINTENANCE_INTERVAL);
+
+    this.inventoryTopic = INVENTORY_TOPIC;
+    this.useInventoryManager = USE_INVENTORY_MANAGER === "true";
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),

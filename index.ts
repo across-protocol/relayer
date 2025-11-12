@@ -10,14 +10,13 @@ import {
   waitForLogger,
   stringifyThrownValue,
 } from "./src/utils";
-import { runRelayer, runRebalancer } from "./src/relayer";
+import { runRelayer, runRebalancer, runInventoryManager } from "./src/relayer";
 import { runDataworker, runDisputerWatchdog } from "./src/dataworker";
 import { runMonitor } from "./src/monitor";
 import { runFinalizer } from "./src/finalizer";
 import { version } from "./package.json";
 import { runRefiller } from "./src/refiller";
 import { runHyperliquidExecutor } from "./src/hyperliquid";
-import { runInventoryManager } from "./src/inventory-manager";
 
 let logger: typeof Logger;
 let cmd: string;

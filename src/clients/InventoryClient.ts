@@ -81,6 +81,7 @@ export class InventoryClient {
     readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
     readonly inventoryConfig: InventoryConfig,
+    readonly inventoryTopic: string,
     readonly tokenClient: TokenClient,
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
@@ -139,6 +140,13 @@ export class InventoryClient {
     this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
   }
 
+  /**
+   * Get the cache key for the InventoryClient state.
+   * @returns Cache key for the InventoryClient state
+   */
+  getInventoryCacheKey(): string {
+    return `${this.inventoryTopic}-${this.relayer}`;
+  } 
   /**
    * Resolve the token balance configuration for `l1Token` on `chainId`. If `l1Token` maps to multiple tokens on
    * `chainId` then `l2Token` must be supplied.
@@ -1692,9 +1700,14 @@ export class InventoryClient {
       return;
     }
 
+    console.log("UPDATING CROSS CHAIN TRANSFERS");
     await this.crossChainTransferClient.update(this.getL1Tokens(), chainIds);
+    console.log("UPDATED CROSS CHAIN TRANSFERS");
 
+    console.log("UPDATING PENDING L2 WITHDRAWALS");
+    console.log("TOKENS", this.getL1Tokens());
     await forEachAsync(this.getL1Tokens(), async (l1Token) => {
+      console.log("UPDATING PENDING L2 WITHDRAWALS FOR L1 TOKEN", l1Token.toNative());
       this.pendingL2Withdrawals[l1Token.toNative()] = {};
       const pendingWithdrawalBalances =
         await this.crossChainTransferClient.adapterManager.getTotalPendingWithdrawalAmount(
@@ -1703,6 +1716,7 @@ export class InventoryClient {
           this.relayer,
           l1Token
         );
+        console.log("PENDING WITHDRAWAL BALANCES", l1Token.toNative());
       Object.keys(pendingWithdrawalBalances).forEach((chainId) => {
         this.pendingL2Withdrawals[l1Token.toNative()][Number(chainId)] = pendingWithdrawalBalances[Number(chainId)];
       });
