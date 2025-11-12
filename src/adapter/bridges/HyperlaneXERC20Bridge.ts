@@ -18,7 +18,7 @@ import { PUBLIC_NETWORKS, HYPERLANE_NO_DOMAIN_ID } from "@across-protocol/consta
 import HYPERLANE_ROUTER_ABI from "../../common/abi/IHypXERC20Router.json";
 import { HYPERLANE_DEFAULT_FEE_CAP, HYPERLANE_FEE_CAP_OVERRIDES, HYPERLANE_ROUTERS } from "../../common";
 
-export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
+export class HyperlaneXERC20Bridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   readonly hubToken: EvmAddress;
   readonly dstToken: EvmAddress;
   private readonly hubDomainId: number;
@@ -40,7 +40,7 @@ export class HyperlaneXERC20Bridge extends BaseBridgeAdapter {
     );
     const l1RouterEvmAddress = EvmAddress.from(l1RouterAddressStr);
 
-    super(l2chainId, hubChainId, l1Signer, [l1RouterEvmAddress]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [l1RouterEvmAddress]);
 
     this.hubToken = l1Token;
     this.hubDomainId = PUBLIC_NETWORKS[hubChainId].hypDomainId;

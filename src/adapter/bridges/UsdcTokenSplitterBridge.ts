@@ -1,5 +1,5 @@
 import { Signer } from "ethers";
-import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
+import { CONTRACT_ADDRESSES, EVM_CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
@@ -15,9 +15,9 @@ import {
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
-export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
-  protected cctpBridge: BaseBridgeAdapter;
-  protected canonicalBridge: BaseBridgeAdapter;
+export class UsdcTokenSplitterBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
+  protected cctpBridge: BaseBridgeAdapter<Signer, Signer | Provider>;
+  protected canonicalBridge: BaseBridgeAdapter<Signer, Signer | Provider>;
 
   constructor(
     l2chainId: number,
@@ -28,7 +28,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     logger: winston.Logger
   ) {
-    const canonicalBridge = new CANONICAL_BRIDGE[l2chainId](
+    const canonicalBridge = new EVM_CANONICAL_BRIDGE[l2chainId](
       l2chainId,
       hubChainId,
       l1Signer,
@@ -37,7 +37,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       logger
     );
 
-    super(l2chainId, hubChainId, l1Signer, [
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
@@ -46,7 +46,7 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
     this.canonicalBridge = canonicalBridge;
   }
 
-  private getRouteForL2Token(l2Token: Address): BaseBridgeAdapter {
+  private getRouteForL2Token(l2Token: Address): BaseBridgeAdapter<Signer, Signer | Provider> {
     return compareAddressesSimple(l2Token.toNative(), TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId])
       ? this.cctpBridge
       : this.canonicalBridge;

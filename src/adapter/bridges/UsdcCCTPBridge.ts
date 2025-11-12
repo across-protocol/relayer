@@ -27,7 +27,7 @@ import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { SortableEvent } from "../../interfaces";
 
-export class UsdcCCTPBridge extends BaseBridgeAdapter {
+export class UsdcCCTPBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   private IS_CCTP_V2 = false;
   private readonly l1UsdcTokenAddress: EvmAddress;
 
@@ -42,7 +42,7 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     _logger: winston.Logger
   ) {
     const { address: l1Address, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"

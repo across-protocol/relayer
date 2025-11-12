@@ -48,7 +48,7 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { BridgeEvents, BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
 import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
@@ -57,7 +57,7 @@ import { ExpandedERC20 } from "@across-protocol/contracts";
 export type SupportedL1Token = EvmAddress;
 export type SupportedTokenSymbol = string;
 
-export class BaseChainAdapter {
+export class BaseChainAdapter<O, D> {
   protected baseL1SearchConfig: MakeOptional<EventSearchConfig, "to">;
   protected baseL2SearchConfig: MakeOptional<EventSearchConfig, "to">;
   protected readonly spokePoolManager: SpokePoolManager;
@@ -70,7 +70,7 @@ export class BaseChainAdapter {
     protected readonly monitoredAddresses: Address[],
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
-    protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter },
+    protected readonly bridges: { [chainId: number]: BaseBridgeAdapter<O, D> },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
@@ -513,7 +513,7 @@ export class BaseChainAdapter {
     await forEachAsync(this.monitoredAddresses, async (monitoredAddress) => {
       await forEachAsync(availableL1Tokens, async (l1Token) => {
         const bridge = this.bridges[l1Token.toNative()];
-        const [depositInitiatedResults, depositFinalizedResults] = await Promise.all([
+        const [depositInitiatedResults, depositFinalizedResults]: [BridgeEvents, BridgeEvents] = await Promise.all([
           bridge.queryL1BridgeInitiationEvents(l1Token, monitoredAddress, monitoredAddress, l1SearchConfig),
           bridge.queryL2BridgeFinalizationEvents(l1Token, monitoredAddress, monitoredAddress, l2SearchConfig),
         ]);

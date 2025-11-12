@@ -30,7 +30,7 @@ type MintAndWithdrawData = {
   amount: bigint;
 };
 
-export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
+export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter<Signer, SVMProvider> {
   private readonly l1UsdcTokenAddress: EvmAddress;
   private readonly l2UsdcTokenAddress: SvmAddress;
   private readonly solanaMessageTransmitter: SvmAddress;
@@ -53,7 +53,7 @@ export class SolanaUsdcCCTPBridge extends BaseBridgeAdapter {
     // This adapter currently only supports CCTP V1.
     const { address: l1Address, abi: l1Abi } = getCctpV1TokenMessenger(hubChainId);
 
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2Provider, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"

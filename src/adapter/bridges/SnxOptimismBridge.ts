@@ -13,7 +13,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class SnxOptimismBridge extends BaseBridgeAdapter {
+export class SnxOptimismBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -24,7 +24,9 @@ export class SnxOptimismBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
+      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge.address),
+    ]);
 
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].snxOptimismBridge;
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
