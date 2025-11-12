@@ -28,3 +28,27 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
     await disconnectRedisClients(logger);
   }
 }
+
+export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  logger = _logger;
+  const config = new HyperliquidExecutorConfig(process.env);
+  const clients = await constructHyperliquidExecutorClients(config, logger, baseSigner);
+  const finalizer = new HyperliquidExecutor(logger, config, clients);
+  await finalizer.initialize();
+
+  try {
+    logger[startupLogLevel(config)]({
+      at: "HyperliquidFinalizer#index",
+      message: "HyperliquidFinalizer started",
+      config,
+    });
+
+    const start = Date.now();
+
+    await finalizer.finalizeSwapFlows();
+
+    logger.debug({ at: "HyperliquidFinalizer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
+  } finally {
+    await disconnectRedisClients(logger);
+  }
+}
