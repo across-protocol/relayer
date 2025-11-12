@@ -296,15 +296,7 @@ export class HyperliquidExecutor {
   }
 
   private _getTokenInfo(token: EvmAddress, chainId: number) {
-    let tokenInfo;
-    try {
-      tokenInfo = getTokenInfo(token, chainId);
-    } catch {
-      tokenInfo = {
-        symbol: "UNKNOWN",
-        decimals: 8,
-      };
-    }
+    const tokenInfo = getTokenInfo(token, chainId);
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
     return {
       ...tokenInfo,
