@@ -14,9 +14,8 @@ type RedisCache = Awaited<ReturnType<typeof getRedisCache>>;
 export async function runInventoryManager(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const personality = "InventoryManager";
   const at = `${personality}::run`;
-
-  logger = _logger;
   const config = new InventoryManagerConfig(process.env);
+  logger = _logger;
 
   try {
     const redis = await getRedisCache(logger);
