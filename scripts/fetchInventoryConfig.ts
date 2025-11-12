@@ -17,10 +17,10 @@ async function fetchFileFromGitHub(
   repo: string,
   path: string,
   token: string,
-  branch: string = "main"
+  branch = "main"
 ): Promise<string> {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
-  
+
   const response = await axios.get<GitHubFileResponse>(url, {
     headers: {
       Authorization: `token ${token}`,
@@ -61,13 +61,7 @@ async function run(): Promise<number> {
 
   try {
     // Fetch the file content from GitHub
-    const fileContent = await fetchFileFromGitHub(
-      githubOwner,
-      githubRepo,
-      githubFilePath,
-      githubToken,
-      githubBranch
-    );
+    const fileContent = await fetchFileFromGitHub(githubOwner, githubRepo, githubFilePath, githubToken, githubBranch);
 
     // Parse JSON to validate it's valid JSON
     const jsonData = JSON.parse(fileContent);
