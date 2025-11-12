@@ -63,7 +63,7 @@ export type Rebalance = {
 
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
-type InventoryClientState = {
+export type InventoryClientState = {
   bundleDataState: BundleDataState;
   pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
 };
@@ -124,6 +124,7 @@ export class InventoryClient {
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     };
 
+    this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
     return state;
   }
 
@@ -135,6 +136,7 @@ export class InventoryClient {
     const { bundleDataState, pendingL2Withdrawals } = state;
     this.bundleDataApproxClient.import(bundleDataState);
     this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
   }
 
   /**
