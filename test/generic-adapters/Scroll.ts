@@ -1,7 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { ZERO_ADDRESS } from "../../src/utils";
-import { ScrollERC20Bridge } from "../../src/adapter/bridges";
+import { ScrollERC20Bridge } from "../../src/adapter/directed";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";

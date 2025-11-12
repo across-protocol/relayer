@@ -1,6 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
-import { LineaBridge, LineaWethBridge, UsdcCCTPBridge } from "../../src/adapter/bridges";
+import { LineaBridge, LineaWethBridge } from "../../src/adapter/directed";
+import { UsdcCCTPBridge } from "../../src/adapter/undirected";
 import { BaseChainAdapter } from "../../src/adapter";
 import { ethers, getContractFactory, Contract, randomAddress, expect, createRandomBytes32 } from "../utils";
 import { utils } from "@across-protocol/sdk";

@@ -9,7 +9,7 @@ import {
   DaiOptimismBridge,
   SnxOptimismBridge,
   UsdcTokenSplitterBridge,
-} from "../../src/adapter/bridges";
+} from "../../src/adapter/directed";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
 import { EVMSpokePoolClient } from "../../src/clients";
 

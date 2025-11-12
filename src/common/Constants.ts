@@ -16,8 +16,8 @@ import {
   toBN,
   Provider,
 } from "../utils";
+import { BaseBridgeAdapter } from "../adapter";
 import {
-  BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
   SnxOptimismBridge,
   DaiOptimismBridge,
@@ -31,30 +31,30 @@ import {
   BlastBridge,
   ScrollERC20Bridge,
   OpStackUSDCBridge,
-  UsdcCCTPBridge,
   ZKStackBridge,
   ZKStackUSDCBridge,
   ZKStackWethBridge,
+  SolanaUsdcCCTPBridge,
+  BaseL2BridgeAdapter,
+  L2OpStackUSDCBridge,
+  L2OpStackWethBridge,
+  L2OpStackBridge,
+  L2BinanceCEXBridge,
+  L2UsdcCCTPBridge,
+  L2BinanceCEXNativeBridge,
+  L2SolanaUsdcCCTPBridge,
+  HyperlaneXERC20BridgeL2,
+  OFTL2Bridge,
+} from "../adapter/directed";
+import {
+  HyperlaneXERC20Bridge,
   OFTBridge,
+  OFTWethBridge,
   BinanceCEXBridge,
   BinanceCEXNativeBridge,
-  SolanaUsdcCCTPBridge,
-  OFTWethBridge,
-} from "../adapter/bridges";
-import {
-  BaseL2BridgeAdapter,
-  OpStackUSDCBridge as L2OpStackUSDCBridge,
-  OpStackWethBridge as L2OpStackWethBridge,
-  OpStackBridge as L2OpStackBridge,
-  BinanceCEXBridge as L2BinanceCEXBridge,
-  UsdcCCTPBridge as L2UsdcCCTPBridge,
-  BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
-  SolanaUsdcCCTPBridge as L2SolanaUsdcCCTPBridge,
-} from "../adapter/l2Bridges";
+  UsdcCCTPBridge,
+} from "../adapter/undirected";
 import { CONTRACT_ADDRESSES } from "./ContractAddresses";
-import { HyperlaneXERC20Bridge } from "../adapter/bridges/HyperlaneXERC20Bridge";
-import { HyperlaneXERC20BridgeL2 } from "../adapter/l2Bridges/HyperlaneXERC20Bridge";
-import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
 
 /**
  * Note: When adding new chains, it's preferred to retain alphabetical ordering of CHAIN_IDs in Object mappings.
