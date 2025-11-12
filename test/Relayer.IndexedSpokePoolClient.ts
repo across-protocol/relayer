@@ -6,7 +6,7 @@ import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
 import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
-import { SpokePoolClientMessage } from "../src/clients/SpokePoolClient";
+import { ListenerMessage } from "../src/libexec/types";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
 type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
@@ -35,30 +35,31 @@ describe("IndexedSpokePoolClient: Update", async function () {
   const chainId = CHAIN_IDs.MAINNET;
 
   const randomNumber = (ceil = 1_000_000) => Math.floor(Math.random() * ceil);
-  const makeHash = () => ethersUtils.id(randomNumber().toString());
-  const makeTopic = () => ethersUtils.id(randomNumber().toString()).slice(0, 40);
+  const makeHash = (seed?: number) => ethersUtils.id((seed ?? randomNumber()).toString());
+  const makeTopic = (signature?: string) => ethersUtils.id(signature ?? randomNumber().toString()).slice(0, 40);
 
   let blockNumber = 100;
 
-  const generateEvent = (event: string, blockNumber: number): Log => {
+  const generateEvent = (event: string, blockNumber: number, transactionHash?: string): Log => {
+    transactionHash ??= makeHash();
     return {
       blockNumber,
       transactionIndex: randomNumber(100),
       logIndex: randomNumber(100),
-      transactionHash: makeHash(),
+      transactionHash,
       removed: false,
       address: randomAddress(),
       data: ethersUtils.id(`EventManager-random-txndata-${randomNumber()}`),
       topics: [makeTopic()],
       args: [] as Result,
-      blockHash: makeHash(),
+      blockHash: makeHash(blockNumber),
       event,
     };
   };
 
   let depositId: number;
-  const getDepositEvent = (blockNumber: number): Log => {
-    const event = generateEvent("FundsDeposited", blockNumber);
+  const getDepositEvent = (blockNumber: number, transactionHash?: string): Log => {
+    const event = generateEvent("FundsDeposited", blockNumber, transactionHash);
     const args = {
       depositor: randomAddress(),
       recipient: randomAddress(),
@@ -98,7 +99,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
    * instance is immediately accessible and the message handler callback is called directly.
    */
   const postEvents = (blockNumber: number, currentTime: number, events: Log[]): void => {
-    const message: SpokePoolClientMessage = {
+    const message: ListenerMessage = {
       blockNumber,
       currentTime,
       nEvents: events.length,
@@ -179,6 +180,24 @@ describe("IndexedSpokePoolClient: Update", async function () {
     expect(droppedDeposit).to.not.exist;
   });
 
+  it("Correctly removes all pending events for a given blockHash", async function () {
+    const events: Log[] = [];
+    for (let i = 0; i < 25; ++i) {
+      events.push(getDepositEvent(blockNumber));
+    }
+
+    postEvents(blockNumber, currentTime, events);
+
+    const [droppedEvent] = events;
+    removeEvent(droppedEvent);
+
+    await spokePoolClient.update();
+
+    // All events should have been dropped before SpokePoolClient update.
+    const deposits = spokePoolClient.getDeposits();
+    expect(deposits.length).to.equal(0);
+  });
+
   it("Correctly removes pending events that are dropped after update", async function () {
     const events: Log[] = [];
     for (let i = 0; i < 25; ++i) {
@@ -200,6 +219,29 @@ describe("IndexedSpokePoolClient: Update", async function () {
     expect(deposits.length).to.equal(events.length);
     const droppedDeposit = deposits.find((deposit) => deposit.txnRef === droppedEvent.transactionHash);
     expect(droppedDeposit).to.not.exist;
+  });
+
+  it("Correctly removes multiple deposits within the same transactionHash after update", async function () {
+    const events: Log[] = [];
+    const deposit = getDepositEvent(blockNumber);
+    const { transactionHash } = deposit;
+    for (let i = 0; i < 25; ++i) {
+      events.push(getDepositEvent(blockNumber, transactionHash));
+    }
+    sortEventsAscendingInPlace(events);
+
+    postEvents(blockNumber, currentTime, events);
+    await spokePoolClient.update();
+
+    let deposits = spokePoolClient.getDeposits();
+    expect(deposits.length).to.equal(events.length);
+
+    // Drop a single event and verify that all related events w/ same transactionHash are also dropped.
+    removeEvent(deposit);
+
+    await spokePoolClient.update();
+    deposits = spokePoolClient.getDeposits();
+    expect(deposits.length).to.equal(0);
   });
 
   it("Throws on post-ingested dropped EnabledDepositRoute events", async function () {
