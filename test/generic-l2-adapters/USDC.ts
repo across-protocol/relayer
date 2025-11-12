@@ -1,5 +1,5 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
-import { UsdcCCTPBridge } from "../../src/adapter/undirected/UsdcCCTPBridge";
+import { UsdcCCTPBridge } from "../../src/adapter/directed/l2ToL1/UsdcCCTPBridge";
 import { ethers, getContractFactory, Contract, randomAddress, expect } from "../utils";
 import { utils } from "@across-protocol/sdk";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
