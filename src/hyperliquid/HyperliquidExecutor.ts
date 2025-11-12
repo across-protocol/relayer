@@ -19,6 +19,7 @@ import {
   BigNumber,
   forEachAsync,
   ConvertDecimals,
+  getChainQuorum,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
@@ -50,6 +51,7 @@ export type Pair = {
 };
 
 const BASE_TOKENS = ["USDT0", "USDC"];
+const abortController = new AbortController();
 
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
@@ -68,8 +70,6 @@ export class HyperliquidExecutor {
   private taskResolver;
 
   public initialized = false;
-  public active = true;
-  private reviewInterval = 10;
   private chainId = CHAIN_IDs.HYPEREVM;
 
   public constructor(
@@ -83,7 +83,7 @@ export class HyperliquidExecutor {
     this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
 
     this.infoClient = getHlInfoClient();
-    this.eventListener = new EventListener(CHAIN_IDs.HYPEREVM, this.logger, 1);
+    this.eventListener = new EventListener(this.chainId, this.logger, getChainQuorum(this.chainId));
   }
 
   public async initialize(): Promise<void> {
@@ -120,6 +120,22 @@ export class HyperliquidExecutor {
         };
         this.pairUpdates[pairId] = 0;
       });
+    });
+
+    process.on("SIGHUP", () => {
+      this.logger.debug({
+        at: "HyperliquidExecutor#initialize",
+        message: "Received SIGHUP on HyperliquidExecutor. stopping...",
+      });
+      abortController.abort();
+    });
+
+    process.on("disconnect", () => {
+      this.logger.debug({
+        at: "HyperliquidExecutor#initialize",
+        message: "HyperliquidExecutor disconnected, stopping...",
+      });
+      abortController.abort();
     });
     this.initialized = true;
   }
@@ -159,7 +175,7 @@ export class HyperliquidExecutor {
     // Handle new block events.
     const handleNewBlock = (blockNumber: number) => {
       Object.entries(this.pairUpdates).forEach(([pairId, updateBlock]) => {
-        if (blockNumber - updateBlock < this.reviewInterval) {
+        if (blockNumber - updateBlock < this.config.reviewInterval) {
           return;
         }
         this.logger.debug({
@@ -189,10 +205,6 @@ export class HyperliquidExecutor {
         await this.clients.multiCallerClient.executeTxnQueues();
       }
     }
-  }
-
-  public deactivate() {
-    this.active = false;
   }
 
   private async updateOrderAmount(pair: Pair, orderAmount: BigNumber): Promise<TaskResult> {
@@ -313,7 +325,7 @@ export class HyperliquidExecutor {
   }
 
   private async *resolveNextTask() {
-    while (this.active) {
+    while (!abortController.signal.aborted) {
       await this.waitForNextTask();
 
       // Yield the first task to complete in the array of tasks and remove that promise from the list of outstanding tasks.
