@@ -48,10 +48,10 @@ import {
   setL2TokenAllowanceInCache,
   TransferTokenParams,
 } from "./utils";
-import { BridgeEvents, BaseBridgeAdapter, BridgeTransactionDetails } from "./bridges/BaseBridgeAdapter";
+import { BridgeEvents, BaseBridgeAdapter, BridgeTransactionDetails } from "./BaseBridgeAdapter";
 import { OutstandingTransfers } from "../interfaces";
 import WETH_ABI from "../common/abi/Weth.json";
-import { BaseL2BridgeAdapter } from "./l2Bridges/BaseL2BridgeAdapter";
+import { BaseL2BridgeAdapter } from "./directed";
 import { ExpandedERC20 } from "@across-protocol/contracts";
 
 export type SupportedL1Token = EvmAddress;
@@ -223,7 +223,7 @@ export class BaseChainAdapter<O, D> {
     // each bridge supports (if applicable).
     const [bridgeTokensToApprove, gasTokensToApprove] = await Promise.all([
       mapAsync(
-        l1Tokens.map((token) => [token, this.bridges[token.toNative()]?.l1Gateways] as [EvmAddress, EvmAddress[]]),
+        l1Tokens.map((token) => [token, this.bridges[token.toNative()]?.srcGateways] as [EvmAddress, EvmAddress[]]),
         async ([l1Token, bridges]) => {
           const l1TokenAddress = l1Token.toNative();
           const erc20 = ERC20.connect(l1TokenAddress, this.getSigner(this.hubChainId));
@@ -248,7 +248,7 @@ export class BaseChainAdapter<O, D> {
         async (bridge) => {
           const gasToken = bridge.gasToken;
           const erc20 = ERC20.connect(gasToken.toNative(), this.getSigner(this.hubChainId));
-          const bridgesToApprove = await filterAsync(bridge.l1Gateways, async (gateway) => {
+          const bridgesToApprove = await filterAsync(bridge.srcGateways, async (gateway) => {
             const senderAddress = EvmAddress.from(await erc20.signer.getAddress());
             const cachedResult = await getTokenAllowanceFromCache(gasToken, senderAddress, gateway);
             const allowance = cachedResult ?? (await erc20.allowance(senderAddress.toNative(), gateway.toNative()));

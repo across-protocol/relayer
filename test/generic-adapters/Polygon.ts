@@ -2,7 +2,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter/BaseChainAdapter";
-import { PolygonWethBridge, PolygonERC20Bridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
+import { PolygonWethBridge, PolygonERC20Bridge, UsdcTokenSplitterBridge } from "../../src/adapter/directed";
 import {
   ethers,
   expect,

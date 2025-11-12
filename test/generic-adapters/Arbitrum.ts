@@ -1,7 +1,7 @@
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { EVMSpokePoolClient } from "../../src/clients";
 import { BaseChainAdapter } from "../../src/adapter";
-import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/bridges";
+import { ArbitrumOrbitBridge, UsdcTokenSplitterBridge } from "../../src/adapter/directed";
 import { ethers, getContractFactory, Contract, randomAddress, expect, toBN, createSpyLogger } from "../utils";
 import { SUPPORTED_TOKENS } from "../../src/common";
 import { getCctpDomainForChainId, EvmAddress, ZERO_ADDRESS, ZERO_BYTES } from "../../src/utils";

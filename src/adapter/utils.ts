@@ -12,7 +12,7 @@ import {
   winston,
   Address,
 } from "../utils";
-import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
+import { BridgeEvent } from "./BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
 import { ExpandedERC20 } from "@across-protocol/contracts";
 
