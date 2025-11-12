@@ -314,11 +314,11 @@ export class HyperliquidExecutor {
   }
 
   private async querySpotBalanceFromEvm(hyperEvmTokenId: number, owner: EvmAddress): Promise<BigNumber> {
-    const { address: coreReader } = CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].coreReader;
+    const { address: coreSpotBalanceReader } = CONTRACT_ADDRESSES[this.chainId].coreSpotBalanceReader;
     const rawCalldata = ethersUtils.defaultAbiCoder.encode(["address", "uint256"], [owner.toNative(), hyperEvmTokenId]);
 
     const rawDataCall = await this.clients.dstProvider.call({
-      to: coreReader,
+      to: coreSpotBalanceReader,
       data: rawCalldata,
     });
     return BigNumber.from(`0x${rawDataCall.slice(-64)}`);
