@@ -70,7 +70,7 @@ export class BaseChainAdapter<O, D> {
     protected readonly monitoredAddresses: Address[],
     protected readonly logger: winston.Logger,
     public readonly supportedTokens: SupportedTokenSymbol[],
-    protected readonly bridges: { [chainId: number]: BaseBridgeAdapter<O, D> },
+    protected readonly bridges: { [l1Token: string]: BaseBridgeAdapter<O, D> },
     protected readonly l2Bridges: { [l1Token: string]: BaseL2BridgeAdapter },
     protected readonly gasMultiplier: number
   ) {
