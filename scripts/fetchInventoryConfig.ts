@@ -12,6 +12,27 @@ interface GitHubFileResponse {
   url: string;
 }
 
+async function fetchWithRetry(
+  url: string,
+  headers: { Authorization: string; Accept: string },
+  retries = 3,
+  delayMs = 1000
+): Promise<GitHubFileResponse> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await axios.get<GitHubFileResponse>(url, { headers });
+      return response.data;
+    } catch (error) {
+      if (i === retries - 1) {
+        throw error;
+      }
+      console.log(`⚠️  Request failed (attempt ${i + 1}/${retries}). Retrying in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error("Failed to fetch file from GitHub");
+}
+
 async function fetchFileFromGitHub(
   owner: string,
   repo: string,
@@ -20,16 +41,15 @@ async function fetchFileFromGitHub(
   branch = "main"
 ): Promise<string> {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+  };
 
-  const response = await axios.get<GitHubFileResponse>(url, {
-    headers: {
-      Authorization: `token ${token}`,
-      Accept: "application/vnd.github.v3+json",
-    },
-  });
+  const response = await fetchWithRetry(url, headers);
 
   // GitHub API returns base64 encoded content
-  const content = Buffer.from(response.data.content, "base64").toString("utf-8");
+  const content = Buffer.from(response.content, "base64").toString("utf-8");
   return content;
 }
 
