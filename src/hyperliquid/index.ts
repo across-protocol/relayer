@@ -19,9 +19,9 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
       config,
     });
     const start = Date.now();
-    await executor.shuffleOrders();
 
-    await clients.multiCallerClient.executeTxnQueues();
+    executor.startListeners();
+    await executor.processTasks();
 
     logger.debug({ at: "HyperliquidExecutor#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
