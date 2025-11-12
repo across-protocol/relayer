@@ -5,14 +5,7 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
-import {
-  BigNumber,
-  bnOne,
-  EventSearchConfig,
-  getCurrentTime,
-  sortEventsAscending,
-  sortEventsAscendingInPlace,
-} from "../src/utils";
+import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
 import { ListenerMessage } from "../src/libexec/types";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 

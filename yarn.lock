@@ -1503,6 +1503,11 @@
     protobufjs "^7.2.4"
     yargs "^17.7.2"
 
+"@henrygd/semaphore@0.1.0":
+  version "0.1.0"
+  resolved "https://registry.yarnpkg.com/@henrygd/semaphore/-/semaphore-0.1.0.tgz#92edf8e441b4f565d046d5de8c8d92437b5df26d"
+  integrity sha512-5wRPsfP9iWnOTFRd7QKdHlWTgY9xw9GAHSkQP/Q05ZTKUBdfTj44BhsnADPfvBoUQVGDtP2Nd0UShVdeTLuLwA==
+
 "@humanwhocodes/config-array@^0.5.0":
   version "0.5.0"
   resolved "https://registry.yarnpkg.com/@humanwhocodes/config-array/-/config-array-0.5.0.tgz#1407967d4c6eecd7388f83acf1eaf4d0c6e58ef9"
@@ -1633,13 +1638,14 @@
   resolved "https://registry.yarnpkg.com/@multiformats/base-x/-/base-x-4.0.1.tgz#95ff0fa58711789d53aefb2590a8b7a4e715d121"
   integrity sha512-eMk0b9ReBbV23xXU693TAIrLyeO5iTgBZGSJfpqriG8UkYvr/hC9u9pyMlAakDNHWmbhMZCDs6KQO0jzKD8OTw==
 
-"@nktkas/hyperliquid@^0.25.4":
-  version "0.25.4"
-  resolved "https://registry.yarnpkg.com/@nktkas/hyperliquid/-/hyperliquid-0.25.4.tgz#1d29e85e4ef6e6d02fffcb15293c582757948620"
-  integrity sha512-o2qGBfB+8pRwfx1ypug7pH70utIwiNt2efsgRqWHjjvd/ZAj10o9et9i9QsFuQMywif2QuFCPfWYHoSF8YQZqg==
+"@nktkas/hyperliquid@^0.25.9":
+  version "0.25.9"
+  resolved "https://registry.yarnpkg.com/@nktkas/hyperliquid/-/hyperliquid-0.25.9.tgz#69b8bef3065322ea5346f67067a43077e64f89e1"
+  integrity sha512-rNqRG4LWeCmnWUNV5XQAl+XLH7uzShvwXj3Z7JsWC45QgU8RlSv/MODUP9CE3Xv/avXWkEEhwy/BkLQkN85s+g==
   dependencies:
+    "@henrygd/semaphore" "0.1.0"
     "@msgpack/msgpack" "^3.1.2"
-    "@noble/hashes" "^2.0.0"
+    "@noble/hashes" "^2.0.1"
     "@noble/secp256k1" "^3.0.0"
     typescript-event-target "1.1.1"
     valibot "1.1.0"
@@ -1721,7 +1727,7 @@
   resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-1.8.0.tgz#cee43d801fcef9644b11b8194857695acd5f815a"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
 
-"@noble/hashes@^2.0.0":
+"@noble/hashes@^2.0.1":
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/@noble/hashes/-/hashes-2.0.1.tgz#fc1a928061d1232b0a52bb754393c37a5216c89e"
   integrity sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==
