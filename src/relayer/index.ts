@@ -251,7 +251,12 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
   }
 }
 
-async function setInventoryState(redis: RedisCacheInterface, topic: string, state: InventoryClientState, ttl: number = 600): Promise<void> {
+async function setInventoryState(
+  redis: RedisCacheInterface,
+  topic: string,
+  state: InventoryClientState,
+  ttl = 600
+): Promise<void> {
   const value = JSON.stringify(state, sdkUtils.jsonReplacerWithBigNumbers);
   await redis.set(topic, value, ttl);
 }
