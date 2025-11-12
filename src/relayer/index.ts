@@ -264,5 +264,7 @@ async function getInventoryState(redis: RedisCacheInterface, topic: string): Pro
   }
 
   const processedState = JSON.parse(state, sdkUtils.jsonReviverWithBigNumbers);
-  return processedState;
+  return processedState.inventoryConfig && processedState.bundleDataState && processedState.pendingL2Withdrawals
+    ? processedState
+    : undefined;
 }
