@@ -65,11 +65,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
   let inventoryInit = false;
 
-  if (!config.useInventoryManager && !inventoryManagement) {
-    logger.error({ at: "Relayer#run", message: "Inventory management is not configured" });
-    throw new Error("Inventory management is not configured");
-  }
-
   try {
     for (let run = 1; !stop; ++run) {
       if (loop) {
@@ -96,13 +91,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         logger.warn({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
       }
 
-      if (!inventoryInit && config.useInventoryManager) {
-        const inventoryState = await getInventoryState(redis, inventoryClient.getInventoryCacheKey());
+      if (!inventoryInit && config.relayerUseInventoryManager) {
+        const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
+        const inventoryState = await getInventoryState(redis, key);
         if (inventoryState) {
           inventoryClient.import(inventoryState);
           inventoryInit = true;
         } else {
-          logger.error({ at: "Relayer#run", message: "No inventory state found in cache" });
+          logger.error({ at: "Relayer#run", message: "No inventory state found in cache", key });
         }
       }
 
@@ -244,7 +240,7 @@ export async function runInventoryManager(_logger: winston.Logger, baseSigner: S
     await inventoryClient.update(config.spokePoolChainsOverride);
 
     const inventory = inventoryClient.export();
-    await setInventoryState(redis, inventoryClient.getInventoryCacheKey(), inventory);
+    await setInventoryState(redis, inventoryClient.getInventoryCacheKey(config.inventoryTopic), inventory);
   } finally {
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
@@ -255,7 +251,7 @@ async function setInventoryState(
   redis: RedisCacheInterface,
   topic: string,
   state: InventoryClientState,
-  ttl = 600
+  ttl = 900 // 15 minutes
 ): Promise<void> {
   const value = JSON.stringify(state, sdkUtils.jsonReplacerWithBigNumbers);
   await redis.set(topic, value, ttl);

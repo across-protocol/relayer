@@ -202,7 +202,6 @@ export async function constructRelayerClients(
     signerAddr,
     logger,
     config.inventoryConfig,
-    config.inventoryTopic,
     tokenClient,
     enabledChainIds,
     hubPoolClient,
