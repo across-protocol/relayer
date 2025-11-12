@@ -2,7 +2,6 @@ import {
   Contract,
   BigNumber,
   EventSearchConfig,
-  Signer,
   getTranslatedTokenAddress,
   assert,
   isDefined,
@@ -27,7 +26,7 @@ export type BridgeEvent = SortableEvent & {
 
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
-export abstract class BaseBridgeAdapter {
+export abstract class BaseBridgeAdapter<O, D> {
   protected l1Bridge: Contract;
   protected l2Bridge: Contract;
   public gasToken: EvmAddress | undefined;
@@ -37,7 +36,8 @@ export abstract class BaseBridgeAdapter {
   constructor(
     protected l2chainId: number,
     protected hubChainId: number,
-    protected l1Signer: Signer,
+    protected l1Signer: O,
+    protected l2SignerOrProvider: D,
     public l1Gateways: EvmAddress[]
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);

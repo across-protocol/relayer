@@ -23,7 +23,7 @@ const SCROLL_STANDARD_GATEWAY: { l1: string; l2: string } = {
   l2: "0xE2b4795039517653c5Ae8C2A9BFdd783b48f447A",
 };
 
-export class ScrollERC20Bridge extends BaseBridgeAdapter {
+export class ScrollERC20Bridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   // Gas limit obtained here: https://docs.scroll.io/en/developers/l1-and-l2-bridging/eth-and-erc20-token-bridge
   protected l2Gas = 200000;
   protected feeMultiplier = toWei(1.5);
@@ -46,7 +46,7 @@ export class ScrollERC20Bridge extends BaseBridgeAdapter {
 
     const { address: gasPriceOracleAddress, abi: gasPriceOracleAbi } =
       CONTRACT_ADDRESSES[hubChainId].scrollGasPriceOracle;
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1BridgeAddress, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2BridgeAddress, l2Abi, l2SignerOrProvider);

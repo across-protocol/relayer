@@ -24,7 +24,7 @@ type OFTBridgeArguments = {
   refundAddress: string;
 };
 
-export class OFTBridge extends BaseBridgeAdapter {
+export class OFTBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   public readonly l2TokenAddress: string;
   private readonly l1ChainEid: number;
   private readonly l2ChainEid: number;
@@ -51,7 +51,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const l1OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l1ChainId);
     const l2OftMessenger = OFT.getMessengerEvm(l1TokenAddress, l2ChainId);
 
-    super(l2ChainId, l1ChainId, l1Signer, [l1OftMessenger]);
+    super(l2ChainId, l1ChainId, l1Signer, l2SignerOrProvider, [l1OftMessenger]);
 
     this.l2TokenAddress = this.resolveL2TokenAddress(l1TokenAddress);
     this.l1ChainEid = OFT.getEndpointId(l1ChainId);

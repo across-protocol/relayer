@@ -24,7 +24,7 @@ import {
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
 import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
-export class BinanceCEXBridge extends BaseBridgeAdapter {
+export class BinanceCEXBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   // Only store the promise in the constructor and evaluate the promise in async blocks.
   protected readonly binanceApiClientPromise;
   protected binanceApiClient;
@@ -44,7 +44,7 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
       throw new Error("Cannot define a binance CEX bridge on a non-production network");
     }
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
-    super(l2chainId, hubChainId, l1Signer, []);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, []);
     // Pull the binance API key from environment and throw if we cannot instantiate this bridge.
     this.binanceApiClientPromise = getBinanceApiClient(process.env["BINANCE_API_BASE"]);
 

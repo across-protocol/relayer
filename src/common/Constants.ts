@@ -14,6 +14,7 @@ import {
   BigNumber,
   winston,
   toBN,
+  Provider,
 } from "../utils";
 import {
   BaseBridgeAdapter,
@@ -398,15 +399,17 @@ export const TOKEN_APPROVALS_TO_FIRST_ZERO: Record<number, string[]> = {
   ],
 };
 
-// Type alias for a function which takes in arbitrary arguments and outputs a BaseBridgeAdapter class.
-type L1BridgeConstructor<T extends BaseBridgeAdapter> = new (
-  l2chainId: number,
-  hubChainId: number,
-  l1Signer: Signer,
-  l2SignerOrProvider: any,
-  l1Token: EvmAddress,
-  logger: winston.Logger
-) => T;
+// Connection for same token network -> network transfer. Not necessarily a two-way transfer method.
+export interface BridgeEdge<O, D> {
+  new (
+    l2chainId: number,
+    hubChainId: number,
+    l1Signer: O,
+    l2SignerOrProvider: D,
+    l1Token: EvmAddress,
+    logger: winston.Logger
+  ): BaseBridgeAdapter<O, D>;
+}
 
 type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   l2chainId: number,
@@ -418,14 +421,13 @@ type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
-const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
+const resolveEvmCanonicalBridges = (): Record<number, BridgeEdge<Signer, Signer | Provider>> => {
   const bridges = {
     [CHAIN_IDs.ARBITRUM]: ArbitrumOrbitBridge,
     [CHAIN_IDs.BSC]: BinanceCEXBridge,
     [CHAIN_IDs.LINEA]: LineaBridge,
     [CHAIN_IDs.POLYGON]: PolygonERC20Bridge,
     [CHAIN_IDs.SCROLL]: ScrollERC20Bridge,
-    [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
     [CHAIN_IDs.ZK_SYNC]: ZKStackBridge,
     // Testnets:
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
@@ -450,7 +452,13 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
       .filter(([, bridge]) => isDefined(bridge))
   );
 };
-export const CANONICAL_BRIDGE = resolveCanonicalBridges();
+
+export const EVM_CANONICAL_BRIDGE = resolveEvmCanonicalBridges();
+
+export const CANONICAL_BRIDGE = {
+  ...EVM_CANONICAL_BRIDGE,
+  [CHAIN_IDs.SOLANA]: SolanaUsdcCCTPBridge,
+};
 
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
@@ -461,7 +469,7 @@ export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2Bridg
 
 // Custom Bridges are all bridges between chains which only support a small number (typically one) of tokens.
 // In addition to mapping a chain to the custom bridges, we also need to specify which token the bridge supports.
-export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<BaseBridgeAdapter>>> = {
+export const CUSTOM_BRIDGE: Record<number, Record<string, BridgeEdge<Signer, Signer | Provider>>> = {
   [CHAIN_IDs.ARBITRUM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,

@@ -24,6 +24,9 @@ import {
   Address,
   isSVMSpokePoolClient,
   bnZero,
+  chainIsEvm,
+  Provider,
+  SVMProvider,
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
@@ -31,7 +34,7 @@ import { BaseChainAdapter } from "../../adapter";
 import { TransferTokenParams } from "../../adapter/utils";
 
 export class AdapterManager {
-  public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  public adapters: { [chainId: number]: BaseChainAdapter<Signer, (Signer | Provider) | SVMProvider> } = {};
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
   // receiving ETH that needs to be wrapped on the L2. This array contains the chainIds of the chains that this
@@ -127,17 +130,31 @@ export class AdapterManager {
     };
     Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => {
       // Instantiate a generic adapter and supply all network-specific configurations.
-      this.adapters[chainId] = new BaseChainAdapter(
-        this.spokePoolManager.getSpokePoolClients(),
-        chainId,
-        hubChainId,
-        filterMonitoredAddresses(chainId),
-        logger,
-        SUPPORTED_TOKENS[chainId] ?? [],
-        constructBridges(chainId),
-        constructL2Bridges(chainId),
-        DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
-      );
+      if (chainIsEvm(chainId)) {
+        this.adapters[chainId] = new BaseChainAdapter<Signer, Signer | Provider>(
+          this.spokePoolManager.getSpokePoolClients(),
+          chainId,
+          hubChainId,
+          filterMonitoredAddresses(chainId),
+          logger,
+          SUPPORTED_TOKENS[chainId] ?? [],
+          constructBridges(chainId),
+          constructL2Bridges(chainId),
+          DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
+        );
+      } else {
+        this.adapters[chainId] = new BaseChainAdapter<Signer, SVMProvider>(
+          this.spokePoolManager.getSpokePoolClients(),
+          chainId,
+          hubChainId,
+          filterMonitoredAddresses(chainId),
+          logger,
+          SUPPORTED_TOKENS[chainId] ?? [],
+          constructBridges(chainId),
+          constructL2Bridges(chainId),
+          DEFAULT_GAS_MULTIPLIER[chainId] ?? 1
+        );
+      }
     });
     logger.debug({
       at: "AdapterManager#constructor",

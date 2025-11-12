@@ -12,7 +12,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class LineaBridge extends BaseBridgeAdapter {
+export class LineaBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -25,7 +25,7 @@ export class LineaBridge extends BaseBridgeAdapter {
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);

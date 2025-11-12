@@ -18,7 +18,7 @@ import { processEvent } from "../utils";
  * and a token gateway which is the address used to initiate a
  * deposit
  */
-export class PolygonERC20Bridge extends BaseBridgeAdapter {
+export class PolygonERC20Bridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   protected l1Gateway: Contract;
 
   constructor(
@@ -36,7 +36,7 @@ export class PolygonERC20Bridge extends BaseBridgeAdapter {
     // up-to-date.
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonBridge;
     const { address: l1GatewayAddress, abi: l1GatewayAbi } = CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l1Gateway = new Contract(l1GatewayAddress, l1GatewayAbi, l1Signer);

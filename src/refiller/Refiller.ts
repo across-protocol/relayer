@@ -34,7 +34,7 @@ import {
   bnZero,
   getL1TokenAddress,
 } from "../utils";
-import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
+import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, EVM_CANONICAL_BRIDGE } from "../common";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -312,7 +312,7 @@ export class Refiller {
     // Construct a token bridge for the target token and build a transaction to send the l1 token to l2.
     const l1Token = getL1TokenAddress(token, chainId);
     const l2TokenInfo = getTokenInfo(token, chainId);
-    const tokenBridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_BRIDGE[chainId];
+    const tokenBridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token.toNative()] ?? EVM_CANONICAL_BRIDGE[chainId];
     const tokenBridge = new tokenBridgeConstructor(
       chainId,
       this.clients.hubPoolClient.chainId,
