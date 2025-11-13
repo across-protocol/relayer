@@ -17,7 +17,7 @@
 //      indicating an amount of tokens that need to be taken out of the spoke pool to execute those slow fills
 //    - relayer_refund_t_c_i is the total amount of token t that needs to be refunded to relayers on chain c at block b
 //      which also indicates an amount of tokens that need to be taken out of the spoke pool to execute those refunds
-//  - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
+// - excess_t_c_{i,i+1,i+2,...} should therefore be consistent unless tokens are dropped onto the spoke pool.
 
 // This script also can be used to identify any unexecuted leaves in the last N bundles, where N is configurable.
 // If there are any, this script will log the leaf + proof conveniently for manual execution.
