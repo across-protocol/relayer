@@ -29,6 +29,7 @@ import {
   EvmAddress,
   ERC20,
   getProvider,
+  stringifyThrownValue,
 } from "../utils";
 import { ScraperOpts } from "./types";
 import { postEvents } from "./util/ipc";
@@ -140,6 +141,11 @@ async function listen(
   const intervalMs = 30_000;
   const providers = urls.map((url) => createSolanaRpcSubscriptions(url, { intervalMs }));
 
+  // Track in-flight fills to prevent duplicate processing across providers
+  const inFlightFills = new Set<string>();
+  // Track retry attempts for fills that previously failed
+  const fillRetryAttempts = new Map<string, number>();
+
   const readSlot = async (provider: WSProvider, providerName: string) => {
     const subscription = await provider.slotNotifications().subscribe({ abortSignal });
 
@@ -154,12 +160,49 @@ async function listen(
       }
     } catch (err: unknown) {
       const message = "Caught error on Solana provider.";
+      let cause: unknown = "unknown cause";
+      let errorString = "unknown error";
+
       if (arch.svm.isSolanaError(err)) {
-        logger.warn({ at, message, provider: providerName, cause: err.cause });
+        cause = err.cause;
+        // Serialize cause if it's an object
+        if (cause && typeof cause === "object") {
+          try {
+            const causeStr = JSON.stringify(cause);
+            errorString = causeStr === "{}" ? `Empty cause object: ${Object.keys(cause).join(", ") || "no keys"}` : causeStr;
+          } catch {
+            errorString = stringifyThrownValue(cause);
+          }
+        } else {
+          errorString = String(cause);
+        }
       } else {
-        const cause = typeguards.isError(err) ? err.message : "unknown cause";
-        logger.warn({ at, message, provider: providerName, cause });
+        if (typeguards.isError(err)) {
+          cause = err.message || "Error without message";
+          errorString = stringifyThrownValue(err);
+        } else if (err && typeof err === "object") {
+          try {
+            const errObj = err as Record<string, unknown>;
+            const errStr = JSON.stringify(errObj);
+            errorString = errStr === "{}" ? `Empty error object: ${Object.keys(errObj).join(", ") || "no keys"}` : errStr;
+            cause = (errObj.message as string) || (errObj.cause as string) || "unknown cause";
+          } catch {
+            errorString = stringifyThrownValue(err);
+            cause = "unknown cause";
+          }
+        } else {
+          cause = String(err) || "unknown cause";
+          errorString = String(err);
+        }
       }
+
+      logger.warn({
+        at,
+        message,
+        provider: providerName,
+        cause: typeof cause === "string" ? cause : stringifyThrownValue(cause),
+        error: errorString,
+      });
 
       abortController.abort();
     }
@@ -179,74 +222,213 @@ async function listen(
           .filter(({ name }) => eventNames.includes(name))
           .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-        events.forEach(async (event) => {
+        // Process events sequentially to avoid parallel fills of the same deposit
+        for (const event of events) {
           if (ethers.utils.arrayify(event.args.message).length !== 32) {
-            return;
+            continue;
           }
-
-          const apiRequestUrl = `${frontendBaseUrl}/api/message?messageHash=${event.args.message}`;
-          const apiResponse = await (await fetch(apiRequestUrl)).json();
-          if (apiResponse.message === null) {
-            return;
-          }
-          const message = apiResponse.message;
-
-          logger.debug({ at, event, message });
 
           const destinationChainId = Number(event.args.destinationChainId.toString());
-          const destProvider = await getProvider(destinationChainId);
-          const destSigner = signer.connect(destProvider);
+          // Create a unique key for this fill operation to prevent duplicates across providers
+          const fillKey = `${signature}-${event.args.depositId.toString()}-${destinationChainId}`;
 
-          const destSpokePool = await utils.getSpokePoolContract(destinationChainId);
-          const outputToken = sdkUtils.EvmAddress.from(event.args.outputToken);
-          const outputAmount = toBN(event.args.outputAmount);
-          const relayer = EvmAddress.from(await signer.getAddress());
-
-          const deposit = {
-            depositId: event.args.depositId,
-            originChainId: chainId,
-            destinationChainId,
-            depositor: toAddressType(event.args.depositor, chainId),
-            recipient: sdkUtils.EvmAddress.from(event.args.recipient),
-            inputToken: toAddressType(event.args.inputToken, chainId),
-            inputAmount: event.args.inputAmount,
-            outputToken,
-            outputAmount,
-            message,
-            quoteTimestamp: event.args.quoteTimestamp,
-            fillDeadline: event.args.fillDeadline,
-            exclusivityDeadline: event.args.exclusivityDeadline,
-            exclusiveRelayer: toAddressType(event.args.exclusiveRelayer, destinationChainId),
-          };
-          const fill = await populateV3Relay(destSpokePool, deposit, relayer);
-
-          logger.debug({ at, deposit, fill });
-
-          const erc20 = new Contract(outputToken.toNative(), ERC20.abi, destSigner);
-          const allowance = await erc20.allowance(relayer.toNative(), destSpokePool.address);
-          if (outputAmount.gt(allowance)) {
-            const approval = await erc20.approve(destSpokePool.address, outputAmount);
-            logger.warn({ at, message: `Approving SpokePool for ${outputAmount.toString()}: ${approval.hash}...` });
-            await approval.wait();
-            logger.warn({ at, message: "Approval complete." });
+          // Skip if this fill is already in progress or completed
+          if (inFlightFills.has(fillKey)) {
+            logger.debug({ at, message: `Skipping duplicate fill`, fillKey, provider: providerName });
+            continue;
           }
 
-          const fillTxn = await destSigner.sendTransaction(fill);
-          logger.warn({ at, message: `Filling relay on SpokePool for ${outputAmount.toString()}: ${fillTxn.hash}...` });
-          await fillTxn.wait();
-          logger.warn({ at, message: "Fill complete." });
+          // Check if this is a retry attempt
+          const retryAttempt = fillRetryAttempts.get(fillKey) ?? 0;
+          if (retryAttempt > 0) {
+            logger.warn({
+              at,
+              message: `Retrying fill processing (attempt ${retryAttempt + 1})`,
+              fillKey,
+              provider: providerName,
+            });
+          }
 
-          eventMgr.add(event, providerName);
-        });
+          // Mark this fill as in-flight
+          inFlightFills.add(fillKey);
+
+          try {
+            const apiRequestUrl = `${frontendBaseUrl}/api/message?messageHash=${event.args.message}`;
+            const apiResponse = await (await fetch(apiRequestUrl)).json();
+            if (apiResponse.message === null) {
+              inFlightFills.delete(fillKey);
+              fillRetryAttempts.delete(fillKey);
+              continue;
+            }
+            const message = apiResponse.message;
+
+            logger.debug({ at, event, message });
+
+            const destProvider = await getProvider(destinationChainId);
+            const destSigner = signer.connect(destProvider);
+
+            const destSpokePool = await utils.getSpokePoolContract(destinationChainId);
+            const outputToken = sdkUtils.EvmAddress.from(event.args.outputToken);
+            const outputAmount = toBN(event.args.outputAmount);
+            const relayer = EvmAddress.from(await signer.getAddress());
+
+            const deposit = {
+              depositId: event.args.depositId,
+              originChainId: chainId,
+              destinationChainId,
+              depositor: toAddressType(event.args.depositor, chainId),
+              recipient: sdkUtils.EvmAddress.from(event.args.recipient),
+              inputToken: toAddressType(event.args.inputToken, chainId),
+              inputAmount: event.args.inputAmount,
+              outputToken,
+              outputAmount,
+              message,
+              quoteTimestamp: event.args.quoteTimestamp,
+              fillDeadline: event.args.fillDeadline,
+              exclusivityDeadline: event.args.exclusivityDeadline,
+              exclusiveRelayer: toAddressType(event.args.exclusiveRelayer, destinationChainId),
+            };
+            const fill = await populateV3Relay(destSpokePool, deposit, relayer);
+
+            logger.debug({ at, deposit, fill });
+
+            const erc20 = new Contract(outputToken.toNative(), ERC20.abi, destSigner);
+            const allowance = await erc20.allowance(relayer.toNative(), destSpokePool.address);
+            if (outputAmount.gt(allowance)) {
+              const approval = await erc20.approve(destSpokePool.address, outputAmount);
+              logger.warn({ at, message: `Approving SpokePool for ${outputAmount.toString()}: ${approval.hash}...` });
+              await approval.wait();
+              logger.warn({ at, message: "Approval complete." });
+            }
+
+            const fillTxn = await destSigner.sendTransaction(fill);
+            logger.warn({ at, message: `Filling relay on SpokePool for ${outputAmount.toString()}: ${fillTxn.hash}...` });
+            const receipt = await fillTxn.wait();
+            logger.warn({
+              at,
+              message: "Fill complete.",
+              fillKey,
+              transactionHash: fillTxn.hash,
+              blockNumber: receipt.blockNumber,
+              provider: providerName,
+            });
+
+            // Successfully completed - remove retry tracking and mark as complete
+            fillRetryAttempts.delete(fillKey);
+            // Note: Keep fillKey in inFlightFills to prevent reprocessing
+
+            // Add to event manager (this might fail but shouldn't affect the fill success)
+            try {
+              eventMgr.add(event, providerName);
+            } catch (eventMgrErr: unknown) {
+              logger.warn({
+                at,
+                message: "Failed to add event to event manager, but fill was successful",
+                fillKey,
+                error: stringifyThrownValue(eventMgrErr),
+              });
+            }
+          } catch (err: unknown) {
+            // On error, remove from in-flight set to allow retry
+            inFlightFills.delete(fillKey);
+            // Increment retry attempt counter
+            const currentAttempt = fillRetryAttempts.get(fillKey) ?? 0;
+            fillRetryAttempts.set(fillKey, currentAttempt + 1);
+
+            // Extract error information with better handling
+            let cause = "unknown cause";
+            let errorString = "unknown error";
+            let errorDetails: Record<string, unknown> = {};
+
+            if (typeguards.isError(err)) {
+              cause = err.message || "Error without message";
+              errorString = stringifyThrownValue(err);
+              errorDetails = {
+                name: err.name,
+                message: err.message,
+                stack: err.stack,
+              };
+            } else if (err && typeof err === "object") {
+              // Try to extract properties from the error object
+              try {
+                const errObj = err as Record<string, unknown>;
+                errorString = JSON.stringify(errObj);
+                if (errorString === "{}") {
+                  errorString = `Empty error object: ${Object.keys(errObj).join(", ") || "no keys"}`;
+                }
+                errorDetails = errObj;
+                cause = (errObj.message as string) || (errObj.cause as string) || "unknown cause";
+              } catch {
+                errorString = stringifyThrownValue(err);
+              }
+            } else {
+              errorString = stringifyThrownValue(err);
+              cause = String(err) || "unknown cause";
+            }
+
+            logger.error({
+              at,
+              message: "Error processing fill",
+              fillKey,
+              provider: providerName,
+              cause,
+              error: errorString,
+              errorDetails,
+              retryAttempt: currentAttempt + 1,
+            });
+            // Continue processing other events
+            continue;
+          }
+
+          // Keep the fill key in the set to prevent reprocessing (fills should only happen once)
+          // Optionally, we could remove it after a timeout, but for now we keep it permanently
+        }
       }
     } catch (err: unknown) {
       const message = "Caught error on Solana provider.";
+      let cause: unknown = "unknown cause";
+      let errorString = "unknown error";
+
       if (arch.svm.isSolanaError(err)) {
-        logger.warn({ at, message, provider: providerName, cause: err.cause });
+        cause = err.cause;
+        // Serialize cause if it's an object
+        if (cause && typeof cause === "object") {
+          try {
+            const causeStr = JSON.stringify(cause);
+            errorString = causeStr === "{}" ? `Empty cause object: ${Object.keys(cause).join(", ") || "no keys"}` : causeStr;
+          } catch {
+            errorString = stringifyThrownValue(cause);
+          }
+        } else {
+          errorString = String(cause);
+        }
       } else {
-        const cause = typeguards.isError(err) ? err.message : "unknown cause";
-        logger.warn({ at, message, provider: providerName, cause });
+        if (typeguards.isError(err)) {
+          cause = err.message || "Error without message";
+          errorString = stringifyThrownValue(err);
+        } else if (err && typeof err === "object") {
+          try {
+            const errObj = err as Record<string, unknown>;
+            const errStr = JSON.stringify(errObj);
+            errorString = errStr === "{}" ? `Empty error object: ${Object.keys(errObj).join(", ") || "no keys"}` : errStr;
+            cause = (errObj.message as string) || (errObj.cause as string) || "unknown cause";
+          } catch {
+            errorString = stringifyThrownValue(err);
+            cause = "unknown cause";
+          }
+        } else {
+          cause = String(err) || "unknown cause";
+          errorString = String(err);
+        }
       }
+
+      logger.warn({
+        at,
+        message,
+        provider: providerName,
+        cause: typeof cause === "string" ? cause : stringifyThrownValue(cause),
+        error: errorString,
+      });
 
       if (!abortController.signal.aborted && --nProviders < quorum) {
         logger.warn({ at, message: `Insufficient ${chain} providers to continue.`, quorum, nProviders });
