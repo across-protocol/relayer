@@ -63,9 +63,10 @@ export type Rebalance = {
 
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
-type InventoryClientState = {
+export type InventoryClientState = {
   bundleDataState: BundleDataState;
   pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
+  inventoryConfig: InventoryConfig;
 };
 
 export class InventoryClient {
@@ -75,12 +76,13 @@ export class InventoryClient {
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
   private bundleDataApproxClient: BundleDataApproxClient;
+  private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(
     readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
-    readonly inventoryConfig: InventoryConfig,
+    inventoryConfig: InventoryConfig,
     readonly tokenClient: TokenClient,
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
@@ -89,6 +91,7 @@ export class InventoryClient {
     readonly simMode = false,
     readonly prioritizeLpUtilization = true
   ) {
+    this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
@@ -117,6 +120,7 @@ export class InventoryClient {
   export(): InventoryClientState {
     const { upcomingDeposits, upcomingRefunds } = this.bundleDataApproxClient.export();
     const state = {
+      inventoryConfig: this.inventoryConfig,
       bundleDataState: {
         upcomingDeposits,
         upcomingRefunds,
@@ -124,6 +128,7 @@ export class InventoryClient {
       pendingL2Withdrawals: this.pendingL2Withdrawals,
     };
 
+    this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
     return state;
   }
 
@@ -133,10 +138,19 @@ export class InventoryClient {
    */
   import(state: InventoryClientState) {
     const { bundleDataState, pendingL2Withdrawals } = state;
+    this.inventoryConfig = state.inventoryConfig;
     this.bundleDataApproxClient.import(bundleDataState);
     this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
   }
 
+  /**
+   * Get the cache key for the InventoryClient state.
+   * @returns Cache key for the InventoryClient state
+   */
+  getInventoryCacheKey(inventoryTopic: string): string {
+    return `${inventoryTopic}-${this.relayer}`;
+  }
   /**
    * Resolve the token balance configuration for `l1Token` on `chainId`. If `l1Token` maps to multiple tokens on
    * `chainId` then `l2Token` must be supplied.

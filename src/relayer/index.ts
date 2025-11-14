@@ -5,6 +5,7 @@ import {
   disconnectRedisClients,
   getNetworkName,
   getRedisCache,
+  isDefined,
   Profiler,
   Signer,
   winston,
@@ -12,6 +13,9 @@ import {
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
+import { InventoryClientState } from "../clients";
+import { updateSpokePoolClients } from "../common";
+import { RedisCacheInterface } from "../caching/RedisCache";
 config();
 let logger: winston.Logger;
 
@@ -85,6 +89,17 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           .filter(({ isUpdated }) => !isUpdated)
           .map(({ chainId }) => getNetworkName(chainId));
         logger.warn({ at: "Relayer#run", message: "Assuming active relayer role in degraded state", degraded });
+      }
+
+      if (!inventoryInit && config.relayerUseInventoryManager) {
+        const key = inventoryClient.getInventoryCacheKey(config.inventoryTopic);
+        const inventoryState = await getInventoryState(redis, key);
+        if (inventoryState) {
+          inventoryClient.import(inventoryState);
+          inventoryInit = true;
+        } else {
+          logger.error({ at: "Relayer#run", message: "No inventory state found in cache", key });
+        }
       }
 
       // One time initialization of functions that handle lots of events only after all spokePoolClients are updated.
@@ -200,4 +215,56 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }
+}
+
+export async function runInventoryManager(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const personality = "InventoryManager";
+  const at = `${personality}::run`;
+  const config = new RelayerConfig(process.env);
+  logger = _logger;
+
+  try {
+    const redis = await getRedisCache(logger);
+
+    const clients = await constructRelayerClients(logger, config, baseSigner);
+    const { spokePoolClients, inventoryClient } = clients;
+
+    await updateSpokePoolClients(spokePoolClients, [
+      "FundsDeposited",
+      "FilledRelay",
+      "RelayedRootBundle",
+      "ExecutedRelayerRefundRoot",
+    ]);
+
+    inventoryClient.setBundleData();
+    await inventoryClient.update(config.spokePoolChainsOverride);
+
+    const inventory = inventoryClient.export();
+    await setInventoryState(redis, inventoryClient.getInventoryCacheKey(config.inventoryTopic), inventory);
+  } finally {
+    await disconnectRedisClients(logger);
+    logger.debug({ at, message: `${personality} instance completed.` });
+  }
+}
+
+async function setInventoryState(
+  redis: RedisCacheInterface,
+  topic: string,
+  state: InventoryClientState,
+  ttl = 900 // 15 minutes
+): Promise<void> {
+  const value = JSON.stringify(state, sdkUtils.jsonReplacerWithBigNumbers);
+  await redis.set(topic, value, ttl);
+}
+
+async function getInventoryState(redis: RedisCacheInterface, topic: string): Promise<InventoryClientState | undefined> {
+  const state = await redis.get<string>(topic);
+  if (!isDefined(state)) {
+    return undefined;
+  }
+
+  const processedState = JSON.parse(state, sdkUtils.jsonReviverWithBigNumbers);
+  return processedState.inventoryConfig && processedState.bundleDataState && processedState.pendingL2Withdrawals
+    ? processedState
+    : undefined;
 }
