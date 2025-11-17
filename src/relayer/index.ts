@@ -208,6 +208,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       await inventoryClient.setTokenApprovals();
     }
 
+    // await inventoryClient.swapInventory();
+    // TODO: Probably need to refresh balances again.
+
     await inventoryClient.rebalanceInventoryIfNeeded();
     // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();

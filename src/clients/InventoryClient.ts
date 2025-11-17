@@ -1237,6 +1237,17 @@ export class InventoryClient {
     }
   }
 
+  async swapInventory(): Promise<void> {
+    if (!this.isInventoryManagementEnabled()) {
+      return;
+    }
+
+    // TODO: Implement this
+    // Check minimum balances.
+    // For any deficits, swap tokens from other stablecoins with excess to deficit tokens.
+    
+  }
+
   async unwrapWeth(): Promise<void> {
     if (!this.isInventoryManagementEnabled()) {
       return;
