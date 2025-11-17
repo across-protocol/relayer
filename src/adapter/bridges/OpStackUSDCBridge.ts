@@ -12,7 +12,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class OpStackUSDCBridge extends BaseBridgeAdapter {
+export class OpStackUSDCBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   private readonly l2Gas = 200000;
 
   constructor(
@@ -27,7 +27,7 @@ export class OpStackUSDCBridge extends BaseBridgeAdapter {
   ) {
     const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId][`opUSDCBridge_${l2chainId}`];
     const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].opUSDCBridge;
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
     this.l2Bridge = new Contract(l2Address, l2Abi, l2SignerOrProvider);

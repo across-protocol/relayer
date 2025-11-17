@@ -33,7 +33,7 @@ const FEE_SCALER_DENOMINATOR = 10;
  * addresses and gas prices (this is also why `constructL1toL2Txn`
  * is an async fn).
  */
-export class ZKStackBridge extends BaseBridgeAdapter {
+export class ZKStackBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   readonly gasPerPubdataLimit = zksync.utils.REQUIRED_L1_TO_L2_GAS_PER_PUBDATA_LIMIT;
   readonly l2GasLimit = BigNumber.from(2_000_000);
   readonly sharedBridge: Contract;
@@ -54,7 +54,7 @@ export class ZKStackBridge extends BaseBridgeAdapter {
     _logger: winston.Logger
   ) {
     const { address: sharedBridgeAddress, abi: sharedBridgeAbi } = CONTRACT_ADDRESSES[hubChainId].zkStackSharedBridge;
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(sharedBridgeAddress)]);
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [EvmAddress.from(sharedBridgeAddress)]);
     this.sharedBridge = new Contract(sharedBridgeAddress, sharedBridgeAbi, l1Signer);
 
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;

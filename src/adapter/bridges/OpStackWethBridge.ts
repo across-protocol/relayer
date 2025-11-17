@@ -18,7 +18,7 @@ import { utils } from "@across-protocol/sdk";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
-export class OpStackWethBridge extends BaseBridgeAdapter {
+export class OpStackWethBridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   protected atomicDepositor: Contract;
   protected l2Weth: Contract;
   protected l1Weth: EvmAddress;
@@ -39,6 +39,7 @@ export class OpStackWethBridge extends BaseBridgeAdapter {
       l2chainId,
       hubChainId,
       l1Signer,
+      l2SignerOrProvider,
       // To keep existing logic, we should use atomic depositor as the l1 bridge
       [EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].atomicDepositor.address)]
     );

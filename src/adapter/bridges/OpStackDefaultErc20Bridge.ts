@@ -12,7 +12,7 @@ import { CONTRACT_ADDRESSES } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
-export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
+export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter<Signer, Signer | Provider> {
   private readonly l2Gas = 200000;
 
   constructor(
@@ -25,7 +25,7 @@ export class OpStackDefaultERC20Bridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    super(l2chainId, hubChainId, l1Signer, [
+    super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, [
       EvmAddress.from(CONTRACT_ADDRESSES[hubChainId][`ovmStandardBridge_${l2chainId}`].address),
     ]);
 
