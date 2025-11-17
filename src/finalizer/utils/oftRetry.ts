@@ -31,18 +31,20 @@ export async function oftRetryFinalizer(
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
   const depositInitiatedMessages = await getSrcOftMessages(spokePoolClient.chainId, searchConfig, srcProvider);
-  const outstandingMessages = [];
+  const _outstandingMessages = [];
   // To avoid rate-limiting, chunk API queries.
   const chunkSize = Number(process.env["LZ_API_CHUNK_SIZE"] ?? 8);
   for (const depositInitiatedMessageChunk of chunk(depositInitiatedMessages, chunkSize)) {
-    outstandingMessages.push(
+    _outstandingMessages.push(
       ...(await mapAsync(depositInitiatedMessageChunk, async ({ txnRef }) => {
         return await getLzTransactionDetails(txnRef);
       }))
     );
   }
+  const outstandingMessages = _outstandingMessages.map(({ data }) => data.flat()).flat();
+
   // Lz messages are executed automatically and must be retried only if their execution reverts on chain.
-  const unprocessedMessages = outstandingMessages.filter((message) => message.status !== "SUCCEEDED");
+  const unprocessedMessages = outstandingMessages.filter(({ destination }) => destination?.status !== "SUCCEEDED");
   const statusesGrouped = groupObjectCountsByProp(
     outstandingMessages.map(({ destination }) => destination),
     (message: { status: string }) => message.status
@@ -53,8 +55,8 @@ export async function oftRetryFinalizer(
     statusesGrouped,
   });
 
-  const destinationTransactions = await mapAsync(unprocessedMessages, async ({ txnRef }) => {
-    return await srcProvider.getTransaction(txnRef);
+  const destinationTransactions = await mapAsync(unprocessedMessages, async ({ source }) => {
+    return await srcProvider.getTransaction(source.tx);
   });
 
   const callData = destinationTransactions.map((txData) => {
