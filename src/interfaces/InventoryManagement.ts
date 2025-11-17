@@ -64,6 +64,10 @@ export interface InventoryConfig {
     [chainId: number]: BigNumber;
   };
   wrapEtherThreshold: BigNumber;
+
+  // @todo: There's probably a more concise way to represent this.
+  // Allows caller to specify inputToken -> outputToken -> inputChain -> outputChain routes eligible for filling.
+  swapConfig: { [inputL1Token: string]: { [outputL1Token: string]: { [inputChainId: number]: number } } };
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {

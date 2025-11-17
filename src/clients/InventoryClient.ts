@@ -172,6 +172,20 @@ export class InventoryClient {
     }
   }
 
+  isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
+    const inputL1Token = this.getL1TokenAddress(inputToken, inputChainId);
+    const outputL1Token = this.getL1TokenAddress(outputToken, outputChainId);
+    if (!isDefined(inputL1Token) || !isDefined(outputL1Token)) {
+      return false;
+    }
+
+    return (
+      this.inventoryConfig?.swapConfig?.[inputToken.toEvmAddress()]?.[outputToken.toEvmAddress()]?.[inputChainId]?.[
+        outputChainId
+      ] ?? false
+    );
+  }
+
   /*
    * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
    * virtual balance on that chain.
@@ -470,6 +484,11 @@ export class InventoryClient {
       destinationChainId
     );
     if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
+    if (this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId)) {
       return true;
     }
 

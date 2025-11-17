@@ -270,6 +270,29 @@ export class RelayerConfig extends CommonConfig {
           });
         }
       });
+
+      // Replace symbols in swapConfig with addresses.
+      const rawSwapConfigs = inventoryConfig?.swapConfig ?? {};
+      const swapConfigs = (inventoryConfig.swapConfig = {});
+      Object.entries(rawSwapConfigs).forEach(([inputL1Token, outputTokenSwapObj]) => {
+        // If the input l1Token is a symbol, resolve the correct address.
+        const effectiveL1Token = ethersUtils.isAddress(inputL1Token)
+          ? ethersUtils.getAddress(inputL1Token)
+          : TOKEN_SYMBOLS_MAP[inputL1Token].addresses[this.hubPoolChainId];
+        assert(effectiveL1Token !== undefined, `swapConfig: No input token identified for ${inputL1Token}`);
+
+        swapConfigs[effectiveL1Token] = outputTokenSwapObj;
+
+        Object.entries(outputTokenSwapObj).forEach(([outputL1Token, routeObj]) => {
+          // If the output l1Token is a symbol, resolve the correct address.
+          const effectiveOutputL1Token = ethersUtils.isAddress(outputL1Token)
+            ? ethersUtils.getAddress(outputL1Token)
+            : TOKEN_SYMBOLS_MAP[outputL1Token].addresses[this.hubPoolChainId];
+          assert(effectiveOutputL1Token !== undefined, `swapConfig: No output token identified for ${outputL1Token}`);
+
+          swapConfigs[effectiveL1Token][effectiveOutputL1Token] = routeObj;
+        });
+      });
     }
 
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
