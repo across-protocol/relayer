@@ -94,13 +94,13 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 // The DstOft/Cctp handler contracts only exist on HyperEVM.
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
-  const artifact = beta[`${factoryName}__factory`];
+  const artifact = beta["HyperCoreFlowExecutor__factory"];
   return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
-  const artifact = beta[`${factoryName}__factory`];
+  const artifact = beta["HyperCoreFlowExecutor__factory"];
   return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
 }
 
