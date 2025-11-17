@@ -138,6 +138,7 @@ export class HyperliquidExecutor {
       from: fromBlock,
       maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[this.chainId],
     };
+
     process.on("SIGHUP", () => {
       this.logger.debug({
         at: "HyperliquidExecutor#initialize",

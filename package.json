@@ -87,6 +87,7 @@
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
+    "update-inventory-config": "yarn ts-node ./scripts/fetchInventoryConfig.ts",
     "validate-root-bundle": "yarn ts-node src/scripts/validateRootBundle.ts"
   },
   "devDependencies": {
