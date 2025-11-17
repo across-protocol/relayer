@@ -39,11 +39,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
 
   async update(): Promise<void> {
     // We know that as we move forward in time, the injected chain id inclusion will
-    // eventually outdate the latest block number. Therefore, we want to remove the
-    // injected chain id inclusion from the chain id indices updates before we call
-    // the super update function. This is to prevent the injected chain id inclusion
-    // from issuing an error. We will re-add the injected chain id inclusion after
-    // in the overloaded _.update() function.
+    // eventually outdate the latest block number. To avoid errors, remove the injected
+    // chain id inclusion from the chain id indices updates before calling super.update().
+    // After super.update() completes, re-apply the injected chain id inclusion in this
+    // overridden update() method.
     if (isDefined(this.injectedChain)) {
       // Track the initial length of the chain id indices updates
       const initialLength = this.chainIdIndicesUpdates.length;
