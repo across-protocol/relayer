@@ -39,7 +39,7 @@ export function castSpokePoolName(networkId: number): string {
     case CHAIN_IDs.BSC:
     case CHAIN_IDs.HYPEREVM:
     case CHAIN_IDs.PLASMA:
-    case CHAIN_IDs.MONAD: // Should we add Monad here? And why?
+    case CHAIN_IDs.MONAD:
       return "Universal_SpokePool";
     case CHAIN_IDs.ZK_SYNC:
       return "ZkSync_SpokePool";

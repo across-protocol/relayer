@@ -239,7 +239,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   [CHAIN_IDs.MAINNET]: 128,
   [CHAIN_IDs.MODE]: 120,
-  [CHAIN_IDs.MONAD]: 150, // @TODO: How to calculate this?
+  [CHAIN_IDs.MONAD]: 150,
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.PLASMA]: 300,
   [CHAIN_IDs.POLYGON]: 256,
@@ -931,7 +931,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
-  [CHAIN_IDs.MONAD]: 1.5,
+  [CHAIN_IDs.MONAD]: 1.1,
   [CHAIN_IDs.PLASMA]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
@@ -1005,7 +1005,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
-  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: How to calculate this?
+  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
   [CHAIN_IDs.PLASMA]: toWei("8"),
 };
 
@@ -1043,7 +1043,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
-  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: How to calculate this?
+  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
@@ -1069,7 +1069,7 @@ export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
     tradeType: "exactOutput",
   },
   [CHAIN_IDs.MONAD]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]), // What token should we use here?
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.ARBITRUM]),
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.MONAD,

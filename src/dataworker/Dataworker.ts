@@ -2768,7 +2768,7 @@ export class Dataworker {
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.BSC,
       CHAIN_IDs.HYPEREVM,
-      CHAIN_IDs.MONAD, // Where to see this?
+      CHAIN_IDs.MONAD,
       CHAIN_IDs.PLASMA,
       CHAIN_IDs.POLYGON,
     ]);
