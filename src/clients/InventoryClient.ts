@@ -174,8 +174,8 @@ export class InventoryClient {
 
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
     return (
-      this.inventoryConfig?.swapConfig?.[inputChainId]?.[inputToken.toEvmAddress()]?.[outputChainId]?.[
-        outputToken.toEvmAddress()
+      this.inventoryConfig?.swapConfig?.[inputChainId]?.[inputToken.toNative()]?.[outputChainId]?.[
+        outputToken.toNative()
       ] ?? false
     );
   }
