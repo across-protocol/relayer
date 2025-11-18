@@ -384,10 +384,7 @@ export class Refiller {
     }
   }
 
-  private async refillUsdh(
-    currentBalance: BigNumber,
-    decimals: number,
-  ): Promise<void> {
+  private async refillUsdh(currentBalance: BigNumber, decimals: number): Promise<void> {
     // If either the apiUrl or apiKey is undefined, then return, since we can't do anything.
     if (!isDefined(this.config.nativeMarketsApiConfig)) {
       this.logger.warn({
