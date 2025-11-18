@@ -1,4 +1,5 @@
 import winston from "winston";
+import axios from "axios";
 import { RefillerConfig, RefillBalanceData } from "./RefillerConfig";
 import {
   Address,
@@ -33,8 +34,10 @@ import {
   Provider,
   bnZero,
   getL1TokenAddress,
+  CHAIN_IDs,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -104,6 +107,8 @@ export class Refiller {
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
       const refillHandler = token.eq(getNativeTokenAddressForChain(chainId))
         ? this.refillNativeTokenBalances.bind(this)
+        : token.eq(EvmAddress.from(TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]))
+        ? this.refillUsdh.bind(this)
         : this.refillTokenBalances.bind(this);
 
       return refillHandler(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
@@ -375,6 +380,104 @@ export class Refiller {
         requiredUnwrapAmount: amount.toString(),
         wethAddress: weth.address,
         account: this.baseSignerAddress,
+      });
+    }
+  }
+
+  private async refillUsdh(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalanceData: RefillBalanceData
+  ): Promise<void> {
+    // If either the apiUrl or apiKey is undefined, then return, since we can't do anything.
+    if (!isDefined(this.config.nativeMarketsApiConfig)) {
+      this.logger.warn({
+        at: "Refiller#refillUsdh",
+        message: "Native markets api key and base URL are missing from .env. Unable to rebalance USDH.",
+      });
+      return;
+    }
+    const { apiUrl: nativeMarketsApiUrl, apiKey: nativeMarketsApiKey } = this.config.nativeMarketsApiConfig;
+
+    // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
+    const headers = {
+      "Api-Version": "2025-11-01",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${nativeMarketsApiKey}`,
+    };
+    const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
+    let addressId = registeredAddresses.items.find(
+      ({ chain, token, address_hex }) =>
+        chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
+    );
+    // In the event the address is not currently available, create a new one by posting to the native markets API.
+    if (!isDefined(addressId)) {
+      const newAddressIdData = {
+        address: this.baseSignerAddress.toNative(),
+        chain: "hyper_evm",
+        name: "across-refiller-test",
+        token: "usdh",
+      };
+
+      this.logger.info({
+        at: "Refiller#refillNativeTokenBalances",
+        message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
+        address: this.baseSignerAddress.toNative(),
+      });
+      const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, { headers });
+      addressId = _addressId;
+    }
+
+    // Next, get the transfer route deposit address on Arbitrum.
+    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    let availableTransferRoute = transferRoutes.items
+      .filter((route) => isDefined(route.source_address))
+      .find(({ source_address }) => source_address.chain === "arbitrum" && source_address.token === "usdc");
+    // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
+    if (!isDefined(availableTransferRoute)) {
+      const newTransferRouteData = {
+        destination_address_id: addressId.id,
+        name: "Arbitrum USDC -> HyperEVM USDH",
+        source_currency: "usdc",
+        source_payment_rail: "arbitrum",
+      };
+
+      this.logger.info({
+        at: "Refiller#refillNativeTokenBalances",
+        message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
+        address: this.baseSignerAddress.toNative(),
+        addressId,
+      });
+      const { data: _availableTransferRoute } = await axios.post(
+        `${nativeMarketsApiUrl}/transfer_routes`,
+        newTransferRouteData,
+        {
+          headers,
+        }
+      );
+      availableTransferRoute = _availableTransferRoute;
+    }
+
+    // Create the transfer transaction.
+    const srcProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ARBITRUM];
+    const usdc = new Contract(
+      TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM],
+      ERC20_ABI,
+      this.baseSigner.connect(srcProvider)
+    );
+    // By default, sweep the entire USDC balance of the base signer to HyperEVM USDH.
+    const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
+    const minAmountToTransfer = toBN(Math.floor(refillBalanceData.trigger * 10 ** decimals));
+
+    if (amountToTransfer.gt(minAmountToTransfer)) {
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: usdc,
+        chainId: CHAIN_IDs.ARBITRUM,
+        method: "transfer",
+        args: [availableTransferRoute.source_address.address_hex, amountToTransfer],
+        message: "Rebalanced Arbitrum USDC to HyperEVM USDH",
+        nonMulticall: true,
+        mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
       });
     }
   }
