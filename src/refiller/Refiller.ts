@@ -387,7 +387,6 @@ export class Refiller {
   private async refillUsdh(
     currentBalance: BigNumber,
     decimals: number,
-    refillBalanceData: RefillBalanceData
   ): Promise<void> {
     // If either the apiUrl or apiKey is undefined, then return, since we can't do anything.
     if (!isDefined(this.config.nativeMarketsApiConfig)) {
@@ -467,9 +466,8 @@ export class Refiller {
     );
     // By default, sweep the entire USDC balance of the base signer to HyperEVM USDH.
     const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
-    const minAmountToTransfer = toBN(Math.floor(refillBalanceData.trigger * 10 ** decimals));
 
-    if (amountToTransfer.gt(minAmountToTransfer)) {
+    if (amountToTransfer.gt(bnZero)) {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: usdc,
         chainId: CHAIN_IDs.ARBITRUM,
