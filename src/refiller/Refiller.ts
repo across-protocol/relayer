@@ -422,7 +422,7 @@ export class Refiller {
     // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
     let addressId;
     // If we have the address ID for the base signer and token combo in cache, then do not request it from native markets.
-    const addressIdCacheKey = `nativeMarketsAddressId:${this.baseSignerAddress.toNative}`;
+    const addressIdCacheKey = `nativeMarketsAddressId:${this.baseSignerAddress.toNative()}`;
     const addressIdCache = await this.redisCache.get(addressIdCacheKey);
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
@@ -459,7 +459,7 @@ export class Refiller {
     // Next, get the transfer route deposit address on Arbitrum.
     let availableTransferRoute: NativeMarketsTransferRoute;
     // Also check for the transfer route in cache.
-    const availableTransferRouteCacheKey = `nativeMarketsTransferRoute:${addressId}`;
+    const availableTransferRouteCacheKey = `nativeMarketsTransferRoute:${addressId}-${this.baseSignerAddress.toNative()}`;
     const availableTransferRouteCache = await this.redisCache.get(availableTransferRouteCacheKey);
     if (isDefined(availableTransferRouteCache)) {
       availableTransferRoute = JSON.parse(availableTransferRouteCache as string);
@@ -467,7 +467,12 @@ export class Refiller {
       const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
       availableTransferRoute = transferRoutes.items
         .filter((route) => isDefined(route.source_address))
-        .find(({ source_address }) => source_address.chain === "arbitrum" && source_address.token === "usdc");
+        .find(
+          ({ source_address, destination_address }) =>
+            source_address.chain === "arbitrum" &&
+            source_address.token === "usdc" &&
+            destination_address.address_hex === this.baseSignerAddress.toNative()
+        );
       // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
       if (!isDefined(availableTransferRoute)) {
         const newTransferRouteData = {
