@@ -49,19 +49,6 @@ export interface RefillerClients {
   multiCallerClient: MultiCallerClient;
 }
 
-// NativeMarkets API minimal types.
-type AddressInfo = {
-  id: string;
-  token: string;
-  chain: string;
-  address_hex: string;
-};
-
-interface NativeMarketsTransferRoute {
-  source_address: AddressInfo;
-  destination_address: AddressInfo;
-}
-
 /**
  * @notice This class is in charge of refilling native token balances for accounts running other bots, like the relayer and
  * dataworker. It is run with an account whose funds are used to refill balances for other accounts by either swapping
@@ -431,7 +418,7 @@ export class Refiller {
       addressId = registeredAddresses.items.find(
         ({ chain, token, address_hex }) =>
           chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
-      );
+      )?.id;
       // In the event the address is not currently available, create a new one by posting to the native markets API.
       if (!isDefined(addressId)) {
         const newAddressIdData = {
@@ -450,54 +437,43 @@ export class Refiller {
           headers,
         });
         addressId = _addressId.id;
-      } else {
-        addressId = addressId.id;
       }
       await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
 
     // Next, get the transfer route deposit address on Arbitrum.
-    let availableTransferRoute: NativeMarketsTransferRoute;
-    // Also check for the transfer route in cache.
-    const availableTransferRouteCacheKey = `nativeMarketsTransferRoute:${addressId}-${this.baseSignerAddress.toNative()}`;
-    const availableTransferRouteCache = await this.redisCache.get(availableTransferRouteCacheKey);
-    if (isDefined(availableTransferRouteCache)) {
-      availableTransferRoute = JSON.parse(availableTransferRouteCache as string);
-    } else {
-      const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
-      availableTransferRoute = transferRoutes.items
-        .filter((route) => isDefined(route.source_address))
-        .find(
-          ({ source_address, destination_address }) =>
-            source_address.chain === "arbitrum" &&
-            source_address.token === "usdc" &&
-            destination_address.address_hex === this.baseSignerAddress.toNative()
-        );
-      // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
-      if (!isDefined(availableTransferRoute)) {
-        const newTransferRouteData = {
-          destination_address_id: addressId,
-          name: "Arbitrum USDC -> HyperEVM USDH",
-          source_currency: "usdc",
-          source_payment_rail: "arbitrum",
-        };
+    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    let availableTransferRoute = transferRoutes.items
+      .filter((route) => isDefined(route.source_address))
+      .find(
+        ({ source_address, destination_address }) =>
+          source_address.chain === "arbitrum" &&
+          source_address.token === "usdc" &&
+          destination_address.address_hex === this.baseSignerAddress.toNative()
+      );
+    // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
+    if (!isDefined(availableTransferRoute)) {
+      const newTransferRouteData = {
+        destination_address_id: addressId,
+        name: "Arbitrum USDC -> HyperEVM USDH",
+        source_currency: "usdc",
+        source_payment_rail: "arbitrum",
+      };
 
-        this.logger.info({
-          at: "Refiller#refillNativeTokenBalances",
-          message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
-          address: this.baseSignerAddress.toNative(),
-          addressId,
-        });
-        const { data: _availableTransferRoute } = await axios.post(
-          `${nativeMarketsApiUrl}/transfer_routes`,
-          newTransferRouteData,
-          {
-            headers,
-          }
-        );
-        availableTransferRoute = _availableTransferRoute;
-      }
-      await this.redisCache.set(availableTransferRouteCacheKey, JSON.stringify(availableTransferRoute), day);
+      this.logger.info({
+        at: "Refiller#refillNativeTokenBalances",
+        message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
+        address: this.baseSignerAddress.toNative(),
+        addressId,
+      });
+      const { data: _availableTransferRoute } = await axios.post(
+        `${nativeMarketsApiUrl}/transfer_routes`,
+        newTransferRouteData,
+        {
+          headers,
+        }
+      );
+      availableTransferRoute = _availableTransferRoute;
     }
 
     // Create the transfer transaction.
