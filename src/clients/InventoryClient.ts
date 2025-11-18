@@ -173,15 +173,9 @@ export class InventoryClient {
   }
 
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
-    const inputL1Token = this.getL1TokenAddress(inputToken, inputChainId);
-    const outputL1Token = this.getL1TokenAddress(outputToken, outputChainId);
-    if (!isDefined(inputL1Token) || !isDefined(outputL1Token)) {
-      return false;
-    }
-
     return (
-      this.inventoryConfig?.swapConfig?.[inputToken.toEvmAddress()]?.[outputToken.toEvmAddress()]?.[inputChainId]?.[
-        outputChainId
+      this.inventoryConfig?.swapConfig?.[inputChainId]?.[inputToken.toEvmAddress()]?.[outputChainId]?.[
+        outputToken.toEvmAddress()
       ] ?? false
     );
   }
