@@ -49,6 +49,19 @@ export interface RefillerClients {
   multiCallerClient: MultiCallerClient;
 }
 
+// NativeMarkets API minimal types.
+type AddressInfo = {
+  id: string;
+  token: string;
+  chain: string;
+  address_hex: string;
+};
+
+interface NativeMarketsTransferRoute {
+  source_address: AddressInfo;
+  destination_address: AddressInfo;
+}
+
 /**
  * @notice This class is in charge of refilling native token balances for accounts running other bots, like the relayer and
  * dataworker. It is run with an account whose funds are used to refill balances for other accounts by either swapping
@@ -105,13 +118,18 @@ export class Refiller {
       const { token, chainId } = refillBalanceData;
       const l2Provider = this.clients.balanceAllocator.providers[chainId];
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
-      const refillHandler = token.eq(getNativeTokenAddressForChain(chainId))
-        ? this.refillNativeTokenBalances.bind(this)
-        : token.eq(EvmAddress.from(TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]))
-        ? this.refillUsdh.bind(this)
-        : this.refillTokenBalances.bind(this);
-
-      return refillHandler(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
+      let refillHandler;
+      switch (token.toNative()) {
+        case getNativeTokenAddressForChain(chainId).toNative():
+          refillHandler = this.refillNativeTokenBalances;
+          break;
+        case TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]:
+          refillHandler = this.refillUsdh;
+          break;
+        default:
+          refillHandler = this.refillTokenBalances;
+      }
+      return refillHandler.bind(this)(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
     });
   }
 
@@ -394,64 +412,87 @@ export class Refiller {
       return;
     }
     const { apiUrl: nativeMarketsApiUrl, apiKey: nativeMarketsApiKey } = this.config.nativeMarketsApiConfig;
-
-    // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
     const headers = {
       "Api-Version": "2025-11-01",
       "Content-Type": "application/json",
       Authorization: `Bearer ${nativeMarketsApiKey}`,
     };
-    const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
-    let addressId = registeredAddresses.items.find(
-      ({ chain, token, address_hex }) =>
-        chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
-    );
-    // In the event the address is not currently available, create a new one by posting to the native markets API.
-    if (!isDefined(addressId)) {
-      const newAddressIdData = {
-        address: this.baseSignerAddress.toNative(),
-        chain: "hyper_evm",
-        name: "across-refiller-test",
-        token: "usdh",
-      };
+    const day = 24 * 60 * 60;
 
-      this.logger.info({
-        at: "Refiller#refillNativeTokenBalances",
-        message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
-        address: this.baseSignerAddress.toNative(),
-      });
-      const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, { headers });
-      addressId = _addressId;
+    // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
+    let addressId;
+    // If we have the address ID for the base signer and token combo in cache, then do not request it from native markets.
+    const addressIdCacheKey = `nativeMarketsAddressId:${this.baseSignerAddress.toNative}`;
+    const addressIdCache = await this.redisCache.get(addressIdCacheKey);
+    if (isDefined(addressIdCache)) {
+      addressId = addressIdCache;
+    } else {
+      const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
+      addressId = registeredAddresses.items.find(
+        ({ chain, token, address_hex }) =>
+          chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
+      );
+      // In the event the address is not currently available, create a new one by posting to the native markets API.
+      if (!isDefined(addressId)) {
+        const newAddressIdData = {
+          address: this.baseSignerAddress.toNative(),
+          chain: "hyper_evm",
+          name: "across-refiller-test",
+          token: "usdh",
+        };
+
+        this.logger.info({
+          at: "Refiller#refillNativeTokenBalances",
+          message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
+          address: this.baseSignerAddress.toNative(),
+        });
+        const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
+          headers,
+        });
+        addressId = _addressId.id;
+      } else {
+        addressId = addressId.id;
+      }
+      await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
 
     // Next, get the transfer route deposit address on Arbitrum.
-    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
-    let availableTransferRoute = transferRoutes.items
-      .filter((route) => isDefined(route.source_address))
-      .find(({ source_address }) => source_address.chain === "arbitrum" && source_address.token === "usdc");
-    // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
-    if (!isDefined(availableTransferRoute)) {
-      const newTransferRouteData = {
-        destination_address_id: addressId.id,
-        name: "Arbitrum USDC -> HyperEVM USDH",
-        source_currency: "usdc",
-        source_payment_rail: "arbitrum",
-      };
+    let availableTransferRoute: NativeMarketsTransferRoute;
+    // Also check for the transfer route in cache.
+    const availableTransferRouteCacheKey = `nativeMarketsTransferRoute:${addressId}`;
+    const availableTransferRouteCache = await this.redisCache.get(availableTransferRouteCacheKey);
+    if (isDefined(availableTransferRouteCache)) {
+      availableTransferRoute = JSON.parse(availableTransferRouteCache as string);
+    } else {
+      const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+      availableTransferRoute = transferRoutes.items
+        .filter((route) => isDefined(route.source_address))
+        .find(({ source_address }) => source_address.chain === "arbitrum" && source_address.token === "usdc");
+      // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
+      if (!isDefined(availableTransferRoute)) {
+        const newTransferRouteData = {
+          destination_address_id: addressId,
+          name: "Arbitrum USDC -> HyperEVM USDH",
+          source_currency: "usdc",
+          source_payment_rail: "arbitrum",
+        };
 
-      this.logger.info({
-        at: "Refiller#refillNativeTokenBalances",
-        message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
-        address: this.baseSignerAddress.toNative(),
-        addressId,
-      });
-      const { data: _availableTransferRoute } = await axios.post(
-        `${nativeMarketsApiUrl}/transfer_routes`,
-        newTransferRouteData,
-        {
-          headers,
-        }
-      );
-      availableTransferRoute = _availableTransferRoute;
+        this.logger.info({
+          at: "Refiller#refillNativeTokenBalances",
+          message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
+          address: this.baseSignerAddress.toNative(),
+          addressId,
+        });
+        const { data: _availableTransferRoute } = await axios.post(
+          `${nativeMarketsApiUrl}/transfer_routes`,
+          newTransferRouteData,
+          {
+            headers,
+          }
+        );
+        availableTransferRoute = _availableTransferRoute;
+      }
+      await this.redisCache.set(availableTransferRouteCacheKey, JSON.stringify(availableTransferRoute), day);
     }
 
     // Create the transfer transaction.
