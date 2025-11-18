@@ -19,6 +19,14 @@ export type ChainTokenInventory = {
   [symbol: string]: ChainTokenConfig;
 };
 
+export type SwapRoute = {
+  fromChain: number;
+  fromToken: string;
+  toChain: number;
+  toToken: string;
+  bidirectional: boolean;
+};
+
 /**
  * Example configuration:
  * - DAI on chains 10 & 42161.
@@ -65,9 +73,8 @@ export interface InventoryConfig {
   };
   wrapEtherThreshold: BigNumber;
 
-  // @todo: There's probably a more concise way to represent this.
-  // Allows caller to specify inputChainId -> inputToken -> outputChainId -> outputToken routes eligible for filling.
-  swapConfig: { [inputChainId: number]: { [inputToken: string]: { [outputChainId: number]: string } } };
+  // Allows caller to specify specific swap routes eligible for filling.
+  allowedSwapRoutes: SwapRoute[];
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {

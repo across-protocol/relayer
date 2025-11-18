@@ -22,7 +22,7 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig, SwapRoute } from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -271,33 +271,36 @@ export class RelayerConfig extends CommonConfig {
         }
       });
 
-      // Replace symbols in swapConfig with addresses.
-      const rawSwapConfigs = inventoryConfig?.swapConfig ?? {};
-      const swapConfigs = (inventoryConfig.swapConfig = {});
-      Object.keys(rawSwapConfigs).forEach((_inputChainId) => {
-        const inputChainId = Number(_inputChainId);
-        swapConfigs[inputChainId] = {};
-        Object.entries(rawSwapConfigs[inputChainId]).forEach(([inputToken, outputTokenSwapObj]) => {
-          const effectiveInputToken = ethersUtils.isAddress(inputToken)
-            ? ethersUtils.getAddress(inputToken)
-            : TOKEN_SYMBOLS_MAP[inputToken].addresses[inputChainId];
-          assert(
-            effectiveInputToken !== undefined,
-            `swapConfig: No input token identified for ${inputToken} on chain ${inputChainId}`
-          );
-          swapConfigs[inputChainId][effectiveInputToken] = outputTokenSwapObj;
-          Object.entries(outputTokenSwapObj).forEach(([_outputChainId, outputToken]) => {
-            const outputChainId = Number(_outputChainId);
-            const effectiveOutputToken = ethersUtils.isAddress(outputToken)
-              ? ethersUtils.getAddress(outputToken)
-              : TOKEN_SYMBOLS_MAP[outputToken].addresses[outputChainId];
-            assert(
-              effectiveOutputToken !== undefined,
-              `swapConfig: No output token identified for ${outputToken} on chain ${outputChainId}`
-            );
-            swapConfigs[inputChainId][effectiveInputToken][outputChainId] = effectiveOutputToken;
-          });
-        });
+      // Replace symbols in allowed swap routes with addresses.
+      const rawSwapRoutes = inventoryConfig?.allowedSwapRoutes ?? ([] as SwapRoute[]);
+      const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
+      rawSwapRoutes.forEach((rawSwapRoute) => {
+        const swapRoute = {
+          ...rawSwapRoute,
+          fromToken: ethersUtils.isAddress(rawSwapRoute.fromToken)
+            ? ethersUtils.getAddress(rawSwapRoute.fromToken)
+            : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
+          toToken: ethersUtils.isAddress(rawSwapRoute.toToken)
+            ? ethersUtils.getAddress(rawSwapRoute.toToken)
+            : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
+        };
+        assert(
+          swapRoute.fromToken !== undefined,
+          `allowedSwapRoutes: No from token identified for ${rawSwapRoute.fromToken} on chain ${rawSwapRoute.fromChain}`
+        );
+        assert(
+          swapRoute.toToken !== undefined,
+          `allowedSwapRoutes: No to token identified for ${rawSwapRoute.toToken} on chain ${rawSwapRoute.toChain}`
+        );
+        swapRoutes.push(swapRoute);
+        if (rawSwapRoute.bidirectional) {
+          const bidirectionalSwapRoute = {
+            ...swapRoute,
+            fromToken: swapRoute.toToken,
+            toToken: swapRoute.fromToken,
+          };
+          swapRoutes.push(bidirectionalSwapRoute);
+        }
       });
     }
 

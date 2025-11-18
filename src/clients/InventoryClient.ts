@@ -173,10 +173,12 @@ export class InventoryClient {
   }
 
   isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
-    return (
-      this.inventoryConfig?.swapConfig?.[inputChainId]?.[inputToken.toNative()]?.[outputChainId]?.[
-        outputToken.toNative()
-      ] ?? false
+    return this.inventoryConfig?.allowedSwapRoutes.some(
+      (swapRoute) =>
+        swapRoute.fromChain === inputChainId &&
+        swapRoute.fromToken === inputToken.toNative() &&
+        swapRoute.toChain === outputChainId &&
+        swapRoute.toToken === outputToken.toNative()
     );
   }
 
