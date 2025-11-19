@@ -689,10 +689,6 @@ export class ProfitClient {
       this.tokenPrices[address] ??= bnZero;
     });
 
-    // We need polygon native token price to compute gas costs on Polygon.
-    const pol = TOKEN_SYMBOLS_MAP.POL.addresses[CHAIN_IDs.MAINNET];
-    tokens["POL"] = pol;
-
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
