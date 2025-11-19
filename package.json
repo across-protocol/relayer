@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@across-protocol/constants": "^3.1.87",
-    "@across-protocol/contracts": "^4.1.12",
+    "@across-protocol/contracts": "^4.1.13",
     "@across-protocol/contracts-beta": "npm:@across-protocol/contracts@4.1.12-beta.7",
-    "@across-protocol/sdk": "4.3.91",
+    "@across-protocol/sdk": "4.3.92",
     "@arbitrum/sdk": "^4.0.2",
     "@consensys/linea-sdk": "^0.3.0",
     "@coral-xyz/anchor": "^0.31.1",
