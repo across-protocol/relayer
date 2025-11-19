@@ -13,11 +13,12 @@ export type RefillBalanceData = {
 
 export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: RefillBalanceData[] = [];
+  readonly nativeMarketsApiConfig: { apiKey: string; apiUrl: string };
 
   constructor(env: ProcessEnv) {
     super(env);
 
-    const { REFILL_BALANCES } = env;
+    const { REFILL_BALANCES, NATIVE_MARKETS_API_KEY, NATIVE_MARKETS_API_BASE } = env;
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
@@ -44,6 +45,10 @@ export class RefillerConfig extends CommonConfig {
           };
         }
       );
+    }
+
+    if (isDefined(NATIVE_MARKETS_API_KEY) && isDefined(NATIVE_MARKETS_API_BASE)) {
+      this.nativeMarketsApiConfig = { apiKey: NATIVE_MARKETS_API_KEY, apiUrl: NATIVE_MARKETS_API_BASE };
     }
 
     // Should only have 1 HubPool.
