@@ -117,10 +117,7 @@ export class RelayerConfig extends CommonConfig {
     this.relayerDestinationTokens = Object.fromEntries(
       Object.entries(JSON.parse(RELAYER_DESTINATION_TOKENS ?? "{}")).map(([_chainId, tokens]) => {
         const chainId = Number(_chainId);
-        return [
-          chainId,
-          ((tokens as string[]) ?? []).map((token) => toAddressType(ethers.utils.getAddress(token), Number(chainId))),
-        ];
+        return [chainId, ((tokens as string[]) ?? []).map((token) => toAddressType(token, Number(chainId)))];
       })
     );
 
