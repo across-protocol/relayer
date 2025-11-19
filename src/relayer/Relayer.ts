@@ -193,7 +193,14 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { addressFilter, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const {
+      addressFilter,
+      ignoreLimits,
+      relayerTokens,
+      acceptInvalidFills,
+      minDepositConfirmations,
+      relayerDestinationTokens,
+    } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
 
@@ -279,9 +286,22 @@ export class Relayer {
     if (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unsupported token.",
+        message: "Skipping deposit for unsupported input token.",
         deposit,
         l1Token,
+      });
+      return ignoreDeposit();
+    }
+
+    if (
+      relayerDestinationTokens[destinationChainId] &&
+      !relayerDestinationTokens[destinationChainId].some((token) => token.eq(deposit.outputToken))
+    ) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for unsupported output token.",
+        deposit,
+        outputToken: deposit.outputToken,
       });
       return ignoreDeposit();
     }

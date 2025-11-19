@@ -38,6 +38,7 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingMessageRelaysEnabled: { [chainId: number]: boolean } = {};
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
+  readonly relayerDestinationTokens: { [chainId: number]: Address[] };
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
@@ -83,6 +84,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_EXTERNAL_INVENTORY_CONFIG,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
+      RELAYER_DESTINATION_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
@@ -108,6 +110,18 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
       toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
+    );
+    // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
+    // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
+    // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
+    this.relayerDestinationTokens = Object.fromEntries(
+      Object.entries(JSON.parse(RELAYER_DESTINATION_TOKENS ?? "{}")).map(([_chainId, tokens]) => {
+        const chainId = Number(_chainId);
+        return [
+          chainId,
+          ((tokens as string[]) ?? []).map((token) => toAddressType(ethers.utils.getAddress(token), Number(chainId))),
+        ];
+      })
     );
 
     // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
