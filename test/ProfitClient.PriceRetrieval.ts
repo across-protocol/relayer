@@ -4,7 +4,7 @@ import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, toAddressType } from "../src/
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
-const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "MATIC"].map((symbol) => {
+const mainnetTokens = ["WETH", "WBTC", "DAI", "USDC", "USDT", "BAL", "POL"].map((symbol) => {
   const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
   const address = addresses[1];
   return { symbol, decimals, address };
@@ -73,7 +73,7 @@ describe("ProfitClient: Price Retrieval", async () => {
 
   it("Correctly resolves addresses for gas token symbols", async () => {
     await profitClient.update();
-    ["ETH", "MATIC"].forEach((gasToken) => expect(profitClient.resolveTokenAddress(gasToken)).to.not.be.undefined);
+    ["ETH", "POL"].forEach((gasToken) => expect(profitClient.resolveTokenAddress(gasToken)).to.not.be.undefined);
   });
 
   it("Remaps token symbols to equivalent token symbols", async () => {
