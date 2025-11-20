@@ -20,9 +20,9 @@ export type ChainTokenInventory = {
 };
 
 export type SwapRoute = {
-  fromChain: number;
+  fromChain: number | "ALL";
   fromToken: string;
-  toChain: number;
+  toChain: number | "ALL";
   toToken: string;
   bidirectional: boolean;
 };
