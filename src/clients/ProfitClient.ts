@@ -690,7 +690,7 @@ export class ProfitClient {
     });
 
     const resolveTokenPrice = (address: string, price: number): number =>
-      price || (Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]) ?? 0);
+      price || (Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]) || 0);
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
