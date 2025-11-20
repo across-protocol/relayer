@@ -696,7 +696,7 @@ export class ProfitClient {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
       tokenPrices.forEach(({ address, price }) => {
-        this.tokenPrices[address] = toBNWei(resolveTokenPrice(address, price))
+        this.tokenPrices[address] = toBNWei(resolveTokenPrice(address, price));
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
