@@ -4,13 +4,21 @@ export interface ProcessBurnTransactionResponse {
   error?: string;
 }
 
+export interface StringUnion {
+  string: string;
+}
+
+export interface LongUnion {
+  long: number;
+}
+
 export interface PubSubMessage {
   burnTransactionHash: string;
   sourceChainId: number;
-  message?: string;
-  attestation?: string;
-  destinationChainId?: number;
-  signature?: string;
+  message?: StringUnion | null;
+  attestation?: StringUnion | null;
+  destinationChainId?: LongUnion | null;
+  signature?: StringUnion | null;
 }
 
 export interface ChainConfig {
