@@ -23,7 +23,7 @@ import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
   string: ["amount", "chainId"],
-  boolean: ["sim"],
+  boolean: ["sendTx"],
 });
 
 // Example run:
@@ -58,7 +58,8 @@ async function run(): Promise<void> {
     throw new Error("Amount must be a positive number");
   }
 
-  const simMode = args.sim === true;
+  // Default to not executing. Only execute if --sim false is explicitly set
+  const sendTransactions = args.sendTx === true;
 
   const l2ChainName = getNetworkName(l2ChainId);
   console.log(`🚀 Withdrawing USDC from ${l2ChainName} (Chain ID: ${l2ChainId}) to Mainnet`);
@@ -81,11 +82,11 @@ async function run(): Promise<void> {
 
   // Get token addresses
   const l1Token = EvmAddress.from(USDC_L1_ADDRESS);
-  const l2TokenAddress = getRemoteTokenForL1Token(l1Token, l2ChainId, MAINNET_CHAIN_ID);
-  if (!l2TokenAddress) {
+  const l2Token = getRemoteTokenForL1Token(l1Token, l2ChainId, MAINNET_CHAIN_ID);
+  if (!isDefined(l2Token)) {
     throw new Error(`USDC not found on ${l2ChainName} (chain ID: ${l2ChainId})`);
   }
-  const l2Token = l2TokenAddress.isEVM() ? l2TokenAddress : EvmAddress.from(l2TokenAddress.toNative());
+
   const l2TokenInfo = getTokenInfo(l2Token, l2ChainId);
 
   // Convert amount to token decimals (USDC has 6 decimals)
@@ -127,6 +128,11 @@ async function run(): Promise<void> {
     l1Token
   ) as BaseL2BridgeAdapter;
 
+  // Construct withdrawal transaction
+  logger.info("Constructing withdrawal transaction...");
+  const toAddress = EvmAddress.from(signerAddr);
+  const txns = await l2Bridge.constructWithdrawToL1Txns(toAddress, l2Token, l1Token, amountInWei);
+
   // Confirm transaction
   console.log("\n📍 Withdrawal Details:");
   console.log(`   From: ${l2ChainName} (Chain ID: ${l2ChainId})`);
@@ -135,37 +141,40 @@ async function run(): Promise<void> {
   console.log(`   Amount: ${formatter(amountInWei.toString())} USDC`);
   console.log(`   Recipient: ${signerAddr}`);
   console.log(`   Bridge: ${BridgeConstructor.name}`);
-  console.log(`   Mode: ${simMode ? "SIMULATION" : "LIVE"}`);
 
-  if (!simMode && !(await askYesNoQuestion("\n⚠️  Confirm that you want to execute this withdrawal?"))) {
-    console.log("Transaction cancelled.");
+  // Only execute if --sendTx is explicitly set
+  if (!sendTransactions) {
+    console.log(`\n📋 Transaction Calldata (${txns.length} transaction(s)):`);
+    txns.forEach((txn, index) => {
+      const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
+      console.log(`\n   Transaction ${index + 1}:`);
+      console.log(`   ${calldata}`);
+    });
+    console.log("\n💡 To execute transactions, run with --sendTx flag");
+    console.log(`   Example: yarn ts-node ./scripts/withdrawUsdcFromL2.ts --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`);
     return;
   }
 
-  // Construct withdrawal transaction
-  logger.info("Constructing withdrawal transaction...");
-  const toAddress = EvmAddress.from(signerAddr);
-  const txns = await l2Bridge.constructWithdrawToL1Txns(toAddress, l2Token, l1Token, amountInWei);
+  // Confirm before sending
+  if (!(await askYesNoQuestion("\n⚠️  Confirm that you want to execute this withdrawal?"))) {
+    console.log("Transaction cancelled.");
+    return;
+  }
 
   // Execute withdrawal
   logger.info("Executing withdrawal...");
   const multicallerClient = new MultiCallerClient(logger);
   txns.forEach((txn) => multicallerClient.enqueueTransaction(txn));
-  const txnReceipts = await multicallerClient.executeTxnQueues(simMode, [l2ChainId]);
+  const txnReceipts = await multicallerClient.executeTxnQueues(false, [l2ChainId]);
   const transactionHashes = txnReceipts[l2ChainId] || [];
 
-  if (simMode) {
-    console.log("\n✅ Simulation completed successfully!");
-    console.log("Transaction receipts:", transactionHashes);
-  } else {
-    console.log("\n✅ Withdrawal transaction submitted!");
-    console.log(`Transaction hash(es): ${transactionHashes.join(", ")}`);
-    if (transactionHashes.length > 0) {
-      console.log(`\n🔗 Monitor on ${l2ChainName}: ${blockExplorerLink(transactionHashes[0], l2ChainId)}`);
-    }
-    console.log("\n⏳ The withdrawal will be finalized on Mainnet by the finalizer bot.");
-    console.log("   You can monitor the finalization on Mainnet once the bridge message is processed.");
+  console.log("\n✅ Withdrawal transaction submitted!");
+  console.log(`Transaction hash(es): ${transactionHashes.join(", ")}`);
+  if (transactionHashes.length > 0) {
+    console.log(`\n🔗 Monitor on ${l2ChainName}: ${blockExplorerLink(transactionHashes[0], l2ChainId)}`);
   }
+  console.log("\n⏳ The withdrawal will be finalized on Mainnet by the finalizer bot.");
+  console.log("   You can monitor the finalization on Mainnet once the bridge message is processed.");
 }
 
 if (require.main === module) {
