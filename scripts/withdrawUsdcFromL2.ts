@@ -151,7 +151,9 @@ async function run(): Promise<void> {
       console.log(`   ${calldata}`);
     });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
-    console.log(`   Example: yarn ts-node ./scripts/withdrawUsdcFromL2.ts --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`);
+    console.log(
+      `   Example: yarn ts-node ./scripts/withdrawUsdcFromL2.ts --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
+    );
     return;
   }
 
