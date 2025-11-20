@@ -286,32 +286,41 @@ export class RelayerConfig extends CommonConfig {
       const rawSwapRoutes = inventoryConfig?.allowedSwapRoutes ?? ([] as SwapRoute[]);
       const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
       rawSwapRoutes.forEach((rawSwapRoute) => {
-        const swapRoute = {
-          ...rawSwapRoute,
-          fromToken: ethersUtils.isAddress(rawSwapRoute.fromToken)
-            ? ethersUtils.getAddress(rawSwapRoute.fromToken)
-            : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
-          toToken: ethersUtils.isAddress(rawSwapRoute.toToken)
-            ? ethersUtils.getAddress(rawSwapRoute.toToken)
-            : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
-        };
-        assert(
-          swapRoute.fromToken !== undefined,
-          `allowedSwapRoutes: No from token identified for ${rawSwapRoute.fromToken} on chain ${rawSwapRoute.fromChain}`
-        );
-        assert(
-          swapRoute.toToken !== undefined,
-          `allowedSwapRoutes: No to token identified for ${rawSwapRoute.toToken} on chain ${rawSwapRoute.toChain}`
-        );
-        swapRoutes.push(swapRoute);
-        if (rawSwapRoute.bidirectional) {
-          const bidirectionalSwapRoute = {
-            ...swapRoute,
-            fromToken: swapRoute.toToken,
-            toToken: swapRoute.fromToken,
-          };
-          swapRoutes.push(bidirectionalSwapRoute);
-        }
+        // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
+        const fromTokens =
+          rawSwapRoute.fromChain === "ALL"
+            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses)
+            : [
+                ethersUtils.isAddress(rawSwapRoute.fromToken)
+                  ? rawSwapRoute.fromToken
+                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
+              ];
+        const toTokens =
+          rawSwapRoute.toChain === "ALL"
+            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses)
+            : [
+                ethersUtils.isAddress(rawSwapRoute.toToken)
+                  ? rawSwapRoute.toToken
+                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
+              ];
+        fromTokens.forEach((fromToken) => {
+          toTokens.forEach((toToken) => {
+            const swapRoute = {
+              ...rawSwapRoute,
+              fromToken,
+              toToken,
+            };
+            swapRoutes.push(swapRoute);
+            if (rawSwapRoute.bidirectional) {
+              const bidirectionalSwapRoute = {
+                ...swapRoute,
+                fromToken: toToken,
+                toToken: fromToken,
+              };
+              swapRoutes.push(bidirectionalSwapRoute);
+            }
+          });
+        });
       });
     }
 
