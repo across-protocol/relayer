@@ -346,14 +346,20 @@ export class BaseChainAdapter {
       getBlockForTimestamp(this.logger, this.hubChainId, getCurrentTime() - lookbackPeriodSeconds),
       getBlockForTimestamp(this.logger, this.chainId, getCurrentTime() - lookbackPeriodSeconds),
     ]);
-    const l1EventSearchConfig: EventSearchConfig = {
+    const hubChainBlockRange = this.spokePoolManager.getClient(this.hubChainId).eventSearchConfig.maxLookBack;
+    const l1EventSearchConfig = {
       from: l1SearchFromBlock,
       to: this.baseL1SearchConfig.to,
+      maxLookBack: hubChainBlockRange,
     };
-    const l2EventSearchConfig: EventSearchConfig = {
+
+    const spokeChainBlockRange = this.spokePoolManager.getClient(this.chainId).eventSearchConfig.maxLookBack;
+    const l2EventSearchConfig = {
       from: l2SearchFromBlock,
       to: this.baseL2SearchConfig.to,
+      maxLookBack: spokeChainBlockRange,
     };
+
     return await this.l2Bridges[l1Token.toNative()].getL2PendingWithdrawalAmount(
       l2EventSearchConfig,
       l1EventSearchConfig,
