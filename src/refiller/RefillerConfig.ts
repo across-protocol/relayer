@@ -1,5 +1,5 @@
 import { CommonConfig, ProcessEnv } from "../common";
-import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBN, BigNumber } from "../utils";
+import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBNWei, BigNumber } from "../utils";
 
 export type RefillBalanceData = {
   chainId: number;
@@ -52,8 +52,8 @@ export class RefillerConfig extends CommonConfig {
       this.nativeMarketsApiConfig = { apiKey: NATIVE_MARKETS_API_KEY, apiUrl: NATIVE_MARKETS_API_BASE };
     }
 
-    // Default minimum is 10 USDH
-    this.minUsdhRebalanceAmount = toBN(Number(MIN_USDH_REBALANCE_AMOUNT ?? 10_000_000));
+    // Default minimum is 10 USDH. USDH only exists on HyperEVM and has 6 decimals.
+    this.minUsdhRebalanceAmount = toBNWei(MIN_USDH_REBALANCE_AMOUNT ?? "10", 6);
 
     // Should only have 1 HubPool.
     if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {
