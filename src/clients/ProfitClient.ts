@@ -128,8 +128,8 @@ export class ProfitClient {
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
     readonly additionalL1Tokens: EvmAddress[] = [],
-    // Mapping of token symbols to symbols that they should be pegged to. For example, USDH -> USDC.
-    readonly peggedTokens: { [tokenToPegSymbol: string]: string } = {}
+    // Sets of token symbols that should be treated equivalently, for example [ "USDC": [USDT, USDH ].
+    readonly peggedTokens: { [pegTokenSymbol: string]: Set<string> } = {}
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -639,7 +639,7 @@ export class ProfitClient {
               return [undefined, undefined];
             }
             throw new Error(
-              `${_symbol} has no definition in TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING, or ProfitClient.peggedTokens`
+              `${_symbol} has no definition in TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING, or PEGGED_TOKEN_PRICES`
             );
           }
 
@@ -824,7 +824,12 @@ export class ProfitClient {
   }
 
   private _getRemappedTokenSymbol(token: string): string {
-    return TOKEN_EQUIVALENCE_REMAPPING[token] ?? this.peggedTokens[token] ?? token;
+    // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
+    if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
+      token =
+        Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token)) ?? token;
+    }
+    return TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
   }
 
   private constructRelayerFeeQuery(

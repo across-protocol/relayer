@@ -21,7 +21,7 @@ export class CommonConfig {
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
   readonly arweaveGateway: ArweaveGatewayInterface;
-  readonly peggedTokenPrices: { [tokenToPegSymbol: string]: string } = {};
+  readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
@@ -88,7 +88,12 @@ export class CommonConfig {
     assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
     this.arweaveGateway = _arweaveGateway;
 
-    this.peggedTokenPrices = JSON.parse(PEGGED_TOKEN_PRICES ?? "{}");
+    this.peggedTokenPrices = Object.fromEntries(
+      Object.entries(JSON.parse(PEGGED_TOKEN_PRICES ?? "{}")).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
+        pegTokenSymbol,
+        new Set(tokenSymbolsToPeg as string[]),
+      ])
+    );
   }
 
   /**
