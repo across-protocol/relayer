@@ -24,7 +24,6 @@ export type SwapRoute = {
   fromToken: string;
   toChain: number | "ALL";
   toToken: string;
-  bidirectional: boolean;
 };
 
 /**

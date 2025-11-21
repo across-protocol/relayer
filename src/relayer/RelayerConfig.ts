@@ -311,14 +311,6 @@ export class RelayerConfig extends CommonConfig {
               toToken,
             };
             swapRoutes.push(swapRoute);
-            if (rawSwapRoute.bidirectional) {
-              const bidirectionalSwapRoute = {
-                ...swapRoute,
-                fromToken: toToken,
-                toToken: fromToken,
-              };
-              swapRoutes.push(bidirectionalSwapRoute);
-            }
           });
         });
       });
