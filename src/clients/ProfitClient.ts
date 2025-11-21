@@ -826,7 +826,7 @@ export class ProfitClient {
   protected _getRemappedTokenSymbol(token: string): string {
     // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
     if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
-      token = Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
+      return Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token));
     }
     return TOKEN_EQUIVALENCE_REMAPPING[token];
   }
