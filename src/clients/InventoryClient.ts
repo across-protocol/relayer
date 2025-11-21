@@ -550,7 +550,7 @@ export class InventoryClient {
     }
 
     if (
-      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient.chainId) &&
+      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
       isDefined(this.inventoryConfig?.repaymentChainOverride)
     ) {
       return [this.inventoryConfig.repaymentChainOverride];
