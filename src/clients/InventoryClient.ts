@@ -418,6 +418,9 @@ export class InventoryClient {
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
+    if (isDefined(this.inventoryConfig?.repaymentChainOverride)) {
+      return [this.inventoryConfig.repaymentChainOverride];
+    }
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
