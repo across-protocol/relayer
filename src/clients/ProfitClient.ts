@@ -689,15 +689,14 @@ export class ProfitClient {
       this.tokenPrices[address] ??= bnZero;
     });
 
+    const resolveTokenPrice = (address: string, price: number): number =>
+      price || Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]) || 0;
+
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      const matic = TOKEN_SYMBOLS_MAP.MATIC.addresses[CHAIN_IDs.MAINNET];
       tokenPrices.forEach(({ address, price }) => {
-        this.tokenPrices[address] = toBNWei(price);
-        if (this.tokenPrices[matic].eq(bnZero)) {
-          this.tokenPrices[matic] = toBNWei("0.10");
-        }
+        this.tokenPrices[address] = toBNWei(resolveTokenPrice(address, price));
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {

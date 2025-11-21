@@ -209,6 +209,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       },
       {
         relayerTokens: [],
+        relayerDestinationTokens: {},
         minDepositConfirmations: defaultMinDepositConfirmations,
         sendingRelaysEnabled: true,
         tryMulticallChains: [],
@@ -422,6 +423,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         },
         {
           relayerTokens: [],
+          relayerDestinationTokens: {},
           relayerOriginChains: [destinationChainId],
           relayerDestinationChains: [originChainId],
           minDepositConfirmations: defaultMinDepositConfirmations,
@@ -440,6 +442,43 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       routes.forEach(({ from, to, enabled }) => expect(relayerInstance.routeEnabled(from, to)).to.equal(enabled));
 
       // Deposit on originChainId, destined for destinationChainId => expect ignored.
+      await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+      await updateAllClients();
+      const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      for (const receipts of Object.values(txnReceipts)) {
+        expect((await receipts).length).to.equal(0);
+      }
+    });
+
+    it("Filters on custom destination tokens", async function () {
+      relayerInstance = new Relayer(
+        relayer.address,
+        spyLogger,
+        {
+          spokePoolClients,
+          hubPoolClient,
+          configStoreClient,
+          tokenClient,
+          profitClient,
+          multiCallerClient,
+          inventoryClient,
+          acrossApiClient: new AcrossApiClient(spyLogger, hubPoolClient, chainIds),
+          tryMulticallClient,
+        },
+        {
+          relayerTokens: [],
+          relayerDestinationTokens: {
+            [destinationChainId]: [], // Explicitly do not include output token here
+          },
+          minDepositConfirmations: defaultMinDepositConfirmations,
+          sendingRelaysEnabled: true,
+          tryMulticallChains: [],
+          sendingMessageRelaysEnabled: {},
+          loggingInterval: -1,
+        } as unknown as RelayerConfig
+      );
+
+      // Deposit for output token should be ignored.
       await depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
       await updateAllClients();
       const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
@@ -537,6 +576,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         },
         {
           relayerTokens: [],
+          relayerDestinationTokens: {},
           minDepositConfirmations: {
             [originChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 3 }],
           },
@@ -577,6 +617,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         {
           minFillTime: { [destinationChainId]: minFillTime },
           relayerTokens: [],
+          relayerDestinationTokens: {},
           minDepositConfirmations: defaultMinDepositConfirmations,
           sendingRelaysEnabled: true,
           sendingMessageRelaysEnabled: {},
@@ -648,6 +689,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         },
         {
           relayerTokens: [],
+          relayerDestinationTokens: {},
           minDepositConfirmations: {
             [originChainId]: originChainConfirmations,
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
@@ -774,6 +816,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         },
         {
           relayerTokens: [],
+          relayerDestinationTokens: {},
           minDepositConfirmations: {
             [originChainId]: originChainConfirmations,
             [destinationChainId]: [{ usdThreshold: bnUint256Max, minConfirmations: 1 }],
