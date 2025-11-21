@@ -549,6 +549,13 @@ export class InventoryClient {
       return [];
     }
 
+    if (
+      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient.chainId) &&
+      isDefined(this.inventoryConfig?.repaymentChainOverride)
+    ) {
+      return [this.inventoryConfig.repaymentChainOverride];
+    }
+
     if (!this.isInventoryManagementEnabled()) {
       return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }

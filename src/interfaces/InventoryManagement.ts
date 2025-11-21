@@ -74,6 +74,9 @@ export interface InventoryConfig {
 
   // Allows caller to specify specific swap routes eligible for filling.
   allowedSwapRoutes: SwapRoute[];
+
+  // Optional parameter which forces relayer repayment on the specified chain ID.
+  repaymentChainOverride: number | undefined;
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
