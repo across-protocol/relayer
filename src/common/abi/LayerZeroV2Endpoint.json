@@ -1,0 +1,75 @@
+[
+  {
+    "type": "event",
+    "anonymous": false,
+    "name": "OFTSent",
+    "inputs": [
+      {
+        "type": "bytes32",
+        "name": "guid",
+        "indexed": true
+      },
+      {
+        "type": "uint32",
+        "name": "dstEid"
+      },
+      {
+        "type": "address",
+        "name": "fromAddress",
+        "indexed": true
+      },
+      {
+        "type": "uint256",
+        "name": "amountSentLD"
+      },
+      {
+        "type": "uint256",
+        "name": "amountReceivedLD"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "lzReceive",
+    "constant": false,
+    "stateMutability": "payable",
+    "payable": true,
+    "inputs": [
+      {
+        "type": "tuple",
+        "name": "origin",
+        "components": [
+          {
+            "type": "uint32",
+            "name": "srcEid"
+          },
+          {
+            "type": "bytes32",
+            "name": "sender"
+          },
+          {
+            "type": "uint64",
+            "name": "nonce"
+          }
+        ]
+      },
+      {
+        "type": "address",
+        "name": "_receiver"
+      },
+      {
+        "type": "bytes32",
+        "name": "_guid"
+      },
+      {
+        "type": "bytes",
+        "name":"_message"
+      },
+      {
+        "type": "bytes",
+        "name": "_extraData"
+      }
+    ],
+    "outputs": []
+  }
+]

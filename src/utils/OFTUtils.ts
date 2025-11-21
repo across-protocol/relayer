@@ -1,22 +1,24 @@
-import { OFT_NO_EID } from "@across-protocol/constants";
+import axios from "axios";
+import { Options } from "@layerzerolabs/lz-v2-utilities";
+import { BytesLike, Contract, utils as ethersUtils } from "ethers";
+import { PRODUCTION_OFT_EIDs, OFT_NO_EID } from "@across-protocol/constants";
+import { SortableEvent } from "../interfaces";
+import LZEndpoint from "../common/abi/LayerZeroV2Endpoint.json";
+import { EVM_OFT_MESSENGERS } from "../common";
 import {
+  Address,
   BigNumber,
   BigNumberish,
+  EventSearchConfig,
   EvmAddress,
   PUBLIC_NETWORKS,
   assert,
   isDefined,
   CHAIN_IDs,
-  EventSearchConfig,
-  Provider,
   paginatedEventQuery,
+  Provider,
   spreadEventWithBlockNumber,
-  getSrcOftPeriphery,
 } from ".";
-import { BytesLike } from "ethers";
-import axios from "axios";
-import { EVM_OFT_MESSENGERS } from "../common";
-import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -33,8 +35,14 @@ export type MessagingFeeStruct = {
   lzTokenFee: BigNumberish;
 };
 
-export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+export type LzTransactionDetails = {
+  source: LzSourceTransactionDetails;
+  destination: LzDestinationTransactionDetails;
+  pathway: Pathway;
+  guid: string;
+};
 
+export type LzSourceTransactionDetails = { status: string; tx: { payload: string } };
 export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
 
 export type LzBridgeEvent = SortableEvent;
@@ -50,6 +58,16 @@ type TransactionOutcome = {
 type Pathway = {
   srcEid: number;
   dstEid: number;
+  sender: {
+    address: string;
+  };
+  receiver: {
+    address: string;
+  };
+  nonce: number;
+  source: {
+    payload: string;
+  };
 };
 
 /**
@@ -70,8 +88,8 @@ export function getEndpointId(chainId: number): number {
  * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID.
  */
 export function getChainIdFromEndpointId(eid: number): number {
-  const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
-  return Number(chainId);
+  const chain = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
+  return Number(chain[0]);
 }
 
 /**
@@ -119,6 +137,25 @@ export function roundAmountToSend(amount: BigNumber, tokenDecimals: number, shar
 }
 
 /**
+ * Boosts the gas limit for an LZv2 send call, based on the destination chain.
+ * @param dstEid Destination chain EID.
+ * @returns A byte string for use for LZv2 send extraOpts.
+ */
+export function boostGasLimit(dstEid: number): string {
+  // Monad needs a boosted gas limit over the default 80k. The default may be lifted by LZ. @todo: Check.
+  const gas = {
+    [PRODUCTION_OFT_EIDs.MONAD]: 500000,
+  };
+
+  const gasBoost = gas[dstEid];
+  if (!gasBoost) {
+    return "0x";
+  }
+
+  return ethersUtils.hexlify(Options.newOptions().addExecutorLzReceiveOption(gasBoost).toBytes());
+}
+
+/**
  * @notice Build a minimal OFT SendParam for EVM transfers with dust-safe amounts.
  * @param to EVM address on the destination chain to receive the tokens
  * @param dstEid OFT endpoint ID for the destination chain
@@ -131,7 +168,7 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
     to: formatToAddress(to),
     amountLD: roundedAmount,
     minAmountLD: roundedAmount,
-    extraOptions: "0x",
+    extraOptions: boostGasLimit(dstEid),
     composeMsg: "0x",
     oftCmd: "0x",
   };
@@ -148,20 +185,19 @@ export async function getLzTransactionDetails(txHash: string): Promise<LzTransac
   return txDetails;
 }
 
-/**
- * @notice Fetches OFT messages initiated from a srcOft contract
- * @param srcChainId Chain ID corresponding to the deployed srcOftMessenger.
- * @param searchConfig Event search config to use on srcChainId.
- * @param srcProvider ethers Provider instance for the srcChainId.
- * @returns A list of SortableEvents corresponding to bridge events on srcChainId.
- */
-export async function getSrcOftMessages(
-  srcChainId: number,
+export async function getOFTSent(
+  chainId: number,
+  token: Address,
   searchConfig: EventSearchConfig,
-  srcProvider: Provider
-): Promise<LzBridgeEvent[]> {
-  const srcOft = getSrcOftPeriphery(srcChainId).connect(srcProvider);
+  provider: Provider
+): Promise<SortableEvent[]> {
+  const oftAddr = EVM_OFT_MESSENGERS.get(token.toNative())?.get(chainId);
+  if (!oftAddr) {
+    return [];
+  }
 
-  const messageInitiatedEvents = await paginatedEventQuery(srcOft, srcOft.filters.SponsoredOFTSend(), searchConfig);
-  return messageInitiatedEvents.map(spreadEventWithBlockNumber);
+  const abi = new ethersUtils.Interface(LZEndpoint);
+  const oftAdapter = new Contract(oftAddr.toNative(), abi, provider);
+  const filter = oftAdapter.filters.OFTSent();
+  return (await paginatedEventQuery(oftAdapter, filter, searchConfig)).map(spreadEventWithBlockNumber);
 }
