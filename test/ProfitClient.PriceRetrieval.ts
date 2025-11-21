@@ -90,7 +90,7 @@ describe("ProfitClient: Price Retrieval", async () => {
       bnOne,
       bnZero,
       [],
-      { "USDC": new Set(["USDH"]) } // Pegged token symbols we are testing.
+      { USDC: new Set(["USDH"]) } // Pegged token symbols we are testing.
     );
     expect(profitClient.getRemappedTokenSymbol("USDH")).to.equal("USDC");
   });
