@@ -19,12 +19,13 @@ import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constan
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
 import { Options } from "@layerzerolabs/lz-v2-utilities";
 
-
 type OFTBridgeArguments = {
   sendParamStruct: OFT.SendParamStruct;
   feeStruct: OFT.MessagingFeeStruct;
   refundAddress: string;
 };
+
+const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 200000;
 
 export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
@@ -116,7 +117,7 @@ export class OFTBridge extends BaseBridgeAdapter {
     const roundedAmount = await this.roundAmountToSend(amount);
     let extraOptions: BytesLike = "0x";
     if (this.l2chainId === CHAIN_IDs.MONAD) {
-      extraOptions = Options.newOptions().addExecutorLzReceiveOption(200000).toBytes(); // @TODO: Make this constant and not hardcoded
+      extraOptions = Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes();
     }
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l2ChainEid,
