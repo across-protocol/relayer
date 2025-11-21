@@ -823,7 +823,7 @@ export class ProfitClient {
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
   }
 
-  private _getRemappedTokenSymbol(token: string): string {
+  protected _getRemappedTokenSymbol(token: string): string {
     // If token symbol exists in a set of pegged tokens, return the key of the set as the remapped symbol.
     if (Object.values(this.peggedTokens).some((peggedTokens) => peggedTokens.has(token))) {
       token =
