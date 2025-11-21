@@ -585,10 +585,7 @@ export class InventoryClient {
 
     // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
     // then short-circuit this check.
-    if (
-      !forceOriginRepayment &&
-      isDefined(this.inventoryConfig?.repaymentChainOverride)
-    ) {
+    if (!forceOriginRepayment && isDefined(this.inventoryConfig?.repaymentChainOverride)) {
       return [this.inventoryConfig.repaymentChainOverride];
     }
 
