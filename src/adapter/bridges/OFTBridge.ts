@@ -25,7 +25,7 @@ type OFTBridgeArguments = {
   refundAddress: string;
 };
 
-const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 200000;
+const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120000;
 
 export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
