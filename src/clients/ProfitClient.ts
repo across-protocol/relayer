@@ -210,7 +210,7 @@ export class ProfitClient {
     } catch {
       // The token address is neither an SVM address nor an EVM address, so it must be a symbol.
     }
-    const remappedTokenSymbol = this._getRemappedTokenSymbol(token);
+    const remappedTokenSymbol = this._getRemappedTokenSymbol(token) ?? token;
     // In some cases, we've remapped a token symbol to its wrapped variant (e.g. BNB -> WBNB),
     // so check if the token symbols map has the non-remapped token symbol stored as a fallback.
     const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
@@ -382,7 +382,7 @@ export class ProfitClient {
    * @returns The minimum required fee multiplier for the specified token/route combination.
    */
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const effectiveSymbol = this._getRemappedTokenSymbol(symbol);
+    const effectiveSymbol = this._getRemappedTokenSymbol(symbol) ?? symbol;
 
     const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
@@ -829,7 +829,7 @@ export class ProfitClient {
       token =
         Object.keys(this.peggedTokens).find((pegTokenSymbol) => this.peggedTokens[pegTokenSymbol].has(token)) ?? token;
     }
-    return TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
+    return TOKEN_EQUIVALENCE_REMAPPING[token];
   }
 
   private constructRelayerFeeQuery(
