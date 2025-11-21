@@ -127,7 +127,9 @@ export class ProfitClient {
     protected gasMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MULTIPLIER),
     protected gasMessageMultiplier = toBNWei(constants.DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER),
     protected gasPadding = toBNWei(constants.DEFAULT_RELAYER_GAS_PADDING),
-    readonly additionalL1Tokens: EvmAddress[] = []
+    readonly additionalL1Tokens: EvmAddress[] = [],
+    // Mapping of token symbols to symbols that they should be pegged to. For example, USDH -> USDC.
+    readonly peggedTokens: { [tokenToPegSymbol: string]: string } = {}
   ) {
     // Require 0% <= gasPadding <= 200%
     assert(
@@ -208,9 +210,9 @@ export class ProfitClient {
     } catch {
       // The token address is neither an SVM address nor an EVM address, so it must be a symbol.
     }
-    const remappedTokenSymbol = TOKEN_EQUIVALENCE_REMAPPING[token] ?? token;
-    // In case we have an entry in `TOKEN_EQUIVALENCE_REMAPPING` which maps the native token symbol to its wrapped variant (e.g. BNB -> WBNB),
-    // also check if the token symbols map has the non-remapped token symbol stored as a fallback.
+    const remappedTokenSymbol = this._getRemappedTokenSymbol(token);
+    // In some cases, we've remapped a token symbol to its wrapped variant (e.g. BNB -> WBNB),
+    // so check if the token symbols map has the non-remapped token symbol stored as a fallback.
     const address = this.tokenSymbolMap[remappedTokenSymbol] ?? this.tokenSymbolMap[token];
     assert(
       isDefined(address),
@@ -380,7 +382,7 @@ export class ProfitClient {
    * @returns The minimum required fee multiplier for the specified token/route combination.
    */
   minRelayerFeePct(symbol: string, srcChainId: number, dstChainId: number): BigNumber {
-    const effectiveSymbol = TOKEN_EQUIVALENCE_REMAPPING[symbol] ?? symbol;
+    const effectiveSymbol = this._getRemappedTokenSymbol(symbol);
 
     const tokenKey = `MIN_RELAYER_FEE_PCT_${effectiveSymbol}`;
     const routeKey = `${tokenKey}_${srcChainId}_${dstChainId}`;
@@ -627,7 +629,7 @@ export class ProfitClient {
       l1Tokens
         .map(({ symbol: _symbol }) => {
           // If the L1 token is defined in token symbols map, then use the L1 token symbol. Otherwise, use the remapping in constants.
-          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : TOKEN_EQUIVALENCE_REMAPPING[_symbol];
+          const symbol = isDefined(TOKEN_SYMBOLS_MAP[_symbol]) ? _symbol : this._getRemappedTokenSymbol(_symbol);
           if (!isDefined(symbol)) {
             // If the symbol is undefined, then there is missing configuration in the constants repository.
             // Throw an error if we are on mainnet, since this indicates that we are attempting to fetch prices for an unsupported token.
@@ -636,7 +638,9 @@ export class ProfitClient {
             if (this.isTestnet) {
               return [undefined, undefined];
             }
-            throw new Error(`${_symbol} has no definition in TOKEN_SYMBOLS_MAP or TOKEN_EQUIVALENCE_REMAPPING`);
+            throw new Error(
+              `${_symbol} has no definition in TOKEN_SYMBOLS_MAP, TOKEN_EQUIVALENCE_REMAPPING, or ProfitClient.peggedTokens`
+            );
           }
 
           const { addresses } = TOKEN_SYMBOLS_MAP[symbol];
@@ -654,7 +658,7 @@ export class ProfitClient {
     // Log any tokens that are in the L1Tokens list but are not in the tokenSymbolsMap.
     // Note: we should batch these up and log them all at once to avoid spamming the logs.
     const unknownTokens = l1Tokens.filter(
-      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(TOKEN_EQUIVALENCE_REMAPPING[symbol])
+      ({ symbol }) => !isDefined(TOKEN_SYMBOLS_MAP[symbol]) && !isDefined(this._getRemappedTokenSymbol(symbol))
     );
     if (unknownTokens.length > 0) {
       this.logger.debug({
@@ -817,6 +821,10 @@ export class ProfitClient {
       };
     });
     return dedupArray([...hubPoolTokens, ...additionalL1Tokens]);
+  }
+
+  private _getRemappedTokenSymbol(token: string): string {
+    return TOKEN_EQUIVALENCE_REMAPPING[token] ?? this.peggedTokens[token] ?? token;
   }
 
   private constructRelayerFeeQuery(

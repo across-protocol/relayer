@@ -184,7 +184,8 @@ export async function constructRelayerClients(
     config.relayerGasMultiplier,
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding,
-    relayerTokens
+    relayerTokens,
+    config.peggedTokenPrices
   );
   await profitClient.update();
 
