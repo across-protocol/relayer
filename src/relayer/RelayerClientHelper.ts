@@ -164,7 +164,15 @@ export async function constructRelayerClients(
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-  const tokenClient = new TokenClient(logger, signerAddr, svmAddress, spokePoolClients, hubPoolClient, relayerTokens);
+  const tokenClient = new TokenClient(
+    logger,
+    signerAddr,
+    svmAddress,
+    spokePoolClients,
+    hubPoolClient,
+    relayerTokens,
+    config.relayerDestinationTokens
+  );
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
