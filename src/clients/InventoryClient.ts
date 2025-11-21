@@ -172,6 +172,16 @@ export class InventoryClient {
     }
   }
 
+  isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).some(
+      (swapRoute) =>
+        (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
+        swapRoute.fromToken === inputToken.toNative() &&
+        (swapRoute.toChain === "ALL" || swapRoute.toChain === outputChainId) &&
+        swapRoute.toToken === outputToken.toNative()
+    );
+  }
+
   /*
    * Get the total balance for an L1 token across all chains, considering any outstanding cross chain transfers as a
    * virtual balance on that chain.
@@ -434,6 +444,10 @@ export class InventoryClient {
         }
       });
     }
+    if (isDefined(this.inventoryConfig?.repaymentChainOverride)) {
+      chainIds.add(this.inventoryConfig.repaymentChainOverride);
+    }
+
     chainIds.add(this.hubPoolClient.chainId);
     return [...chainIds];
   }
@@ -470,6 +484,11 @@ export class InventoryClient {
       destinationChainId
     );
     if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
+    if (this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId)) {
       return true;
     }
 
@@ -567,6 +586,13 @@ export class InventoryClient {
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
     }
+
+    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
+    // then short-circuit this check.
+    if (!forceOriginRepayment && isDefined(this.inventoryConfig?.repaymentChainOverride)) {
+      return [this.inventoryConfig.repaymentChainOverride];
+    }
+
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);

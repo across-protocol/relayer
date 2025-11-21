@@ -80,7 +80,7 @@ export const MAX_RELAYER_DEPOSIT_LOOK_BACK = 4 * 60 * 60;
 export const FINALIZER_TOKENBRIDGE_LOOKBACK = 14 * 24 * 60 * 60;
 
 // Chain IDs using the Succinct/Helios SP1 messaging bridge.
-export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA];
+export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PLASMA, CHAIN_IDs.MONAD];
 
 // Reorgs are anticipated on Ethereum and Polygon. We use different following distances when processing deposit
 // events based on the USD amount of the deposit. This protects the relayer from the worst case situation where it fills
@@ -111,6 +111,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
+    [CHAIN_IDs.MONAD]: 10,
     [CHAIN_IDs.PLASMA]: 10,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
@@ -121,6 +122,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
+    [CHAIN_IDs.MONAD]: 1,
     [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
@@ -151,6 +153,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
+    [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
   };
@@ -177,6 +180,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.INK]: 120, // 1s/block gives 2 mins buffer time
   [CHAIN_IDs.MAINNET]: 5, // 12s/block
   [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
+  [CHAIN_IDs.MONAD]: 150, // ~400ms/block. 0.8s finality
   [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
   [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
   [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
@@ -197,6 +201,7 @@ export const BUNDLE_END_BLOCK_BUFFERS = {
   [CHAIN_IDs.LENS_SEPOLIA]: 0,
   [CHAIN_IDs.LISK_SEPOLIA]: 0,
   [CHAIN_IDs.MODE_SEPOLIA]: 0,
+  [CHAIN_IDs.MONAD_TESTNET]: 0,
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
   [CHAIN_IDs.PLASMA_TESTNET]: 0,
   [CHAIN_IDs.POLYGON_AMOY]: 0,
@@ -237,6 +242,7 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
   [CHAIN_IDs.MAINNET]: 128,
   [CHAIN_IDs.MODE]: 120,
+  [CHAIN_IDs.MONAD]: 150,
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.PLASMA]: 300,
   [CHAIN_IDs.POLYGON]: 256,
@@ -281,6 +287,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
   [CHAIN_IDs.MODE]: 86400,
+  [CHAIN_IDs.MONAD]: 432000,
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
@@ -342,6 +349,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
+  [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
     "DAI",
     "SNX",
@@ -378,6 +386,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.TATARA]: ["TATARA-USDC", "WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
+  [CHAIN_IDs.MONAD_TESTNET]: ["USDC", "USDT", "WBTC"],
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.BOB_SEPOLIA]: ["WETH", "WBTC"],
 };
@@ -505,6 +514,12 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
+  [CHAIN_IDs.MONAD]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    // @TODO: Add WBTC after its added to the chain token list
+    // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+  },
   [CHAIN_IDs.OPTIMISM]: {
     [TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET]]: SnxOptimismBridge,
     [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
@@ -567,6 +582,11 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.MODE_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
   },
+  [CHAIN_IDs.MONAD_TESTNET]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.SEPOLIA]]: OFTBridge,
+  },
   [CHAIN_IDs.OPTIMISM_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
@@ -618,6 +638,11 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+  },
+  [CHAIN_IDs.MONAD]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
@@ -909,6 +934,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
   [CHAIN_IDs.MODE]: 1.5,
+  [CHAIN_IDs.MONAD]: 1.1,
   [CHAIN_IDs.PLASMA]: 1.5,
   [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
@@ -982,6 +1008,7 @@ export const HYPERLANE_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
   [CHAIN_IDs.PLASMA]: toWei("8"),
 };
 
@@ -994,6 +1021,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
+      [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")], // @TODO: Check with Monad team if this is correct
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
@@ -1019,6 +1047,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
+  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
@@ -1041,6 +1070,13 @@ export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
     outputToken: EvmAddress.from(ZERO_ADDRESS),
     originChainId: CHAIN_IDs.ARBITRUM,
     destinationChainId: CHAIN_IDs.BSC,
+    tradeType: "exactOutput",
+  },
+  [CHAIN_IDs.MONAD]: {
+    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.ARBITRUM]),
+    outputToken: EvmAddress.from(ZERO_ADDRESS),
+    originChainId: CHAIN_IDs.ARBITRUM,
+    destinationChainId: CHAIN_IDs.MONAD,
     tradeType: "exactOutput",
   },
   [CHAIN_IDs.POLYGON]: {

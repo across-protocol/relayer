@@ -35,11 +35,16 @@ export class CCTPService {
       const {
         burnTransactionHash,
         sourceChainId,
-        message: cctpMessage,
-        attestation: cctpAttestation,
-        destinationChainId: providedDestinationChainId,
-        signature,
+        message: cctpMessageUnion,
+        attestation: cctpAttestationUnion,
+        destinationChainId: providedDestinationChainIdUnion,
+        signature: signatureUnion,
       } = message;
+
+      const cctpMessage = cctpMessageUnion?.string;
+      const cctpAttestation = cctpAttestationUnion?.string;
+      const providedDestinationChainId = providedDestinationChainIdUnion?.long;
+      const signature = signatureUnion?.string;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",

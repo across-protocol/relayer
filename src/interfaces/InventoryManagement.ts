@@ -19,6 +19,13 @@ export type ChainTokenInventory = {
   [symbol: string]: ChainTokenConfig;
 };
 
+export type SwapRoute = {
+  fromChain: number | "ALL";
+  fromToken: string;
+  toChain: number | "ALL";
+  toToken: string;
+};
+
 /**
  * Example configuration:
  * - DAI on chains 10 & 42161.
@@ -64,6 +71,12 @@ export interface InventoryConfig {
     [chainId: number]: BigNumber;
   };
   wrapEtherThreshold: BigNumber;
+
+  // Allows caller to specify specific swap routes eligible for filling.
+  allowedSwapRoutes: SwapRoute[];
+
+  // Optional parameter which forces relayer repayment on the specified chain ID.
+  repaymentChainOverride: number | undefined;
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
