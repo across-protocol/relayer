@@ -111,6 +111,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
   },
   [MDC_DEFAULT_THRESHOLD]: {
     [CHAIN_IDs.MAINNET]: 4,
+    [CHAIN_IDs.MONAD]: 10,
     [CHAIN_IDs.PLASMA]: 10,
     [CHAIN_IDs.POLYGON]: 64, // Probabilistically safe level based on historic Polygon reorgs
     [CHAIN_IDs.BSC]: 2, // Average takes 2.5 blocks to finalize but reorgs rarely happen
@@ -121,6 +122,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
+    [CHAIN_IDs.MONAD]: 1,
     [CHAIN_IDs.PLASMA]: 1,
     [CHAIN_IDs.POLYGON]: 16,
     [CHAIN_IDs.SCROLL]: 2,
@@ -347,7 +349,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
-  [CHAIN_IDs.MONAD]: ["USDC"], // @TODO: Add USDT and WBTC after its added to the chain token list
+  [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
     "DAI",
     "SNX",
@@ -514,8 +516,8 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.MONAD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
-    // @TODO: Add USDT and WBTC after its added to the chain token list
-    // [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    // @TODO: Add WBTC after its added to the chain token list
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.OPTIMISM]: {
@@ -639,7 +641,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.MONAD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
-    // [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.LINEA]: {
@@ -1019,8 +1021,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
-      // @TODO: Add this after enabling USDT0 on Monad
-      // [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")], // @TODO: Check with Monad team if this is correct
+      [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")], // @TODO: Check with Monad team if this is correct
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],

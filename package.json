@@ -25,6 +25,7 @@
     "@ethersproject/bignumber": "^5.7.0",
     "@google-cloud/kms": "^3.6.0",
     "@google-cloud/storage": "^6.10.1",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.147",
     "@maticnetwork/maticjs": "^3.6.0",
     "@maticnetwork/maticjs-ethers": "^1.0.3",
     "@nktkas/hyperliquid": "^0.25.9",
