@@ -444,6 +444,10 @@ export class InventoryClient {
         }
       });
     }
+    if (isDefined(this.inventoryConfig?.repaymentChainOverride)) {
+      chainIds.add(this.inventoryConfig.repaymentChainOverride);
+    }
+
     chainIds.add(this.hubPoolClient.chainId);
     return [...chainIds];
   }
