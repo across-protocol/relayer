@@ -549,13 +549,6 @@ export class InventoryClient {
       return [];
     }
 
-    if (
-      !depositForcesOriginChainRepayment(deposit, this.hubPoolClient) &&
-      isDefined(this.inventoryConfig?.repaymentChainOverride)
-    ) {
-      return [this.inventoryConfig.repaymentChainOverride];
-    }
-
     if (!this.isInventoryManagementEnabled()) {
       return [!this.canTakeDestinationChainRepayment(deposit) ? originChainId : destinationChainId];
     }
@@ -589,6 +582,16 @@ export class InventoryClient {
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
     }
+
+    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
+    // then short-circuit this check.
+    if (
+      !forceOriginRepayment &&
+      isDefined(this.inventoryConfig?.repaymentChainOverride)
+    ) {
+      return [this.inventoryConfig.repaymentChainOverride];
+    }
+
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
