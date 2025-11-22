@@ -8,6 +8,7 @@ import ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI from "./abi/AtomicDepositorTransferPr
 import HUB_POOL_ABI from "./abi/HubPool.json";
 import VOTING_V2_ABI from "./abi/VotingV2.json";
 import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
+import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
 import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
@@ -234,6 +235,16 @@ export const CONTRACT_ADDRESSES: {
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
   },
+  [CHAIN_IDs.MONAD]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
@@ -299,6 +310,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: undefined, // TODO: Deploy and add mainnet address
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -467,6 +482,10 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x06C61D54958a0772Ee8aF41789466d39FfeaeB13",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM]: {

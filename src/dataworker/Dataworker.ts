@@ -28,6 +28,7 @@ import {
   toAddressType,
   getKitKeypairFromEvmSigner,
   getEventAuthority,
+  getRedisCache,
   getStatePda,
   getFillStatusPda,
   LatestBlockhash,
@@ -84,7 +85,7 @@ import {
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } from "./DataworkerUtils";
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
@@ -646,7 +647,16 @@ export class Dataworker {
       spokePoolClients,
       earliestBlocksInSpokePoolClients
     );
-    if (!valid) {
+
+    if (valid) {
+      const rootBundleKey = generateValidationKey(pendingRootBundle);
+      const redis = await getRedisCache(this.logger);
+      if (isDefined(redis)) {
+        const validations = await redis.incr(rootBundleKey);
+        const message = "Registered successful validation.";
+        this.logger.debug({ at: "Dataworker#validate", message, rootBundleKey, validations });
+      }
+    } else {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
       // can get dataworker running ASAP.
       if (ERROR_DISPUTE_REASONS.has(reason)) {
@@ -2758,6 +2768,7 @@ export class Dataworker {
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.BSC,
       CHAIN_IDs.HYPEREVM,
+      CHAIN_IDs.MONAD,
       CHAIN_IDs.PLASMA,
       CHAIN_IDs.POLYGON,
     ]);

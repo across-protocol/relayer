@@ -1,4 +1,4 @@
-import { Contract, Signer } from "ethers";
+import { BytesLike, Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
   BigNumber,
@@ -17,12 +17,15 @@ import { processEvent } from "../utils";
 import * as OFT from "../../utils/OFTUtils";
 import { OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common/Constants";
 import { IOFT_ABI_FULL } from "../../common/ContractAddresses";
+import { Options } from "@layerzerolabs/lz-v2-utilities";
 
 type OFTBridgeArguments = {
   sendParamStruct: OFT.SendParamStruct;
   feeStruct: OFT.MessagingFeeStruct;
   refundAddress: string;
 };
+
+const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120000;
 
 export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
@@ -112,13 +115,17 @@ export class OFTBridge extends BaseBridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount);
+    let extraOptions: BytesLike = "0x";
+    if (this.l2chainId === CHAIN_IDs.MONAD) {
+      extraOptions = Options.newOptions().addExecutorLzReceiveOption(MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT).toBytes();
+    }
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l2ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
       minAmountLD: roundedAmount,
-      extraOptions: "0x",
+      extraOptions,
       composeMsg: "0x",
       oftCmd: "0x",
     };

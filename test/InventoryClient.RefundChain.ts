@@ -18,7 +18,7 @@ import {
 
 import { ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
-import { Deposit, InventoryConfig } from "../src/interfaces";
+import { Deposit, InventoryConfig, SwapRoute } from "../src/interfaces";
 import {
   CHAIN_IDs,
   ZERO_ADDRESS,
@@ -281,6 +281,81 @@ describe("InventoryClient: Refund chain selection", async function () {
         inventoryClient.determineRefundChainId(sampleDepositData),
         `Unexpected ${dstChain} output token on ${srcChain} deposit`
       );
+    });
+
+    it("Allows user to define swap routes", async function () {
+      const swapRoutes: SwapRoute[] = [
+        {
+          fromChain: POLYGON,
+          fromToken: l2TokensForWeth[POLYGON],
+          toChain: OPTIMISM,
+          toToken: l2TokensForUsdc[OPTIMISM],
+          bidirectional: false,
+        },
+      ];
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          allowedSwapRoutes: swapRoutes,
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false, // simMode
+        false // prioritizeUtilization
+      );
+
+      expect(
+        await _inventoryClient.isSwapSupported(
+          toAddressType(l2TokensForWeth[POLYGON], POLYGON),
+          toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM),
+          POLYGON,
+          OPTIMISM
+        )
+      ).to.be.true;
+      // Should not throw:
+      await _inventoryClient.determineRefundChainId(sampleDepositData);
+    });
+
+    it("allows swap routes to be defined for all chains", async function () {
+      const swapRoutes: SwapRoute[] = [
+        {
+          fromChain: "ALL",
+          fromToken: l2TokensForWeth[POLYGON],
+          toChain: "ALL",
+          toToken: l2TokensForUsdc[OPTIMISM],
+          bidirectional: false,
+        },
+      ];
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          allowedSwapRoutes: swapRoutes,
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false, // simMode
+        false // prioritizeUtilization
+      );
+      expect(
+        await _inventoryClient.isSwapSupported(
+          toAddressType(l2TokensForWeth[POLYGON], POLYGON),
+          toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM),
+          POLYGON,
+          OPTIMISM
+        )
+      ).to.be.true;
+      // Should not throw:
+      await _inventoryClient.determineRefundChainId(sampleDepositData);
     });
 
     it("token config is not defined", async function () {

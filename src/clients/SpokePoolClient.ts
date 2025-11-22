@@ -179,29 +179,20 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       const at = "SpokePoolClient#removeEvent";
       const eventIdx = this._queryableEventNames().indexOf(event.event);
       const pendingEvents = this.#pendingEvents[eventIdx];
-      const { event: eventName, blockNumber, blockHash, transactionHash, transactionIndex, logIndex } = event;
+      const { event: eventName, blockNumber, blockHash, transactionHash } = event;
 
       // First check for removal from any pending events.
-      const pendingEventIdx = pendingEvents.findIndex(
-        (pending) =>
-          pending.logIndex === logIndex &&
-          pending.transactionIndex === transactionIndex &&
-          pending.transactionHash === transactionHash &&
-          pending.blockHash === blockHash
-      );
-
-      let handled = false;
-      if (pendingEventIdx !== -1) {
-        // Drop the relevant event.
-        pendingEvents.splice(pendingEventIdx, 1);
-        handled = true;
-
-        this.logger.debug({
-          at: "SpokePoolClient#removeEvent",
-          message: `Removed 1 pre-ingested ${this.#chain} ${eventName} event for block ${blockNumber}.`,
-          event,
-        });
-      }
+      let removed = false;
+      let removedEventIdx: number;
+      do {
+        removedEventIdx = pendingEvents.findIndex(({ blockHash }) => blockHash === event.blockHash);
+        if (removedEventIdx !== -1) {
+          removed = true;
+          pendingEvents.splice(removedEventIdx, 1); // Drop the relevant event.
+          const message = `Removed pre-ingested ${this.#chain} ${eventName} event for block ${blockNumber}.`;
+          this.logger.debug({ at, message, event });
+        }
+      } while (removedEventIdx !== -1);
 
       // Back out any events that were previously ingested via update(). This is best-effort and may help to save the
       // relayer from filling a deposit where it must wait for additional deposit confirmations. Note that this is
@@ -211,12 +202,13 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         const { depositId } = event.args;
         assert(isDefined(depositId));
 
-        const result = Object.entries(this.depositHashes).find(([, deposit]) => deposit.txnRef === transactionHash);
-        if (isDefined(result)) {
-          const [depositKey, deposit] = result;
-          delete this.depositHashes[depositKey];
-          handled = true;
-          this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+        const deposits = Object.entries(this.depositHashes).filter(([, deposit]) => deposit.txnRef === transactionHash);
+        if (deposits.length > 0) {
+          deposits.forEach(([depositKey, deposit]) => {
+            delete this.depositHashes[depositKey];
+            removed = true;
+            this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+          });
         } else {
           this.logger.warn({
             at,
@@ -232,12 +224,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       } else {
         // Retaining any remaining event types should be non-critical for relayer operation. They may
         // produce sub-optimal decisions, but should not affect the correctness of relayer operation.
-        handled = true;
+        removed = true;
         const message = `Detected re-org affecting pre-ingested ${this.#chain} ${eventName} events. Ignoring.`;
         this.logger.debug({ at, message, transactionHash, blockHash });
       }
 
-      return handled;
+      return removed;
     }
 
     async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {

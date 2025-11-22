@@ -71,10 +71,10 @@ function logFromEvent(event: Pick<EventWithData, "slot" | "program" | "signature
 }
 
 /**
- * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
+ * Aggregate utils/scrapeEvents for a series of event names and submit them to the parent process.
+ * @param eventsClient SVM CPI events client instance.
  * @param eventNames The array of events to be queried.
- * @param opts Options to configure event scraping behaviour.
+ * @param opts Options to configure event scraping behaviour, including the target block number.
  * @returns void
  */
 async function scrapeEvents(
