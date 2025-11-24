@@ -693,14 +693,17 @@ export class ProfitClient {
       this.tokenPrices[address] ??= bnZero;
     });
 
-    const resolveTokenPrice = (address: string, price: number): number =>
-      price || Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]) || 0;
-
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
-      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => {
-        this.tokenPrices[address] = toBNWei(resolveTokenPrice(address, price));
+      // If user defined a price for token, skip external price lookup.
+      const tokenAddrsToQuery = tokenAddrs.filter((address) => !process.env[`RELAYER_TOKEN_PRICE_${address}`]);
+      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrsToQuery, "usd");
+      tokenAddrs.forEach((address) => {
+        const hasExternalPrice = tokenAddrsToQuery.includes(address);
+        const price = hasExternalPrice
+          ? tokenPrices.find(({ address: _address }) => _address === address).price
+          : Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]);
+        this.tokenPrices[address] = toBNWei(price);
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
