@@ -56,7 +56,8 @@ export class TokenClient {
     readonly relayerSvmAddress: SvmAddress,
     spokePoolClients: { [chainId: number]: SpokePoolClient },
     readonly hubPoolClient: HubPoolClient,
-    readonly additionalL1Tokens: EvmAddress[] = []
+    readonly additionalL1Tokens: EvmAddress[] = [],
+    readonly additionalL2Tokens: { [chainId: number]: Address[] } = {}
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.profiler = new Profiler({ at: "TokenClient", logger });
@@ -291,6 +292,19 @@ export class TokenClient {
           args: [this.relayerEvmAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
         });
       });
+
+      // Add additional L2 tokens to the balances and allowances.
+      if (isDefined(this.additionalL2Tokens[chainId])) {
+        this.additionalL2Tokens[chainId].forEach((token) => {
+          const contract = new Contract(token.toNative(), ERC20.abi, spokePoolClient.spokePool.signer);
+          balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
+          allowances.push({
+            contract,
+            method: "allowance",
+            args: [this.relayerEvmAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
+          });
+        });
+      }
 
       const calls = [...balances, ...allowances];
       const results = await sdkUtils.aggregate(multicall3, calls);
