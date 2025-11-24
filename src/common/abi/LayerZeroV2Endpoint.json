@@ -63,7 +63,7 @@
       },
       {
         "type": "bytes",
-        "name":"_message"
+        "name": "_message"
       },
       {
         "type": "bytes",
