@@ -166,9 +166,7 @@ async function listen(
 
         const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
         if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
-          if (!postEvents(quorumEvents)) {
-            abortController.abort();
-          }
+          abortController.abort();
         }
       }
     } catch (err: unknown) {
