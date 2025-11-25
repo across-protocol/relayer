@@ -20,7 +20,6 @@ import {
 import { processEvent, TransferTokenParams } from "../utils";
 import {
   getCctpV2TokenMessenger,
-  getCctpV2TokenMinter,
   getV2DepositForBurnMaxFee,
   CCTPV2_FINALITY_THRESHOLD_STANDARD,
 } from "../../utils/CCTPUtils";
@@ -42,9 +41,8 @@ export class UsdcCCTPBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: tokenMinterAddress } = getCctpV2TokenMinter(hubChainId);
     const { address: l1Address, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
-    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(tokenMinterAddress)]);
+    super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
     assert(
       getCctpDomainForChainId(l2chainId) !== CCTP_NO_DOMAIN && getCctpDomainForChainId(hubChainId) !== CCTP_NO_DOMAIN,
       "Unknown CCTP domain ID"
