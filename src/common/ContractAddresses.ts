@@ -633,9 +633,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    cctpV2TokenMinter: {
-      address: "0xb43db544E2c27092c107639Ad201b3dEfAbcF192",
-    },
     atomicDepositor: {
       address: "0xdf87d6eFd856D6145Fcd387252cefD12868AC593",
       abi: ATOMIC_DEPOSITOR_ABI,
