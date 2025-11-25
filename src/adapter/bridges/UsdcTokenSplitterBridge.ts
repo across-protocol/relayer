@@ -1,5 +1,5 @@
 import { Signer } from "ethers";
-import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
+import { CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
@@ -36,13 +36,14 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       l1Token,
       logger
     );
+    const cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
 
     super(l2chainId, hubChainId, l1Signer, [
-      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
+      cctpBridge.l1Gateways[0], // The USDC CCTP Bridge only has a single L1 Gateway.
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
-    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
+    this.cctpBridge = cctpBridge;
     this.canonicalBridge = canonicalBridge;
   }
 
