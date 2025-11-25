@@ -190,6 +190,9 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    cctpV2TokenMinter: {
+      address: "0xfd78EE919681417d192449715b2594ab58f5D002",
+    },
     scrollRelayMessenger: {
       address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
       abi: SCROLL_RELAY_MESSENGER_ABI,
