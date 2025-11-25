@@ -1084,7 +1084,8 @@ const generateSwapRoutes = () => {
 
   return Object.fromEntries(
     swapChains.map((destinationChainId) => {
-      const { originChainId, inputTokenSymbol } = overrides[destinationChainId] ?? defaults;
+      const { originChainId } = overrides[destinationChainId] ?? defaults;
+      const { inputTokenSymbol } = overrides[destinationChainId] ?? defaults;
       const inputToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[inputTokenSymbol].addresses[originChainId]);
 
       const swapRoute = {
