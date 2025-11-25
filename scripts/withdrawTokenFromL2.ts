@@ -22,27 +22,43 @@ import { MultiCallerClient } from "../src/clients";
 import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
-  string: ["amount", "chainId"],
+  string: ["amount", "chainId", "token"],
   boolean: ["sendTx"],
 });
 
 // Example run:
-// ts-node ./scripts/withdrawUsdcFromMonad.ts --chainId 143 --amount 3 --wallet gckms --keys bot1
-// ts-node ./scripts/withdrawUsdcFromMonad.ts --chainId 8453 --amount 5 --sim  # simulation mode (Base)
-// ts-node ./scripts/withdrawUsdcFromMonad.ts --chainId 137 --amount 2
+// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
+// ts-node ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
+// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
 
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
-const USDC_L1_ADDRESS = TOKEN_SYMBOLS_MAP.USDC.addresses[MAINNET_CHAIN_ID];
+
+// Supported tokens
+const SUPPORTED_TOKENS = ["USDC", "USDT"] as const;
+type SupportedToken = typeof SUPPORTED_TOKENS[number];
 
 async function run(): Promise<void> {
   // Validate arguments
+  if (!args.token) {
+    throw new Error(
+      `Define \`token\` as the token symbol to withdraw (e.g., --token USDC or --token USDT). Supported tokens: ${SUPPORTED_TOKENS.join(", ")}`
+    );
+  }
+
+  const tokenSymbol = args.token.toUpperCase() as SupportedToken;
+  if (!SUPPORTED_TOKENS.includes(tokenSymbol)) {
+    throw new Error(
+      `Unsupported token: ${tokenSymbol}. Supported tokens: ${SUPPORTED_TOKENS.join(", ")}`
+    );
+  }
+
   if (!args.chainId) {
     throw new Error(
       "Define `chainId` as the source L2 chain ID (e.g., --chainId 143 for Monad, --chainId 8453 for Base)"
     );
   }
   if (!args.amount) {
-    throw new Error("Define `amount` as the amount of USDC to withdraw (e.g., --amount 3 for 3 USDC)");
+    throw new Error(`Define \`amount\` as the amount of ${tokenSymbol} to withdraw (e.g., --amount 3 for 3 ${tokenSymbol})`);
   }
 
   const l2ChainId = Number(args.chainId);
@@ -58,11 +74,11 @@ async function run(): Promise<void> {
     throw new Error("Amount must be a positive number");
   }
 
-  // Default to not executing. Only execute if --sim false is explicitly set
+  // Default to not executing. Only execute if --sendTx is explicitly set
   const sendTransactions = args.sendTx === true;
 
   const l2ChainName = getNetworkName(l2ChainId);
-  console.log(`🚀 Withdrawing USDC from ${l2ChainName} (Chain ID: ${l2ChainId}) to Mainnet`);
+  console.log(`🚀 Withdrawing ${tokenSymbol} from ${l2ChainName} (Chain ID: ${l2ChainId}) to Mainnet`);
 
   // Initialize logger
   const logger = winston.createLogger({
@@ -81,40 +97,50 @@ async function run(): Promise<void> {
   const mainnetSigner = baseSigner.connect(await getProvider(MAINNET_CHAIN_ID));
 
   // Get token addresses
-  const l1Token = EvmAddress.from(USDC_L1_ADDRESS);
+  const tokenInfo = TOKEN_SYMBOLS_MAP[tokenSymbol];
+  if (!tokenInfo) {
+    throw new Error(`Token ${tokenSymbol} not found in TOKEN_SYMBOLS_MAP`);
+  }
+
+  const l1TokenAddress = tokenInfo.addresses[MAINNET_CHAIN_ID];
+  if (!l1TokenAddress) {
+    throw new Error(`${tokenSymbol} not found on Mainnet`);
+  }
+
+  const l1Token = EvmAddress.from(l1TokenAddress);
   const l2Token = getRemoteTokenForL1Token(l1Token, l2ChainId, MAINNET_CHAIN_ID);
   if (!isDefined(l2Token)) {
-    throw new Error(`USDC not found on ${l2ChainName} (chain ID: ${l2ChainId})`);
+    throw new Error(`${tokenSymbol} not found on ${l2ChainName} (chain ID: ${l2ChainId})`);
   }
 
   const l2TokenInfo = getTokenInfo(l2Token, l2ChainId);
 
-  // Convert amount to token decimals (USDC has 6 decimals)
+  // Convert amount to token decimals
   const amountInWei = parseUnits(withdrawAmount.toString(), l2TokenInfo.decimals);
   const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
 
   // Check balance on L2
-  const usdcContract = new Contract(l2Token.toNative(), ERC20.abi, l2Signer);
-  const balance = await usdcContract.balanceOf(signerAddr);
+  const tokenContract = new Contract(l2Token.toNative(), ERC20.abi, l2Signer);
+  const balance = await tokenContract.balanceOf(signerAddr);
   const balanceFormatted = formatter(balance.toString());
 
-  console.log(`\n📊 Current USDC balance on ${l2ChainName}: ${balanceFormatted} USDC`);
-  console.log(`💸 Amount to withdraw: ${formatter(amountInWei.toString())} USDC`);
+  console.log(`\n📊 Current ${tokenSymbol} balance on ${l2ChainName}: ${balanceFormatted} ${tokenSymbol}`);
+  console.log(`💸 Amount to withdraw: ${formatter(amountInWei.toString())} ${tokenSymbol}`);
 
   if (balance.lt(amountInWei)) {
     throw new Error(
-      `Insufficient balance! You have ${balanceFormatted} USDC on ${l2ChainName}, but trying to withdraw ${formatter(
+      `Insufficient balance! You have ${balanceFormatted} ${tokenSymbol} on ${l2ChainName}, but trying to withdraw ${formatter(
         amountInWei.toString()
-      )} USDC`
+      )} ${tokenSymbol}`
     );
   }
 
   // Determine which L2 bridge to use
-  logger.info(`Determining L2 bridge for ${l2ChainName}...`);
+  logger.info(`Determining L2 bridge for ${tokenSymbol} on ${l2ChainName}...`);
   const BridgeConstructor = CUSTOM_L2_BRIDGE[l2ChainId]?.[l1Token.toNative()] ?? CANONICAL_L2_BRIDGE[l2ChainId];
   if (!isDefined(BridgeConstructor)) {
     throw new Error(
-      `No L2 bridge configured for USDC on ${l2ChainName} (chain ID: ${l2ChainId}). Check CUSTOM_L2_BRIDGE and CANONICAL_L2_BRIDGE in Constants.ts`
+      `No L2 bridge configured for ${tokenSymbol} on ${l2ChainName} (chain ID: ${l2ChainId}). Check CUSTOM_L2_BRIDGE and CANONICAL_L2_BRIDGE in Constants.ts`
     );
   }
 
@@ -137,8 +163,8 @@ async function run(): Promise<void> {
   console.log("\n📍 Withdrawal Details:");
   console.log(`   From: ${l2ChainName} (Chain ID: ${l2ChainId})`);
   console.log(`   To: Mainnet (Chain ID: ${MAINNET_CHAIN_ID})`);
-  console.log("   Token: USDC");
-  console.log(`   Amount: ${formatter(amountInWei.toString())} USDC`);
+  console.log(`   Token: ${tokenSymbol}`);
+  console.log(`   Amount: ${formatter(amountInWei.toString())} ${tokenSymbol}`);
   console.log(`   Recipient: ${signerAddr}`);
   console.log(`   Bridge: ${BridgeConstructor.name}`);
 
@@ -152,7 +178,7 @@ async function run(): Promise<void> {
     });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
     console.log(
-      `   Example: yarn ts-node ./scripts/withdrawUsdcFromL2.ts --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
+      `   Example: yarn ts-node ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
     );
     return;
   }
@@ -194,3 +220,4 @@ if (require.main === module) {
       process.exit(1);
     });
 }
+
