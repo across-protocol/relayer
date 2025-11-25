@@ -147,7 +147,6 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         // nb. This condition may be indicative of re-org.
         // Some chains have sub-second block times, so multiple blocks may share the same timestamp.
         if ((this.isUpdated && blockNumber <= this.#pendingBlockNumber) || currentTime < this.#pendingCurrentTime) {
-          console.log(`xxx ${this.chainId} block update (${blockNumber}) is out of order (${this.#pendingBlockNumber} >= ${blockNumber}).`);
           this.logger.warn({
             at,
             message: "Received out-of-order block update.",
