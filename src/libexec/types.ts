@@ -7,15 +7,18 @@ export type ScraperOpts = {
   filterArgs?: { [event: string]: string[] }; // Event-specific filter criteria to apply.
 };
 
+type BlockUpdate = {
+  blockNumber: number;
+  currentTime: number;
+};
+
 type EventRemoved = {
   event: string;
 };
 
 type EventsAdded = {
-  blockNumber: number;
-  currentTime: number;
   nEvents: number; // Number of events.
   data: string;
 };
 
-export type ListenerMessage = EventsAdded | EventRemoved;
+export type ListenerMessage = BlockUpdate | EventsAdded | EventRemoved;
