@@ -149,7 +149,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         if ((this.isUpdated && blockNumber <= this.#pendingBlockNumber) || currentTime < this.#pendingCurrentTime) {
           this.logger.warn({
             at,
-            message: "Received out-of-order block update.",
+            message: "Received out-of-order block update on ${this.#chain}.",
             blockNumber: { current: this.#pendingBlockNumber, new: blockNumber },
             currentTime: { current: this.#pendingCurrentTime, new: currentTime },
           });
