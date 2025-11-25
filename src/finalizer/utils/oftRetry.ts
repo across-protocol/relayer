@@ -23,7 +23,7 @@ import {
   toAddressType,
   TOKEN_SYMBOLS_MAP,
 } from "../../utils";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { AddressesToFinalize, CrossChainMessage, FinalizerPromise } from "../types";
 
 const OFT_RETRY_TOKENS = ["USDT"];
 
@@ -35,7 +35,8 @@ const OFT_RETRY_TOKENS = ["USDT"];
  */
 export async function oftRetryFinalizer(
   logger: winston.Logger,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  addressesToFinalize: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient), "Cannot retry LZ messages on non-EVM networks.");
   const srcProvider = spokePoolClient.spokePool.provider;
@@ -45,14 +46,22 @@ export async function oftRetryFinalizer(
     to: spokePoolClient.latestHeightSearched,
     maxLookBack: spokePoolClient.eventSearchConfig.maxLookBack,
   };
-  const promises = [getSrcOftMessages(spokePoolClient.chainId, searchConfig, srcProvider)];
-  OFT_RETRY_TOKENS.map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[spokePoolClient.chainId])
-    .filter(isDefined)
-    .forEach((address) =>
-      promises.push(OFT.getOFTSent(spokePoolClient.chainId, EvmAddress.from(address), searchConfig, srcProvider))
-    );
 
-  const deposits = (await Promise.all(promises)).flat();
+  const senderAddresses = Array.from(addressesToFinalize.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toNative());
+  const getDeposits = async () => {
+    const deposits = await Promise.all(
+      OFT_RETRY_TOKENS.map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[spokePoolClient.chainId])
+        .filter(isDefined)
+        .map((address) => OFT.getOFTSent(spokePoolClient.chainId, EvmAddress.from(address), searchConfig, srcProvider))
+    );
+    return deposits.flat().filter(({ fromAddress }) => senderAddresses.includes(fromAddress));
+  };
+
+  const deposits = (
+    await Promise.all([getSrcOftMessages(spokePoolClient.chainId, searchConfig, srcProvider), getDeposits()])
+  ).flat();
 
   // To avoid rate-limiting, chunk API queries.
   const chunkSize = Number(process.env["LZ_API_CHUNK_SIZE"] ?? 8);

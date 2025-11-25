@@ -47,6 +47,14 @@ export type LzDestinationTransactionDetails = { status: string; failedTx: Transa
 
 export type LzBridgeEvent = SortableEvent;
 
+type OFTSent = SortableEvent & {
+  guid: string;
+  fromAddress: string;
+  dstEid: number;
+  amountSendLD: BigNumber;
+  amountReceivedLd: BigNumber;
+};
+
 type TransactionOutcome = {
   txHash: string;
   txError: string;
@@ -190,7 +198,7 @@ export async function getOFTSent(
   token: Address,
   searchConfig: EventSearchConfig,
   provider: Provider
-): Promise<SortableEvent[]> {
+): Promise<OFTSent[]> {
   const oftAddr = EVM_OFT_MESSENGERS.get(token.toNative())?.get(chainId);
   if (!oftAddr) {
     return [];
@@ -199,5 +207,5 @@ export async function getOFTSent(
   const abi = new ethersUtils.Interface(LZEndpoint);
   const oftAdapter = new Contract(oftAddr.toNative(), abi, provider);
   const filter = oftAdapter.filters.OFTSent();
-  return (await paginatedEventQuery(oftAdapter, filter, searchConfig)).map(spreadEventWithBlockNumber);
+  return (await paginatedEventQuery(oftAdapter, filter, searchConfig)).map(spreadEventWithBlockNumber) as OFTSent[];
 }
