@@ -1,5 +1,5 @@
 import { Signer } from "ethers";
-import { CONTRACT_ADDRESSES, CANONICAL_BRIDGE } from "../../common";
+import { CANONICAL_BRIDGE } from "../../common";
 import { UsdcCCTPBridge } from "./UsdcCCTPBridge";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import {
@@ -12,6 +12,7 @@ import {
   EvmAddress,
   Address,
   winston,
+  getCctpV2TokenMinter,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
@@ -37,8 +38,9 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       logger
     );
 
+    const { address: l1TokenMinter } = getCctpV2TokenMinter(hubChainId);
     super(l2chainId, hubChainId, l1Signer, [
-      EvmAddress.from(CONTRACT_ADDRESSES[hubChainId].cctpTokenMessenger.address),
+      EvmAddress.from(l1TokenMinter),
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
