@@ -1,6 +1,6 @@
 import { ConfigStoreClient, ProfitClient } from "../src/clients"; // Tested
 import { L1Token } from "../src/interfaces";
-import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, toAddressType } from "../src/utils";
+import { bnZero, TOKEN_SYMBOLS_MAP, toAddressType, toAddressType, Address, bnOne } from "../src/utils";
 import { expect, ethers, createSpyLogger, hubPoolFixture, deployConfigStore, randomAddress, toBNWei } from "./utils";
 import { MockHubPoolClient } from "./mocks";
 
@@ -25,6 +25,10 @@ class ProfitClientWithMockPriceClient extends ProfitClient {
       this.tokenPrices[address] = toBNWei(tokenPrices[address]);
     });
   }
+
+  getRemappedTokenSymbol(token: string): string {
+    return this._getRemappedTokenSymbol(token);
+  }
 }
 
 describe("ProfitClient: Price Retrieval", async () => {
@@ -32,6 +36,7 @@ describe("ProfitClient: Price Retrieval", async () => {
   const { spyLogger } = createSpyLogger();
   let hubPoolClient: MockHubPoolClient;
   let profitClient: ProfitClientWithMockPriceClient; // tested
+  let relayerAddress: Address;
 
   beforeEach(async function () {
     const [owner] = await ethers.getSigners();
@@ -45,7 +50,7 @@ describe("ProfitClient: Price Retrieval", async () => {
     await hubPoolClient.update();
 
     mainnetTokens.forEach((token) => hubPoolClient.addL1Token(token));
-    const relayerAddress = toAddressType(randomAddress(), hubPoolClient.chainId);
+    relayerAddress = toAddressType(randomAddress(), hubPoolClient.chainId);
     profitClient = new ProfitClientWithMockPriceClient(
       spyLogger,
       hubPoolClient,
@@ -69,6 +74,25 @@ describe("ProfitClient: Price Retrieval", async () => {
         expect(profitClient.getPriceOfToken(toAddressType(token, hubPoolClient.chainId).toEvmAddress()).gt(bnZero)).to
           .be.true
     );
+  });
+
+  it("Gets pegged token symbols", async () => {
+    profitClient = new ProfitClientWithMockPriceClient(
+      spyLogger,
+      hubPoolClient,
+      {},
+      [],
+      relayerAddress,
+      relayerAddress,
+      bnZero,
+      false,
+      bnOne,
+      bnOne,
+      bnZero,
+      [],
+      { USDC: new Set(["USDH"]) } // Pegged token symbols we are testing.
+    );
+    expect(profitClient.getRemappedTokenSymbol("USDH")).to.equal("USDC");
   });
 
   it("Correctly resolves addresses for gas token symbols", async () => {

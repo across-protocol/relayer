@@ -486,7 +486,7 @@ export class Refiller {
     // By default, sweep the entire USDC balance of the base signer to HyperEVM USDH.
     const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
 
-    if (amountToTransfer.gt(bnZero)) {
+    if (amountToTransfer.gt(this.config.minUsdhRebalanceAmount)) {
       this.clients.multiCallerClient.enqueueTransaction({
         contract: usdc,
         chainId: CHAIN_IDs.ARBITRUM,
