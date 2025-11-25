@@ -12,7 +12,6 @@ import {
   EvmAddress,
   Address,
   winston,
-  getCctpV2TokenMinter,
 } from "../../utils";
 import { TransferTokenParams } from "../utils";
 
@@ -37,14 +36,14 @@ export class UsdcTokenSplitterBridge extends BaseBridgeAdapter {
       l1Token,
       logger
     );
+    const cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
 
-    const { address: l1TokenMinter } = getCctpV2TokenMinter(hubChainId);
     super(l2chainId, hubChainId, l1Signer, [
-      EvmAddress.from(l1TokenMinter),
+      cctpBridge.l1Gateways[0], // The USDC CCTP Bridge only has a single L1 Gateway.
       canonicalBridge.l1Gateways[0], // Canonical Bridge should have a single L1 Gateway.
     ]);
 
-    this.cctpBridge = new UsdcCCTPBridge(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
+    this.cctpBridge = cctpBridge;
     this.canonicalBridge = canonicalBridge;
   }
 
