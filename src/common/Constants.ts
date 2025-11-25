@@ -1092,6 +1092,7 @@ const generateSwapRoutes = () => {
         ...defaults,
         ...overrides[destinationChainId],
         inputToken,
+        destinationChainId
       };
 
       return [destinationChainId, swapRoute];
