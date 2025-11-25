@@ -35,21 +35,21 @@ const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
 // Supported tokens
 const SUPPORTED_TOKENS = ["USDC", "USDT"] as const;
-type SupportedToken = typeof SUPPORTED_TOKENS[number];
+type SupportedToken = (typeof SUPPORTED_TOKENS)[number];
 
 async function run(): Promise<void> {
   // Validate arguments
   if (!args.token) {
     throw new Error(
-      `Define \`token\` as the token symbol to withdraw (e.g., --token USDC or --token USDT). Supported tokens: ${SUPPORTED_TOKENS.join(", ")}`
+      `Define \`token\` as the token symbol to withdraw (e.g., --token USDC or --token USDT). Supported tokens: ${SUPPORTED_TOKENS.join(
+        ", "
+      )}`
     );
   }
 
   const tokenSymbol = args.token.toUpperCase() as SupportedToken;
   if (!SUPPORTED_TOKENS.includes(tokenSymbol)) {
-    throw new Error(
-      `Unsupported token: ${tokenSymbol}. Supported tokens: ${SUPPORTED_TOKENS.join(", ")}`
-    );
+    throw new Error(`Unsupported token: ${tokenSymbol}. Supported tokens: ${SUPPORTED_TOKENS.join(", ")}`);
   }
 
   if (!args.chainId) {
@@ -58,7 +58,9 @@ async function run(): Promise<void> {
     );
   }
   if (!args.amount) {
-    throw new Error(`Define \`amount\` as the amount of ${tokenSymbol} to withdraw (e.g., --amount 3 for 3 ${tokenSymbol})`);
+    throw new Error(
+      `Define \`amount\` as the amount of ${tokenSymbol} to withdraw (e.g., --amount 3 for 3 ${tokenSymbol})`
+    );
   }
 
   const l2ChainId = Number(args.chainId);
@@ -220,4 +222,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-
