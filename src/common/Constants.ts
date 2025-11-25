@@ -1047,7 +1047,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
-  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
+  [CHAIN_IDs.MONAD]: toWei(100),
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
