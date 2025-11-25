@@ -695,14 +695,14 @@ export class ProfitClient {
 
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
-      // If user defined a price for token, skip external price lookup.
-      const tokenAddrsToQuery = tokenAddrs.filter((address) => !process.env[`RELAYER_TOKEN_PRICE_${address}`]);
+      // If user defined a fixed price for token, skip external price lookup.
+      const tokenAddrsToQuery = tokenAddrs.filter((address) => !process.env[`RELAYER_TOKEN_PRICE_FIXED_${address}`]);
       const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrsToQuery, "usd");
       tokenAddrs.forEach((address) => {
         const hasExternalPrice = tokenAddrsToQuery.includes(address);
         const price = hasExternalPrice
           ? tokenPrices.find(({ address: _address }) => _address === address).price
-          : Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]);
+          : Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) ?? 0;
         this.tokenPrices[address] = toBNWei(price);
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
