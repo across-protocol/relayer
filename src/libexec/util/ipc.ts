@@ -63,7 +63,7 @@ function post(message: ListenerMessage): boolean {
   }
 
   try {
-    process.send(message);
+    process.send(JSON.stringify(message));
   } catch {
     return false;
   }
