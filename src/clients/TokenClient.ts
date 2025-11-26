@@ -336,11 +336,7 @@ export class TokenClient {
       .map(({ chainId }) => chainId)
       .filter((chainId) => chainIds?.includes(chainId) ?? true);
 
-    const balanceInfo = await Promise.all(
-      chainIds
-        .filter((chainId) => isDefined(this.spokePoolManager.getClient(chainId)))
-        .map((chainId) => this.updateChain(chainId, tokenClientTokens))
-    );
+    const balanceInfo = await Promise.all(chainIds.map((chainId) => this.updateChain(chainId, tokenClientTokens)));
 
     balanceInfo.forEach((tokenData, idx) => {
       const chainId = chainIds[idx];
