@@ -650,9 +650,8 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
-              const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
               let symbol;
-              if (gasTokenAddressForChain) {
+              if (!isDefined(token)) {
                 symbol = getNativeTokenSymbol(chainId);
               } else {
                 const spokePoolClient = this.clients.spokePoolClients[chainId];
