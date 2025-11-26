@@ -154,7 +154,7 @@ export class Relayer {
     };
 
     await Promise.all([
-      this.updated % 10 === 0 || tokenShortfall ? updateTokenClient(): Promise.resolve(),
+      this.updated % 10 === 0 || tokenShortfall ? updateTokenClient() : Promise.resolve(),
       updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
       acrossApiClient.update(this.config.ignoreLimits),
     ]);
