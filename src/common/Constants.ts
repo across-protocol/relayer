@@ -1073,7 +1073,7 @@ const generateSwapRoutes = () => {
     originChainId: CHAIN_IDs.ARBITRUM,
     inputTokenSymbol: "WETH",
     outputToken: EvmAddress.from(ZERO_ADDRESS),
-    tradeType: "exactOutput",
+    tradeType: "minOutput",
   };
 
   // Can override one or more defaults for a given chain here.
