@@ -368,10 +368,6 @@ export function getCctpV2MessageTransmitter(chainId: number): { address?: string
   return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
 }
 
-export function getCctpV2TokenMinter(chainId: number): { address?: string } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMinter"];
-}
-
 /** ********************************************************************************************************************
  *
  * Internal functions and constants:

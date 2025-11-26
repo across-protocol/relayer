@@ -49,6 +49,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     #pendingEvents: Log[][];
     #pendingEventsRemoved: Log[];
 
+    #misorderedBlocks: number[] = [];
+
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
       this.#indexerPath = opts.path;
@@ -144,19 +146,14 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       if (BlockUpdateMessage.is(message)) {
         const { blockNumber, currentTime } = message;
 
-        // nb. This condition may be indicative of re-org.
+        // nb. This condition may be indicative of re-org, but is more likely out-of-order delivery.
         // Some chains have sub-second block times, so multiple blocks may share the same timestamp.
-        if ((this.isUpdated && blockNumber <= this.#pendingBlockNumber) || currentTime < this.#pendingCurrentTime) {
-          this.logger.warn({
-            at,
-            message: `Received out-of-order block update on ${this.#chain}.`,
-            blockNumber: { current: this.#pendingBlockNumber, new: blockNumber },
-            currentTime: { current: this.#pendingCurrentTime, new: currentTime },
-          });
+        if (this.isUpdated && (blockNumber <= this.#pendingBlockNumber || currentTime < this.#pendingCurrentTime)) {
+          this.#misorderedBlocks.push(blockNumber);
+        } else {
+          this.#pendingBlockNumber = blockNumber;
+          this.#pendingCurrentTime = currentTime;
         }
-
-        this.#pendingBlockNumber = blockNumber;
-        this.#pendingCurrentTime = currentTime;
         return;
       }
 
@@ -250,6 +247,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
+      const at = "SpokePoolClient#_update";
+
       if (this.#pendingBlockNumber === this.deploymentBlock) {
         return { success: false, reason: clients.UpdateFailureReason.NotReady };
       }
@@ -267,6 +266,16 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         pendingEvents.forEach(({ removed }) => assert(!removed));
         return pendingEvents.map(spreadEventWithBlockNumber);
       });
+
+      const misordered = this.#misorderedBlocks;
+      this.#misorderedBlocks = [];
+      if (misordered.length > 0) {
+        this.logger.debug({
+          at,
+          message: `Received ${misordered.length} out-of-order block updates since last ${this.#chain} update.`,
+          blockNumbers: misordered,
+        });
+      }
 
       return {
         success: true,
