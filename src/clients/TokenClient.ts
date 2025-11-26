@@ -332,9 +332,11 @@ export class TokenClient {
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
 
     const tokenClientTokens = this._getTokenClientTokens();
-    chainIds = Object.values(this.spokePoolManager.getSpokePoolClients())
-      .map(({ chainId }) => chainId)
-      .filter((chainId) => chainIds ? chainIds.includes(chainId) : true);
+
+    chainIds ??= Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => chainId);
+
+    // Filter supplied/retrieved chainIds for defined SpokePoolClients.
+    chainIds = chainIds.filter((chainId) => isDefined(this.spokePoolManager.getClient(chainId)));
 
     const balanceInfo = await Promise.all(chainIds.map((chainId) => this.updateChain(chainId, tokenClientTokens)));
 
