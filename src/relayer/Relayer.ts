@@ -143,14 +143,14 @@ export class Relayer {
       }
     }
 
-    const destinationChains =
-      this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
-
     // Most of the time there's no need to update the tokenClient.
     // Force update on a known token shortfall, or otherwise every nth update loop.
     const updateTokenClient = (): Promise<void> => {
+      const destinationChains =
+        this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
+
       tokenClient.clearTokenData();
-      return tokenClient.update();
+      return tokenClient.update(destinationChains);
     };
 
     await Promise.all([
