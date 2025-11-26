@@ -142,7 +142,10 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
+    const destinationChains =
+      this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
+
+    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update(destinationChains)]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
