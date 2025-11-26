@@ -136,7 +136,6 @@ export class Relayer {
       // Clear state from profit and token clients. These should start fresh on each iteration.
       profitClient.clearUnprofitableFills();
       tokenClient.clearTokenShortfall();
-      tokenClient.clearTokenData();
 
       await configStoreClient.update();
       if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
@@ -149,11 +148,13 @@ export class Relayer {
 
     // Most of the time there's no need to update the tokenClient.
     // Force update on a known token shortfall, or otherwise every nth update loop.
-    const updateTokenClient = async (): Promise<void> =>
-      this.updated % 10 === 0 || tokenShortfall ? tokenClient.update(destinationChains) : Promise.resolve();
+    const updateTokenClient = (): Promise<void> => {
+      tokenClient.clearTokenData();
+      return tokenClient.update();
+    };
 
     await Promise.all([
-      updateTokenClient(),
+      this.updated % 10 === 0 || tokenShortfall ? updateTokenClient(): Promise.resolve(),
       updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
       acrossApiClient.update(this.config.ignoreLimits),
     ]);
