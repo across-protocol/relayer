@@ -68,7 +68,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let inventoryInit = false;
 
   const apiUpdateInterval = 30; // seconds
-  scheduleTask(acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+  scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
 
   try {
     for (let run = 1; !abortController.signal.aborted; ++run) {
