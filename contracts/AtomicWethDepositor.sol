@@ -55,6 +55,8 @@ contract AtomicWethDepositor is Ownable, MultiCaller, Lockable {
 
     error InvalidBridgeFunction();
 
+    constructor() Ownable(msg.sender) {}
+
     ///////////////////////////////
     //     Internal Functions    //
     ///////////////////////////////
