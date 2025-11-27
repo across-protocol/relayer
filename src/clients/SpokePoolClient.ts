@@ -4,7 +4,7 @@ import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
 import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
-import { EventsAddedMessage, EventRemovedMessage } from "../utils/SuperstructUtils";
+import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
 
@@ -29,6 +29,7 @@ type MinGenericSpokePoolClient = {
   chainId: number;
   spokePoolAddress: Address | undefined;
   deploymentBlock: number;
+  isUpdated: boolean;
   _queryableEventNames: () => string[];
   eventSearchConfig: { from: number; to?: number; maxLookBack?: number };
   depositHashes: { [depositHash: string]: DepositWithBlock };
@@ -47,6 +48,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
     #pendingEvents: Log[][];
     #pendingEventsRemoved: Log[];
+
+    #misorderedBlocks: number[] = [];
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
@@ -140,12 +143,26 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         return;
       }
 
+      if (BlockUpdateMessage.is(message)) {
+        const { blockNumber, currentTime } = message;
+
+        // nb. This condition may be indicative of re-org, but is more likely out-of-order delivery.
+        // Some chains have sub-second block times, so multiple blocks may share the same timestamp.
+        if (this.isUpdated && (blockNumber <= this.#pendingBlockNumber || currentTime < this.#pendingCurrentTime)) {
+          this.#misorderedBlocks.push(blockNumber);
+        } else {
+          this.#pendingBlockNumber = blockNumber;
+          this.#pendingCurrentTime = currentTime;
+        }
+        return;
+      }
+
       if (!EventsAddedMessage.is(message)) {
         this.logger.warn({ at, message: "Received unexpected message from SpokePoolListener.", rawMessage: message });
         return;
       }
 
-      const { blockNumber, currentTime, nEvents, data } = message;
+      const { nEvents, data } = message;
       if (nEvents > 0) {
         const pendingEvents = JSON.parse(data, sdkUtils.jsonReviverWithBigNumbers);
 
@@ -165,9 +182,6 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           this.#pendingEvents[eventIdx].push(event);
         });
       }
-
-      this.#pendingBlockNumber = blockNumber;
-      this.#pendingCurrentTime = currentTime;
     }
 
     /**
@@ -233,6 +247,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     async _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate> {
+      const at = "SpokePoolClient#_update";
+
       if (this.#pendingBlockNumber === this.deploymentBlock) {
         return { success: false, reason: clients.UpdateFailureReason.NotReady };
       }
@@ -250,6 +266,16 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         pendingEvents.forEach(({ removed }) => assert(!removed));
         return pendingEvents.map(spreadEventWithBlockNumber);
       });
+
+      const misordered = this.#misorderedBlocks;
+      this.#misorderedBlocks = [];
+      if (misordered.length > 0) {
+        this.logger.debug({
+          at,
+          message: `Received ${misordered.length} out-of-order block updates since last ${this.#chain} update.`,
+          blockNumbers: misordered,
+        });
+      }
 
       return {
         success: true,

@@ -5,7 +5,13 @@ import { CHAIN_IDs } from "@across-protocol/constants";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { SpokeListener, EVMSpokePoolClient } from "../src/clients";
 import { Log } from "../src/interfaces";
-import { EventSearchConfig, sortEventsAscending, sortEventsAscendingInPlace } from "../src/utils";
+import {
+  bnOne,
+  EventSearchConfig,
+  getCurrentTime,
+  sortEventsAscending,
+  sortEventsAscendingInPlace,
+} from "../src/utils";
 import { ListenerMessage } from "../src/libexec/types";
 import { assertPromiseError, createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
 
@@ -57,13 +63,14 @@ describe("IndexedSpokePoolClient: Update", async function () {
     };
   };
 
-  let depositId: number;
+  let depositId: BigNumber;
   const getDepositEvent = (blockNumber: number, transactionHash?: string): Log => {
     const event = generateEvent("FundsDeposited", blockNumber, transactionHash);
+    depositId = depositId.add(bnOne);
     const args = {
       depositor: randomAddress(),
       recipient: randomAddress(),
-      depositId: depositId++,
+      depositId,
       inputToken: randomAddress(),
       destinationChainId: Math.ceil(Math.random() * 1e3),
       inputAmount: sdkUtils.bnOne,
@@ -98,12 +105,19 @@ describe("IndexedSpokePoolClient: Update", async function () {
    * process.send() to submit a message to the SpokePoolClient. In this test, the SpokePoolClient
    * instance is immediately accessible and the message handler callback is called directly.
    */
-  const postEvents = (blockNumber: number, currentTime: number, events: Log[]): void => {
+  const postEvents = (events: Log[]): void => {
+    const message: ListenerMessage = {
+      nEvents: events.length,
+      data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
+    };
+
+    spokePoolClient.indexerUpdate(JSON.stringify(message));
+  };
+
+  const postBlock = (blockNumber: number, currentTime: number): void => {
     const message: ListenerMessage = {
       blockNumber,
       currentTime,
-      nEvents: events.length,
-      data: JSON.stringify(sortEventsAscending(events), sdkUtils.jsonReplacerWithBigNumbers),
     };
 
     spokePoolClient.indexerUpdate(JSON.stringify(message));
@@ -124,7 +138,7 @@ describe("IndexedSpokePoolClient: Update", async function () {
     const searchConfig: EventSearchConfig | undefined = undefined;
     spokePoolClient = new MockSpokeListener(logger, spokePool, null, chainId, deploymentBlock, searchConfig);
     spokePoolClient.init({});
-    depositId = 1;
+    depositId = bnOne;
     currentTime = Math.round(Date.now() / 1000);
   });
 
@@ -135,7 +149,9 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, getCurrentTime());
+    postEvents(events);
+
     await spokePoolClient.update();
 
     expect(spokePoolClient.latestHeightSearched).to.equal(blockNumber);
@@ -167,7 +183,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
     const [droppedEvent] = events.splice(-2, 1); // Drop the 2nd-last event.
     removeEvent(droppedEvent);
 
@@ -186,7 +203,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
       events.push(getDepositEvent(blockNumber));
     }
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
 
     const [droppedEvent] = events;
     removeEvent(droppedEvent);
@@ -205,7 +223,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
     await spokePoolClient.update();
 
     let deposits = spokePoolClient.getDeposits();
@@ -230,7 +249,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
     await spokePoolClient.update();
 
     let deposits = spokePoolClient.getDeposits();
@@ -251,7 +271,8 @@ describe("IndexedSpokePoolClient: Update", async function () {
     }
     sortEventsAscendingInPlace(events);
 
-    postEvents(blockNumber, currentTime, events);
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
     await spokePoolClient.update();
 
     const depositRoutes = spokePoolClient.getDepositRoutes();
