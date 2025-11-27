@@ -1,7 +1,8 @@
 import { getBase64EncodedWireTransaction, KeyPairSigner, signTransactionMessageWithSigners } from "@solana/kit";
+import { updateOrAppendSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
 import { SVMSpokePoolClient } from "../../../../clients";
 import { AttestedCCTPMessage, isDepositForBurnEvent } from "../../../../utils/CCTPUtils";
-import { mapAsync, winston, SvmAddress } from "../../../../utils";
+import { winston, SvmAddress, isDefined } from "../../../../utils";
 import { arch } from "@across-protocol/sdk";
 
 /**
@@ -23,9 +24,10 @@ export async function finalizeCCTPV1MessagesSVM(
   hubChainId = 1
 ): Promise<string[]> {
   const svmProvider = solanaClient.svmEventsClient.getRpc();
-  return mapAsync(attestedMessages, async (message) => {
+  const finalizedTxns = [];
+  for (const message of attestedMessages) {
     const attestedCCTPMessage = attestedCCTPMessageToSvmAttestedCCTPMessage(message);
-    const receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
+    const _receiveMessageIx = await arch.svm.getCCTPV1ReceiveMessageTx(
       svmProvider,
       signer,
       attestedCCTPMessage,
@@ -33,6 +35,10 @@ export async function finalizeCCTPV1MessagesSVM(
       SvmAddress.from(message.recipient)
     );
 
+    const computeUnitAmount = process.env["SVM_COMPUTE_UNIT_OVERRIDE"];
+    const receiveMessageIx = isDefined(computeUnitAmount)
+      ? updateOrAppendSetComputeUnitLimitInstruction(Number(computeUnitAmount), _receiveMessageIx)
+      : _receiveMessageIx;
     if (simulate) {
       const result = await svmProvider
         .simulateTransaction(
@@ -43,17 +49,26 @@ export async function finalizeCCTPV1MessagesSVM(
         )
         .send();
       if (result.value.err) {
+        logger.warn({
+          at: `Finalizer#simulateSvmMessages:${solanaClient.chainId}`,
+          message: `Failed to simulate CCTP message ${message.log.transactionHash} ; log index ${message.log.logIndex}`,
+          error: result.value.err,
+          log: result.value.logs,
+        });
         throw new Error(result.value.err.toString());
       }
-      return "";
+      finalizedTxns.push("");
+      continue;
     }
 
     try {
       const signedTransaction = await signTransactionMessageWithSigners(receiveMessageIx);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
-      return await svmProvider
-        .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
-        .send();
+      finalizedTxns.push(
+        await svmProvider
+          .sendTransaction(encodedTransaction, { preflightCommitment: "confirmed", encoding: "base64" })
+          .send()
+      );
     } catch (err) {
       logger.error({
         at: `Finalizer#finalizeSvmMessages:${solanaClient.chainId}`,
@@ -62,7 +77,8 @@ export async function finalizeCCTPV1MessagesSVM(
       });
       throw err;
     }
-  });
+  }
+  return finalizedTxns;
 }
 
 export function attestedCCTPMessageToSvmAttestedCCTPMessage(

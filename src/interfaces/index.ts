@@ -8,6 +8,7 @@ export * from "./Error";
 export * from "./Report";
 export * from "./Arweave";
 export * from "./BundleData";
+export * from "./Hyperliquid";
 
 // Bridge interfaces
 export interface OutstandingTransfers {
@@ -71,6 +72,7 @@ export type RunningBalances = interfaces.RunningBalances;
 export type TokensBridged = interfaces.TokensBridged;
 export const { FillType, FillStatus } = interfaces;
 export type FillStatus = interfaces.FillStatus;
+export type TokenInfo = interfaces.TokenInfo;
 
 export type CachingMechanismInterface = interfaces.CachingMechanismInterface;
 export type PubSubMechanismInterface = interfaces.PubSubMechanismInterface;

@@ -21,10 +21,12 @@ export class CommonConfig {
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
   readonly arweaveGateway: ArweaveGatewayInterface;
+  readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
+  public fromBlockOverride: Record<number, number> = {};
   public addressFilter: Set<string>;
 
   constructor(env: ProcessEnv) {
@@ -40,6 +42,7 @@ export class CommonConfig {
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
       ARWEAVE_GATEWAY,
+      PEGGED_TOKEN_PRICES,
     } = env;
 
     const mergeConfig = <T>(config: T, envVar: string): T => {
@@ -84,6 +87,13 @@ export class CommonConfig {
     const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
     assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
     this.arweaveGateway = _arweaveGateway;
+
+    this.peggedTokenPrices = Object.fromEntries(
+      Object.entries(JSON.parse(PEGGED_TOKEN_PRICES ?? "{}")).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
+        pegTokenSymbol,
+        new Set(tokenSymbolsToPeg as string[]),
+      ])
+    );
   }
 
   /**
@@ -103,7 +113,7 @@ export class CommonConfig {
       const missing = chainIds.find((chainId) => !lookbackKeys.includes(chainId));
       if (missing) {
         const message = `Missing MAX_BLOCK_LOOK_BACK configuration for chainId ${missing}`;
-        logger.warn({ at: "RelayerConfig::validate", message });
+        logger.warn({ at: "Config::validate", message });
         this.maxBlockLookBack[missing] = 5000; // Revert to a safe default.
       }
     }
@@ -130,6 +140,12 @@ export class CommonConfig {
       if (isDefined(toBlock)) {
         assert(toBlock > 0, `TO_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
         this.toBlockOverride[chainId] = toBlock;
+      }
+      // Load any fromBlock overrides.
+      const fromBlock = Number(process.env[`FROM_BLOCK_OVERRIDE_${chainId}`]) || undefined;
+      if (isDefined(fromBlock)) {
+        assert(fromBlock > 0, `FROM_BLOCK_OVERRIDE_${chainId} must be greater than 0`);
+        this.fromBlockOverride[chainId] = fromBlock;
       }
     }
   }

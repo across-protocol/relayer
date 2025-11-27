@@ -3,7 +3,6 @@ import { AugmentedTransaction } from "../../clients";
 import {
   Address,
   EvmAddress,
-  Provider,
   assert,
   createFormatFunction,
   ConvertDecimals,
@@ -13,6 +12,7 @@ import {
   bnZero,
   EventSearchConfig,
   getTokenInfo,
+  fixedPointAdjustment,
 } from "../../utils";
 import { interfaces as sdkInterfaces } from "@across-protocol/sdk";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -27,15 +27,10 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   private sharedDecimals?: number;
   private readonly nativeFeeCap: BigNumber;
   private l2ToL1AmountConverter: (amount: BigNumber) => BigNumber;
+  private readonly feePct: BigNumber = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
 
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
     const translatedL2Token = getTranslatedTokenAddress(l1Token, hubChainId, l2chainId);
     assert(translatedL2Token.isEVM());
@@ -46,7 +41,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
 
     this.nativeFeeCap = OFT_FEE_CAP_OVERRIDES[this.l2chainId] ?? OFT_DEFAULT_FEE_CAP;
 
-    this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, l1Provider);
+    this.l1Bridge = new Contract(l1OftMessenger.toNative(), IOFT_ABI_FULL, l1Signer);
     this.l2Bridge = new Contract(l2OftMessenger.toNative(), IOFT_ABI_FULL, l2Signer);
 
     this.l2ChainEid = OFT.getEndpointId(l2chainId);
@@ -75,12 +70,16 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
     // We round `amount` to a specific precision to prevent rounding on the contract side. This way, we
     // receive the exact amount we sent in the transaction
     const roundedAmount = await this.roundAmountToSend(amount, this.l2TokenInfo.decimals);
+    const appliedFee = OFT.isStargateBridge(this.l2chainId)
+      ? roundedAmount.mul(this.feePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
+    const expectedOutputAmount = roundedAmount.sub(appliedFee);
     const sendParamStruct: OFT.SendParamStruct = {
       dstEid: this.l1ChainEid,
       to: OFT.formatToAddress(toAddress),
       amountLD: roundedAmount,
       // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
-      minAmountLD: roundedAmount,
+      minAmountLD: expectedOutputAmount,
       extraOptions: "0x",
       composeMsg: "0x",
       oftCmd: "0x",
@@ -169,6 +168,7 @@ export class OFTL2Bridge extends BaseL2BridgeAdapter {
   /**
    * Rounds send amount so that dust doesn't get subtracted from it in the OFT contract.
    * @param amount amount to round
+   * @param decimals token decimals to use for rounding
    * @returns amount rounded down
    */
   private async roundAmountToSend(amount: BigNumber, decimals: number): Promise<BigNumber> {

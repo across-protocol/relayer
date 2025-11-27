@@ -39,15 +39,10 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
       if (config.botModes.reportEnabled) {
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
+        await acrossMonitor.reportInvalidFills();
         await acrossMonitor.reportInvalidFillsRelatedToSvm();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
-      }
-
-      if (config.botModes.refillBalancesEnabled) {
-        await acrossMonitor.refillBalances();
-      } else {
-        logger.debug({ at: "Monitor#index", message: "Refiller disabled" });
       }
 
       if (config.botModes.balancesEnabled) {

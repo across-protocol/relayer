@@ -2,7 +2,7 @@ version: 2.1
 jobs:
   install:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:
@@ -25,7 +25,7 @@ jobs:
             - .yarn
   test:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     parallelism: 20
@@ -112,7 +112,7 @@ jobs:
             yarn test --bail $(cat /tmp/test-files)
   lint:
     docker:
-      - image: cimg/node:20.19.2
+      - image: cimg/node:22.18.0
     working_directory: ~/relayer-v2
     resource_class: medium+
     steps:

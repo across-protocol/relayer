@@ -17,6 +17,10 @@ import {
   assert,
   isEVMSpokePoolClient,
   isSignerWallet,
+  TOKEN_SYMBOLS_MAP,
+  EvmAddress,
+  Address,
+  Provider,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -75,9 +79,9 @@ export async function zkSyncFinalizer(
     .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
-  const candidates = await filterMessageLogs(wallet, l2Finalized);
+  const candidates = await filterMessageLogs(wallet, l1ChainId, l2Finalized);
   const withdrawalParams = await getWithdrawalParams(wallet, candidates);
-  const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams);
+  const txns = await prepareFinalizations(l1ChainId, l2ChainId, withdrawalParams, candidates);
 
   const withdrawals = candidates.map(({ l2TokenAddress, amountToReturn }) => {
     const { decimals, symbol } = getTokenInfo(l2TokenAddress, l2ChainId);
@@ -139,6 +143,7 @@ async function sortWithdrawals(
  */
 async function filterMessageLogs(
   wallet: zkWallet,
+  l1ChainId: number,
   tokensBridged: TokensBridged[]
 ): Promise<(TokensBridged & { withdrawalIdx: number })[]> {
   // For each token bridge event, store a unique log index for the event within the zksync transaction hash.
@@ -148,8 +153,20 @@ async function filterMessageLogs(
     return { ...tokenBridged, withdrawalIdx: logIndexesForMessage[i] };
   });
 
-  const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx }) => {
+  const ready = await sdkUtils.filterAsync(withdrawals, async ({ txnRef, withdrawalIdx, chainId, l2TokenAddress }) => {
     try {
+      // If the token is USDC, we need to avoid using the zksync-ethers SDK version < 6.20.0, which adds support
+      // for the custom USDC bridge that ZkStack uses. Specifically, the L2 Bridge for USDC withdrawals doesn't have
+      // a "l1SharedBridge" view method but instead has a "l1USDCBridge" view method.
+      if (withdrawalRequiresCustomUsdcBridge(l1ChainId, chainId, l2TokenAddress)) {
+        // The following code is copied from the zksync-ethers SDK but replaces the l1BridgeContract
+        // with the l1UsdcBridgeContract where we call isWithdrawalFinalized().
+        const { l2ToL1LogIndex } = await wallet._getWithdrawalL2ToL1Log(txnRef, withdrawalIdx);
+        const { id } = await wallet._providerL2().getLogProof(txnRef, l2ToL1LogIndex);
+        const { l1BatchNumber } = await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx);
+        const l1UsdcBridge = getSharedBridge(l1ChainId, chainId, l2TokenAddress, wallet._providerL1());
+        return !(await l1UsdcBridge.isWithdrawalFinalized(chainId, l1BatchNumber, id));
+      }
       return !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx));
     } catch (error: unknown) {
       if (error instanceof Error && error.message.includes("Log proof not found")) {
@@ -162,6 +179,13 @@ async function filterMessageLogs(
   return ready;
 }
 
+function withdrawalRequiresCustomUsdcBridge(l1ChainId: number, l2ChainId: number, l2TokenAddress: Address): boolean {
+  if (CONTRACT_ADDRESSES[l1ChainId]?.[`zkStackUSDCBridge_${l2ChainId}`] && CONTRACT_ADDRESSES[l2ChainId]?.usdcBridge) {
+    const l2Usdc = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId]);
+    return l2TokenAddress.eq(l2Usdc);
+  }
+  return false;
+}
 /**
  * @param wallet zkSync wallet instance.
  * @param msgLogs Array of txnRef and withdrawal index pairs.
@@ -213,19 +237,34 @@ async function prepareFinalization(
 async function prepareFinalizations(
   l1ChainId: number,
   l2ChainId: number,
-  withdrawalParams: zkSyncWithdrawalData[]
+  withdrawalParams: zkSyncWithdrawalData[],
+  tokensBridged: TokensBridged[]
 ): Promise<Multicall2Call[]> {
-  const sharedBridge = getSharedBridge(l1ChainId);
-
-  return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal) =>
-    prepareFinalization(withdrawal, l2ChainId, sharedBridge)
+  assert(
+    tokensBridged.length === withdrawalParams.length,
+    "Withdrawal params and tokens bridged must have the same length"
   );
+
+  return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal, idx) => {
+    const sharedBridge = getSharedBridge(l1ChainId, tokensBridged[idx].chainId, tokensBridged[idx].l2TokenAddress);
+    return prepareFinalization(withdrawal, l2ChainId, sharedBridge);
+  });
 }
 
-function getSharedBridge(l1ChainId: number): Contract {
-  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkStackSharedBridge;
+function getSharedBridge(
+  l1ChainId: number,
+  l2ChainId: number,
+  l2TokenAddress: Address,
+  l1Provider?: Provider
+): Contract {
+  const contract =
+    CONTRACT_ADDRESSES[l1ChainId]?.[
+      withdrawalRequiresCustomUsdcBridge(l1ChainId, l2ChainId, l2TokenAddress)
+        ? `zkStackUSDCBridge_${l2ChainId}`
+        : "zkStackSharedBridge"
+    ];
   if (!contract) {
     throw new Error(`zkStack shared bridge contract data not found for chain ${l1ChainId}`);
   }
-  return new Contract(contract.address, contract.abi);
+  return new Contract(contract.address, contract.abi, l1Provider);
 }

@@ -94,7 +94,7 @@ export async function polygonFinalizer(
 
 async function getPosClient(mainnetSigner: Signer): Promise<POSClient> {
   const from = await mainnetSigner.getAddress();
-  // Following from https://maticnetwork.github.io/matic.js/docs/pos
+  // Following from https://docs.polygon.technology/tools/matic-js/pos/client/
   use(Web3ClientPlugin);
   setProofApi("https://apis.matic.network/");
   const posClient = new POSClient();
@@ -147,8 +147,11 @@ async function getFinalizableTransactions(
       // one followed by a non-USDC one, the USDC 'logIndex' as far as building the payload is concerned
       // will be 0 and the non-USDC 'logIndex' will be 1. This is why we can't filter out USDC CCTP withdrawals
       // until after we've computed payloads.
-      if (l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId))) {
-        return { status: "USDC_CCTP_L2_WITHDRAWAL" };
+      if (
+        l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId)) ||
+        l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], chainId))
+      ) {
+        return { status: "ALT_L2_WITHDRAWAL" };
       }
 
       try {

@@ -5,18 +5,24 @@ import { L1Token } from "../../src/interfaces";
 export class MockTokenClient extends TokenClient {
   public override tokenData: { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } } =
     {};
-  public tokenShortfall: {
-    [chainId: number]: { [token: string]: { deposits: number[]; totalRequirement: BigNumber } };
+  public override tokenShortfall: {
+    [chainId: number]: { [token: string]: { deposits: BigNumber[]; totalRequirement: BigNumber } };
   } = {};
+  override unfilledDepositAmounts = {};
 
   setTokenData(chainId: number, token: Address, balance: BigNumber, allowance: BigNumber = bnZero): void {
     this.tokenData[chainId] ??= {};
     this.tokenData[chainId][token.toNative()] = { balance, allowance };
   }
 
-  setTokenShortFallData(chainId: number, token: Address, deposits: number[], totalRequirement: BigNumber): void {
+  setTokenShortFallData(chainId: number, token: Address, deposits: BigNumber[], totalRequirement: BigNumber[]): void {
     this.tokenShortfall[chainId] ??= {};
-    this.tokenShortfall[chainId][token.toNative()] = { deposits, totalRequirement };
+    this.tokenShortfall[chainId][token.toNative()] = {
+      deposits,
+      totalRequirement: totalRequirement.reduce((acc, curr) => acc.add(curr), bnZero),
+    };
+    this.unfilledDepositAmounts[chainId] ??= {};
+    this.unfilledDepositAmounts[chainId][token.toNative()] = totalRequirement;
   }
 
   getBalance(chainId: number, token: Address): BigNumber {

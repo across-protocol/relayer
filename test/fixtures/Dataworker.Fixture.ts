@@ -24,12 +24,13 @@ import {
 } from "../constants";
 
 import { Dataworker } from "../../src/dataworker/Dataworker"; // Tested
-import { BundleDataClient } from "../../src/clients";
+import { BundleDataClient, HubPoolClient } from "../../src/clients";
 import { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 import { DataworkerClients } from "../../src/dataworker/DataworkerClientHelper";
 import { MockConfigStoreClient, MockedMultiCallerClient, SimpleMockHubPoolClient } from "../mocks";
 import { EthersTestLibrary } from "../types";
 import { clients as sdkClients } from "@across-protocol/sdk";
+import { EvmAddress } from "../../src/utils";
 
 export { DataworkerConfig } from "../../src/dataworker/DataworkerConfig";
 
@@ -38,7 +39,7 @@ async function _constructSpokePoolClientsWithLookback(
   spokePoolChains: number[],
   spyLogger: winston.Logger,
   signer: SignerWithAddress,
-  hubPoolClient: sdkClients.HubPoolClient,
+  hubPoolClient: HubPoolClient,
   lookbackForAllChains?: number,
   deploymentBlocks?: { [chainId: number]: number }
 ) {
@@ -84,7 +85,7 @@ export async function setupDataworker(
   spokePoolClients: { [chainId: number]: sdkClients.SpokePoolClient };
   mockedConfigStoreClient: MockConfigStoreClient;
   configStoreClient: sdkClients.AcrossConfigStoreClient;
-  hubPoolClient: sdkClients.HubPoolClient;
+  hubPoolClient: HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;
@@ -174,10 +175,10 @@ export async function setupDataworker(
     hubPoolDeploymentBlock,
     hubPoolChainId
   );
-  hubPoolClient.mapTokenInfo(l1Token_1.address, "TEST");
-  hubPoolClient.mapTokenInfo(l1Token_2.address, "TEST");
-  hubPoolClient.mapTokenInfo(erc20_1.address, "TEST");
-  hubPoolClient.mapTokenInfo(erc20_2.address, "TEST");
+  hubPoolClient.mapTokenInfo(EvmAddress.from(l1Token_1.address), "TEST");
+  hubPoolClient.mapTokenInfo(EvmAddress.from(l1Token_2.address), "TEST");
+  hubPoolClient.mapTokenInfo(EvmAddress.from(erc20_1.address), "TEST");
+  hubPoolClient.mapTokenInfo(EvmAddress.from(erc20_2.address), "TEST");
 
   const multiCallerClient = new MockedMultiCallerClient(spyLogger); // leave out the gasEstimator for now.
 
@@ -313,7 +314,7 @@ export async function setupFastDataworker(
   spokePoolClients: { [chainId: number]: sdkClients.SpokePoolClient };
   mockedConfigStoreClient: MockConfigStoreClient;
   configStoreClient: sdkClients.AcrossConfigStoreClient;
-  hubPoolClient: sdkClients.HubPoolClient;
+  hubPoolClient: HubPoolClient;
   dataworkerInstance: Dataworker;
   spyLogger: winston.Logger;
   spy: sinon.SinonSpy;

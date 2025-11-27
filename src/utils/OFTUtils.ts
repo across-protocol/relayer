@@ -1,7 +1,22 @@
 import { OFT_NO_EID } from "@across-protocol/constants";
-import { BigNumber, BigNumberish, EvmAddress, PUBLIC_NETWORKS, assert, isDefined } from ".";
+import {
+  BigNumber,
+  BigNumberish,
+  EvmAddress,
+  PUBLIC_NETWORKS,
+  assert,
+  isDefined,
+  CHAIN_IDs,
+  EventSearchConfig,
+  Provider,
+  paginatedEventQuery,
+  spreadEventWithBlockNumber,
+  getSrcOftPeriphery,
+} from ".";
 import { BytesLike } from "ethers";
-import { EVM_OFT_MESSENGERS } from "../common/Constants";
+import axios from "axios";
+import { EVM_OFT_MESSENGERS } from "../common";
+import { SortableEvent } from "../interfaces";
 
 export type SendParamStruct = {
   dstEid: BigNumberish;
@@ -14,8 +29,27 @@ export type SendParamStruct = {
 };
 
 export type MessagingFeeStruct = {
-  nativeFee: BigNumberish;
+  nativeFee: BigNumber;
   lzTokenFee: BigNumberish;
+};
+
+export type LzTransactionDetails = { destination: LzDestinationTransactionDetails; pathway: Pathway };
+
+export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
+
+export type LzBridgeEvent = SortableEvent;
+
+type TransactionOutcome = {
+  txHash: string;
+  txError: string;
+  blockHash: string;
+  blockNumber: string;
+  revertReason: string;
+};
+
+type Pathway = {
+  srcEid: number;
+  dstEid: number;
 };
 
 /**
@@ -31,6 +65,16 @@ export function getEndpointId(chainId: number): number {
 }
 
 /**
+ * @param endpoint ID The OFT endpoint ID for the given chain.
+ * @returns The endpoint's corresponding chain ID.
+ * @throws If oftEid is not defined for a chain or equal to OFT_NO_EID.
+ */
+export function getChainIdFromEndpointId(eid: number): number {
+  const [chainId] = Object.entries(PUBLIC_NETWORKS).find(([, network]) => network.oftEid === eid);
+  return Number(chainId);
+}
+
+/**
  * @returns IOFT messenger for a given chain. Only supports EVM chains for now
  * @throws If EVM_OFT_MESSENGERS mapping doesn't have an entry for the l1Token - chainId combination
  */
@@ -38,6 +82,14 @@ export function getMessengerEvm(l1TokenAddress: EvmAddress, chainId: number): Ev
   const messenger = EVM_OFT_MESSENGERS.get(l1TokenAddress.toNative())?.get(chainId);
   assert(isDefined(messenger), `No OFT messenger configured for ${l1TokenAddress.toNative()} on chain ${chainId}`);
   return messenger;
+}
+
+/**
+ * @param chainId The chain Id of the network to check
+ * @returns If the input chain ID's OFT adapter requires payment in the input token.
+ */
+export function isStargateBridge(chainId: number): boolean {
+  return [CHAIN_IDs.PLASMA].includes(chainId);
 }
 
 /**
@@ -83,4 +135,33 @@ export function buildSimpleSendParamEvm(to: EvmAddress, dstEid: number, roundedA
     composeMsg: "0x",
     oftCmd: "0x",
   };
+}
+
+/**
+ * @notice Fetches destination chain transaction details for a outbound message.
+ * @param txHash Transaction hash of the outbound message on the origin chain.
+ * @returns Message data as outlined in these docs: https://docs.layerzero.network/v2/concepts/troubleshooting/debugging-messages#response-shape.
+ */
+export async function getLzTransactionDetails(txHash: string): Promise<LzTransactionDetails> {
+  const httpResponse = await axios.get<LzTransactionDetails>(`https://scan.layerzero-api.com/v1/messages/tx/${txHash}`);
+  const txDetails = httpResponse.data;
+  return txDetails;
+}
+
+/**
+ * @notice Fetches OFT messages initiated from a srcOft contract
+ * @param srcChainId Chain ID corresponding to the deployed srcOftMessenger.
+ * @param searchConfig Event search config to use on srcChainId.
+ * @param srcProvider ethers Provider instance for the srcChainId.
+ * @returns A list of SortableEvents corresponding to bridge events on srcChainId.
+ */
+export async function getSrcOftMessages(
+  srcChainId: number,
+  searchConfig: EventSearchConfig,
+  srcProvider: Provider
+): Promise<LzBridgeEvent[]> {
+  const srcOft = getSrcOftPeriphery(srcChainId).connect(srcProvider);
+
+  const messageInitiatedEvents = await paginatedEventQuery(srcOft, srcOft.filters.SponsoredOFTSend(), searchConfig);
+  return messageInitiatedEvents.map(spreadEventWithBlockNumber);
 }

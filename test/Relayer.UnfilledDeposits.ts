@@ -121,9 +121,9 @@ describe("Relayer: Unfilled Deposits", async function () {
 
     hubPoolClient = new SimpleMockHubPoolClient(spyLogger, hubPool, configStoreClient);
     await hubPoolClient.update();
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(l1Token.address, "L1Token1");
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_1.address, "L1Token1");
-    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(erc20_2.address, "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(l1Token.address), "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_1.address), "L1Token1");
+    (hubPoolClient as SimpleMockHubPoolClient).mapTokenInfo(EvmAddress.from(erc20_2.address), "L1Token1");
 
     spokePoolClient_1 = new EVMSpokePoolClient(
       spyLogger,
@@ -182,6 +182,7 @@ describe("Relayer: Unfilled Deposits", async function () {
       },
       {
         relayerTokens: [],
+        relayerDestinationTokens: {},
         minDepositConfirmations: defaultMinDepositConfirmations,
         acceptInvalidFills: false,
         sendingMessageRelaysEnabled: {},

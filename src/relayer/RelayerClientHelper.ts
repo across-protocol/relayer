@@ -2,7 +2,6 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
-  BundleDataClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -165,7 +164,15 @@ export async function constructRelayerClients(
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-  const tokenClient = new TokenClient(logger, signerAddr, svmAddress, spokePoolClients, hubPoolClient, relayerTokens);
+  const tokenClient = new TokenClient(
+    logger,
+    signerAddr,
+    svmAddress,
+    spokePoolClients,
+    hubPoolClient,
+    relayerTokens,
+    config.relayerDestinationTokens
+  );
 
   // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
   const enabledChainIds = (
@@ -185,20 +192,13 @@ export async function constructRelayerClients(
     config.relayerGasMultiplier,
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding,
-    relayerTokens
+    relayerTokens,
+    config.peggedTokenPrices
   );
   await profitClient.update();
 
   const monitoredAddresses = [signerAddr];
   const adapterManager = new AdapterManager(logger, spokePoolClients, hubPoolClient, monitoredAddresses);
-
-  const bundleDataClient = new BundleDataClient(
-    logger,
-    commonClients,
-    spokePoolClients,
-    configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
-  );
 
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
@@ -214,7 +214,6 @@ export async function constructRelayerClients(
     tokenClient,
     enabledChainIds,
     hubPoolClient,
-    bundleDataClient,
     adapterManager,
     crossChainTransferClient,
     !config.sendingTransactionsEnabled
