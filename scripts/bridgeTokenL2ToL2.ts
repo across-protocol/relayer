@@ -182,7 +182,7 @@ async function run(): Promise<void> {
   }
 
   // Initialize UsdcCCTPBridge directly for L2->L2 transfers
-  logger.info(`Initializing UsdcCCTPBridge for L2->L2 transfer...`);
+  logger.info("Initializing UsdcCCTPBridge for L2->L2 transfer...");
   const l2Bridge = new UsdcCCTPBridge(
     srcChainId,
     MAINNET_CHAIN_ID,
@@ -205,7 +205,7 @@ async function run(): Promise<void> {
   console.log(`   Token: ${tokenSymbol}`);
   console.log(`   Amount: ${formatter(amountInWei.toString())} ${tokenSymbol}`);
   console.log(`   Recipient: ${signerAddr}`);
-  console.log(`   Bridge: UsdcCCTPBridge`);
+  console.log("   Bridge: UsdcCCTPBridge");
 
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
@@ -259,4 +259,3 @@ if (require.main === module) {
       process.exit(1);
     });
 }
-

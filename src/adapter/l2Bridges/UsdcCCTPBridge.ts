@@ -32,7 +32,15 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   private readonly l2UsdcTokenAddress: EvmAddress;
   private readonly l2DstUsdcTokenAddress: EvmAddress;
 
-  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress, l2dstChainId?: number, l2dstSigner?: Signer) {
+  constructor(
+    l2chainId: number,
+    hubChainId: number,
+    l2Signer: Signer,
+    l1Signer: Signer,
+    l1Token: EvmAddress,
+    l2dstChainId?: number,
+    l2dstSigner?: Signer
+  ) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token, l2dstChainId, l2dstSigner);
 
     const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpV2TokenMessenger(l2chainId);
@@ -45,7 +53,9 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     this.l2UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2chainId]);
 
     if (isDefined(this.l2dstChainId) && isDefined(this.l2DstSigner)) {
-      const { address: l2DstTokenMessengerAddress, abi: l2DstTokenMessengerAbi } = getCctpV2TokenMessenger(this.l2dstChainId);
+      const { address: l2DstTokenMessengerAddress, abi: l2DstTokenMessengerAbi } = getCctpV2TokenMessenger(
+        this.l2dstChainId
+      );
       this.l2DstBridge = new Contract(l2DstTokenMessengerAddress, l2DstTokenMessengerAbi, this.l2DstSigner);
       this.l2DstUsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.l2dstChainId]);
     }
@@ -129,14 +139,8 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     );
     assert(l2SrcToken.eq(this.l2UsdcTokenAddress), "Source token must be USDC on source L2 chain");
     assert(l2DstToken.eq(this.l2DstUsdcTokenAddress), "Destination token must be USDC on destination L2 chain");
-    assert(
-      this.l2dstChainId !== this.l2chainId,
-      "Source and destination chains must be different"
-    );
-    assert(
-      this.l2dstChainId !== this.hubChainId,
-      "Use constructWithdrawToL1Txns for L2->L1 transfers"
-    );
+    assert(this.l2dstChainId !== this.l2chainId, "Source and destination chains must be different");
+    assert(this.l2dstChainId !== this.hubChainId, "Use constructWithdrawToL1Txns for L2->L1 transfers");
 
     const { decimals } = getTokenInfo(l2SrcToken, this.l2chainId);
     const formatter = createFormatFunction(2, 4, false, decimals);
@@ -237,10 +241,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   async _getCctpV2DepositForBurnMaxFeeL2ToL2(
     amount: BigNumber
   ): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
-    assert(
-      isDefined(this.l2dstChainId),
-      "Destination L2 chain must be configured in constructor"
-    );
+    assert(isDefined(this.l2dstChainId), "Destination L2 chain must be configured in constructor");
     return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.l2dstChainId, amount);
   }
 }
