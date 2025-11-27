@@ -203,8 +203,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
 
-  scheduleTask(clients.acrossApiClient.update(false), 5, abortController.signal);
-
   try {
     await rebalancer.init();
     await rebalancer.update();
