@@ -139,7 +139,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
           message: "Completed relayer execution loop.",
           loopCount: run,
         });
-        if (abortController.signal.aborted) {
+        if (!abortController.signal.aborted) {
           const runTime = Math.round(runTimeMilliseconds / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
