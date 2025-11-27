@@ -118,8 +118,7 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
@@ -142,7 +141,7 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
+    await tokenClient.update();
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
