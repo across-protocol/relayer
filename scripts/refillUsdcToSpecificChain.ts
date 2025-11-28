@@ -19,7 +19,6 @@ import {
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { constructCctpDepositForBurnTxn } from "../src/utils/CCTPUtils";
 import { MultiCallerClient } from "../src/clients";
-import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
   string: ["chainIds", "dstChainId"],
