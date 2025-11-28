@@ -7,6 +7,7 @@ import {
   getRedisCache,
   isDefined,
   Profiler,
+  scheduleTask,
   Signer,
   winston,
 } from "../utils";
@@ -29,6 +30,14 @@ const {
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 const abortController = new AbortController();
 
+process.on("SIGHUP", () => {
+  logger.debug({
+    at: "Relayer#run",
+    message: "Received SIGHUP, stopping...",
+  });
+  abortController.abort();
+});
+
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
     at: "Relayer#run",
@@ -40,13 +49,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
-  process.on("SIGHUP", () => {
-    logger.debug({
-      at: "Relayer#run",
-      message: "Received SIGHUP, stopping at end of current loop.",
-    });
-    abortController.abort();
-  });
 
   const redis = await getRedisCache(logger);
   let activeRelayerUpdated = false;
@@ -59,11 +61,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients, inventoryClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, spokePoolClients } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
   let inventoryInit = false;
+
+  const apiUpdateInterval = 30; // seconds
+  scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
 
   try {
     for (let run = 1; !abortController.signal.aborted; ++run) {
@@ -212,6 +217,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();
   } finally {
+    abortController.abort();
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }
