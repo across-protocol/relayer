@@ -421,12 +421,11 @@ export class InventoryClient {
    * Determines if origin chain repayment is forced for a deposit.
    * Priority: forceOriginRepaymentPerChain[originChainId] > forceOriginRepayment > protocol rules
    * @param deposit The deposit to check
-   * @param originChainId The origin chain ID
    * @returns true if origin chain repayment is forced
    */
-  private shouldForceOriginRepayment(deposit: Deposit, originChainId: number): boolean {
+  private shouldForceOriginRepayment(deposit: Deposit): boolean {
     const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
-    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[originChainId];
+    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[deposit.originChainId];
     const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
     // Per-chain config takes priority over global config
     const configForcesOriginRepayment = perChainForceOriginRepayment ?? globalForceOriginRepayment;
@@ -452,7 +451,7 @@ export class InventoryClient {
     chainIds.add(originChainId);
 
     // Check if origin chain repayment is forced by protocol rules or config overrides
-    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit, originChainId);
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
 
     if (forceOriginRepayment) {
       return [originChainId];
@@ -605,7 +604,7 @@ export class InventoryClient {
     }
 
     // Check if origin chain repayment is forced by protocol rules or config overrides
-    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit, originChainId);
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
 
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
