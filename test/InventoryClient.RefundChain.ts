@@ -1090,6 +1090,53 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(possibleChains).to.include(POLYGON); // Polygon should still be in the list (as origin chain)
     });
 
+    it("repaymentChainOverridePerChain is respected when forceOriginRepaymentPerChain=false overrides global forceOriginRepayment=true", async function () {
+      // Use native USDC for Polygon (CCTP support)
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: true, // Global says yes
+          forceOriginRepaymentPerChain: {
+            [POLYGON]: false, // But per-chain says no for Polygon
+          },
+          repaymentChainOverridePerChain: {
+            [POLYGON]: ARBITRUM, // Override to Arbitrum for Polygon deposits
+          },
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
+
+      // Should use the repaymentChainOverridePerChain (Arbitrum) because forceOriginRepaymentPerChain is false
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([ARBITRUM]);
+    });
+
     it("forceOriginRepayment includes only origin chain in possible repayment chains", async function () {
       // Use native USDC for Polygon (CCTP support)
       const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
