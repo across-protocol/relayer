@@ -39,6 +39,14 @@ const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
 
+const SPOKEPOOL_EVENTS = [
+  "FundsDeposited",
+  "RequestedSpeedUpDeposit",
+  "FilledRelay",
+  "RelayedRootBundle",
+  "ExecutedRelayerRefundRoot",
+];
+
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
 type RepaymentChainProfitability = {
@@ -121,12 +129,13 @@ export class Relayer {
   async update(): Promise<boolean> {
     const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
+    const tokenShortfall = tokenClient.anyCapturedShortFallFills();
+
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
       // Clear state from profit and token clients. These should start fresh on each iteration.
       profitClient.clearUnprofitableFills();
       tokenClient.clearTokenShortfall();
-      tokenClient.clearTokenData();
 
       await configStoreClient.update();
       if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
@@ -134,15 +143,19 @@ export class Relayer {
       }
     }
 
-    await updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]);
+    // Most of the time there's no need to update the tokenClient.
+    // Force update on a known token shortfall, or otherwise every nth update loop.
+    const updateTokenClient = (): Promise<void> => {
+      const destinationChains =
+        this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
+      tokenClient.clearTokenData();
+      return tokenClient.update(destinationChains);
+    };
 
-    await tokenClient.update();
+    await Promise.all([
+      this.updated % 10 === 0 || tokenShortfall ? updateTokenClient() : Promise.resolve(),
+      updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
+    ]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
