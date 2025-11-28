@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { AugmentedTransaction, TryMulticallClient } from "../src/clients";
-import { BigNumber, TransactionSimulationResult, Signer } from "../src/utils";
+import { BigNumber, TransactionSimulationResult } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import {

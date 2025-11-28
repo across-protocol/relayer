@@ -2,7 +2,8 @@ import { MultiCallerClient, TransactionClient } from "../../src/clients";
 import { Contract, winston } from "../utils";
 
 export class MockedMultiCallerClient extends MultiCallerClient {
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, readonly multisend?: Contract) {
+  private multisend?: Contract;
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract) {
     super(logger, chunkSize);
     this.txnClient = new TransactionClient(logger);
   }
