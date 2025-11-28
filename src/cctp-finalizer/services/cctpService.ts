@@ -1,18 +1,24 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
-import { winston, getCctpDestinationChainFromDomain, PUBLIC_NETWORKS, chainIsProd, chainIsSvm } from "../../utils";
+import {
+  winston,
+  getCctpDestinationChainFromDomain,
+  PUBLIC_NETWORKS,
+  chainIsProd,
+  chainIsSvm,
+  retrieveGckmsKeys,
+  getGckmsConfig,
+} from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
 
 export class CCTPService {
-  private privateKey: string;
-  private svmPrivateKey?: Uint8Array;
+  private evmPrivateKey: string;
+  private svmPrivateKey: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
-    this.privateKey = process.env.PRIVATE_KEY!;
-
     this.logger =
       logger ||
       winston.createLogger({
@@ -20,14 +26,6 @@ export class CCTPService {
         format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
         transports: [new winston.transports.Console()],
       });
-
-    if (process.env.SVM_PRIVATE_KEY) {
-      try {
-        this.svmPrivateKey = Uint8Array.from(JSON.parse(process.env.SVM_PRIVATE_KEY));
-      } catch (error) {
-        this.logger.warn({ at: "CCTPService#constructor", message: "Failed to parse SVM private key", error });
-      }
-    }
   }
 
   async processBurnTransaction(message: PubSubMessage): Promise<ProcessBurnTransactionResponse> {
@@ -40,6 +38,9 @@ export class CCTPService {
         destinationChainId: providedDestinationChainIdUnion,
         signature: signatureUnion,
       } = message;
+
+      this.evmPrivateKey = await this.getPrivateKey("evm");
+      this.svmPrivateKey = Uint8Array.from(await this.getPrivateKey("svm"));
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
@@ -218,7 +219,7 @@ export class CCTPService {
       } else {
         const rpcUrl = this.getRpcUrlForChain(chainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.privateKey, this.logger, signature);
+        const result = await processMintEvm(chainId, attestation, provider, this.evmPrivateKey, this.logger, signature);
         return {
           success: true,
           mintTxHash: result.txHash,
@@ -272,5 +273,15 @@ export class CCTPService {
       throw new Error(`No RPC URL configured for chain ID ${chainId}`);
     }
     return rpcUrl;
+  }
+
+  private async getPrivateKey(type: "evm" | "svm"): Promise<string> {
+    const privateKeys = await retrieveGckmsKeys(
+      getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
+    );
+    if (privateKeys.length === 0) {
+      throw new Error(`No private key found for ${type}`);
+    }
+    return privateKeys[0].slice(2);
   }
 }
