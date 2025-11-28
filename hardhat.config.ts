@@ -20,7 +20,7 @@ import "@openzeppelin/hardhat-upgrades";
 
 dotenv.config();
 
-const solcVersion = "0.8.23";
+const solcVersion = "0.8.30";
 
 const LARGE_CONTRACT_COMPILER_SETTINGS = {
   version: solcVersion,
