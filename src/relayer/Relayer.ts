@@ -103,9 +103,10 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
+      acrossApiClient.update(this.config.ignoreLimits),
       tokenClient.update(),
     ]);
 
@@ -126,8 +127,7 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
     const tokenShortfall = tokenClient.anyCapturedShortFallFills();
 
@@ -148,7 +148,6 @@ export class Relayer {
     const updateTokenClient = (): Promise<void> => {
       const destinationChains =
         this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
-
       tokenClient.clearTokenData();
       return tokenClient.update(destinationChains);
     };
@@ -156,7 +155,6 @@ export class Relayer {
     await Promise.all([
       this.updated % 10 === 0 || tokenShortfall ? updateTokenClient() : Promise.resolve(),
       updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
-      acrossApiClient.update(this.config.ignoreLimits),
     ]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
