@@ -67,6 +67,11 @@ describe("InventoryClient: Refund chain selection", async function () {
     wrapEtherTarget: toWei(1),
     wrapEtherThresholdPerChain: {},
     wrapEtherThreshold: toWei(1),
+    allowedSwapRoutes: [],
+    repaymentChainOverride: undefined,
+    repaymentChainOverridePerChain: {},
+    forceOriginRepayment: undefined,
+    forceOriginRepaymentPerChain: {},
     tokenConfig: {
       [mainnetWeth]: {
         [OPTIMISM]: { targetPct: toWei(0.12), thresholdPct: toWei(0.1), targetOverageBuffer },
@@ -897,6 +902,409 @@ describe("InventoryClient: Refund chain selection", async function () {
       expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.true;
       const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
       expect(refundChains).to.deep.equal([sampleDepositData.originChainId]);
+    });
+  });
+
+  describe("forceOriginRepayment configuration", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      // Use MAINNET as origin chain since it's always a quick rebalance source
+      // This ensures forceOriginRepayment returns [originChainId] immediately
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: MAINNET,
+        destinationChainId: OPTIMISM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(l2TokensForWeth[MAINNET], MAINNET),
+        inputAmount,
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+      // Ensure deposit doesn't force origin chain repayment by protocol rules
+      expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
+    });
+
+    it("global forceOriginRepayment forces origin chain repayment", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: true,
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([MAINNET]);
+    });
+
+    it("per-chain forceOriginRepaymentPerChain takes priority over global forceOriginRepayment", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: false, // Global says no
+          forceOriginRepaymentPerChain: {
+            [MAINNET]: true, // But per-chain says yes for Mainnet
+          },
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      // Should force origin chain repayment because per-chain config overrides global
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([MAINNET]);
+
+      // Test with a different origin chain that doesn't have per-chain config and is not a quick rebalance source
+      sampleDepositData.originChainId = POLYGON;
+      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[POLYGON], POLYGON);
+      // Should not force origin chain repayment (uses global false, and Polygon is not a quick rebalance source)
+      // Check getPossibleRepaymentChainIds to verify it includes multiple chains
+      const possibleChains2 = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      // When forceOriginRepayment is false, possible chains should include more than just origin
+      expect(possibleChains2.length).to.be.greaterThan(1);
+      expect(possibleChains2).to.include(POLYGON); // Origin chain should be in the list
+    });
+
+    it("per-chain forceOriginRepaymentPerChain=false overrides global forceOriginRepayment=true", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: true, // Global says yes
+          forceOriginRepaymentPerChain: {
+            [MAINNET]: false, // But per-chain says no for Mainnet
+          },
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      // Should NOT force origin chain repayment because per-chain config overrides global
+      // Since forceOriginRepaymentPerChain[MAINNET] = false, shouldForceOriginRepayment returns false
+      // Verify that forceOriginRepayment is actually false by checking getPossibleRepaymentChainIds
+      const possibleChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      // When forceOriginRepayment is false, possible chains should include more than just origin
+      // This is the key test - it should not be forced to only Mainnet
+      expect(possibleChains.length).to.be.greaterThan(1);
+      expect(possibleChains).to.include(MAINNET); // Mainnet should still be in the list (as origin chain)
+    });
+
+    it("forceOriginRepayment includes only origin chain in possible repayment chains", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: true,
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      // When forceOriginRepayment is true and origin is a quick rebalance source (Mainnet),
+      // getPossibleRepaymentChainIds should return only origin chain
+      expect(possibleRepaymentChains).to.deep.equal([MAINNET]);
+      expect(possibleRepaymentChains.length).to.equal(1);
+    });
+  });
+
+  describe("repaymentChainOverride configuration", function () {
+    beforeEach(async function () {
+      const inputAmount = toBNWei(1);
+      sampleDepositData = {
+        depositId: bnZero,
+        fromLiteChain: false,
+        toLiteChain: false,
+        originChainId: POLYGON,
+        destinationChainId: OPTIMISM,
+        depositor: toAddressType(owner.address, MAINNET),
+        recipient: toAddressType(owner.address, MAINNET),
+        inputToken: toAddressType(l2TokensForWeth[POLYGON], POLYGON),
+        inputAmount,
+        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputAmount: inputAmount,
+        message: "0x",
+        messageHash: "0x",
+        quoteTimestamp: hubPoolClient.currentTime!,
+        fillDeadline: 0,
+        exclusivityDeadline: 0,
+        exclusiveRelayer: toAddressType(ZERO_ADDRESS, MAINNET),
+      };
+      // Ensure deposit doesn't force origin chain repayment by protocol rules
+      expect(depositForcesOriginChainRepayment(sampleDepositData, hubPoolClient)).to.be.false;
+    });
+
+    it("global repaymentChainOverride overrides repayment chain selection", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          repaymentChainOverride: ARBITRUM, // Override to Arbitrum
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([ARBITRUM]);
+    });
+
+    it("per-chain repaymentChainOverridePerChain takes priority over global repaymentChainOverride", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          repaymentChainOverride: ARBITRUM, // Global override to Arbitrum
+          repaymentChainOverridePerChain: {
+            [POLYGON]: OPTIMISM, // But per-chain override to Optimism for Polygon deposits
+          },
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      // Should use per-chain override (Optimism) instead of global override (Arbitrum)
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([OPTIMISM]);
+
+      // Test with a different origin chain that doesn't have per-chain config
+      sampleDepositData.originChainId = ARBITRUM;
+      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+      // Should use global override (Arbitrum)
+      const refundChains2 = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains2).to.deep.equal([ARBITRUM]);
+    });
+
+    it("repaymentChainOverride includes override chain in possible repayment chains", async function () {
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          repaymentChainOverride: ARBITRUM,
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
+      expect(possibleRepaymentChains).to.include(ARBITRUM);
+    });
+
+    it("repaymentChainOverride is ignored when forceOriginRepayment is true", async function () {
+      // Use Mainnet as origin since it's a quick rebalance source, so forceOriginRepayment will return immediately
+      sampleDepositData.originChainId = MAINNET;
+      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[MAINNET], MAINNET);
+
+      const _inventoryClient = new MockInventoryClient(
+        toAddressType(owner.address, MAINNET),
+        spyLogger,
+        {
+          ...inventoryConfig,
+          forceOriginRepayment: true,
+          repaymentChainOverride: ARBITRUM, // Should be ignored
+        },
+        tokenClient,
+        enabledChainIds,
+        hubPoolClient,
+        adapterManager,
+        crossChainTransferClient,
+        false,
+        false
+      );
+      (_inventoryClient as MockInventoryClient).setTokenMapping({
+        [mainnetWeth]: {
+          [MAINNET]: mainnetWeth,
+          [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+          [POLYGON]: l2TokensForWeth[POLYGON],
+          [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+          [BSC]: l2TokensForWeth[BSC],
+        },
+        [mainnetUsdc]: {
+          [MAINNET]: mainnetUsdc,
+          [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
+          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
+          [BSC]: l2TokensForUsdc[BSC],
+        },
+      });
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+
+      // Should return origin chain, not the override chain
+      const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
+      expect(refundChains).to.deep.equal([MAINNET]);
     });
   });
 });

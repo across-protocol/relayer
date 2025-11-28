@@ -1,5 +1,5 @@
 import winston from "winston";
-import minimist from "minimist";
+import { config } from "dotenv";
 import {
   retrieveSignerFromCLIArgs,
   getProvider,
@@ -20,43 +20,45 @@ import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { constructCctpDepositForBurnTxn } from "../src/utils/CCTPUtils";
 import { MultiCallerClient } from "../src/clients";
 
-const args = minimist(process.argv.slice(2), {
-  string: ["chainIds", "dstChainId"],
-  boolean: ["sendTx"],
-});
+// Load environment variables from .env file
+config();
 
-// Example run:
-// ts-node ./scripts/bridgeTokenL2ToL2.ts --chainIds "[1]" --dstChainId 42161 --sendTx
-// ts-node ./scripts/bridgeTokenL2ToL2.ts --chainIds "[8453,42161]" --dstChainId 10  # Shows calldata, doesn't execute
+// Example usage:
+//   ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1
+//
+// Required environment variables (set in .env file):
+//   SOURCE_CHAIN_IDS="[8453,42161,137]"  # JSON array of source chain IDs
+//   DST_CHAIN_ID=42161                   # Destination chain ID (optional, defaults to DEFAULT_DST_CHAIN_ID or Arbitrum)
+//   SEND_TRANSACTIONS=true                         # Set to "true" to execute transactions (default: false)
+//   MIN_BALANCE_THRESHOLD_USDC=4         # Minimum USDC balance to trigger transfer (default: 100)
 
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
-// Configuration constants
-const MIN_BALANCE_THRESHOLD_USDC = 4; // Minimum USDC balance (in human-readable units) to trigger transfer
-const DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
+// Configuration constants with environment variable support
+const MIN_BALANCE_THRESHOLD_USDC = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 100; // Minimum USDC balance (in human-readable units) to trigger transfer
+const DEFAULT_DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
 
 async function run(): Promise<void> {
-  // Validate arguments
-  if (!args.chainIds) {
-    throw new Error(
-      'Define `chainIds` as a JSON array of source chain IDs (e.g., --chainIds "[8453,42161,137]" for Base, Arbitrum, Polygon)'
-    );
+  // Get configuration from environment variables only
+  const chainIdsInput = process.env.SOURCE_CHAIN_IDS;
+  if (!chainIdsInput) {
+    throw new Error("Missing required environment variable: SOURCE_CHAIN_IDS");
   }
 
   let sourceChainIds: number[];
   try {
-    sourceChainIds = JSON.parse(args.chainIds);
+    sourceChainIds = JSON.parse(chainIdsInput);
     if (!Array.isArray(sourceChainIds) || sourceChainIds.length === 0) {
-      throw new Error("chainIds must be a non-empty array");
+      throw new Error("SOURCE_CHAIN_IDS must be a non-empty array");
     }
   } catch (error) {
-    throw new Error(`Invalid chainIds format. Expected JSON array, got: ${args.chainIds}`);
+    throw new Error(`Invalid SOURCE_CHAIN_IDS format. Expected JSON array, got: ${chainIdsInput}`);
   }
 
-  // Validate destination chain
-  const destinationChainId = args.dstChainId ? Number(args.dstChainId) : DESTINATION_CHAIN_ID;
+  // Validate destination chain from ENV var
+  const destinationChainId = Number(process.env.DST_CHAIN_ID) || DEFAULT_DESTINATION_CHAIN_ID;
   if (isNaN(destinationChainId) || destinationChainId <= 0) {
-    throw new Error("dstChainId must be a positive number");
+    throw new Error(`Invalid DST_CHAIN_ID: must be a positive number, got: ${process.env.DST_CHAIN_ID}`);
   }
   if (destinationChainId === MAINNET_CHAIN_ID) {
     throw new Error("Destination chain must be an L2 chain, not Mainnet (1)");
@@ -72,14 +74,19 @@ async function run(): Promise<void> {
     }
   });
 
-  // Default to not executing. Only execute if --sendTx is explicitly set
-  const sendTransactions = args.sendTx === true;
+  // Get sendTx flag from ENV var
+  const sendTransactions = process.env.SEND_TRANSACTIONS === "true";
 
   const destinationChainName = getNetworkName(destinationChainId);
   console.log(
     `🚀 Checking USDC balances on ${sourceChainIds.length} chain(s) and bridging to ${destinationChainName} (Chain ID: ${destinationChainId})`
   );
   console.log(`📊 Minimum balance threshold: ${MIN_BALANCE_THRESHOLD_USDC} USDC`);
+  console.log("⚙️  Configuration:");
+  console.log(`   Source chains: ${sourceChainIds.join(", ")}`);
+  console.log(`   Destination chain: ${destinationChainName} (${destinationChainId})`);
+  console.log(`   Send transactions: ${sendTransactions ? "Yes" : "No (dry run)"}`);
+  console.log(`   Balance threshold: ${MIN_BALANCE_THRESHOLD_USDC} USDC`);
 
   // Initialize logger
   const logger = winston.createLogger({
@@ -217,9 +224,9 @@ async function run(): Promise<void> {
         console.log(`   ${calldata}`);
       });
     });
-    console.log("\n💡 To execute transactions, run with --sendTx flag");
+    console.log("\n💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables");
     console.log(
-      `   Example: yarn ts-node ./scripts/bridgeTokenL2ToL2.ts --chainIds "${args.chainIds}" --dstChainId ${destinationChainId} --sendTx --wallet gckms --keys bot1`
+      "   Example: SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1"
     );
     return;
   }
