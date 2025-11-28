@@ -907,20 +907,28 @@ describe("InventoryClient: Refund chain selection", async function () {
 
   describe("forceOriginRepayment configuration", function () {
     beforeEach(async function () {
-      const inputAmount = toBNWei(1);
-      // Use MAINNET as origin chain since it's always a quick rebalance source
-      // This ensures forceOriginRepayment returns [originChainId] immediately
+      const inputAmount = toMegaWei(1); // Use USDC amount (6 decimals)
+      // Use POLYGON as origin chain with native USDC - Polygon supports CCTP for native USDC,
+      // making it a quick rebalance source without Mainnet's special hub chain behavior
+      // Note: We use native USDC (not USDC.e) for CCTP support
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
+      const optimismNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[OPTIMISM] || l2TokensForUsdc[OPTIMISM];
+
+      // Set up pool rebalance route for native USDC on Polygon
+      hubPoolClient.setTokenMapping(mainnetUsdc, POLYGON, polygonNativeUsdc);
+      hubPoolClient.setEnableAllL2Tokens(true);
+
       sampleDepositData = {
         depositId: bnZero,
         fromLiteChain: false,
         toLiteChain: false,
-        originChainId: MAINNET,
+        originChainId: POLYGON,
         destinationChainId: OPTIMISM,
         depositor: toAddressType(owner.address, MAINNET),
         recipient: toAddressType(owner.address, MAINNET),
-        inputToken: toAddressType(l2TokensForWeth[MAINNET], MAINNET),
+        inputToken: toAddressType(polygonNativeUsdc, POLYGON),
         inputAmount,
-        outputToken: toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM),
+        outputToken: toAddressType(optimismNativeUsdc, OPTIMISM),
         outputAmount: inputAmount,
         message: "0x",
         messageHash: "0x",
@@ -934,6 +942,8 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
 
     it("global forceOriginRepayment forces origin chain repayment", async function () {
+      // Use native USDC for Polygon (CCTP support)
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
       const _inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
         spyLogger,
@@ -960,18 +970,22 @@ describe("InventoryClient: Refund chain selection", async function () {
         [mainnetUsdc]: {
           [MAINNET]: mainnetUsdc,
           [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
-          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
           [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([MAINNET]);
+      // When forceOriginRepayment is true and origin chain is a quick rebalance source (Polygon with native USDC/CCTP),
+      // determineRefundChainId returns origin chain immediately
+      expect(refundChains).to.deep.equal([POLYGON]);
     });
 
     it("per-chain forceOriginRepaymentPerChain takes priority over global forceOriginRepayment", async function () {
+      // Use native USDC for Polygon (CCTP support)
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
       const _inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
         spyLogger,
@@ -979,7 +993,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           ...inventoryConfig,
           forceOriginRepayment: false, // Global says no
           forceOriginRepaymentPerChain: {
-            [MAINNET]: true, // But per-chain says yes for Mainnet
+            [POLYGON]: true, // But per-chain says yes for Polygon
           },
         },
         tokenClient,
@@ -1001,29 +1015,35 @@ describe("InventoryClient: Refund chain selection", async function () {
         [mainnetUsdc]: {
           [MAINNET]: mainnetUsdc,
           [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
-          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
           [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
       // Should force origin chain repayment because per-chain config overrides global
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([MAINNET]);
+      expect(refundChains).to.deep.equal([POLYGON]);
 
       // Test with a different origin chain that doesn't have per-chain config and is not a quick rebalance source
-      sampleDepositData.originChainId = POLYGON;
-      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[POLYGON], POLYGON);
-      // Should not force origin chain repayment (uses global false, and Polygon is not a quick rebalance source)
+      // Use ARBITRUM with WETH (not a quick rebalance source for WETH)
+      sampleDepositData.originChainId = ARBITRUM;
+      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+      sampleDepositData.outputToken = toAddressType(l2TokensForWeth[OPTIMISM], OPTIMISM);
+      sampleDepositData.inputAmount = toBNWei(1); // Back to WETH amount (18 decimals)
+      sampleDepositData.outputAmount = toBNWei(1);
+      // Should not force origin chain repayment (uses global false, and Arbitrum with WETH is not a quick rebalance source)
       // Check getPossibleRepaymentChainIds to verify it includes multiple chains
       const possibleChains2 = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is false, possible chains should include more than just origin
       expect(possibleChains2.length).to.be.greaterThan(1);
-      expect(possibleChains2).to.include(POLYGON); // Origin chain should be in the list
+      expect(possibleChains2).to.include(ARBITRUM); // Origin chain should be in the list
     });
 
     it("per-chain forceOriginRepaymentPerChain=false overrides global forceOriginRepayment=true", async function () {
+      // Use native USDC for Polygon (CCTP support)
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
       const _inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
         spyLogger,
@@ -1031,7 +1051,7 @@ describe("InventoryClient: Refund chain selection", async function () {
           ...inventoryConfig,
           forceOriginRepayment: true, // Global says yes
           forceOriginRepaymentPerChain: {
-            [MAINNET]: false, // But per-chain says no for Mainnet
+            [POLYGON]: false, // But per-chain says no for Polygon
           },
         },
         tokenClient,
@@ -1053,24 +1073,26 @@ describe("InventoryClient: Refund chain selection", async function () {
         [mainnetUsdc]: {
           [MAINNET]: mainnetUsdc,
           [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
-          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
           [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
       // Should NOT force origin chain repayment because per-chain config overrides global
       // Since forceOriginRepaymentPerChain[MAINNET] = false, shouldForceOriginRepayment returns false
       // Verify that forceOriginRepayment is actually false by checking getPossibleRepaymentChainIds
       const possibleChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
       // When forceOriginRepayment is false, possible chains should include more than just origin
-      // This is the key test - it should not be forced to only Mainnet
+      // This is the key test - it should not be forced to only Polygon
       expect(possibleChains.length).to.be.greaterThan(1);
-      expect(possibleChains).to.include(MAINNET); // Mainnet should still be in the list (as origin chain)
+      expect(possibleChains).to.include(POLYGON); // Polygon should still be in the list (as origin chain)
     });
 
     it("forceOriginRepayment includes only origin chain in possible repayment chains", async function () {
+      // Use native USDC for Polygon (CCTP support)
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
       const _inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
         spyLogger,
@@ -1097,17 +1119,17 @@ describe("InventoryClient: Refund chain selection", async function () {
         [mainnetUsdc]: {
           [MAINNET]: mainnetUsdc,
           [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
-          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
           [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
       const possibleRepaymentChains = _inventoryClient.getPossibleRepaymentChainIds(sampleDepositData);
-      // When forceOriginRepayment is true and origin is a quick rebalance source (Mainnet),
+      // When forceOriginRepayment is true and origin is a quick rebalance source (Polygon with native USDC/CCTP),
       // getPossibleRepaymentChainIds should return only origin chain
-      expect(possibleRepaymentChains).to.deep.equal([MAINNET]);
+      expect(possibleRepaymentChains).to.deep.equal([POLYGON]);
       expect(possibleRepaymentChains.length).to.equal(1);
     });
   });
@@ -1264,9 +1286,12 @@ describe("InventoryClient: Refund chain selection", async function () {
     });
 
     it("repaymentChainOverride is ignored when forceOriginRepayment is true", async function () {
-      // Use Mainnet as origin since it's a quick rebalance source, so forceOriginRepayment will return immediately
-      sampleDepositData.originChainId = MAINNET;
-      sampleDepositData.inputToken = toAddressType(l2TokensForWeth[MAINNET], MAINNET);
+      // Use Polygon with native USDC as origin since it's a quick rebalance source (CCTP), so forceOriginRepayment will return immediately
+      const polygonNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[POLYGON];
+      const optimismNativeUsdc = TOKEN_SYMBOLS_MAP.USDC.addresses[OPTIMISM] || l2TokensForUsdc[OPTIMISM];
+      sampleDepositData.originChainId = POLYGON;
+      sampleDepositData.inputToken = toAddressType(polygonNativeUsdc, POLYGON);
+      sampleDepositData.outputToken = toAddressType(optimismNativeUsdc, OPTIMISM);
 
       const _inventoryClient = new MockInventoryClient(
         toAddressType(owner.address, MAINNET),
@@ -1295,16 +1320,16 @@ describe("InventoryClient: Refund chain selection", async function () {
         [mainnetUsdc]: {
           [MAINNET]: mainnetUsdc,
           [OPTIMISM]: l2TokensForUsdc[OPTIMISM],
-          [POLYGON]: l2TokensForUsdc[POLYGON],
+          [POLYGON]: polygonNativeUsdc, // Use native USDC for CCTP support
           [ARBITRUM]: l2TokensForUsdc[ARBITRUM],
           [BSC]: l2TokensForUsdc[BSC],
         },
       });
-      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetWeth, {});
+      (_inventoryClient as MockInventoryClient).setUpcomingRefunds(mainnetUsdc, {});
 
       // Should return origin chain, not the override chain
       const refundChains = await _inventoryClient.determineRefundChainId(sampleDepositData);
-      expect(refundChains).to.deep.equal([MAINNET]);
+      expect(refundChains).to.deep.equal([POLYGON]);
     });
   });
 });
