@@ -225,12 +225,6 @@ async function run(): Promise<void> {
     return;
   }
 
-  // Confirm before sending
-  if (!(await askYesNoQuestion("\n⚠️  Confirm that you want to execute these bridge transactions?"))) {
-    console.log("Transaction cancelled.");
-    return;
-  }
-
   // Execute all transactions
   logger.info("Executing bridge transactions...");
   const chainIdsToExecute = transactionsToExecute.map(({ chainId }) => chainId);
