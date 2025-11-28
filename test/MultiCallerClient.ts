@@ -16,7 +16,7 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract) {
     super(logger, chunkSize, multisend);
     this.txnClient = new MockedTransactionClient(logger);
   }

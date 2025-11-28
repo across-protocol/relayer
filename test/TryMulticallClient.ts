@@ -1,6 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { AugmentedTransaction, TryMulticallClient } from "../src/clients";
-import { BigNumber, TransactionSimulationResult } from "../src/utils";
+import { BigNumber, TransactionSimulationResult, Signer } from "../src/utils";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import {
@@ -18,10 +18,12 @@ import {
 class DummyTryMulticallClient extends TryMulticallClient {
   public ignoredSimulationFailures: TransactionSimulationResult[] = [];
   public loggedSimulationFailures: TransactionSimulationResult[] = [];
+  private multisend?: Contract;
 
-  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, public multisend?: Contract) {
-    super(logger, chunkSize, multisend);
+  constructor(logger: winston.Logger, chunkSize: { [chainId: number]: number } = {}, multisend?: Contract) {
+    super(logger, chunkSize);
     this.txnClient = new MockedTransactionClient(logger);
+    this.multisend = multisend;
   }
 
   simulationFailureCount(): number {
