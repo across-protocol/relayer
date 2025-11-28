@@ -703,7 +703,7 @@ export class ProfitClient {
         const price = hasExternalPrice
           ? tokenPrices.find(({ address: _address }) => _address === address).price
           : Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) || 0;
-        this.tokenPrices[address] = toBNWei(price);
+        this.tokenPrices[address] = toBNWei(price.toFixed(18));
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
