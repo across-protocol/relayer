@@ -102,7 +102,7 @@ jobs:
           command: |
             source $BASH_ENV
             circleci tests glob "test/**/*.ts" | circleci tests split > /tmp/test-files
-            yarn test --bail $(cat /tmp/test-files)
+            test:parallel --bail $(cat /tmp/test-files)
   lint:
     docker:
       - image: cimg/node:22.18.0
