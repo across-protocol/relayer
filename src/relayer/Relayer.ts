@@ -95,9 +95,10 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
+      acrossApiClient.update(this.config.ignoreLimits),
       tokenClient.update(),
     ]);
 
