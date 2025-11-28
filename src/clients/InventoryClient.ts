@@ -455,7 +455,7 @@ export class InventoryClient {
     const forceOriginRepayment = this.shouldForceOriginRepayment(deposit, originChainId);
 
     if (forceOriginRepayment) {
-      return [...chainIds];
+      return [originChainId];
     }
 
     if (this.canTakeDestinationChainRepayment(deposit)) {
