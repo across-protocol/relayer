@@ -422,7 +422,18 @@ export class InventoryClient {
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
     chainIds.add(originChainId);
-    if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
+
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    // Priority: forceOriginRepaymentPerChain[originChainId] > forceOriginRepayment
+    const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[originChainId];
+    const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
+    // Per-chain config takes priority over global config
+    const configForcesOriginRepayment =
+      perChainForceOriginRepayment !== undefined ? perChainForceOriginRepayment : globalForceOriginRepayment;
+    const forceOriginRepayment = protocolForcesOriginRepayment || configForcesOriginRepayment;
+
+    if (forceOriginRepayment) {
       return [...chainIds];
     }
 
@@ -444,8 +455,12 @@ export class InventoryClient {
         }
       });
     }
-    if (isDefined(this.inventoryConfig?.repaymentChainOverride)) {
-      chainIds.add(this.inventoryConfig.repaymentChainOverride);
+    // Check per-chain override first, then global override
+    const perChainRepaymentOverride = this.inventoryConfig?.repaymentChainOverridePerChain?.[originChainId];
+    const globalRepaymentOverride = this.inventoryConfig?.repaymentChainOverride;
+    const chainOverride = perChainRepaymentOverride !== undefined ? perChainRepaymentOverride : globalRepaymentOverride;
+    if (isDefined(chainOverride)) {
+      chainIds.add(chainOverride);
     }
 
     chainIds.add(this.hubPoolClient.chainId);
@@ -570,10 +585,19 @@ export class InventoryClient {
       );
     }
 
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    // Priority: forceOriginRepaymentPerChain[originChainId] > forceOriginRepayment > protocol rules
+    const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[originChainId];
+    const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
+    // Per-chain config takes priority over global config
+    const configForcesOriginRepayment =
+      perChainForceOriginRepayment !== undefined ? perChainForceOriginRepayment : globalForceOriginRepayment;
+    const forceOriginRepayment = protocolForcesOriginRepayment || configForcesOriginRepayment;
+
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
       return [originChainId];
     }
@@ -589,8 +613,15 @@ export class InventoryClient {
 
     // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
     // then short-circuit this check.
-    if (!forceOriginRepayment && isDefined(this.inventoryConfig?.repaymentChainOverride)) {
-      return [this.inventoryConfig.repaymentChainOverride];
+    // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+    if (!forceOriginRepayment) {
+      const perChainRepaymentOverride = this.inventoryConfig?.repaymentChainOverridePerChain?.[originChainId];
+      const globalRepaymentOverride = this.inventoryConfig?.repaymentChainOverride;
+      const chainOverride =
+        perChainRepaymentOverride !== undefined ? perChainRepaymentOverride : globalRepaymentOverride;
+      if (isDefined(chainOverride)) {
+        return [chainOverride];
+      }
     }
 
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);

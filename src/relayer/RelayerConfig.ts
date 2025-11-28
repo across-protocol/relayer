@@ -189,6 +189,12 @@ export class RelayerConfig extends CommonConfig {
         }
       });
 
+      // Initialize forceOriginRepayment defaults
+      inventoryConfig.forceOriginRepaymentPerChain ??= {};
+
+      // Initialize repaymentChainOverridePerChain defaults
+      inventoryConfig.repaymentChainOverridePerChain ??= {};
+
       const parseTokenConfig = (
         l1Token: string,
         chainId: string,

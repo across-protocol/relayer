@@ -77,6 +77,14 @@ export interface InventoryConfig {
 
   // Optional parameter which forces relayer repayment on the specified chain ID.
   repaymentChainOverride: number | undefined;
+  // Per-chain override for repayment chain. Takes priority over global repaymentChainOverride.
+  repaymentChainOverridePerChain: {
+    [chainId: number]: number;
+  };
+  forceOriginRepayment: boolean | undefined;
+  forceOriginRepaymentPerChain: {
+    [chainId: number]: boolean;
+  };
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
