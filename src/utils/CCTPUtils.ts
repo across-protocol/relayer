@@ -3,7 +3,7 @@ import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
-import { CONTRACT_ADDRESSES } from "../common";
+import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -19,12 +19,14 @@ import {
   toBNWei,
   forEachAsync,
   chainIsEvm,
+  createFormatFunction,
 } from "./SDKUtils";
+import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider } from ".";
+import { assert, getRedisCache, Provider, Signer } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
 
@@ -88,6 +90,10 @@ export const {
   getCctpDestinationChainFromDomain,
   isDepositForBurnEvent,
 } = utils;
+
+// Import types and utilities needed for the constructCctpDepositForBurnTxn function
+import type { AugmentedTransaction } from "../clients/TransactionClient";
+import type { TransferTokenParams } from "../adapter/utils";
 
 /**
  * Return all deposit for burn transaction hashes that were created on the source chain.
@@ -849,4 +855,81 @@ async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<C
   );
   const attestationResponse = httpResponse.data;
   return attestationResponse;
+}
+
+/**
+ * Constructs a CCTP depositForBurn transaction for L1->L2, L2->L2, or L2->L1 transfers.
+ * This is a utility function extracted from UsdcCCTPBridge to be reusable.
+ *
+ * @param sourceChainId Source chain ID (L1 or L2)
+ * @param destinationChainId Destination chain ID (L2 or L1)
+ * @param sourceSigner Signer for the source chain
+ * @param toAddress Recipient address on destination chain
+ * @param sourceUsdcTokenAddress USDC token address on source chain
+ * @param amount Amount to transfer (will be capped at CCTP_MAX_SEND_AMOUNT)
+ * @param optionalParams Optional parameters including fastMode
+ * @param hubChainId Optional hub chain ID (L1). If not provided, will be inferred from sourceChainId.
+ *                   Required for L1->L2 transfers to determine L1 USDC address.
+ * @returns AugmentedTransaction ready to be enqueued in MultiCallerClient
+ */
+export async function constructCctpDepositForBurnTxn(
+  sourceChainId: number,
+  destinationChainId: number,
+  sourceSigner: Signer,
+  toAddress: EvmAddress,
+  sourceUsdcTokenAddress: EvmAddress,
+  amount: BigNumber,
+  optionalParams?: TransferTokenParams
+): Promise<AugmentedTransaction> {
+  const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpV2TokenMessenger(sourceChainId);
+  const bridgeContract = new Contract(tokenMessengerAddress, tokenMessengerAbi, sourceSigner);
+
+  const { decimals } = getTokenInfo(sourceUsdcTokenAddress, sourceChainId);
+  const formatter = createFormatFunction(2, 4, false, decimals);
+
+  // Cap amount at CCTP_MAX_SEND_AMOUNT
+  amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
+
+  let maxFee = bnZero;
+  let finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+  if (optionalParams?.fastMode) {
+    const feeResult = await getV2DepositForBurnMaxFee(
+      sourceUsdcTokenAddress,
+      sourceChainId,
+      destinationChainId,
+      amount
+    );
+    maxFee = feeResult.maxFee;
+    finalityThreshold = feeResult.finalityThreshold;
+  }
+
+  // Add maxFee so that we end up with desired amount of tokens on destination chain.
+  const amountWithFee = amount.add(maxFee);
+  const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
+
+  const sourceChainName = getNetworkName(sourceChainId);
+  const destinationChainName = getNetworkName(destinationChainId);
+  const destinationDomain = getCctpDomainForChainId(destinationChainId);
+
+  return {
+    contract: bridgeContract,
+    chainId: sourceChainId,
+    method: "depositForBurn",
+    nonMulticall: true,
+    message: `🎰 Bridged CCTP USDC from ${sourceChainName} to ${destinationChainName}${
+      optionalParams?.fastMode ? " using fast mode" : ""
+    }`,
+    mrkdwn: `Bridged ${formatter(amountToSend)} USDC from ${sourceChainName} to ${destinationChainName} via CCTP${
+      optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
+    }`,
+    args: [
+      amountToSend,
+      destinationDomain,
+      toAddress.toBytes32(),
+      sourceUsdcTokenAddress.toNative(),
+      ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+      maxFee,
+      finalityThreshold,
+    ],
+  };
 }
