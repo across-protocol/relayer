@@ -27,6 +27,7 @@ const {
 } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
+const abortController = new AbortController();
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
@@ -39,13 +40,12 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
-  let stop = false;
   process.on("SIGHUP", () => {
     logger.debug({
       at: "Relayer#run",
       message: "Received SIGHUP, stopping at end of current loop.",
     });
-    stop = true;
+    abortController.abort();
   });
 
   const redis = await getRedisCache(logger);
@@ -66,7 +66,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   let inventoryInit = false;
 
   try {
-    for (let run = 1; !stop; ++run) {
+    for (let run = 1; !abortController.signal.aborted; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
@@ -122,24 +122,24 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
             activeRelayerUpdated = true;
           } else {
             logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
-            stop = true;
+            abortController.abort();
           }
         }
       }
 
-      if (!stop) {
+      if (!abortController.signal.aborted) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
       if (!loop) {
-        stop = true;
+        abortController.abort();
       } else {
         const runTimeMilliseconds = tLoopStart.stop({
           message: "Completed relayer execution loop.",
           loopCount: run,
         });
-        if (!stop) {
+        if (!abortController.signal.aborted) {
           const runTime = Math.round(runTimeMilliseconds / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
