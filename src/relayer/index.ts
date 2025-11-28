@@ -7,6 +7,7 @@ import {
   getRedisCache,
   isDefined,
   Profiler,
+  scheduleTask,
   Signer,
   winston,
 } from "../utils";
@@ -27,6 +28,15 @@ const {
 } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
+const abortController = new AbortController();
+
+process.on("SIGHUP", () => {
+  logger.debug({
+    at: "Relayer#run",
+    message: "Received SIGHUP, stopping...",
+  });
+  abortController.abort();
+});
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const profiler = new Profiler({
@@ -39,14 +49,6 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const { externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
-  let stop = false;
-  process.on("SIGHUP", () => {
-    logger.debug({
-      at: "Relayer#run",
-      message: "Received SIGHUP, stopping at end of current loop.",
-    });
-    stop = true;
-  });
 
   const redis = await getRedisCache(logger);
   let activeRelayerUpdated = false;
@@ -59,14 +61,17 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients, inventoryClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, spokePoolClients } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
   let inventoryInit = false;
 
+  const apiUpdateInterval = 30; // seconds
+  scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+
   try {
-    for (let run = 1; !stop; ++run) {
+    for (let run = 1; !abortController.signal.aborted; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
@@ -122,24 +127,24 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
             activeRelayerUpdated = true;
           } else {
             logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
-            stop = true;
+            abortController.abort();
           }
         }
       }
 
-      if (!stop) {
+      if (!abortController.signal.aborted) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
       if (!loop) {
-        stop = true;
+        abortController.abort();
       } else {
         const runTimeMilliseconds = tLoopStart.stop({
           message: "Completed relayer execution loop.",
           loopCount: run,
         });
-        if (!stop) {
+        if (!abortController.signal.aborted) {
           const runTime = Math.round(runTimeMilliseconds / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
@@ -212,6 +217,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();
   } finally {
+    abortController.abort();
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }
