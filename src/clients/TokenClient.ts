@@ -283,7 +283,7 @@ export class TokenClient {
       return this.fetchSolanaTokenData(chainId, hubPoolTokens);
     }
 
-    throw new Error(`Unknown SpokePool client type: ${chainId}`);
+    throw new Error(`Unknown SpokePool client type for ${getNetworkName(chainId)}`);
   }
 
   async update(): Promise<void> {
