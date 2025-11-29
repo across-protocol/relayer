@@ -17,7 +17,6 @@ import {
   Profiler,
   runTransaction,
   toBN,
-  Provider,
   winston,
   getRedisCache,
   TOKEN_SYMBOLS_MAP,
