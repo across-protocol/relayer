@@ -250,7 +250,7 @@ async function run(): Promise<void> {
   }
 
   if (transactionsToExecute.length === 0) {
-    logger.info({
+    logger.debug({
       at: "RefillUsdcToSpecificChain#run",
       message: "✅ No transactions to execute. All balances are below the threshold.",
     });
