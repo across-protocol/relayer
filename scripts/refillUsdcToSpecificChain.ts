@@ -82,7 +82,7 @@ async function run(): Promise<void> {
   const sendTransactions = process.env.SEND_TRANSACTIONS === "true";
 
   const destinationChainName = getNetworkName(destinationChainId);
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "🚀 Starting USDC balance check and bridge",
     sourceChainCount: sourceChainIds.length,
@@ -187,7 +187,7 @@ async function run(): Promise<void> {
 
       // Check if balance exceeds threshold
       if (balanceInUsdc >= MIN_BALANCE_THRESHOLD_USDC) {
-        logger.info({
+        logger.debug({
           at: "RefillUsdcToSpecificChain#run",
           message: "✓ Balance exceeds threshold - queuing transaction",
           chainName: sourceChainName,
