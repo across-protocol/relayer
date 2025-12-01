@@ -876,12 +876,11 @@ async function checkAndApproveCctpTokenMessenger(
   sourceSigner: Signer,
   sourceUsdcTokenAddress: EvmAddress,
   tokenMessengerAddress: string,
-  logger?: winston.Logger
+  logger: winston.Logger
 ): Promise<void> {
-  if (!logger || !chainIsEvm(sourceChainId)) {
+  if (!chainIsEvm(sourceChainId)) {
     return;
   }
-
   const tokenMessengerEvmAddress = EvmAddress.from(tokenMessengerAddress);
   const signerAddress = await sourceSigner.getAddress();
   const signerEvmAddress = EvmAddress.from(signerAddress);
@@ -958,8 +957,8 @@ export async function constructCctpDepositForBurnTxn(
   toAddress: EvmAddress,
   sourceUsdcTokenAddress: EvmAddress,
   amount: BigNumber,
-  optionalParams?: TransferTokenParams,
-  logger?: winston.Logger
+  logger: winston.Logger,
+  optionalParams?: TransferTokenParams
 ): Promise<AugmentedTransaction> {
   const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpV2TokenMessenger(sourceChainId);
   const bridgeContract = new Contract(tokenMessengerAddress, tokenMessengerAbi, sourceSigner);
