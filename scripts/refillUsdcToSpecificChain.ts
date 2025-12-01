@@ -1,4 +1,3 @@
-import winston from "winston";
 import { config } from "dotenv";
 import {
   retrieveSignerFromCLIArgs,
@@ -15,6 +14,9 @@ import {
   isDefined,
   blockExplorerLink,
   getCctpDomainForChainId,
+  Logger,
+  waitForLogger,
+  delay,
 } from "../src/utils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { constructCctpDepositForBurnTxn } from "../src/utils/CCTPUtils";
@@ -37,6 +39,8 @@ const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 // Configuration constants with environment variable support
 const MIN_BALANCE_THRESHOLD_USDC = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 100; // Minimum USDC balance (in human-readable units) to trigger transfer
 const DEFAULT_DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
+
+let logger: typeof Logger;
 
 async function run(): Promise<void> {
   // Get configuration from environment variables only
@@ -78,27 +82,25 @@ async function run(): Promise<void> {
   const sendTransactions = process.env.SEND_TRANSACTIONS === "true";
 
   const destinationChainName = getNetworkName(destinationChainId);
-  console.log(
-    `🚀 Checking USDC balances on ${sourceChainIds.length} chain(s) and bridging to ${destinationChainName} (Chain ID: ${destinationChainId})`
-  );
-  console.log(`📊 Minimum balance threshold: ${MIN_BALANCE_THRESHOLD_USDC} USDC`);
-  console.log("⚙️  Configuration:");
-  console.log(`   Source chains: ${sourceChainIds.join(", ")}`);
-  console.log(`   Destination chain: ${destinationChainName} (${destinationChainId})`);
-  console.log(`   Send transactions: ${sendTransactions ? "Yes" : "No (dry run)"}`);
-  console.log(`   Balance threshold: ${MIN_BALANCE_THRESHOLD_USDC} USDC`);
-
-  // Initialize logger
-  const logger = winston.createLogger({
-    level: "info",
-    format: winston.format.json(),
-    transports: [new winston.transports.Console({ format: winston.format.simple() })],
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "🚀 Starting USDC balance check and bridge",
+    sourceChainCount: sourceChainIds.length,
+    sourceChains: sourceChainIds,
+    destinationChain: destinationChainName,
+    destinationChainId,
+    minBalanceThreshold: MIN_BALANCE_THRESHOLD_USDC,
+    sendTransactions,
   });
 
   // Get signer
   const baseSigner = await retrieveSignerFromCLIArgs();
   const signerAddr = await baseSigner.getAddress();
-  console.log(`Connected to account: ${signerAddr}`);
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "Connected to account",
+    signerAddress: signerAddr,
+  });
 
   // Get L1 token address
   const usdcTokenInfo = TOKEN_SYMBOLS_MAP.USDC;
@@ -124,7 +126,11 @@ async function run(): Promise<void> {
   const multicallerClient = new MultiCallerClient(logger);
   const transactionsToExecute: Array<{ chainId: number; chainName: string; amount: string; balance: string }> = [];
 
-  console.log("\n📊 Checking balances on source chains...\n");
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "📊 Checking balances on source chains",
+    sourceChainCount: sourceChainIds.length,
+  });
 
   for (const sourceChainId of sourceChainIds) {
     const sourceChainName = getNetworkName(sourceChainId);
@@ -132,7 +138,12 @@ async function run(): Promise<void> {
     // Validate source chain has CCTP support
     const srcCctpDomain = getCctpDomainForChainId(sourceChainId);
     if (srcCctpDomain === CCTP_NO_DOMAIN) {
-      console.log(`⚠️  Skipping ${sourceChainName} (chain ID: ${sourceChainId}): No CCTP support`);
+      logger.warn({
+        at: "RefillUsdcToSpecificChain#run",
+        message: "⚠️  Skipping chain: No CCTP support",
+        chainName: sourceChainName,
+        chainId: sourceChainId,
+      });
       continue;
     }
 
@@ -145,7 +156,12 @@ async function run(): Promise<void> {
       if (sourceChainId !== MAINNET_CHAIN_ID) {
         const sourceUsdcTokenAddress = getRemoteTokenForL1Token(l1UsdcToken, sourceChainId, MAINNET_CHAIN_ID);
         if (!isDefined(sourceUsdcTokenAddress)) {
-          console.log(`⚠️  Skipping ${sourceChainName} (chain ID: ${sourceChainId}): USDC not found on this chain`);
+          logger.warn({
+            at: "RefillUsdcToSpecificChain#run",
+            message: "⚠️  Skipping chain: USDC not found",
+            chainName: sourceChainName,
+            chainId: sourceChainId,
+          });
           continue;
         }
         sourceUsdcToken = EvmAddress.from(sourceUsdcTokenAddress.toNative());
@@ -160,11 +176,25 @@ async function run(): Promise<void> {
       const balanceFormatted = formatter(balance.toString());
       const balanceInUsdc = parseFloat(balanceFormatted);
 
-      console.log(`${sourceChainName} (${sourceChainId}): ${balanceFormatted} USDC`);
+      logger.debug({
+        at: "RefillUsdcToSpecificChain#run",
+        message: "Checked balance on source chain",
+        chainName: sourceChainName,
+        chainId: sourceChainId,
+        balance: balanceFormatted,
+        balanceInUsdc,
+      });
 
       // Check if balance exceeds threshold
       if (balanceInUsdc >= MIN_BALANCE_THRESHOLD_USDC) {
-        console.log(`  ✓ Balance (${balanceFormatted} USDC) exceeds threshold (${MIN_BALANCE_THRESHOLD_USDC} USDC)`);
+        logger.debug({
+          at: "RefillUsdcToSpecificChain#run",
+          message: "✓ Balance exceeds threshold - queuing transaction",
+          chainName: sourceChainName,
+          chainId: sourceChainId,
+          balance: balanceFormatted,
+          threshold: MIN_BALANCE_THRESHOLD_USDC,
+        });
 
         // Construct transaction to send entire balance to destination chain
         const toAddress = EvmAddress.from(signerAddr);
@@ -187,82 +217,135 @@ async function run(): Promise<void> {
           balance: balanceFormatted,
         });
 
-        console.log(`  → Queued transaction to bridge ${balanceFormatted} USDC to ${destinationChainName}`);
+        logger.debug({
+          at: "RefillUsdcToSpecificChain#run",
+          message: "→ Queued transaction to bridge USDC",
+          chainName: sourceChainName,
+          chainId: sourceChainId,
+          amount: balanceFormatted,
+          destinationChain: destinationChainName,
+          destinationChainId,
+        });
       } else {
-        console.log(
-          `  ✗ Balance (${balanceFormatted} USDC) below threshold (${MIN_BALANCE_THRESHOLD_USDC} USDC) - skipping`
-        );
+        logger.debug({
+          at: "RefillUsdcToSpecificChain#run",
+          message: "✗ Balance below threshold - skipping",
+          chainName: sourceChainName,
+          chainId: sourceChainId,
+          balance: balanceFormatted,
+          threshold: MIN_BALANCE_THRESHOLD_USDC,
+        });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ Error processing ${sourceChainName} (chain ID: ${sourceChainId}):`, errorMessage);
+      logger.error({
+        at: "RefillUsdcToSpecificChain#run",
+        message: "❌ Error processing chain",
+        chainName: sourceChainName,
+        chainId: sourceChainId,
+        error: errorMessage,
+      });
       // Continue with other chains
     }
   }
 
   if (transactionsToExecute.length === 0) {
-    console.log("\n✅ No transactions to execute. All balances are below the threshold.");
+    logger.debug({
+      at: "RefillUsdcToSpecificChain#run",
+      message: "✅ No transactions to execute. All balances are below the threshold.",
+    });
     return;
   }
 
   // Summary
-  console.log("\n📍 Transaction Summary:");
-  console.log(`   Total transactions: ${transactionsToExecute.length}`);
-  console.log(`   Destination: ${destinationChainName} (Chain ID: ${destinationChainId})`);
-  transactionsToExecute.forEach(({ chainName, amount }) => {
-    console.log(`   - ${chainName}: ${amount} USDC`);
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "📍 Transaction Summary",
+    totalTransactions: transactionsToExecute.length,
+    destinationChain: destinationChainName,
+    destinationChainId,
+    transactions: transactionsToExecute.map(({ chainName, amount }) => ({
+      chainName,
+      amount,
+    })),
   });
 
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
-    console.log("\n📋 Transaction Calldata:");
-    transactionsToExecute.forEach(({ chainId, chainName }, index) => {
+    const calldataList: Array<{ chainName: string; chainId: number; calldata: string }> = [];
+    transactionsToExecute.forEach(({ chainId, chainName }) => {
       const txns = multicallerClient.getQueuedTransactions(chainId);
-      txns.forEach((txn, txnIndex) => {
+      txns.forEach((txn) => {
         const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
-        console.log(`\n   Transaction ${index + 1}.${txnIndex + 1} (${chainName}):`);
-        console.log(`   ${calldata}`);
+        calldataList.push({ chainName, chainId, calldata });
       });
     });
-    console.log("\n💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables");
-    console.log(
-      "   Example: SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1"
-    );
+    logger.debug({
+      at: "RefillUsdcToSpecificChain#run",
+      message: "📋 Transaction Calldata (dry run)",
+      calldataList,
+    });
+    logger.debug({
+      at: "RefillUsdcToSpecificChain#run",
+      message: "💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables",
+      example: "SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
+    });
     return;
   }
 
   // Execute all transactions
-  logger.info("Executing bridge transactions...");
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "Executing bridge transactions",
+    transactionCount: transactionsToExecute.length,
+  });
   const chainIdsToExecute = transactionsToExecute.map(({ chainId }) => chainId);
   const txnReceipts = await multicallerClient.executeTxnQueues(false, chainIdsToExecute);
 
-  console.log("\n✅ Bridge transactions submitted!");
-  transactionsToExecute.forEach(({ chainId, chainName, amount }) => {
+  const transactionResults = transactionsToExecute.map(({ chainId, chainName, amount }) => {
     const hashes = txnReceipts[chainId] || [];
-    if (hashes.length > 0) {
-      console.log(`\n${chainName} (${chainId}):`);
-      console.log(`   Amount: ${amount} USDC`);
-      console.log(`   Transaction hash(es): ${hashes.join(", ")}`);
-      console.log(`   🔗 Monitor: ${blockExplorerLink(hashes[0], chainId)}`);
-    }
+    return {
+      chainName,
+      chainId,
+      amount,
+      transactionHashes: hashes,
+      explorerLink: hashes.length > 0 ? blockExplorerLink(hashes[0], chainId) : undefined,
+    };
   });
 
-  console.log(`\n⏳ The bridges will be finalized on ${destinationChainName} by the finalizer bot.`);
-  console.log("   You can monitor the finalization on the destination chain once the bridge messages are processed.");
+  logger.info({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "✅ Bridge transactions submitted",
+    transactions: transactionResults,
+  });
+
+  logger.debug({
+    at: "RefillUsdcToSpecificChain#run",
+    message: "⏳ The bridges will be finalized by the finalizer bot",
+    destinationChain: destinationChainName,
+    destinationChainId,
+  });
 }
 
 if (require.main === module) {
+  logger = Logger;
+  let exitCode = 0;
   run()
-    .then(async () => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
-    })
     .catch(async (error) => {
-      console.error("❌ Process exited with error:", error.message);
-      if (error.stack) {
-        console.error(error.stack);
-      }
+      exitCode = 1;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      logger.error({
+        at: "RefillUsdcToSpecificChain",
+        message: "❌ Process exited with error",
+        error: errorMessage,
+        stack: errorStack,
+      });
+    })
+    .finally(async () => {
+      await waitForLogger(logger);
+      await delay(5); // Wait 5s for logger to flush.
       // eslint-disable-next-line no-process-exit
-      process.exit(1);
+      process.exit(exitCode);
     });
 }
