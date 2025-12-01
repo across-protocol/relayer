@@ -1,4 +1,3 @@
-import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
