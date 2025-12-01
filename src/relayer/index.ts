@@ -72,6 +72,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
 
   if (eventListener) {
+    const updates: { [blockNumber: number]: boolean } = {};
     const updateHub = async (): Promise<void> => {
       const { configStoreClient, hubPoolClient } = relayerClients;
       await configStoreClient.update();
@@ -79,6 +80,14 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     };
 
     const newBlock = (blockNumber: number, currentTime: number) => {
+      // Protect against duplicate events by tracking blockNumbers previously updated.
+      const updated = updates[blockNumber];
+      if (updated) {
+        logger.debug({ at, message: "Received duplicate Hub Chain block update.", blockNumber, currentTime });
+        return;
+      }
+
+      updates[blockNumber] = true;
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
       setImmediate(async () => updateHub());
     };
