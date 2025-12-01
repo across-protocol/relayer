@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
@@ -92,7 +93,10 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       setImmediate(async () => updateHub());
     };
 
+    // @todo: Resolve types correctly.
     const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
+    assert(isDefined(hubChainSpoke["onBlock"]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (hubChainSpoke as any).onBlock(newBlock);
   }
 
