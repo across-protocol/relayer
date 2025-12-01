@@ -95,7 +95,7 @@ async function run(): Promise<void> {
   // Get signer
   const baseSigner = await retrieveSignerFromCLIArgs();
   const signerAddr = await baseSigner.getAddress();
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "Connected to account",
     signerAddress: signerAddr,
@@ -125,7 +125,7 @@ async function run(): Promise<void> {
   const multicallerClient = new MultiCallerClient(logger);
   const transactionsToExecute: Array<{ chainId: number; chainName: string; amount: string; balance: string }> = [];
 
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "📊 Checking balances on source chains",
     sourceChainCount: sourceChainIds.length,
@@ -175,7 +175,7 @@ async function run(): Promise<void> {
       const balanceFormatted = formatter(balance.toString());
       const balanceInUsdc = parseFloat(balanceFormatted);
 
-      logger.info({
+      logger.debug({
         at: "RefillUsdcToSpecificChain#run",
         message: "Checked balance on source chain",
         chainName: sourceChainName,
@@ -216,7 +216,7 @@ async function run(): Promise<void> {
           balance: balanceFormatted,
         });
 
-        logger.info({
+        logger.debug({
           at: "RefillUsdcToSpecificChain#run",
           message: "→ Queued transaction to bridge USDC",
           chainName: sourceChainName,
@@ -226,7 +226,7 @@ async function run(): Promise<void> {
           destinationChainId,
         });
       } else {
-        logger.info({
+        logger.debug({
           at: "RefillUsdcToSpecificChain#run",
           message: "✗ Balance below threshold - skipping",
           chainName: sourceChainName,
@@ -257,7 +257,7 @@ async function run(): Promise<void> {
   }
 
   // Summary
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "📍 Transaction Summary",
     totalTransactions: transactionsToExecute.length,
@@ -279,12 +279,12 @@ async function run(): Promise<void> {
         calldataList.push({ chainName, chainId, calldata });
       });
     });
-    logger.info({
+    logger.debug({
       at: "RefillUsdcToSpecificChain#run",
       message: "📋 Transaction Calldata (dry run)",
       calldataList,
     });
-    logger.info({
+    logger.debug({
       at: "RefillUsdcToSpecificChain#run",
       message: "💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables",
       example: "SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
@@ -293,7 +293,7 @@ async function run(): Promise<void> {
   }
 
   // Execute all transactions
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "Executing bridge transactions",
     transactionCount: transactionsToExecute.length,
@@ -318,7 +318,7 @@ async function run(): Promise<void> {
     transactions: transactionResults,
   });
 
-  logger.info({
+  logger.debug({
     at: "RefillUsdcToSpecificChain#run",
     message: "⏳ The bridges will be finalized by the finalizer bot",
     destinationChain: destinationChainName,
