@@ -24,9 +24,12 @@ import {
   getBlockForTimestamp,
   getSpotClearinghouseState,
   getChainQuorum,
+  getUserNonFundingLedgerUpdates,
+  toBN,
+  assert,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
-import { CONTRACT_ADDRESSES, CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
@@ -158,12 +161,14 @@ export class HyperliquidExecutor {
   }
 
   public async finalizeSwapFlows(): Promise<void> {
+    const snapshotBlock = await this.clients.dstProvider.getBlock("latest");
+    const currentTimeInMs = snapshotBlock.timestamp * 1000;
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
       const [baseTokenSymbol, finalTokenSymbol] = pairId.split("-");
       const [inputSpotBalance, _outputSpotBalance, outstandingOrders] = await Promise.all([
-        this.querySpotBalance(baseTokenSymbol, pair.swapHandler),
-        this.querySpotBalance(finalTokenSymbol, pair.swapHandler),
-        this.getOutstandingOrdersOnPair(pair),
+        this.querySpotBalanceAtTimestamp(baseTokenSymbol, pair.swapHandler, currentTimeInMs),
+        this.querySpotBalanceAtTimestamp(finalTokenSymbol, pair.swapHandler, currentTimeInMs),
+        this.getOutstandingOrdersOnPair(pair, snapshotBlock.number),
       ]);
       let outputSpotBalance = _outputSpotBalance;
       const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
@@ -211,7 +216,7 @@ export class HyperliquidExecutor {
       this.pairUpdates[pairId] = log.blockNumber;
 
       // Update tasks to place a new limit order.
-      this.updateTasks(this.updateOrderAmount(pair, BigNumber.from(swapFlowInitiated.evmAmountIn)));
+      this.updateTasks(this.updateOrderAmount(pair));
     };
 
     // Handle events coming from all destination handlers.
@@ -236,7 +241,7 @@ export class HyperliquidExecutor {
         });
 
         // Update tasks to refresh limit orders.
-        this.updateTasks(this.updateOrderAmount(this.pairs[pairId], bnZero)); // Placing an order with an order amount of zero just refreshes the order at the bestAsk.
+        this.updateTasks(this.updateOrderAmount(this.pairs[pairId]));
         this.pairUpdates[pairId] = blockNumber;
       });
     };
@@ -256,35 +261,34 @@ export class HyperliquidExecutor {
     }
   }
 
-  private async updateOrderAmount(pair: Pair, orderAmount: BigNumber): Promise<TaskResult> {
+  private async updateOrderAmount(pair: Pair): Promise<TaskResult> {
     // Get the existing orders on the pair and the l2Book.
-    const [openOrders, l2Book] = await Promise.all([
+    const { symbol: baseTokenSymbol } = this._getTokenInfo(pair.baseToken, this.chainId);
+
+    // The amount to swap to finalToken should always be the inputSpotBalance, since every swapHandler
+    // must attempt to swap all inputToken amounts to `finalToken`s.
+    const [openOrders, l2Book, sizeXe8] = await Promise.all([
       getOpenOrders(this.infoClient, { user: pair.swapHandler.toNative() }),
       getL2Book(this.infoClient, { coin: pair.name }),
+      this.querySpotBalance(baseTokenSymbol, pair.swapHandler),
     ]);
     const { baseToken, finalToken } = pair;
-    const { decimals } = this._getTokenInfo(baseToken, this.chainId);
 
+    // Set the price as the best ask.
     const existingOrder = openOrders[0];
     const bestAsk = Number(l2Book.levels[0][0].px);
     const priceXe8 = Math.floor(bestAsk * 10 ** 8);
-    // The swap handler should only have orders placed on the associated pair.
-    // `sz` represents the remaining, unfilled quantity.
-    const existingAmountPlaced = BigNumber.from(openOrders[0]?.sz ?? 0);
-    const existingAmountPlacedQuantums = existingAmountPlaced.mul(10 ** decimals);
-    const newAmountToPlace = orderAmount.add(existingAmountPlacedQuantums);
-    const sizeXe8 = ConvertDecimals(decimals, 8)(newAmountToPlace);
 
     const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
     // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
     if (isDefined(existingOrder)) {
       this.cancelLimitOrderByCloid(baseToken, finalToken, existingOrder.oid);
-    } else if (newAmountToPlace.eq(bnZero)) {
-      // If the existing order is undefined and there is no new amount to place, then there is nothing actionable for us to do on this update.
+    } else if (sizeXe8.eq(bnZero)) {
+      // If the inputSpotBalance is 0, then there is nothing to do.
       return { actionable: false, mrkdwn: "No order updates required" };
     }
     this.placeOrder(baseToken, finalToken, priceXe8, sizeXe8, oid);
-    return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${newAmountToPlace}.` };
+    return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${sizeXe8}.` };
   }
 
   // Onchain function wrappers.
@@ -309,20 +313,36 @@ export class HyperliquidExecutor {
     const { balances } = await getSpotClearinghouseState(this.infoClient, { user: owner.toNative() });
     const balance = balances.find((balance) => balance.coin === tokenSymbol);
     if (isDefined(balance)) {
-      return BigNumber.from(Math.floor(Number(balance.total) * 10 ** 8));
+      return toBN(Math.floor(Number(balance.total) * 10 ** 8));
     }
     return bnZero;
   }
 
-  private async querySpotBalanceFromEvm(hyperEvmTokenId: number, owner: EvmAddress): Promise<BigNumber> {
-    const { address: coreSpotBalanceReader } = CONTRACT_ADDRESSES[this.chainId].coreSpotBalanceReader;
-    const rawCalldata = ethersUtils.defaultAbiCoder.encode(["address", "uint256"], [owner.toNative(), hyperEvmTokenId]);
-
-    const rawDataCall = await this.clients.dstProvider.call({
-      to: coreSpotBalanceReader,
-      data: rawCalldata,
-    });
-    return BigNumber.from(`0x${rawDataCall.slice(-64)}`);
+  private async querySpotBalanceAtTimestamp(
+    tokenSymbol: string,
+    owner: EvmAddress,
+    timestampInMs: number
+  ): Promise<BigNumber> {
+    const [currentBalance, userNonFundingLedgerUpdates] = await Promise.all([
+      this.querySpotBalance(tokenSymbol, owner),
+      getUserNonFundingLedgerUpdates(this.infoClient, {
+        user: owner.toNative(),
+        startTime: timestampInMs,
+      }),
+    ]);
+    const outOfScopeTransactions = userNonFundingLedgerUpdates.filter(
+      ({ delta }) =>
+        delta.type === "spotTransfer" &&
+        delta.token === tokenSymbol &&
+        delta.destination === owner.toNative().toLowerCase()
+    );
+    const outOfScopeBalance = outOfScopeTransactions.reduce((sum, txn) => {
+      // Need to type check to ensure `amount` is a field of `txn.delta`.
+      assert(txn.delta.type === "spotTransfer");
+      const { amount } = txn.delta;
+      return toBN(Math.floor(Number(amount) * 10 ** 8));
+    }, bnZero);
+    return currentBalance.sub(outOfScopeBalance);
   }
 
   private sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
@@ -359,19 +379,20 @@ export class HyperliquidExecutor {
     });
   }
 
-  private async getOutstandingOrdersOnPair(pair: Pair): Promise<SwapFlowInitialized[]> {
+  private async getOutstandingOrdersOnPair(pair: Pair, toBlock?: number): Promise<SwapFlowInitialized[]> {
     const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const searchConfig = { ...this.dstSearchConfig, to: toBlock ?? this.dstSearchConfig.to };
     const [orderInitializedEvents, orderFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         dstHandler,
         dstHandler.filters.SwapFlowInitialized(undefined, undefined, pair.finalToken.toNative()),
-        this.dstSearchConfig
+        searchConfig
       ),
       paginatedEventQuery(
         dstHandler,
         dstHandler.filters.SwapFlowFinalized(undefined, undefined, pair.finalToken.toNative()),
-        this.dstSearchConfig
+        searchConfig
       ),
     ]);
     return orderInitializedEvents
