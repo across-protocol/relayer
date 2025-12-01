@@ -15,7 +15,8 @@ import {
   blockExplorerLink,
   getCctpDomainForChainId,
   Logger,
-  winston,
+  waitForLogger,
+  delay,
 } from "../src/utils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
 import { constructCctpDepositForBurnTxn } from "../src/utils/CCTPUtils";
@@ -39,7 +40,7 @@ const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 const MIN_BALANCE_THRESHOLD_USDC = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 100; // Minimum USDC balance (in human-readable units) to trigger transfer
 const DEFAULT_DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
 
-let logger: winston.Logger;
+let logger: typeof Logger;
 
 async function run(): Promise<void> {
   // Get configuration from environment variables only
@@ -328,12 +329,10 @@ async function run(): Promise<void> {
 
 if (require.main === module) {
   logger = Logger;
+  let exitCode = 0;
   run()
-    .then(async () => {
-      // eslint-disable-next-line no-process-exit
-      process.exit(0);
-    })
     .catch(async (error) => {
+      exitCode = 1;
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       logger.error({
@@ -342,7 +341,11 @@ if (require.main === module) {
         error: errorMessage,
         stack: errorStack,
       });
+    })
+    .finally(async () => {
+      await waitForLogger(logger);
+      await delay(5); // Wait 5s for logger to flush.
       // eslint-disable-next-line no-process-exit
-      process.exit(1);
+      process.exit(exitCode);
     });
 }
