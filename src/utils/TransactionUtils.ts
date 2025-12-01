@@ -176,6 +176,13 @@ export async function runTransaction(
         await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
 
+      // Likely irrecoverable error due to native token wrap/unwrap collision.
+      case errors.INSUFFICIENT_FUNDS: {
+        message = "Cannot execute transaction due to insufficent native token balance.";
+        logger.warn({ at, message, code, reason, ...commonFields });
+        throw error;
+      }
+
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
