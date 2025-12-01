@@ -235,6 +235,16 @@ export const CONTRACT_ADDRESSES: {
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
   },
+  [CHAIN_IDs.MONAD]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",

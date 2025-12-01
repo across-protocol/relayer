@@ -95,9 +95,10 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
+      acrossApiClient.update(this.config.ignoreLimits),
       tokenClient.update(),
     ]);
 
@@ -118,8 +119,7 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
@@ -142,7 +142,7 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
+    await tokenClient.update();
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
@@ -193,7 +193,14 @@ export class Relayer {
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
     const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
-    const { addressFilter, ignoreLimits, relayerTokens, acceptInvalidFills, minDepositConfirmations } = this.config;
+    const {
+      addressFilter,
+      ignoreLimits,
+      relayerTokens,
+      acceptInvalidFills,
+      minDepositConfirmations,
+      relayerDestinationTokens,
+    } = this.config;
     const [srcChain, dstChain] = [getNetworkName(originChainId), getNetworkName(destinationChainId)];
     const relayKey = sdkUtils.getRelayEventKey(deposit);
 
@@ -279,9 +286,22 @@ export class Relayer {
     if (relayerTokens.length > 0 && !relayerTokens.some((token) => token.eq(l1Token))) {
       this.logger.debug({
         at: "Relayer::filterDeposit",
-        message: "Skipping deposit for unsupported token.",
+        message: "Skipping deposit for unsupported input token.",
         deposit,
         l1Token,
+      });
+      return ignoreDeposit();
+    }
+
+    if (
+      relayerDestinationTokens[destinationChainId] &&
+      !relayerDestinationTokens[destinationChainId].some((token) => token.eq(deposit.outputToken))
+    ) {
+      this.logger.debug({
+        at: "Relayer::filterDeposit",
+        message: "Skipping deposit for unsupported output token.",
+        deposit,
+        outputToken: deposit.outputToken,
       });
       return ignoreDeposit();
     }
@@ -1186,7 +1206,7 @@ export class Relayer {
   }
 
   getRelayerAddrOn(repaymentChainId: number): Address {
-    return chainIsSvm(repaymentChainId) ? this.clients.svmFillerClient.relayerAddress : this.relayerEvmAddress;
+    return chainIsSvm(repaymentChainId) ? this.clients.tokenClient.relayerSvmAddress : this.relayerEvmAddress;
   }
 
   /**
