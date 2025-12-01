@@ -14,6 +14,21 @@ export type IndexerOpts = {
 };
 
 /**
+ * Type representing a SpokePoolClient with the SpokeListener mixin applied.
+ * Uses TypeScript's InstanceType and ReturnType to automatically infer the complete type from the mixin.
+ */
+export type SpokePoolClientWithListener = InstanceType<ReturnType<typeof SpokeListener<Constructor<SpokePoolClient>>>>;
+
+/**
+ * Type guard to check if a SpokePoolClient has the listener mixin applied.
+ * @param client The SpokePoolClient to check
+ * @returns true if the client has the onBlock method (i.e., has the listener mixin)
+ */
+export function isSpokePoolClientWithListener(client: SpokePoolClient): client is SpokePoolClientWithListener {
+  return "onBlock" in client && typeof (client as any).onBlock === "function";
+}
+
+/**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
  * The SDK exports both the EVMSpokePoolClient and SVMSpokePoolClient types. They have different properties
  * and even different methods of instantiation. To avoid duplicating the SpokePoolListener implementation,

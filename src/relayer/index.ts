@@ -15,7 +15,7 @@ import {
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
-import { InventoryClientState } from "../clients";
+import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { RedisCacheInterface } from "../caching/RedisCache";
 config();
@@ -73,6 +73,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
 
   if (eventListener) {
+    const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
+    assert(isSpokePoolClientWithListener(hubChainSpoke));
+
     const updates: { [blockNumber: number]: boolean } = {};
     const updateHub = async (): Promise<void> => {
       const { configStoreClient, hubPoolClient } = relayerClients;
@@ -92,12 +95,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
       setImmediate(async () => updateHub());
     };
-
-    // @todo: Resolve types correctly.
-    const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
-    assert(isDefined(hubChainSpoke["onBlock"]));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (hubChainSpoke as any).onBlock(newBlock);
+    hubChainSpoke.onBlock(newBlock);
   }
 
   try {
