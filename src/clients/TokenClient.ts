@@ -33,6 +33,7 @@ import {
   EvmAddress,
   convertRelayDataParamsToBytes32,
   getSolanaTokenBalance,
+  ZERO_ADDRESS,
 } from "../utils";
 
 export type TokenDataType = { [chainId: number]: { [token: string]: { balance: BigNumber; allowance: BigNumber } } };
@@ -44,6 +45,7 @@ type UnfilledDepositAmountsType = {
 };
 
 export class TokenClient {
+  private readonly erc20: Contract;
   private profiler: InstanceType<typeof Profiler>;
   tokenData: TokenDataType = {};
   tokenShortfall: TokenShortfallType = {};
@@ -61,6 +63,7 @@ export class TokenClient {
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
     this.profiler = new Profiler({ at: "TokenClient", logger });
+    this.erc20 = new Contract(ZERO_ADDRESS, ERC20.abi);
   }
 
   getAllTokenData(): TokenDataType {
@@ -219,10 +222,11 @@ export class TokenClient {
     const spokePoolClient = this.spokePoolManager.getClient(chainId);
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
     assert(isEVMSpokePoolClient(spokePoolClient));
-    const signer = spokePoolClient.spokePool.signer;
+    const { provider } = spokePoolClient.spokePool;
+    const erc20 = this.erc20.connect(provider);
 
     if (chainId === this.hubPoolClient.chainId) {
-      return hubPoolTokens.map(({ address }) => new Contract(address.toEvmAddress(), ERC20.abi, signer));
+      return hubPoolTokens.map(({ address }) => erc20.attach(address.toEvmAddress()));
     }
 
     const tokens = hubPoolTokens
@@ -238,14 +242,14 @@ export class TokenClient {
 
         // If the HubPool token is USDC then it might map to multiple tokens on the destination chain.
         if (symbol === "USDC") {
-          ["USDC.e", "USDbC"]
+          ["USDC.e", "USDbC", "USDzC"]
             .map((symbol) => TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId])
             .filter(isDefined)
             .forEach((address) => tokenAddrs.push(address));
           tokenAddrs = dedupArray(tokenAddrs);
         }
 
-        return tokenAddrs.filter(isDefined).map((address) => new Contract(address, ERC20.abi, signer));
+        return tokenAddrs.filter(isDefined).map((address) => erc20.attach(address));
       })
       .flat();
 
@@ -367,8 +371,9 @@ export class TokenClient {
     });
 
     // Add additional L2 tokens to the balances and allowances.
+    const erc20 = this.erc20.connect(provider);
     this.additionalL2Tokens[chainId]?.forEach((token) => {
-      const contract = new Contract(token.toNative(), ERC20.abi, provider);
+      const contract = erc20.attach(token.toNative());
       balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
       allowances.push({
         contract,
