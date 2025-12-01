@@ -26,9 +26,16 @@ import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider, Signer } from ".";
+import { assert, getRedisCache, Provider, Signer, ERC20, winston } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
+import {
+  aboveAllowanceThreshold,
+  getL2TokenAllowanceFromCache,
+  setL2TokenAllowanceInCache,
+  TransferTokenParams,
+} from "../adapter/utils";
+import { approveTokens as approveBridgeTokens } from "../clients/bridges/utils";
 
 /** ********************************************************************************************************************
  *
@@ -93,7 +100,6 @@ export const {
 
 // Import types and utilities needed for the constructCctpDepositForBurnTxn function
 import type { AugmentedTransaction } from "../clients/TransactionClient";
-import type { TransferTokenParams } from "../adapter/utils";
 
 /**
  * Return all deposit for burn transaction hashes that were created on the source chain.
@@ -858,6 +864,79 @@ async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<C
 }
 
 /**
+ * Checks and sets USDC approval for CCTP TokenMessenger if needed.
+ * @param sourceChainId Chain ID where the approval is needed
+ * @param sourceSigner Signer for the source chain
+ * @param sourceUsdcTokenAddress USDC token address on source chain
+ * @param tokenMessengerAddress CCTP TokenMessenger contract address
+ * @param logger Optional logger for logging approval actions
+ */
+async function checkAndApproveCctpTokenMessenger(
+  sourceChainId: number,
+  sourceSigner: Signer,
+  sourceUsdcTokenAddress: EvmAddress,
+  tokenMessengerAddress: string,
+  logger?: winston.Logger
+): Promise<void> {
+  if (!logger || !chainIsEvm(sourceChainId)) {
+    return;
+  }
+
+  const tokenMessengerEvmAddress = EvmAddress.from(tokenMessengerAddress);
+  const signerAddress = await sourceSigner.getAddress();
+  const signerEvmAddress = EvmAddress.from(signerAddress);
+
+  // Check allowance (first from cache, then on-chain)
+  const cachedAllowance = await getL2TokenAllowanceFromCache(
+    sourceChainId,
+    sourceUsdcTokenAddress,
+    signerEvmAddress,
+    tokenMessengerEvmAddress
+  );
+  const usdcContract = new Contract(sourceUsdcTokenAddress.toNative(), ERC20.abi, sourceSigner);
+  const allowance = cachedAllowance ?? (await usdcContract.allowance(signerAddress, tokenMessengerAddress));
+
+  // Cache the allowance if we fetched it on-chain and it's sufficient
+  if (!isDefined(cachedAllowance) && aboveAllowanceThreshold(allowance)) {
+    await setL2TokenAllowanceInCache(
+      sourceChainId,
+      sourceUsdcTokenAddress,
+      signerEvmAddress,
+      tokenMessengerEvmAddress,
+      allowance
+    );
+  }
+
+  // Approve if needed
+  if (!aboveAllowanceThreshold(allowance)) {
+    const sourceChainName = getNetworkName(sourceChainId);
+    logger.info({
+      at: "checkAndApproveCctpTokenMessenger",
+      message: "Approving USDC for CCTP TokenMessenger",
+      chainName: sourceChainName,
+      chainId: sourceChainId,
+      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenMessengerAddress,
+    });
+
+    // Use Mainnet as hub chain ID for approval
+    await approveBridgeTokens(
+      [{ token: usdcContract, bridge: tokenMessengerEvmAddress }],
+      sourceChainId,
+      CHAIN_IDs.MAINNET,
+      logger
+    );
+
+    logger.info({
+      at: "checkAndApproveCctpTokenMessenger",
+      message: "✓ USDC approved for CCTP TokenMessenger",
+      chainName: sourceChainName,
+      chainId: sourceChainId,
+    });
+  }
+}
+
+/**
  * Constructs a CCTP depositForBurn transaction for L1->L2, L2->L2, or L2->L1 transfers.
  * This is a utility function extracted from UsdcCCTPBridge to be reusable.
  *
@@ -879,10 +958,20 @@ export async function constructCctpDepositForBurnTxn(
   toAddress: EvmAddress,
   sourceUsdcTokenAddress: EvmAddress,
   amount: BigNumber,
-  optionalParams?: TransferTokenParams
+  optionalParams?: TransferTokenParams,
+  logger?: winston.Logger
 ): Promise<AugmentedTransaction> {
   const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpV2TokenMessenger(sourceChainId);
   const bridgeContract = new Contract(tokenMessengerAddress, tokenMessengerAbi, sourceSigner);
+
+  // Check and set CCTP TokenMessenger approval if needed
+  await checkAndApproveCctpTokenMessenger(
+    sourceChainId,
+    sourceSigner,
+    sourceUsdcTokenAddress,
+    tokenMessengerAddress,
+    logger
+  );
 
   const { decimals } = getTokenInfo(sourceUsdcTokenAddress, sourceChainId);
   const formatter = createFormatFunction(2, 4, false, decimals);

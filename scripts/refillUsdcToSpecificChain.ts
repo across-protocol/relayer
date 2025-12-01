@@ -205,7 +205,8 @@ async function run(): Promise<void> {
           toAddress,
           sourceUsdcToken,
           balance, // Send entire balance
-          undefined // No fast mode for now
+          undefined, // No fast mode for now
+          logger // Pass logger for approval checking
         );
 
         // Enqueue transaction
