@@ -269,7 +269,7 @@ export class TokenClient {
       .filter(isDefined);
   }
 
-  async updateChain(
+  updateChain(
     chainId: number,
     hubPoolTokens: L1Token[]
   ): Promise<Record<string, { balance: BigNumber; allowance: BigNumber }>> {
@@ -277,54 +277,12 @@ export class TokenClient {
     assert(isDefined(spokePoolClient), `SpokePoolClient not found for chainId ${chainId}`);
 
     if (isEVMSpokePoolClient(spokePoolClient)) {
-      const multicall3 = sdkUtils.getMulticall3(chainId, spokePoolClient.spokePool.provider);
-      if (!isDefined(multicall3)) {
-        return this.fetchTokenData(chainId, hubPoolTokens);
-      }
-
-      const balances: sdkUtils.Call3[] = [];
-      const allowances: sdkUtils.Call3[] = [];
-      this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
-        balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
-        allowances.push({
-          contract: token,
-          method: "allowance",
-          args: [this.relayerEvmAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
-        });
-      });
-
-      // Add additional L2 tokens to the balances and allowances.
-      if (isDefined(this.additionalL2Tokens[chainId])) {
-        this.additionalL2Tokens[chainId].forEach((token) => {
-          const contract = new Contract(token.toNative(), ERC20.abi, spokePoolClient.spokePool.signer);
-          balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
-          allowances.push({
-            contract,
-            method: "allowance",
-            args: [this.relayerEvmAddress.toEvmAddress(), spokePoolClient.spokePoolAddress.toEvmAddress()],
-          });
-        });
-      }
-
-      const calls = [...balances, ...allowances];
-      const results = await sdkUtils.aggregate(multicall3, calls);
-
-      const allowanceOffset = balances.length;
-      const balanceInfo = Object.fromEntries(
-        balances.map(({ contract: { address } }, idx) => {
-          return [
-            toAddressType(address, chainId).toNative(),
-            { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
-          ];
-        })
-      );
-
-      return balanceInfo;
+      return this.updateEVM(chainId, hubPoolTokens);
     } else if (isSVMSpokePoolClient(spokePoolClient)) {
       return this.fetchSolanaTokenData(chainId, hubPoolTokens);
-    } else {
-      throw new Error(`Unknown SpokePool client type: ${chainId}`);
     }
+
+    throw new Error(`Unknown SpokePool client type for ${getNetworkName(chainId)}`);
   }
 
   async update(): Promise<void> {
@@ -382,6 +340,55 @@ export class TokenClient {
     );
 
     return tokenData;
+  }
+
+  private async updateEVM(chainId: number, hubPoolTokens: L1Token[]) {
+    const spokePoolClient = this.spokePoolManager.getClient(chainId);
+    assert(isEVMSpokePoolClient(spokePoolClient));
+    const {
+      spokePool: { provider },
+      spokePoolAddress,
+    } = spokePoolClient;
+
+    const multicall3 = sdkUtils.getMulticall3(chainId, provider);
+    if (!isDefined(multicall3)) {
+      return this.fetchTokenData(chainId, hubPoolTokens);
+    }
+
+    const balances: sdkUtils.Call3[] = [];
+    const allowances: sdkUtils.Call3[] = [];
+    this.resolveRemoteTokens(chainId, hubPoolTokens).forEach((token) => {
+      balances.push({ contract: token, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
+      allowances.push({
+        contract: token,
+        method: "allowance",
+        args: [this.relayerEvmAddress.toEvmAddress(), spokePoolAddress.toEvmAddress()],
+      });
+    });
+
+    // Add additional L2 tokens to the balances and allowances.
+    this.additionalL2Tokens[chainId]?.forEach((token) => {
+      const contract = new Contract(token.toNative(), ERC20.abi, provider);
+      balances.push({ contract, method: "balanceOf", args: [this.relayerEvmAddress.toEvmAddress()] });
+      allowances.push({
+        contract,
+        method: "allowance",
+        args: [this.relayerEvmAddress.toEvmAddress(), spokePoolAddress.toEvmAddress()],
+      });
+    });
+
+    const calls = [...balances, ...allowances];
+    const results = await sdkUtils.aggregate(multicall3, calls);
+
+    const allowanceOffset = balances.length;
+    const balanceInfo = Object.fromEntries(
+      balances.map(({ contract: { address } }, idx) => [
+        EvmAddress.from(address).toNative(),
+        { balance: results[idx][0], allowance: results[allowanceOffset + idx][0] },
+      ])
+    );
+
+    return balanceInfo;
   }
 
   async fetchSolanaTokenData(
