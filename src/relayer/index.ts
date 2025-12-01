@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
@@ -39,6 +40,7 @@ process.on("SIGHUP", () => {
 });
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const at = "runRelayer";
   const profiler = new Profiler({
     at: "Relayer#run",
     logger: _logger,
@@ -46,7 +48,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalListener, pollingDelay } = config;
+  const { eventListener, externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
 
@@ -55,7 +57,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
   const { addressFilter: _addressFilter, ...loggedConfig } = config;
-  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
+  logger.debug({ at, message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
@@ -69,6 +71,22 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   const apiUpdateInterval = 30; // seconds
   scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+
+  if (eventListener) {
+    const updateHub = async (): Promise<void> => {
+      const { configStoreClient, hubPoolClient } = relayerClients;
+      await configStoreClient.update();
+      await hubPoolClient.update();
+    };
+
+    const newBlock = (blockNumber: number, currentTime: number) => {
+      logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
+      setImmediate(async () => updateHub());
+    };
+
+    const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
+    (hubChainSpoke as any).onBlock(newBlock);
+  }
 
   try {
     for (let run = 1; !abortController.signal.aborted; ++run) {

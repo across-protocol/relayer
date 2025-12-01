@@ -1,4 +1,5 @@
 import assert from "assert";
+import { EventEmitter } from "node:events";
 import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
@@ -41,6 +42,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     // Standard private/readonly constraints are not available to mixins; use ES2020 private properties instead.
     #chain: string;
     #indexerPath: string;
+    #eventEmitter: EventEmitter;
 
     #worker: ChildProcess;
     #pendingBlockNumber: number;
@@ -61,7 +63,17 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       this.#pendingEvents = this._queryableEventNames().map(() => []);
       this.#pendingEventsRemoved = [];
 
+      this.#eventEmitter = new EventEmitter();
+
+      this.#eventEmitter.once("newListener", (event) => {
+        this.logger.debug({ at: "SpokePoolClient::newListener", message: "New event listener registered.", event });
+      });
+
       this._startWorker();
+    }
+
+    onBlock(handler: (blockNumber: number, currentTime: number) => void) {
+      this.#eventEmitter.on("block", handler);
     }
 
     /**
@@ -153,6 +165,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         } else {
           this.#pendingBlockNumber = blockNumber;
           this.#pendingCurrentTime = currentTime;
+          this.#eventEmitter.emit("block", blockNumber, currentTime);
         }
         return;
       }

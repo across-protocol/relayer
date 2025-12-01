@@ -31,6 +31,7 @@ type DepositConfirmationConfig = {
 
 export class RelayerConfig extends CommonConfig {
   readonly externalListener: boolean;
+  readonly eventListener: boolean;
   readonly listenerPath: { [chainId: number]: string } = {};
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
@@ -97,11 +98,13 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_MAINTENANCE_INTERVAL = "60",
       INVENTORY_TOPIC = "across-relayer-inventory",
       RELAYER_USE_INVENTORY_MANAGER = "false",
+      RELAYER_EVENT_LISTENER = "false",
     } = env;
     super(env);
 
     // External listeners are dependent on looping mode being configured.
     this.externalListener = this.pollingDelay > 0 && RELAYER_EXTERNAL_LISTENER === "true";
+    this.eventListener = this.externalListener && RELAYER_EVENT_LISTENER === "true";
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
