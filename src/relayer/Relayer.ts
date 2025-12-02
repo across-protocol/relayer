@@ -128,9 +128,11 @@ export class Relayer {
       tokenClient.clearTokenShortfall();
       tokenClient.clearTokenData();
 
-      await configStoreClient.update();
-      if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
-        await hubPoolClient.update();
+      if (!this.config.eventListener) {
+        await configStoreClient.update();
+        if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
+          await hubPoolClient.update();
+        }
       }
     }
 
