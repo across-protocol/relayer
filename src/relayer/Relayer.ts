@@ -144,16 +144,12 @@ export class Relayer {
       }
     }
 
-    // Most of the time there's no need to update the tokenClient.
-    // Force update on a known token shortfall, or otherwise every nth update loop.
-    const updateTokenClient = (): Promise<void> => {
-      const destinationChains =
-        this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
-      tokenClient.clearTokenData();
-      return tokenClient.update(destinationChains);
-    };
-
-    await Promise.all([updateTokenClient(), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)]);
+    // Only update the TokenClient on chains where the relayer is making fills.
+    const destinationChains =
+      this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
+    await Promise.all([
+      tokenClient.update(destinationChains), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)
+    ]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
