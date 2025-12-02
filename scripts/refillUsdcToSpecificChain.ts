@@ -205,6 +205,7 @@ async function run(): Promise<void> {
           toAddress,
           sourceUsdcToken,
           balance, // Send entire balance
+          logger,
           undefined // No fast mode for now
         );
 
