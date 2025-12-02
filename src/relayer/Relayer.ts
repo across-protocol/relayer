@@ -144,13 +144,7 @@ export class Relayer {
       }
     }
 
-    // Only update the TokenClient on chains where the relayer is making fills.
-    const destinationChains =
-      this.config.relayerDestinationChains.length > 0 ? this.config.relayerDestinationChains : undefined;
-    await Promise.all([
-      tokenClient.update(destinationChains),
-      updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
-    ]);
+    await Promise.all([tokenClient.update(), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }

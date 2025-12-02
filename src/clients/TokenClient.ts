@@ -289,16 +289,12 @@ export class TokenClient {
     throw new Error(`Unknown SpokePool client type for ${getNetworkName(chainId)}`);
   }
 
-  async update(chainIds?: number[]): Promise<void> {
+  async update(): Promise<void> {
     const mark = this.profiler.start("update");
     this.logger.debug({ at: "TokenBalanceClient", message: "Updating TokenBalance client" });
 
     const tokenClientTokens = this._getTokenClientTokens();
-
-    chainIds ??= Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => chainId);
-
-    // Filter supplied/retrieved chainIds for defined SpokePoolClients.
-    chainIds = chainIds.filter((chainId) => isDefined(this.spokePoolManager.getClient(chainId)));
+    const chainIds = Object.values(this.spokePoolManager.getSpokePoolClients()).map(({ chainId }) => chainId);
 
     const balanceInfo = await Promise.all(chainIds.map((chainId) => this.updateChain(chainId, tokenClientTokens)));
 
