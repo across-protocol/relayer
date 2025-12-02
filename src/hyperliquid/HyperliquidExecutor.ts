@@ -445,9 +445,9 @@ export class HyperliquidExecutor {
     while (!abortController.signal.aborted) {
       await this.waitForNextTask();
 
-      // Yield the first task to complete in the array of tasks and remove that promise from the list of outstanding tasks.
-      const taskResult = Promise.race(this.tasks);
-      this.tasks.splice(this.tasks.indexOf(Promise.resolve(taskResult)), 1);
+      // Yield the first task in the task queue.
+      const topPromise = this.tasks.shift();
+      const taskResult = await topPromise;
 
       yield taskResult;
     }
