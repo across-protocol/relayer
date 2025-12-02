@@ -95,9 +95,10 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
+      acrossApiClient.update(this.config.ignoreLimits),
       tokenClient.update(),
     ]);
 
@@ -118,8 +119,7 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
@@ -128,9 +128,11 @@ export class Relayer {
       tokenClient.clearTokenShortfall();
       tokenClient.clearTokenData();
 
-      await configStoreClient.update();
-      if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
-        await hubPoolClient.update();
+      if (!this.config.eventListener) {
+        await configStoreClient.update();
+        if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
+          await hubPoolClient.update();
+        }
       }
     }
 
@@ -142,7 +144,7 @@ export class Relayer {
       "ExecutedRelayerRefundRoot",
     ]);
 
-    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
+    await tokenClient.update();
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }

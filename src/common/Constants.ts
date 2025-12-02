@@ -1047,7 +1047,7 @@ export const OFT_FEE_CAP_OVERRIDES: { [chainId: number]: BigNumber } = {
   // 0.4 BNB fee cap on BSC
   [CHAIN_IDs.BSC]: toWei("0.4"),
   [CHAIN_IDs.HYPEREVM]: toWei("8"),
-  [CHAIN_IDs.MONAD]: toWei("8"), // @TODO: Re-evaluate this after token launch
+  [CHAIN_IDs.MONAD]: toWei(100),
   [CHAIN_IDs.PLASMA]: toWei("600"),
   // 1600 MATIC/POL cap on Polygon
   [CHAIN_IDs.POLYGON]: toWei("1600"),
@@ -1064,40 +1064,33 @@ export type SwapRoute = {
 // Hardcoded swap routes the refiller can take to swap into the native token on the input destination chain ID.
 // @dev When calling the Swap API, the ZERO_ADDRESS is associated with the native gas token, even if
 // the native token address is not actually ZERO_ADDRESS.
-export const SWAP_ROUTES: { [chainId: number]: SwapRoute } = {
-  [CHAIN_IDs.BSC]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.ARBITRUM]),
-    outputToken: EvmAddress.from(ZERO_ADDRESS),
+const generateSwapRoutes = () => {
+  const swapChains = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.MONAD, CHAIN_IDs.POLYGON, CHAIN_IDs.PLASMA];
+
+  // Stable defaults that are a good fit for most chains.
+  // Arbitrum WETH is selected because the relayer receives bridge fee refunds from the Arbitrum canonical bridge.
+  const defaults = {
     originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.BSC,
-    tradeType: "exactOutput",
-  },
-  [CHAIN_IDs.MONAD]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.ARBITRUM]),
+    inputTokenSymbol: "WETH",
     outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.MONAD,
-    tradeType: "exactOutput",
-  },
-  [CHAIN_IDs.POLYGON]: {
-    inputToken: EvmAddress.from(ZERO_ADDRESS),
-    outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.POLYGON,
-    tradeType: "exactOutput",
-  },
-  [CHAIN_IDs.HYPEREVM]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM]),
-    outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.HYPEREVM,
-    tradeType: "exactOutput",
-  },
-  [CHAIN_IDs.PLASMA]: {
-    inputToken: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.ARBITRUM]),
-    outputToken: EvmAddress.from(ZERO_ADDRESS),
-    originChainId: CHAIN_IDs.ARBITRUM,
-    destinationChainId: CHAIN_IDs.PLASMA,
-    tradeType: "exactOutput",
-  },
+    tradeType: "minOutput",
+  };
+
+  // Can override one or more defaults for a given chain here.
+  const overrides: Partial<typeof defaults> = {
+    [CHAIN_IDs.HYPEREVM]: { inputTokenSymbol: "USDC" },
+    [CHAIN_IDs.PLASMA]: { inputTokenSymbol: "USDT" },
+  };
+
+  return Object.fromEntries(
+    swapChains.map((destinationChainId) => {
+      const swapRoute = { ...defaults, ...(overrides[destinationChainId] ?? {}) };
+      const { originChainId, inputTokenSymbol } = swapRoute;
+      const inputToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[inputTokenSymbol].addresses[originChainId]);
+
+      return [destinationChainId, { ...swapRoute, inputToken, destinationChainId }];
+    })
+  );
 };
+
+export const SWAP_ROUTES = generateSwapRoutes();

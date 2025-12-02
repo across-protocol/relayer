@@ -1,3 +1,4 @@
+import assert from "assert";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import {
   config,
@@ -7,13 +8,14 @@ import {
   getRedisCache,
   isDefined,
   Profiler,
+  scheduleTask,
   Signer,
   winston,
 } from "../utils";
 import { Relayer } from "./Relayer";
 import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
-import { InventoryClientState } from "../clients";
+import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { RedisCacheInterface } from "../caching/RedisCache";
 config();
@@ -27,8 +29,18 @@ const {
 } = process.env;
 
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
+const abortController = new AbortController();
+
+process.on("SIGHUP", () => {
+  logger.debug({
+    at: "Relayer#run",
+    message: "Received SIGHUP, stopping...",
+  });
+  abortController.abort();
+});
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const at = "runRelayer";
   const profiler = new Profiler({
     at: "Relayer#run",
     logger: _logger,
@@ -36,37 +48,58 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
   logger = _logger;
   const config = new RelayerConfig(process.env);
-  const { externalListener, pollingDelay } = config;
+  const { eventListener, externalListener, pollingDelay } = config;
 
   const loop = pollingDelay > 0;
-  let stop = false;
-  process.on("SIGHUP", () => {
-    logger.debug({
-      at: "Relayer#run",
-      message: "Received SIGHUP, stopping at end of current loop.",
-    });
-    stop = true;
-  });
 
   const redis = await getRedisCache(logger);
   let activeRelayerUpdated = false;
 
   // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
   const { addressFilter: _addressFilter, ...loggedConfig } = config;
-  logger.debug({ at: "Relayer#run", message: "Relayer started 🏃‍♂️", loggedConfig });
+  logger.debug({ at, message: "Relayer started 🏃‍♂️", loggedConfig });
   const mark = profiler.start("relayer");
   const relayerClients = await constructRelayerClients(logger, config, baseSigner);
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { spokePoolClients, inventoryClient } = relayerClients;
+  const { acrossApiClient, inventoryClient, spokePoolClients } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
   let inventoryInit = false;
 
+  const apiUpdateInterval = 30; // seconds
+  scheduleTask(() => acrossApiClient.update(config.ignoreLimits), apiUpdateInterval, abortController.signal);
+
+  if (eventListener) {
+    const hubChainSpoke = spokePoolClients[config.hubPoolChainId];
+    assert(isSpokePoolClientWithListener(hubChainSpoke));
+
+    const updates: { [blockNumber: number]: boolean } = {};
+    const updateHub = async (): Promise<void> => {
+      const { configStoreClient, hubPoolClient } = relayerClients;
+      await configStoreClient.update();
+      await hubPoolClient.update();
+    };
+
+    const newBlock = (blockNumber: number, currentTime: number) => {
+      // Protect against duplicate events by tracking blockNumbers previously updated.
+      const updated = updates[blockNumber];
+      if (updated) {
+        logger.debug({ at, message: "Received duplicate Hub Chain block update.", blockNumber, currentTime });
+        return;
+      }
+
+      updates[blockNumber] = true;
+      logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
+      setImmediate(async () => updateHub());
+    };
+    hubChainSpoke.onBlock(newBlock);
+  }
+
   try {
-    for (let run = 1; !stop; ++run) {
+    for (let run = 1; !abortController.signal.aborted; ++run) {
       if (loop) {
         logger.debug({ at: "relayer#run", message: `Starting relayer execution loop ${run}.` });
       }
@@ -122,24 +155,24 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
             activeRelayerUpdated = true;
           } else {
             logger.debug({ at: "Relayer#run", message: `Handing over to ${botIdentifier} instance ${activeRelayer}.` });
-            stop = true;
+            abortController.abort();
           }
         }
       }
 
-      if (!stop) {
+      if (!abortController.signal.aborted) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
 
       if (!loop) {
-        stop = true;
+        abortController.abort();
       } else {
         const runTimeMilliseconds = tLoopStart.stop({
           message: "Completed relayer execution loop.",
           loopCount: run,
         });
-        if (!stop) {
+        if (!abortController.signal.aborted) {
           const runTime = Math.round(runTimeMilliseconds / 1000);
 
           // When txns are pending submission, yield execution to ensure they can be submitted.
@@ -212,6 +245,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();
   } finally {
+    abortController.abort();
     await disconnectRedisClients(logger);
     logger.debug({ at, message: `${personality} instance completed.` });
   }
