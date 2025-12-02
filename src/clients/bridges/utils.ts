@@ -117,6 +117,7 @@ export async function setL2TokenAllowanceInCache(
   await redis?.set(key, allowance.toString());
 }
 
+// @TODO: It looks like this function is not used anywhere. We have similar function in adapter/utils.ts. Delete this?
 export async function approveTokens(
   tokens: { token: Contract; bridge: EvmAddress }[],
   chainId: number,
