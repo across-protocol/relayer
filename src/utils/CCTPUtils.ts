@@ -34,8 +34,8 @@ import {
   getL2TokenAllowanceFromCache,
   setL2TokenAllowanceInCache,
   TransferTokenParams,
+  approveTokens as approveBridgeTokens,
 } from "../adapter/utils";
-import { approveTokens as approveBridgeTokens } from "../clients/bridges/utils";
 
 /** ********************************************************************************************************************
  *
@@ -892,7 +892,7 @@ async function checkAndApproveCctpTokenMessenger(
     signerEvmAddress,
     tokenMessengerEvmAddress
   );
-  const usdcContract = new Contract(sourceUsdcTokenAddress.toNative(), ERC20.abi, sourceSigner);
+  const usdcContract = ERC20.connect(sourceUsdcTokenAddress.toNative(), sourceSigner);
   const allowance = cachedAllowance ?? (await usdcContract.allowance(signerAddress, tokenMessengerAddress));
 
   // Cache the allowance if we fetched it on-chain and it's sufficient
@@ -920,7 +920,7 @@ async function checkAndApproveCctpTokenMessenger(
 
     // Use Mainnet as hub chain ID for approval
     await approveBridgeTokens(
-      [{ token: usdcContract, bridge: tokenMessengerEvmAddress }],
+      [{ token: usdcContract, bridges: [tokenMessengerEvmAddress] }],
       sourceChainId,
       CHAIN_IDs.MAINNET,
       logger
