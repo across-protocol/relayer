@@ -137,10 +137,9 @@ export class Relayer {
       if (!this.config.eventListener) {
         await configStoreClient.update();
         if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
-          await hubPoolClient.update();
+          tokenClient.clearTokenData();
+          await Promise.all([hubPoolClient.update(), tokenClient.update()]);
         }
-        tokenClient.clearTokenData();
-        await tokenClient.update();
       }
     }
 
