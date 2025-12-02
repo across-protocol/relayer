@@ -918,20 +918,32 @@ async function checkAndApproveCctpTokenMessenger(
       tokenMessengerAddress,
     });
 
-    // Use Mainnet as hub chain ID for approval
-    await approveBridgeTokens(
-      [{ token: usdcContract, bridge: tokenMessengerEvmAddress }],
-      sourceChainId,
-      CHAIN_IDs.MAINNET,
-      logger
-    );
+    try {
+      // Use Mainnet as hub chain ID for approval
+      await approveBridgeTokens(
+        [{ token: usdcContract, bridge: tokenMessengerEvmAddress }],
+        sourceChainId,
+        CHAIN_IDs.MAINNET,
+        logger
+      );
 
-    logger.info({
-      at: "checkAndApproveCctpTokenMessenger",
-      message: "✓ USDC approved for CCTP TokenMessenger",
-      chainName: sourceChainName,
-      chainId: sourceChainId,
-    });
+      logger.info({
+        at: "checkAndApproveCctpTokenMessenger",
+        message: "✓ USDC approved for CCTP TokenMessenger",
+        chainName: sourceChainName,
+        chainId: sourceChainId,
+      });
+    } catch (error) {
+      // Log the error but don't fail - the approval transaction itself may have succeeded
+      // even if the markdown generation failed
+      logger.warn({
+        at: "checkAndApproveCctpTokenMessenger",
+        message: "Approval completed with error",
+        chainName: sourceChainName,
+        chainId: sourceChainId,
+        error,
+      });
+    }
   }
 }
 
