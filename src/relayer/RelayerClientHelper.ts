@@ -166,7 +166,6 @@ export async function constructRelayerClients(
 
   const svmSigner = getSvmSignerFromEvmSigner(baseSigner);
   const svmAddress = SvmAddress.from(svmSigner.publicKey.toBase58());
-
   const tokenClient = new TokenClient(
     logger,
     signerAddr,
