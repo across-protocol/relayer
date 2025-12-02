@@ -93,7 +93,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       updates[blockNumber] = true;
       logger.debug({ at, message: "Received new Hub Chain block update.", blockNumber, currentTime });
-      setImmediate(async () => updateHub());
+      setTimeout(async () => updateHub());
     };
     hubChainSpoke.onBlock(newBlock);
   }
