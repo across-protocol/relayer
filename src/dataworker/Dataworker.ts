@@ -116,8 +116,6 @@ import {
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
-import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
-import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import {
   findAddressLookupTablePda,
@@ -1470,13 +1468,25 @@ export class Dataworker {
           });
         } else {
           assert(isSVMSpokePoolClient(client));
-          const signature = await this._executeSlowFillLeafSvm(
+          const executionResult = await this._executeSlowFillLeafSvm(
             client,
             leaf,
             rootBundleId,
             slowRelayTree.getHexProof(leaf)
           );
-          this.logger.info({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn, signature });
+          if (executionResult.executable) {
+            this.logger.info({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: mrkdwn,
+              signature: executionResult.signature,
+            });
+          } else {
+            this.logger.debug({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: "Cannot execute slow fill leaf since recipient account does not have an ATA.",
+              slowFillMarkdown: mrkdwn,
+            });
+          }
         }
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
@@ -3285,7 +3295,7 @@ export class Dataworker {
     leaf: SlowFillLeaf,
     rootBundleId: number,
     slowFillHexProof: string[]
-  ): Promise<string> {
+  ): Promise<{ executable: boolean; signature?: string }> {
     // Parse relevant info from the slow fill leaf/dataworker.
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const spokePoolProgramId = toKitAddress(spokePoolClient.spokePoolAddress);
@@ -3340,21 +3350,10 @@ export class Dataworker {
       proof: some(proof),
     });
 
-    // Check whether the recipient on Solana has an ATA for the output token. If they do not, then create one and include that in the instruction set.
-    let recipientCreateTokenAccountInstruction;
+    // Do not execute a slow fill leaf if the recipient's ATA does not exist. The dataworker should not fund new token accounts for users.
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
-      const mint = arch.svm.toAddress(leaf.relayData.outputToken);
-      const mintInfo = await arch.svm.getMintInfo(spokePoolClient.svmEventsClient.getRpc(), mint);
-      const programAddress = mintInfo.programAddress;
-      recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
-        payer: kitKeypair,
-        owner: statePda,
-        mint: l2TokenAddress,
-        ata: recipientTokenAccount,
-        systemProgram: SYSTEM_PROGRAM_ADDRESS,
-        tokenProgram: programAddress,
-      });
+      return { executable: false };
     }
 
     // Build the slow fill transaction. If there are instructions to create a new token account, then add those instructions to the slow fill transaction. Otherwise,
@@ -3363,13 +3362,10 @@ export class Dataworker {
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-      (tx) =>
-        isDefined(recipientCreateTokenAccountInstruction)
-          ? appendTransactionMessageInstructions([recipientCreateTokenAccountInstruction], tx)
-          : tx,
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
-    return sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
+    const signature = await sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
+    return { executable: true, signature };
   }
 
   async _getKitKeypair(): Promise<KeyPairSigner> {
