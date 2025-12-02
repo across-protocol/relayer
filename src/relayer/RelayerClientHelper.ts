@@ -151,8 +151,7 @@ export async function constructRelayerClients(
   }
 
   const allChainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
-  const resolveChainIds = (chainIds: number[], fallback: number[] = []): number[] =>
-    chainIds.length > 0 ? chainIds : fallback;
+  const resolveChainIds = (chainIds: number[], fallback: number[] = []) => (chainIds.length > 0 ? chainIds : fallback);
 
   // Determine which origin chains to query limits for.
   const srcChainIds = resolveChainIds(config.relayerOriginChains, allChainIds);
