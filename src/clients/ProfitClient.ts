@@ -693,32 +693,17 @@ export class ProfitClient {
       this.tokenPrices[address] ??= bnZero;
     });
 
-    const resolveTokenPrice = (address: string, price: number): number =>
-      price || Number(process.env[`RELAYER_TOKEN_PRICE_${address}`]) || 0;
-
-    // Helper to safely convert price to BigNumber, handling prices with >18 decimal places
-    const safePriceToBNWei = (price: number): BigNumber => {
-      const priceStr = price.toString();
-
-      // Only apply toFixed(18) if price has >18 decimal places
-      // This prevents "fractional component exceeds decimals" error from parseUnits
-      if (priceStr.includes(".")) {
-        const decimals = priceStr.split(".")[1].length;
-        if (decimals > 18) {
-          // Truncate to 18 decimals
-          return toBNWei(price.toFixed(18));
-        }
-      }
-
-      // For prices with <=18 decimals, use directly (no rounding needed)
-      return toBNWei(price);
-    };
-
     try {
       const tokenAddrs = Array.from(new Set(Object.values(tokens)));
-      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrs, "usd");
-      tokenPrices.forEach(({ address, price }) => {
-        this.tokenPrices[address] = safePriceToBNWei(resolveTokenPrice(address, price));
+      // If user defined a fixed price for token, skip external price lookup.
+      const tokenAddrsToQuery = tokenAddrs.filter((address) => !process.env[`RELAYER_TOKEN_PRICE_FIXED_${address}`]);
+      const tokenPrices = await this.priceClient.getPricesByAddress(tokenAddrsToQuery, "usd");
+      tokenAddrs.forEach((address) => {
+        const hasExternalPrice = tokenAddrsToQuery.includes(address);
+        const price = hasExternalPrice
+          ? tokenPrices.find(({ address: _address }) => _address === address).price
+          : Number(process.env[`RELAYER_TOKEN_PRICE_DEFAULT_${address}`]) || 0;
+        this.tokenPrices[address] = toBNWei(price.toFixed(18));
       });
       this.logger.debug({ at: "ProfitClient", message: "Updated token prices", tokenPrices: this.tokenPrices });
     } catch (err) {
