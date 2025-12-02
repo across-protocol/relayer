@@ -133,18 +133,17 @@ export class Relayer {
       // Clear state from profit and token clients. These should start fresh on each iteration.
       profitClient.clearUnprofitableFills();
       tokenClient.clearTokenShortfall();
-      tokenClient.clearTokenData();
 
       if (!this.config.eventListener) {
         await configStoreClient.update();
         if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
-          await hubPoolClient.update();
+          tokenClient.clearTokenData();
+          await Promise.all([hubPoolClient.update(), tokenClient.update()]);
         }
       }
     }
 
-    await Promise.all([tokenClient.update(), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)]);
-
+    await updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS);
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
 

@@ -63,7 +63,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   const relayer = new Relayer(await baseSigner.getAddress(), logger, relayerClients, config);
   await relayer.init();
 
-  const { acrossApiClient, inventoryClient, spokePoolClients } = relayerClients;
+  const { acrossApiClient, inventoryClient, spokePoolClients, tokenClient } = relayerClients;
   const simulate = !config.sendingTransactionsEnabled || !config.sendingRelaysEnabled;
   let txnReceipts: { [chainId: number]: Promise<string[]> } = {};
   const inventoryManagement = inventoryClient.isInventoryManagementEnabled();
@@ -80,7 +80,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     const updateHub = async (): Promise<void> => {
       const { configStoreClient, hubPoolClient } = relayerClients;
       await configStoreClient.update();
-      await hubPoolClient.update();
+      await Promise.all([hubPoolClient.update(), tokenClient.update()]);
     };
 
     const newBlock = (blockNumber: number, currentTime: number) => {
