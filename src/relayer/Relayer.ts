@@ -129,8 +129,6 @@ export class Relayer {
   async update(): Promise<boolean> {
     const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
-    const tokenShortfall = tokenClient.anyCapturedShortFallFills();
-
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
       // Clear state from profit and token clients. These should start fresh on each iteration.
@@ -154,10 +152,7 @@ export class Relayer {
       return tokenClient.update(destinationChains);
     };
 
-    await Promise.all([
-      this.updated % 10 === 0 || tokenShortfall ? updateTokenClient() : Promise.resolve(),
-      updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS),
-    ]);
+    await Promise.all([updateTokenClient(), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)]);
 
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
