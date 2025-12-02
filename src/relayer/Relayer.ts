@@ -140,11 +140,11 @@ export class Relayer {
         if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
           await hubPoolClient.update();
         }
+        await tokenClient.update();
       }
     }
 
-    await Promise.all([tokenClient.update(), updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS)]);
-
+    await updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS);
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
 
