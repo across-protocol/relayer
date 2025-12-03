@@ -24,6 +24,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   getAssociatedTokenAddress,
 } from "../../utils";
+import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
 import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/contracts";
 import * as sdk from "@across-protocol/sdk";
 import { PublicKey } from "@solana/web3.js";
@@ -112,12 +113,12 @@ async function getTokenMessengerAccounts(
 ): Promise<TokenMessengerAccounts> {
   const solanaUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[destinationChainId];
   if (!solanaUsdcAddress) {
-    throw new Error(`USDC address not configured for destination chain ${destinationChainId}`);
+    throw new DestinationUsdcNotConfiguredError(destinationChainId);
   }
 
   const originUsdcAddress = TOKEN_SYMBOLS_MAP.USDC.addresses[originChainId];
   if (!originUsdcAddress) {
-    throw new Error(`USDC address not configured for origin chain ${originChainId}`);
+    throw new OriginUsdcNotConfiguredError(originChainId);
   }
 
   const solanaUsdcAddr = address(solanaUsdcAddress);
