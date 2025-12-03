@@ -1,4 +1,5 @@
 import assert from "assert";
+import { EventEmitter } from "node:events";
 import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
@@ -11,6 +12,21 @@ export type SpokePoolClient = clients.SpokePoolClient;
 export type IndexerOpts = {
   path?: string;
 };
+
+/**
+ * Type representing a SpokePoolClient with the SpokeListener mixin applied.
+ * Uses TypeScript's InstanceType and ReturnType to automatically infer the complete type from the mixin.
+ */
+export type SpokePoolClientWithListener = InstanceType<ReturnType<typeof SpokeListener<Constructor<SpokePoolClient>>>>;
+
+/**
+ * Type guard to check if a SpokePoolClient has the listener mixin applied.
+ * @param client The SpokePoolClient to check
+ * @returns true if the client has the onBlock method (i.e., has the listener mixin)
+ */
+export function isSpokePoolClientWithListener(client: SpokePoolClient): client is SpokePoolClientWithListener {
+  return "onBlock" in client && typeof (client as any).onBlock === "function";
+}
 
 /**
  * Apply Typescript Mixins to permit a single class to generically extend a SpokePoolClient-ish instance.
@@ -41,6 +57,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     // Standard private/readonly constraints are not available to mixins; use ES2020 private properties instead.
     #chain: string;
     #indexerPath: string;
+    #eventEmitter: EventEmitter;
 
     #worker: ChildProcess;
     #pendingBlockNumber: number;
@@ -61,7 +78,17 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       this.#pendingEvents = this._queryableEventNames().map(() => []);
       this.#pendingEventsRemoved = [];
 
+      this.#eventEmitter = new EventEmitter();
+
+      this.#eventEmitter.once("newListener", (event) => {
+        this.logger.debug({ at: "SpokePoolClient::newListener", message: "New event listener registered.", event });
+      });
+
       this._startWorker();
+    }
+
+    onBlock(handler: (blockNumber: number, currentTime: number) => void) {
+      this.#eventEmitter.on("block", handler);
     }
 
     /**
@@ -153,6 +180,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         } else {
           this.#pendingBlockNumber = blockNumber;
           this.#pendingCurrentTime = currentTime;
+          this.#eventEmitter.emit("block", blockNumber, currentTime);
         }
         return;
       }
