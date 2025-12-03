@@ -8,6 +8,8 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   createFormatFunction,
+  formatUnits,
+  toBNWei,
   ERC20,
   Contract,
   getRemoteTokenForL1Token,
@@ -37,7 +39,12 @@ config();
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
 // Configuration constants with environment variable support
-const MIN_BALANCE_THRESHOLD_USDC = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 100; // Minimum USDC balance (in human-readable units) to trigger transfer
+const MIN_BALANCE_THRESHOLD_USDC_DECIMAL = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 10; // Minimum USDC balance (in human-readable units) to trigger transfer
+// Convert to smallest unit (USDC has 6 decimals)
+const MIN_BALANCE_THRESHOLD_USDC = toBNWei(
+  MIN_BALANCE_THRESHOLD_USDC_DECIMAL.toString(),
+  TOKEN_SYMBOLS_MAP.USDC.decimals
+);
 const DEFAULT_DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
 
 let logger: typeof Logger;
@@ -89,7 +96,7 @@ async function run(): Promise<void> {
     sourceChains: sourceChainIds,
     destinationChain: destinationChainName,
     destinationChainId,
-    minBalanceThreshold: MIN_BALANCE_THRESHOLD_USDC,
+    minBalanceThreshold: MIN_BALANCE_THRESHOLD_USDC_DECIMAL,
     sendTransactions,
   });
 
@@ -174,7 +181,6 @@ async function run(): Promise<void> {
       const usdcContract = new Contract(sourceUsdcToken.toNative(), ERC20.abi, sourceSigner);
       const balance = await usdcContract.balanceOf(signerAddr);
       const balanceFormatted = formatter(balance.toString());
-      const balanceInUsdc = parseFloat(balanceFormatted);
 
       logger.debug({
         at: "RefillUsdcToSpecificChain#run",
@@ -182,18 +188,17 @@ async function run(): Promise<void> {
         chainName: sourceChainName,
         chainId: sourceChainId,
         balance: balanceFormatted,
-        balanceInUsdc,
       });
 
-      // Check if balance exceeds threshold
-      if (balanceInUsdc >= MIN_BALANCE_THRESHOLD_USDC) {
+      // Check if balance exceeds threshold (compare BigNumbers directly)
+      if (balance.gte(MIN_BALANCE_THRESHOLD_USDC)) {
         logger.debug({
           at: "RefillUsdcToSpecificChain#run",
           message: "✓ Balance exceeds threshold - queuing transaction",
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: MIN_BALANCE_THRESHOLD_USDC,
+          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
         });
 
         // Construct transaction to send entire balance to destination chain
@@ -234,7 +239,7 @@ async function run(): Promise<void> {
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: MIN_BALANCE_THRESHOLD_USDC,
+          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
         });
       }
     } catch (error) {
