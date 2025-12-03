@@ -194,7 +194,7 @@ export class HyperliquidExecutor {
       const [inputSpotBalance, _outputSpotBalance, outstandingOrders] = await Promise.all([
         this.querySpotBalanceAtTimestamp(baseTokenSymbol, pair.swapHandler, pair.baseTokenDecimals, currentTimeInMs),
         this.querySpotBalanceAtTimestamp(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals, currentTimeInMs),
-        this.getOutstandingOrdersOnPair(pair),
+        this.getOutstandingOrdersOnPair(pair, snapshotBlock.number),
       ]);
       let outputSpotBalance = _outputSpotBalance;
       // The swapped input amount is calculated by `totalInputBalance` - `currentInputBalance`, where `totalInputBalance` is the amount of input tokens that have been sent
@@ -317,6 +317,10 @@ export class HyperliquidExecutor {
     }
   }
 
+  /*
+   * @notice Utility function which tells the HyperliquidExecutor when a handoff has occurred.
+   * Calls the abort controller and settles this function's promise once a handoff is observed.
+   */
   public async waitForDisconnect(): Promise<void> {
     const {
       RUN_IDENTIFIER: runIdentifier,
@@ -348,7 +352,9 @@ export class HyperliquidExecutor {
 
   /*
    * @notice Evaluates whether a new order should be placed on the input pair, and if so, enqueues a new transaction in the multicaller client.
-   * @param pair Pair to evaluate
+   * @param pair Pair to evaluate.
+   * @dev This function needs no knowledge on how much an order should be updated by, since at any point in time, the swap handler should try to swap
+   * the entire input balance with the output balance.
    */
   private async updateOrderAmount(pair: Pair): Promise<TaskResult> {
     // Get the existing orders on the pair and the l2Book.
@@ -376,11 +382,13 @@ export class HyperliquidExecutor {
       // If the inputSpotBalance is 0, then there is nothing to do.
       return { actionable: false, mrkdwn: "No order updates required" };
     }
+    // Finally enqueue an order with the derived price and total swap handler's balance of baseToken.
     this.placeOrder(baseToken, finalToken, priceXe8, sizeXe8, oid);
     return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${sizeXe8}.` };
   }
 
   // Onchain function wrappers.
+  // Enqueues an order transaction in the multicaller client.
   private placeOrder(baseToken: EvmAddress, finalToken: EvmAddress, price: number, size: BigNumber, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
@@ -398,6 +406,12 @@ export class HyperliquidExecutor {
     });
   }
 
+  /*
+   * @notice Queries the spot balance of the input token symbol.
+   * @param tokenSymbol Hyperliquid recognized token symbol (e.g. USDT0 for USDT).
+   * @param owner The address whose balance should be queried.
+   * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
+   */
   private async querySpotBalance(tokenSymbol: string, owner: EvmAddress, decimals: number): Promise<BigNumber> {
     const { balances } = await getSpotClearinghouseState(this.infoClient, { user: owner.toNative() });
     const balance = balances.find((balance) => balance.coin === tokenSymbol);
@@ -407,12 +421,20 @@ export class HyperliquidExecutor {
     return bnZero;
   }
 
+  /*
+   * @notice Queries spot balance at a specific timestamp by taking the current balance and subtracting all spotSends which have occurred since.
+   * @param tokenSymbol The token symbol to query.
+   * @param owner The address whose balance should be queried.
+   * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
+   * @param timestampInMs The timestamp to query the snapshot balance, defined in milliseconds.
+   */
   private async querySpotBalanceAtTimestamp(
     tokenSymbol: string,
     owner: EvmAddress,
     decimals: number,
     timestampInMs: number
   ): Promise<BigNumber> {
+    // Query the current balance along with all ledger updates of the owner since the input timestamp.
     const [currentBalance, userNonFundingLedgerUpdates] = await Promise.all([
       this.querySpotBalance(tokenSymbol, owner, decimals),
       getUserNonFundingLedgerUpdates(this.infoClient, {
@@ -420,12 +442,14 @@ export class HyperliquidExecutor {
         startTime: timestampInMs,
       }),
     ]);
+    // Out of scope transactions are spot sends to the owner which occurred since the input timestamp.
     const outOfScopeTransactions = userNonFundingLedgerUpdates.filter(
       ({ delta }) =>
         delta.type === "spotTransfer" &&
         delta.token === tokenSymbol &&
         delta.destination === owner.toNative().toLowerCase()
     );
+    // Deduct all spot sends to the owner from the final amount.
     const outOfScopeBalance = outOfScopeTransactions.reduce((sum, txn) => {
       // Need to type check to ensure `amount` is a field of `txn.delta`.
       assert(txn.delta.type === "spotTransfer");
@@ -435,6 +459,7 @@ export class HyperliquidExecutor {
     return currentBalance.sub(outOfScopeBalance);
   }
 
+  // Spot sends a token to the swap handler.
   private sendSponsorshipFundsToSwapHandler(baseToken: EvmAddress, amount: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
@@ -452,6 +477,7 @@ export class HyperliquidExecutor {
     });
   }
 
+  // Cancels a limit order via the handler contract.
   private cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
@@ -469,6 +495,11 @@ export class HyperliquidExecutor {
     });
   }
 
+  /*
+   * @notice Queries all outstanding orders on the destination handler contract corresponding to the input pair.
+   * @param pair The baseToken -> finalToken pair whose outstanding orders are queried.
+   * @param toBlock optional toBlock (defaults to "latest") to use when querying outstanding orders.
+   */
   private async getOutstandingOrdersOnPair(pair: Pair, toBlock?: number): Promise<SwapFlowInitialized[]> {
     const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
@@ -492,6 +523,7 @@ export class HyperliquidExecutor {
       .map(({ args }) => args as SwapFlowInitialized);
   }
 
+  // Finalizes swap flows for the input quote nonces.
   private finalizeLimitOrders(
     baseToken: EvmAddress,
     finalToken: EvmAddress,
@@ -514,6 +546,7 @@ export class HyperliquidExecutor {
     });
   }
 
+  // Wrapper for `getTokenInfo` which changes `USDT` to `USDT0`.
   private _getTokenInfo(token: EvmAddress, chainId: number) {
     const tokenInfo = getTokenInfo(token, chainId);
     const updatedSymbol = tokenInfo.symbol === "USDT" ? "USDT0" : tokenInfo.symbol;
@@ -531,6 +564,8 @@ export class HyperliquidExecutor {
     await new Promise<void>((resolve) => (this.taskResolver = resolve));
   }
 
+  // Async iterator which yields the top task in the task queue. If no task is present, then it waits for the task queue to receive
+  // another task.
   private async *resolveNextTask() {
     while (!abortController.signal.aborted) {
       await this.waitForNextTask();
@@ -543,6 +578,7 @@ export class HyperliquidExecutor {
     }
   }
 
+  // Adds a task to the task queue and calls the task resolver (thereby waking the promise in `resolveNextTask`).
   private updateTasks(task: Promise<TaskResult>) {
     this.tasks.push(task);
     this.taskResolver();
