@@ -21,7 +21,9 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
     const start = Date.now();
 
     executor.startListeners();
-    await executor.processTasks();
+    const processTasks = executor.processTasks();
+    const waitForHandover = executor.waitForDisconnect();
+    await Promise.allSettled([processTasks, waitForHandover]);
 
     logger.debug({ at: "HyperliquidExecutor#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {

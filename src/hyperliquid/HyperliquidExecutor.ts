@@ -27,6 +27,8 @@ import {
   getUserNonFundingLedgerUpdates,
   toBN,
   assert,
+  getRedisCache,
+  delay,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
@@ -74,6 +76,7 @@ export class HyperliquidExecutor {
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
   private infoClient;
+  private redisClient;
   private handledEvents: Set<string> = new Set<string>();
   private dstSearchConfig: EventSearchConfig;
 
@@ -99,6 +102,7 @@ export class HyperliquidExecutor {
 
   public async initialize(): Promise<void> {
     const spotMeta = await getSpotMeta(this.infoClient);
+    this.redisClient = await getRedisCache(this.logger);
     await forEachAsync(BASE_TOKENS, async (supportedToken) => {
       const counterpartTokens = this.config.supportedTokens.filter((token) => token !== supportedToken);
       await forEachAsync(counterpartTokens, async (counterpartToken) => {
@@ -257,6 +261,35 @@ export class HyperliquidExecutor {
       });
       if (this.clients.multiCallerClient.transactionCount() !== 0) {
         await this.clients.multiCallerClient.executeTxnQueues();
+      }
+    }
+  }
+
+  public async waitForDisconnect(): Promise<void> {
+    const {
+      RUN_IDENTIFIER: runIdentifier,
+      BOT_IDENTIFIER: botIdentifier,
+      HL_MAX_CYCLES: _maxCycles = 120,
+      HL_POLLING_DELAY: _pollingDelay = 3,
+    } = process.env;
+    const maxCycles = Number(_maxCycles);
+    const pollingDelay = Number(_pollingDelay);
+    // Set the active instance immediately on arrival here. This function will poll until it reaches the max amount of
+    // runs or it is interrupted by another process.
+    if (isDefined(runIdentifier) && isDefined(botIdentifier)) {
+      await this.redisClient.set(botIdentifier, runIdentifier, maxCycles * pollingDelay);
+      for (let run = 0; run < maxCycles; run++) {
+        const currentBot = await this.redisClient.get(botIdentifier);
+        if (currentBot !== runIdentifier) {
+          this.logger.debug({
+            at: "HyperliquidExecutor#waitForDisconnect",
+            message: `Handing over ${runIdentifier} instance to ${currentBot} for ${botIdentifier}`,
+            run,
+          });
+          abortController.abort();
+          return;
+        }
+        await delay(pollingDelay);
       }
     }
   }
