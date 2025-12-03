@@ -150,11 +150,12 @@ export async function constructRelayerClients(
     );
   }
 
+  const allChainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const resolveChainIds = (chainIds: number[], fallback: number[] = []) => (chainIds.length > 0 ? chainIds : fallback);
+
   // Determine which origin chains to query limits for.
-  const srcChainIds =
-    config.relayerOriginChains.length > 0
-      ? config.relayerOriginChains
-      : Object.values(spokePoolClients).map(({ chainId }) => chainId);
+  const srcChainIds = resolveChainIds(config.relayerOriginChains, allChainIds);
+  const dstChainIds = resolveChainIds(config.relayerDestinationChains, allChainIds);
   const acrossApiClient = new AcrossApiClient(logger, hubPoolClient, srcChainIds, config.relayerTokens);
 
   const relayerTokens = sdkUtils.dedupArray([
@@ -168,23 +169,17 @@ export async function constructRelayerClients(
     logger,
     signerAddr,
     svmAddress,
-    spokePoolClients,
+    Object.fromEntries(dstChainIds.map((chainId) => [chainId, spokePoolClients[chainId]])),
     hubPoolClient,
     relayerTokens,
     config.relayerDestinationTokens
   );
 
-  // If `relayerDestinationChains` is a non-empty array, then copy its value, otherwise default to all chains.
-  const enabledChainIds = (
-    config.relayerDestinationChains.length > 0
-      ? config.relayerDestinationChains
-      : configStoreClient.getChainIdIndicesForBlock()
-  ).filter((chainId) => Object.keys(spokePoolClients).includes(chainId.toString()));
   const profitClient = new ProfitClient(
     logger,
     hubPoolClient,
     spokePoolClients,
-    enabledChainIds,
+    dstChainIds,
     signerAddr,
     svmAddress,
     config.minRelayerFeePct,
@@ -203,7 +198,7 @@ export async function constructRelayerClients(
   const crossChainAdapterSupportedChains = adapterManager.supportedChains();
   const crossChainTransferClient = new CrossChainTransferClient(
     logger,
-    enabledChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
+    dstChainIds.filter((chainId) => crossChainAdapterSupportedChains.includes(chainId)),
     adapterManager
   );
 
@@ -212,7 +207,7 @@ export async function constructRelayerClients(
     logger,
     config.inventoryConfig,
     tokenClient,
-    enabledChainIds,
+    dstChainIds,
     hubPoolClient,
     adapterManager,
     crossChainTransferClient,
@@ -221,7 +216,7 @@ export async function constructRelayerClients(
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);
 
-  const svmChainIds = enabledChainIds.filter(chainIsSvm);
+  const svmChainIds = dstChainIds.filter(chainIsSvm);
   if (svmChainIds.length > 1) {
     throw new Error(`Multiple SVM chains detected: ${svmChainIds.join(", ")}. Only one SVM chain is supported.`);
   }
