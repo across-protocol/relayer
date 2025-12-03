@@ -41,7 +41,10 @@ const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 // Configuration constants with environment variable support
 const MIN_BALANCE_THRESHOLD_USDC_DECIMAL = Number(process.env.MIN_BALANCE_THRESHOLD_USDC) || 10; // Minimum USDC balance (in human-readable units) to trigger transfer
 // Convert to smallest unit (USDC has 6 decimals)
-const MIN_BALANCE_THRESHOLD_USDC = toBNWei(MIN_BALANCE_THRESHOLD_USDC_DECIMAL.toString(), TOKEN_SYMBOLS_MAP.USDC.decimals);
+const MIN_BALANCE_THRESHOLD_USDC = toBNWei(
+  MIN_BALANCE_THRESHOLD_USDC_DECIMAL.toString(),
+  TOKEN_SYMBOLS_MAP.USDC.decimals
+);
 const DEFAULT_DESTINATION_CHAIN_ID = CHAIN_IDs.ARBITRUM; // Default to Arbitrum
 
 let logger: typeof Logger;
