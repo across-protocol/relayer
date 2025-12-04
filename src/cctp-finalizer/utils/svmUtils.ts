@@ -120,28 +120,21 @@ async function getTokenMessengerAccounts(
   const solanaUsdcAddr = address(solanaUsdcAddress);
   const solanaUsdcBytes = new PublicKey(solanaUsdcAddr.toString()).toBytes();
 
-  const [tokenMessengerAccount] = await getProgramDerivedAddress({
-    seeds: [textEncoder.encode("token_messenger")],
-    programAddress: TOKEN_MESSENGER_V2_PROGRAM,
-  });
-
-  const [tokenMinterAccount] = await getProgramDerivedAddress({
-    seeds: [textEncoder.encode("token_minter")],
-    programAddress: TOKEN_MESSENGER_V2_PROGRAM,
-  });
-
-  const [localToken] = await getProgramDerivedAddress({
-    seeds: [textEncoder.encode("local_token"), solanaUsdcBytes],
-    programAddress: TOKEN_MESSENGER_V2_PROGRAM,
-  });
-
   const remoteDomain = sdk.utils.getCctpDomainForChainId(originChainId);
   const remoteDomainBytes = textEncoder.encode(remoteDomain.toString());
 
-  const [remoteTokenMessengerKey] = await getProgramDerivedAddress({
-    seeds: [textEncoder.encode("remote_token_messenger"), remoteDomainBytes],
-    programAddress: TOKEN_MESSENGER_V2_PROGRAM,
-  });
+  const depositAccounts = await sdk.arch.svm.getCCTPDepositAccounts(
+    originChainId,
+    remoteDomain,
+    TOKEN_MESSENGER_V2_PROGRAM,
+    MESSAGE_TRANSMITTER_V2_PROGRAM
+  );
+
+  const tokenMessengerAccount = depositAccounts.tokenMessenger;
+  const tokenMinterAccount = depositAccounts.tokenMinter;
+  const localToken = depositAccounts.localToken;
+  const tokenMessengerEventAuthority = depositAccounts.cctpEventAuthority;
+  const remoteTokenMessengerKey = depositAccounts.remoteTokenMessenger;
 
   const originUsdcBytes32 = new Uint8Array(32);
   const originUsdcBuffer = Buffer.from(originUsdcAddress.replace("0x", ""), "hex");
@@ -154,11 +147,6 @@ async function getTokenMessengerAccounts(
 
   const [custodyTokenAccount] = await getProgramDerivedAddress({
     seeds: [textEncoder.encode("custody"), solanaUsdcBytes],
-    programAddress: TOKEN_MESSENGER_V2_PROGRAM,
-  });
-
-  const [tokenMessengerEventAuthority] = await getProgramDerivedAddress({
-    seeds: [textEncoder.encode("__event_authority")],
     programAddress: TOKEN_MESSENGER_V2_PROGRAM,
   });
 
