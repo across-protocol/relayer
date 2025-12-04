@@ -467,7 +467,7 @@ export class Refiller {
       this.logger.debug({
         at: "Refiller#refillUsdh",
         message: "Skipping transfer",
-        reason: !shouldSendTokens ? "Origin chain balance insufficient or no deficit" : "Amount to transfer is zero",
+        reason: "Origin chain balance insufficient or no deficit",
         originChainBalance: formatUnits(originChainBalance, decimals),
         minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
         amountToTransfer: formatUnits(amountToTransfer, decimals),
