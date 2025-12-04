@@ -38,6 +38,13 @@ const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
 const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
+const SPOKEPOOL_EVENTS = [
+  "FundsDeposited",
+  "RequestedSpeedUpDeposit",
+  "FilledRelay",
+  "RelayedRootBundle",
+  "ExecutedRelayerRefundRoot",
+];
 
 type RepaymentFee = { paymentChainId: number; lpFeePct: BigNumber };
 type BatchLPFees = { [depositKey: string]: RepaymentFee[] };
@@ -95,9 +102,10 @@ export class Relayer {
    * @description Perform one-time relayer init. Handle (for example) token approvals.
    */
   async init(): Promise<void> {
-    const { tokenClient } = this.clients;
+    const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
+      acrossApiClient.update(this.config.ignoreLimits),
       tokenClient.update(),
     ]);
 
@@ -118,32 +126,24 @@ export class Relayer {
    * @return True if all SpokePoolClients updated successfully, otherwise false.
    */
   async update(): Promise<boolean> {
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } =
-      this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients, tokenClient } = this.clients;
 
     // Some steps can be skipped on the first run.
     if (this.updated++ > 0) {
       // Clear state from profit and token clients. These should start fresh on each iteration.
       profitClient.clearUnprofitableFills();
       tokenClient.clearTokenShortfall();
-      tokenClient.clearTokenData();
 
-      await configStoreClient.update();
-      if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
-        await hubPoolClient.update();
+      if (!this.config.eventListener) {
+        await configStoreClient.update();
+        if (configStoreClient.latestHeightSearched > hubPoolClient.latestHeightSearched) {
+          tokenClient.clearTokenData();
+          await Promise.all([hubPoolClient.update(), tokenClient.update()]);
+        }
       }
     }
 
-    await updateSpokePoolClients(spokePoolClients, [
-      "FundsDeposited",
-      "RequestedSpeedUpDeposit",
-      "FilledRelay",
-      "RelayedRootBundle",
-      "ExecutedRelayerRefundRoot",
-    ]);
-
-    await Promise.all([acrossApiClient.update(this.config.ignoreLimits), tokenClient.update()]);
-
+    await updateSpokePoolClients(spokePoolClients, SPOKEPOOL_EVENTS);
     return Object.values(spokePoolClients).every((spokePoolClient) => spokePoolClient.isUpdated);
   }
 

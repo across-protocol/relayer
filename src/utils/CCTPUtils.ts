@@ -3,7 +3,7 @@ import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
 import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import axios from "axios";
 import { Contract, ethers } from "ethers";
-import { CONTRACT_ADDRESSES } from "../common";
+import { CONTRACT_ADDRESSES, CCTP_MAX_SEND_AMOUNT } from "../common";
 import { BigNumber } from "./BNUtils";
 import {
   bnZero,
@@ -19,14 +19,23 @@ import {
   toBNWei,
   forEachAsync,
   chainIsEvm,
+  createFormatFunction,
 } from "./SDKUtils";
+import { getNetworkName } from "./NetworkUtils";
 import { isDefined } from "./TypeGuards";
 import { getCachedProvider, getProvider, getSvmProvider } from "./ProviderUtils";
 import { EventSearchConfig, paginatedEventQuery, spreadEvent } from "./EventUtils";
 import { Log } from "../interfaces";
-import { assert, getRedisCache, Provider } from ".";
+import { assert, getRedisCache, Provider, Signer, ERC20, winston } from ".";
 import { KeyPairSigner } from "@solana/kit";
 import { TransactionRequest } from "@ethersproject/abstract-provider";
+import {
+  aboveAllowanceThreshold,
+  getL2TokenAllowanceFromCache,
+  setL2TokenAllowanceInCache,
+  TransferTokenParams,
+  approveTokens as approveBridgeTokens,
+} from "../adapter/utils";
 
 /** ********************************************************************************************************************
  *
@@ -88,6 +97,9 @@ export const {
   getCctpDestinationChainFromDomain,
   isDepositForBurnEvent,
 } = utils;
+
+// Import types and utilities needed for the constructCctpDepositForBurnTxn function
+import type { AugmentedTransaction } from "../clients/TransactionClient";
 
 /**
  * Return all deposit for burn transaction hashes that were created on the source chain.
@@ -849,4 +861,163 @@ async function _fetchCCTPSvmAttestationProof(transactionHash: string): Promise<C
   );
   const attestationResponse = httpResponse.data;
   return attestationResponse;
+}
+
+/**
+ * Checks and sets USDC approval for CCTP TokenMessenger if needed.
+ * @param sourceChainId Chain ID where the approval is needed
+ * @param sourceSigner Signer for the source chain
+ * @param sourceUsdcTokenAddress USDC token address on source chain
+ * @param tokenMessengerAddress CCTP TokenMessenger contract address
+ * @param logger Optional logger for logging approval actions
+ */
+async function checkAndApproveCctpTokenMessenger(
+  sourceChainId: number,
+  sourceSigner: Signer,
+  sourceUsdcTokenAddress: EvmAddress,
+  tokenMessengerAddress: string,
+  logger: winston.Logger
+): Promise<void> {
+  if (!chainIsEvm(sourceChainId)) {
+    return;
+  }
+  const tokenMessengerEvmAddress = EvmAddress.from(tokenMessengerAddress);
+  const signerAddress = await sourceSigner.getAddress();
+  const signerEvmAddress = EvmAddress.from(signerAddress);
+
+  // Check allowance (first from cache, then on-chain)
+  const cachedAllowance = await getL2TokenAllowanceFromCache(
+    sourceChainId,
+    sourceUsdcTokenAddress,
+    signerEvmAddress,
+    tokenMessengerEvmAddress
+  );
+  const usdcContract = ERC20.connect(sourceUsdcTokenAddress.toNative(), sourceSigner);
+  const allowance = cachedAllowance ?? (await usdcContract.allowance(signerAddress, tokenMessengerAddress));
+
+  // Cache the allowance if we fetched it on-chain and it's sufficient
+  if (!isDefined(cachedAllowance) && aboveAllowanceThreshold(allowance)) {
+    await setL2TokenAllowanceInCache(
+      sourceChainId,
+      sourceUsdcTokenAddress,
+      signerEvmAddress,
+      tokenMessengerEvmAddress,
+      allowance
+    );
+  }
+
+  // Approve if needed
+  if (!aboveAllowanceThreshold(allowance)) {
+    const sourceChainName = getNetworkName(sourceChainId);
+    logger.info({
+      at: "checkAndApproveCctpTokenMessenger",
+      message: "Approving USDC for CCTP TokenMessenger",
+      chainName: sourceChainName,
+      chainId: sourceChainId,
+      tokenAddress: sourceUsdcTokenAddress.toNative(),
+      tokenMessengerAddress,
+    });
+
+    // Use Mainnet as hub chain ID for approval
+    await approveBridgeTokens(
+      [{ token: usdcContract, bridges: [tokenMessengerEvmAddress] }],
+      sourceChainId,
+      CHAIN_IDs.MAINNET,
+      logger
+    );
+
+    logger.info({
+      at: "checkAndApproveCctpTokenMessenger",
+      message: "✓ USDC approved for CCTP TokenMessenger",
+      chainName: sourceChainName,
+      chainId: sourceChainId,
+    });
+  }
+}
+
+/**
+ * Constructs a CCTP depositForBurn transaction for L1->L2, L2->L2, or L2->L1 transfers.
+ * This is a utility function extracted from UsdcCCTPBridge to be reusable.
+ *
+ * @param sourceChainId Source chain ID (L1 or L2)
+ * @param destinationChainId Destination chain ID (L2 or L1)
+ * @param sourceSigner Signer for the source chain
+ * @param toAddress Recipient address on destination chain
+ * @param sourceUsdcTokenAddress USDC token address on source chain
+ * @param amount Amount to transfer (will be capped at CCTP_MAX_SEND_AMOUNT)
+ * @param optionalParams Optional parameters including fastMode
+ * @param hubChainId Optional hub chain ID (L1). If not provided, will be inferred from sourceChainId.
+ *                   Required for L1->L2 transfers to determine L1 USDC address.
+ * @returns AugmentedTransaction ready to be enqueued in MultiCallerClient
+ */
+export async function constructCctpDepositForBurnTxn(
+  sourceChainId: number,
+  destinationChainId: number,
+  sourceSigner: Signer,
+  toAddress: EvmAddress,
+  sourceUsdcTokenAddress: EvmAddress,
+  amount: BigNumber,
+  logger: winston.Logger,
+  optionalParams?: TransferTokenParams
+): Promise<AugmentedTransaction> {
+  const { address: tokenMessengerAddress, abi: tokenMessengerAbi } = getCctpV2TokenMessenger(sourceChainId);
+  const bridgeContract = new Contract(tokenMessengerAddress, tokenMessengerAbi, sourceSigner);
+
+  // Check and set CCTP TokenMessenger approval if needed
+  await checkAndApproveCctpTokenMessenger(
+    sourceChainId,
+    sourceSigner,
+    sourceUsdcTokenAddress,
+    tokenMessengerAddress,
+    logger
+  );
+
+  const { decimals } = getTokenInfo(sourceUsdcTokenAddress, sourceChainId);
+  const formatter = createFormatFunction(2, 4, false, decimals);
+
+  // Cap amount at CCTP_MAX_SEND_AMOUNT
+  amount = amount.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amount;
+
+  let maxFee = bnZero;
+  let finalityThreshold = CCTPV2_FINALITY_THRESHOLD_STANDARD;
+  if (optionalParams?.fastMode) {
+    const feeResult = await getV2DepositForBurnMaxFee(
+      sourceUsdcTokenAddress,
+      sourceChainId,
+      destinationChainId,
+      amount
+    );
+    maxFee = feeResult.maxFee;
+    finalityThreshold = feeResult.finalityThreshold;
+  }
+
+  // Add maxFee so that we end up with desired amount of tokens on destination chain.
+  const amountWithFee = amount.add(maxFee);
+  const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
+
+  const sourceChainName = getNetworkName(sourceChainId);
+  const destinationChainName = getNetworkName(destinationChainId);
+  const destinationDomain = getCctpDomainForChainId(destinationChainId);
+
+  return {
+    contract: bridgeContract,
+    chainId: sourceChainId,
+    method: "depositForBurn",
+    nonMulticall: true,
+    message: `🎰 Bridged CCTP USDC from ${sourceChainName} to ${destinationChainName}${
+      optionalParams?.fastMode ? " using fast mode" : ""
+    }`,
+    mrkdwn: `Bridged ${formatter(amountToSend)} USDC from ${sourceChainName} to ${destinationChainName} via CCTP${
+      optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
+    }`,
+    args: [
+      amountToSend,
+      destinationDomain,
+      toAddress.toBytes32(),
+      sourceUsdcTokenAddress.toNative(),
+      ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+      maxFee,
+      finalityThreshold,
+    ],
+  };
 }

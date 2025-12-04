@@ -2,6 +2,7 @@ export interface ProcessBurnTransactionResponse {
   success: boolean;
   mintTxHash?: string;
   error?: string;
+  shouldRetry?: boolean;
 }
 
 export interface StringUnion {
