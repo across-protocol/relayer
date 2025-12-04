@@ -21,6 +21,7 @@ import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json"
 import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
+import ZKSTACK_L1_NULLIFIER_ABI from "./abi/ZkStackL1Nullifier.json";
 import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
@@ -62,6 +63,10 @@ export const CONTRACT_ADDRESSES: {
     zkStackSharedBridge: {
       address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
+    zkStackL1Nullifier: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      abi: ZKSTACK_L1_NULLIFIER_ABI,
     },
     zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
