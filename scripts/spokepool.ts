@@ -90,7 +90,7 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
   return relayData;
 }
 
-function printDeposit(originChainId: number, log: LogDescription): void {
+function printDeposit(originChainId: number, log: LogDescription, transactionHash?: string): void {
   const { destinationChainId, message } = log.args;
   const relayData = decodeRelayData(originChainId, destinationChainId, log);
   const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
@@ -100,6 +100,7 @@ function printDeposit(originChainId: number, log: LogDescription): void {
     ...relayData,
     messageHash: getMessageHash(message),
     relayDataHash,
+    transactionHash,
   };
   const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
@@ -112,13 +113,14 @@ function printDeposit(originChainId: number, log: LogDescription): void {
   );
 }
 
-function printFill(destinationChainId: number, log: LogDescription): void {
+function printFill(destinationChainId: number, log: LogDescription, transactionHash?: string): void {
   const { originChainId } = log.args;
   const relayData = decodeRelayData(originChainId, destinationChainId, log);
 
   const fields = {
     tokenSymbol: resolveTokenSymbols([relayData.outputToken.toNative()], destinationChainId)[0],
     ...relayData,
+    transactionHash,
   };
   const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
 
@@ -544,12 +546,12 @@ async function fetchTxn(args: Record<string, number | string>, _signer: Signer):
     ({ deposits, fills } = await _fetchTxn(spokePool, txnHash as string));
   }
 
-  deposits.forEach((deposit) => {
-    printDeposit(chainId, spokePool.interface.parseLog(deposit));
+  deposits.forEach(({ transactionHash, ...deposit }) => {
+    printDeposit(chainId, spokePool.interface.parseLog(deposit), transactionHash);
   });
 
-  fills.forEach((fill) => {
-    printFill(chainId, spokePool.interface.parseLog(fill));
+  fills.forEach(({ transactionHash, ...fill }) => {
+    printFill(chainId, spokePool.interface.parseLog(fill), transactionHash);
   });
 
   return true;
