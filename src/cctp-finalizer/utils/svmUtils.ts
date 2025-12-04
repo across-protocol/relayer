@@ -8,10 +8,6 @@ import {
   address,
   getProgramDerivedAddress,
   appendTransactionMessageInstruction,
-  compileTransaction,
-  signTransaction,
-  getSignatureFromTransaction,
-  sendTransactionWithoutConfirmingFactory,
   type Address as KitAddress,
   AccountRole,
   type IAccountMeta,
@@ -223,7 +219,7 @@ async function hasCCTPV2MessageBeenProcessed(message: string, provider: SVMProvi
   return Boolean(nonceInfo.value);
 }
 
-async function getCCTPV2ReceiveMessageTx(params: {
+async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
   provider: SVMProvider;
   signer: KeyPairSigner;
   attestation: string;
@@ -260,25 +256,16 @@ async function getCCTPV2ReceiveMessageTx(params: {
   let tx = await sdk.arch.svm.createDefaultTransaction(provider, signer);
   tx = appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx);
 
-  const compiledTx = compileTransaction(tx);
-  const signedTx = await signTransaction([signer.keyPair], compiledTx);
-  const signature = getSignatureFromTransaction(signedTx);
-
-  const sendTx = sendTransactionWithoutConfirmingFactory({
-    rpc: provider,
-  });
-  await sendTx(signedTx, { commitment: "confirmed" });
-
-  const signatureString = signature.toString();
+  const signature = await sendAndConfirmSolanaTransaction(tx, provider);
   logger.info({
     at: "svmUtils#getCCTPV2ReceiveMessageTx",
     message: "Mint transaction completed on Solana V2",
     destinationChainId,
     originChainId,
-    signature: signatureString,
+    signature,
   });
 
-  return signatureString;
+  return signature;
 }
 
 /**
@@ -381,7 +368,7 @@ export async function processMintSvm(
       originChainId,
       nonce,
     });
-    txSignature = await getCCTPV2ReceiveMessageTx({
+    txSignature = await sendAndConfirmCCTPV2ReceiveMessageTx({
       provider: svmProvider,
       signer: svmSigner,
       attestation: attestation.attestation,
