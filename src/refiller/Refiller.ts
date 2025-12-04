@@ -452,9 +452,7 @@ export class Refiller {
 
     this.logger.debug({
       at: "Refiller#refillUsdh",
-      message: checkOriginChainBalance
-        ? "Checking origin chain (Arbitrum) USDC balance"
-        : "Destination balance below trigger, calculating top-up amount",
+      message: "Determining if we should send tokens and how much to send",
       destinationChainBalance: formatUnits(currentBalance, decimals),
       targetThreshold: formatUnits(targetThreshold, decimals),
       deficit: formatUnits(deficit, decimals),
