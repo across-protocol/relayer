@@ -40,7 +40,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
         await acrossMonitor.reportInvalidFills();
-        await acrossMonitor.reportInvalidFillsRelatedToSvm();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
