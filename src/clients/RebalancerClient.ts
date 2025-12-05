@@ -1,8 +1,8 @@
 import { BigNumber } from "../utils";
 
 interface ChainConfig {
-  minimumBalance: BigNumber;
-  maximumBalance: BigNumber;
+  // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
+  // positive infinity (to indicate that a chain should be the universal sink for the given token).
   targetBalance: BigNumber;
 }
 
@@ -47,10 +47,16 @@ export class RebalancerClient {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async rebalanceInventory(currentAllocations: RebalancerAllocation): Promise<void> {
-    // TODO:
-    // Figure out which chain targets are under and over allocated, then for any over allocated chains,
-    // attempt to send excess to chains with under allocations. We can only send tokens between chains that share
-    // a rebalance route.
+    // Proposed heuristic:
+    // - For each token:
+    // - Load all current balances per chain, including spot balances, pending rebalances, shortfalls, etc, and
+    //   store in memory within this function.
+    // - Filter all chains that are UNDER target balance and sort by largest deficit.
+    // - For each chain, query all rebalance routes TO the current chain that have an "excess" balance 
+    //   large enough to cover the deficit (excess = current balance - target balance).
+    // - If resultant route list is empty, log a warning.
+    // - Otherwise, enqueue calldata for the rebalance route to execute, and decrement the current balance for
+    //   the source chain so we don't overdraw the source chain when trying to rebalance to another chain.
   }
 
   async getCurrentAllocations(): Promise<RebalancerAllocation> {
@@ -59,7 +65,7 @@ export class RebalancerClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  getRebalanceRoutes(chain: number, token: string, amountToTransfer: BigNumber): RebalanceRoute[] {
+  getRebalanceRoutesToChain(chain: number, token: string, amountToTransfer: BigNumber): RebalanceRoute[] {
     // TODO:
     return [];
   }
