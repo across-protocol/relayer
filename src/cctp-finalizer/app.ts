@@ -52,7 +52,12 @@ app.post("/", async (req: Request, res: Response) => {
       attributes: pubSubMessage.attributes,
     });
 
-    await processMessage(data, pubSubMessage.attributes);
+    const shouldRetry = await processMessage(data, pubSubMessage.attributes);
+
+    if (shouldRetry) {
+      res.status(500).send("Internal Server Error");
+      return;
+    }
 
     res.status(204).send();
   } catch (error) {
@@ -61,7 +66,7 @@ app.post("/", async (req: Request, res: Response) => {
   }
 });
 
-async function processMessage(data: string, attributes?: { [key: string]: string }): Promise<void> {
+async function processMessage(data: string, attributes?: { [key: string]: string }): Promise<boolean> {
   try {
     const messageData: PubSubMessage = JSON.parse(data);
 
@@ -82,6 +87,7 @@ async function processMessage(data: string, attributes?: { [key: string]: string
         mintTxHash: response.mintTxHash,
         burnTransactionHash: messageData.burnTransactionHash,
       });
+      return false;
     } else {
       logger.error({
         at: "CCTPFinalizer#processMessage",
@@ -89,6 +95,7 @@ async function processMessage(data: string, attributes?: { [key: string]: string
         error: response.error,
         burnTransactionHash: messageData.burnTransactionHash,
       });
+      return response.shouldRetry ?? true;
     }
   } catch (parseError) {
     logger.error({ at: "CCTPFinalizer#processMessage", message: "Error parsing message data", error: parseError });
