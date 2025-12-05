@@ -257,9 +257,11 @@ export class HyperliquidExecutor {
           const formatter = createFormatFunction(2, 4);
           this.logger.warn({
             at: "HyperliquidExecutor#finalizeSwapFlows",
-            message: `Finalization amount is ${formatter(
+            message: `Finalization amount has slippage ${formatter(
               absDeviationPct
-            )} greater than max allowed slippage ${formatter(deviationPct)}. Aborting finalizations.`,
+            )} which is greater than max allowed slippage ${formatter(
+              this.config.maxAllowedSlippage
+            )}. Aborting finalizations.`,
             outstandingOrder,
             outstandingOrders: outstandingOrders.length,
           });
