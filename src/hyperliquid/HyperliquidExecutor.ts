@@ -347,6 +347,8 @@ export class HyperliquidExecutor {
         }
         await delay(pollingDelay);
       }
+      // If we finish looping without receiving a handover signal, still exit so that we won't await the other promise forever.
+      abortController.abort();
     }
   }
 
