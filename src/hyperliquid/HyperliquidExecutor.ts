@@ -35,7 +35,7 @@ import {
   Block,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
