@@ -78,6 +78,24 @@ export class PrivateKeyNotFoundError extends CCTPError {
   }
 }
 
+export class DestinationUsdcNotConfiguredError extends CCTPError {
+  readonly shouldRetry = false;
+  readonly code = "DEST_USDC_NOT_CONFIGURED";
+
+  constructor(chainId: number) {
+    super(`USDC address not configured for destination chain ${chainId}`);
+  }
+}
+
+export class OriginUsdcNotConfiguredError extends CCTPError {
+  readonly shouldRetry = false;
+  readonly code = "ORIGIN_USDC_NOT_CONFIGURED";
+
+  constructor(chainId: number) {
+    super(`USDC address not configured for origin chain ${chainId}`);
+  }
+}
+
 export function isCCTPError(error: unknown): error is CCTPError {
   return error instanceof CCTPError;
 }
