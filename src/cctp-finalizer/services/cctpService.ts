@@ -50,7 +50,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = Uint8Array.from(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
@@ -128,7 +128,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation, signature);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature);
     } catch (error) {
       if (isCCTPError(error)) {
         if (error instanceof AlreadyProcessedError) {
@@ -207,34 +207,49 @@ export class CCTPService {
   }
 
   private async processMint(
-    chainId: number,
+    destinationChainId: number,
+    originChainId: number,
     attestation: any,
     signature?: string
   ): Promise<ProcessBurnTransactionResponse> {
-    const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
+    const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
-      message: `Calling receiveMessage on ${chainName} (${chainId})`,
+      message: `Calling receiveMessage on ${chainName} (${destinationChainId})`,
     });
 
     try {
-      if (chainIsSvm(chainId)) {
+      if (chainIsSvm(destinationChainId)) {
         if (!this.svmPrivateKey) {
           throw new SvmPrivateKeyNotConfiguredError();
         }
 
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
-        const result = await processMintSvm(attestation, this.svmPrivateKey, svmProvider, this.logger);
+        const result = await processMintSvm(
+          attestation,
+          this.svmPrivateKey,
+          svmProvider,
+          destinationChainId,
+          originChainId,
+          this.logger
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
           shouldRetry: false,
         };
       } else {
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.evmPrivateKey, this.logger, signature);
+        const result = await processMintEvm(
+          destinationChainId,
+          attestation,
+          provider,
+          this.evmPrivateKey,
+          this.logger,
+          signature
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
