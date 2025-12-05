@@ -259,7 +259,7 @@ export class HyperliquidExecutor {
             at: "HyperliquidExecutor#finalizeSwapFlows",
             message: `Finalization amount is ${formatter(
               absDeviationPct
-            )} greater than max allowed slippage ${formatter(deviationPct)}%. Aborting finalizations.`,
+            )} greater than max allowed slippage ${formatter(deviationPct)}. Aborting finalizations.`,
             outstandingOrder,
             outstandingOrders: outstandingOrders.length,
           });
@@ -542,6 +542,7 @@ export class HyperliquidExecutor {
       const spotTransfersFromHyperEvm = await getUserNonFundingLedgerUpdates(this.infoClient, {
         user: pair.swapHandler.toNative(),
         startTime: validTimestampMs,
+        endTime: validTimestampMs + 750, // End time is hardcoded as 0.75s. This assumes that the core state update from HyperEVM will not take more than 0.75s after the timestamp of the HyperEVM block.
       });
       const finalTokenInfo = this._getTokenInfo(pair.finalToken, this.chainId);
       const initiatedAmounts = spotTransfersFromHyperEvm
@@ -549,7 +550,8 @@ export class HyperliquidExecutor {
           ({ delta }) =>
             delta.type === "spotTransfer" &&
             delta.token === baseTokenInfo.symbol &&
-            delta.destination === pair.swapHandler.toNative().toLowerCase()
+            delta.destination === pair.swapHandler.toNative().toLowerCase() &&
+            delta.user === CONTRACT_ADDRESSES[this.chainId].hypercoreSpotSendAccount!.address
         )
         .map((transfer) => {
           validTimestampMs = validTimestampMs < transfer.time ? transfer.time : validTimestampMs;
