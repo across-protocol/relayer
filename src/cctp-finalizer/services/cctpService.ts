@@ -22,7 +22,6 @@ import {
   PrivateKeyNotFoundError,
   isCCTPError,
 } from "../errors";
-import { bs58 } from "@coral-xyz/anchor/dist/cjs/utils/bytes";
 
 export class CCTPService {
   private evmPrivateKey: string;
@@ -51,7 +50,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = bs58.decode(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
