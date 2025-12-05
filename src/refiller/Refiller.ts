@@ -448,7 +448,17 @@ export class Refiller {
     // Determine if we should send tokens and how much based on the check type
     const shouldSendTokens = checkOriginChainBalance ? originChainBalanceOverThreshold : deficit.gt(bnZero);
 
-    const amountToTransfer = checkOriginChainBalance ? originChainBalance : originChainBalance.sub(deficit);
+    const amountToTransfer = checkOriginChainBalance ? originChainBalance : deficit;
+
+    if (!checkOriginChainBalance && amountToTransfer.gt(originChainBalance)) {
+      this.logger.warn({
+        at: "Refiller#refillUsdh",
+        message: "Amount to transfer is greater than origin chain balance, skipping transfer",
+        amountToTransfer: formatUnits(amountToTransfer, decimals),
+        originChainBalance: formatUnits(originChainBalance, decimals),
+      });
+      return;
+    }
 
     this.logger.debug({
       at: "Refiller#refillUsdh",
