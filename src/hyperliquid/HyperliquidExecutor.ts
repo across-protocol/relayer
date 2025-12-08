@@ -129,11 +129,10 @@ export class HyperliquidExecutor {
         if (!isDefined(pair)) {
           return;
         }
-        // Ideally take token addresses from the spot meta, but if they do not exist, fallback to TOKEN_SYMBOLS_MAP.
-        const baseTokenAddress =
-          baseToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[baseToken.name].addresses[this.chainId];
-        const finalTokenAddress =
-          finalToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[finalToken.name].addresses[this.chainId];
+        // Take the tokens from TOKEN_SYMBOLS_MAP, since the spot meta `evmContract` does not necessarily point to the ERC20 address.
+        const castSymbol = (symbol: string) => (symbol === "USDT0" ? "USDT" : symbol);
+        const baseTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(baseToken.name)].addresses[this.chainId];
+        const finalTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(finalToken.name)].addresses[this.chainId];
 
         // There are only two available swap handlers.
         const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;
