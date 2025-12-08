@@ -29,9 +29,13 @@ import {
   assert,
   getRedisCache,
   delay,
+  toBNWei,
+  fixedPointAdjustment,
+  createFormatFunction,
+  Block,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
@@ -125,11 +129,10 @@ export class HyperliquidExecutor {
         if (!isDefined(pair)) {
           return;
         }
-        // Ideally take token addresses from the spot meta, but if they do not exist, fallback to TOKEN_SYMBOLS_MAP.
-        const baseTokenAddress =
-          baseToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[baseToken.name].addresses[this.chainId];
-        const finalTokenAddress =
-          finalToken.evmContract?.address ?? TOKEN_SYMBOLS_MAP[finalToken.name].addresses[this.chainId];
+        // Take the tokens from TOKEN_SYMBOLS_MAP, since the spot meta `evmContract` does not necessarily point to the ERC20 address.
+        const castSymbol = (symbol: string) => (symbol === "USDT0" ? "USDT" : symbol);
+        const baseTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(baseToken.name)].addresses[this.chainId];
+        const finalTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(finalToken.name)].addresses[this.chainId];
 
         // There are only two available swap handlers.
         const dstHandler = baseToken.name === "USDT0" ? this.dstOftMessenger : this.dstCctpMessenger;
@@ -185,15 +188,30 @@ export class HyperliquidExecutor {
    */
   public async finalizeSwapFlows(): Promise<void> {
     const snapshotBlock = await this.clients.dstProvider.getBlock("latest");
-    const currentTimeInMs = snapshotBlock.timestamp * 1000;
+
     // For each pair the finalizer handles, create a single transaction which bundles together all limit orders which have sufficient finalToken liquidity.
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
+      // There is a slight delay between the time a token is deposited to a spot balance on HyperEVM and the time a Hypercore balance is credited.
+      // We _must_ find the exact timestamp in ms when the Hypercore account is credited if the snapshot block contains any action which would influence the
+      // hypercore balance (i.e. any `SwapFlowInitialized` or `SwapFlowFinalized` event).
+      const snapshotTimestampInMs = await this.getValidSnapshotTimestamp(pair, snapshotBlock);
+
       // PairIds are formatted as `BASE_TOKEN-FINAL_TOKEN`.
       const [baseTokenSymbol, finalTokenSymbol] = pairId.split("-");
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
       const [inputSpotBalance, _outputSpotBalance, outstandingOrders] = await Promise.all([
-        this.querySpotBalanceAtTimestamp(baseTokenSymbol, pair.swapHandler, pair.baseTokenDecimals, currentTimeInMs),
-        this.querySpotBalanceAtTimestamp(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals, currentTimeInMs),
+        this.querySpotBalanceAtTimestamp(
+          baseTokenSymbol,
+          pair.swapHandler,
+          pair.baseTokenDecimals,
+          snapshotTimestampInMs
+        ),
+        this.querySpotBalanceAtTimestamp(
+          finalTokenSymbol,
+          pair.swapHandler,
+          pair.finalTokenDecimals,
+          snapshotTimestampInMs
+        ),
         this.getOutstandingOrdersOnPair(pair, snapshotBlock.number),
       ]);
       let outputSpotBalance = _outputSpotBalance;
@@ -206,11 +224,20 @@ export class HyperliquidExecutor {
         pair.baseTokenDecimals
       )(totalInputBalanceInRange);
       const swappedInputAmount = totalInputBalanceInRangeCore.sub(inputSpotBalance);
+      this.logger.debug({
+        at: "HyperliquidExecutor#finalizeSwapFlows",
+        message: "Snapshot data",
+        snapshotBlock,
+        inputSpotBalance,
+        outputSpotBalance,
+        totalInputBalanceInRangeCore,
+        outstandingOrders: outstandingOrders.length,
+      });
 
-      const quoteNonces = [];
-      const outputAmounts = [];
       // We must derive `limitOrderOuts` by finding the realized price of `outputToken` in terms of `inputToken`. This can be done by comparing how much input token we have swapped
       // with how much output token the contract owns.
+      const quoteNonces = [];
+      const outputAmounts = [];
       for (const outstandingOrder of outstandingOrders) {
         const convertedInputAmount = ConvertDecimals(
           inputTokenDecimals,
@@ -218,6 +245,27 @@ export class HyperliquidExecutor {
         )(outstandingOrder.evmAmountIn);
         // `limitOrderOut` is calculated using the realized price of _all_ orders over the time frame.
         const limitOrderOut = _outputSpotBalance.mul(convertedInputAmount).div(swappedInputAmount);
+        // If for some reason this bot is deriving a limitOrderOut which deviates from the inputAmount by greater than a configured precision, then abort.
+        // @dev This assumes that `limitOrderOut` and `convertedInputAmount` are denominated in the same decimals, which is true for all currently supported Hypercore stablecoins.
+        const deviationPct = limitOrderOut
+          .sub(convertedInputAmount)
+          .mul(fixedPointAdjustment)
+          .div(convertedInputAmount);
+        const absDeviationPct = deviationPct.lt(bnZero) ? deviationPct.mul(-1) : deviationPct;
+        if (absDeviationPct.gt(this.config.maxAllowedSlippage)) {
+          const formatter = createFormatFunction(2, 4);
+          this.logger.warn({
+            at: "HyperliquidExecutor#finalizeSwapFlows",
+            message: `Finalization amount has slippage ${formatter(
+              absDeviationPct
+            )} which is greater than max allowed slippage ${formatter(
+              this.config.maxAllowedSlippage
+            )}. Aborting finalizations.`,
+            outstandingOrder,
+            outstandingOrders: outstandingOrders.length,
+          });
+          break;
+        }
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
           quoteNonces.push(outstandingOrder.quoteNonce);
@@ -459,6 +507,113 @@ export class HyperliquidExecutor {
       return toBN(Math.floor(Number(amount) * 10 ** 8));
     }, bnZero);
     return currentBalance.sub(outOfScopeBalance);
+  }
+
+  /*
+   * @notice Finds a precise snapshot timestamp for an input block.
+   * @param snapshotBlock The block whose precise timestamp we need to find.
+   */
+  private async getValidSnapshotTimestamp(pair: Pair, snapshotBlock: Block): Promise<number> {
+    const blockNumber = snapshotBlock.number;
+    const baseTokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
+    const associatedHandler = baseTokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+
+    // We only need to check if this specific block has `SwapFlowInitialized` or `SwapFlowFinalized` events in it.
+    // @dev Filtering on `pair.finalToken` should ensure that we only take events which correspond to the input pair,
+    // since each recipient swap handler is uniquely identified by the baseToken (associatedHandler) and finalToken.
+    const [initEvents, finalizeEvents] = await Promise.all([
+      paginatedEventQuery(
+        associatedHandler,
+        associatedHandler.filters.SwapFlowInitialized(undefined, undefined, pair.finalToken.toNative()),
+        { from: blockNumber, to: blockNumber, maxLookBack: 1 }
+      ),
+      paginatedEventQuery(
+        associatedHandler,
+        associatedHandler.filters.SwapFlowFinalized(undefined, undefined, pair.finalToken.toNative()),
+        { from: blockNumber, to: blockNumber, maxLookBack: 1 }
+      ),
+    ]);
+    let validTimestampMs = snapshotBlock.timestamp * 1000;
+
+    // If either of these events exist in the snapshot block, then we need to take the latest snapshot timestamp of the two.
+    // E.g. if both occurred and the account transferred USDC at t=100 and received at t=101, then the valid timestamp is t=101.
+    // If only one is nonzero in length, then that transfer event timestamp is the valid timestamp.
+    if (initEvents.length !== 0 || finalizeEvents.length !== 0) {
+      // Only query spot transfers if we need to, i.e. if there is an event which occurred on the snapshot block.
+      const spotTransfersFromHyperEvm = await getUserNonFundingLedgerUpdates(this.infoClient, {
+        user: pair.swapHandler.toNative(),
+        startTime: validTimestampMs,
+        endTime: validTimestampMs + 750, // End time is hardcoded as 0.75s. This assumes that the core state update from HyperEVM will not take more than 0.75s after the timestamp of the HyperEVM block.
+      });
+      const finalTokenInfo = this._getTokenInfo(pair.finalToken, this.chainId);
+      const initiatedAmounts = spotTransfersFromHyperEvm
+        .filter(
+          ({ delta }) =>
+            delta.type === "spotTransfer" &&
+            delta.token === baseTokenInfo.symbol &&
+            delta.destination === pair.swapHandler.toNative().toLowerCase() &&
+            delta.user === CONTRACT_ADDRESSES[this.chainId].hypercoreSpotSendAccount!.address
+        )
+        .map((transfer) => {
+          validTimestampMs = validTimestampMs < transfer.time ? transfer.time : validTimestampMs;
+          assert(transfer.delta.type === "spotTransfer");
+          return toBNWei(transfer.delta.amount, pair.baseTokenDecimals).toString();
+        });
+      const finalizedAmounts = spotTransfersFromHyperEvm
+        .filter(
+          ({ delta }) =>
+            delta.type === "spotTransfer" &&
+            delta.token === finalTokenInfo.symbol &&
+            delta.user === pair.swapHandler.toNative().toLowerCase()
+        )
+        .map((transfer) => {
+          validTimestampMs = validTimestampMs < transfer.time ? transfer.time : validTimestampMs;
+          assert(transfer.delta.type === "spotTransfer");
+          return toBNWei(transfer.delta.amount, pair.finalTokenDecimals).toString();
+        });
+
+      // Go through all events and make sure all events are accounted for. Assert that we can find the associated core transfer.
+      const filteredEvents = [];
+      filteredEvents.push(
+        ...initEvents.filter((initEvent) => {
+          const eventAmount = initEvent.args.coreAmountIn;
+          // Remove the first match. This handles scenarios where are collisions by amount.
+          const index = initiatedAmounts.indexOf(eventAmount.toString());
+          if (index > -1) {
+            initiatedAmounts.splice(index, 1);
+            return false;
+          }
+          return true;
+        })
+      );
+      filteredEvents.push(
+        ...finalizeEvents.filter((finalizeEvent) => {
+          const amountSponsoredInCore = ConvertDecimals(
+            finalTokenInfo.decimals,
+            pair.finalTokenDecimals
+          )(finalizeEvent.args.evmAmountSponsored);
+          const eventAmount = finalizeEvent.args.totalSent.sub(amountSponsoredInCore); // In this case, the expected deduction in our account is the amount we do not sponsor.
+          // Remove the first match. This handles scenarios where are collisions by amount.
+          const index = finalizedAmounts.indexOf(eventAmount.toString());
+          if (index > -1) {
+            finalizedAmounts.splice(index, 1);
+            return false;
+          }
+          return true;
+        })
+      );
+      if (filteredEvents.length !== 0) {
+        this.logger.error({
+          at: "HyperliquidExecutor#getValidSnapshotTimestamp",
+          message: "Detected HyperEVM event with no associated transfer event.",
+          initEvents,
+          finalizeEvents,
+          spotTransfersFromHyperEvm,
+        });
+        throw new Error("Cannot continue with desynced balances");
+      }
+    }
+    return validTimestampMs;
   }
 
   // Spot sends a token to the swap handler.
