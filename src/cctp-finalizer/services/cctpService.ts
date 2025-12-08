@@ -50,7 +50,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = Uint8Array.from(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
