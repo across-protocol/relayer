@@ -71,6 +71,11 @@ export type Pair = {
 const BASE_TOKENS = ["USDT0", "USDC"];
 const abortController = new AbortController();
 
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
  * swap handler contracts to users on Hypercore.
