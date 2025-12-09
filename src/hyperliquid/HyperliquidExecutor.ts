@@ -24,19 +24,12 @@ import {
   getBlockForTimestamp,
   getSpotClearinghouseState,
   getChainQuorum,
-  getHistoricalOrders,
-  getUserNonFundingLedgerUpdates,
   toBN,
-  assert,
   getRedisCache,
   delay,
-  toBNWei,
-  fixedPointAdjustment,
-  createFormatFunction,
-  Block,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
-import { CHAIN_MAX_BLOCK_LOOKBACK, CONTRACT_ADDRESSES } from "../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
 
 export interface HyperliquidExecutorClients {
@@ -60,6 +53,7 @@ export type TaskResult = {
 // same HL orderbook).
 export type Pair = {
   name: string;
+  baseForFinal: boolean;
   swapHandler: EvmAddress;
   baseToken: EvmAddress;
   baseTokenId: number;
@@ -71,6 +65,7 @@ export type Pair = {
 
 const BASE_TOKENS = ["USDT0", "USDC"];
 const abortController = new AbortController();
+const HL_FIXED_ADJUSTMENT = 10 ** 8;
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -135,6 +130,9 @@ export class HyperliquidExecutor {
         if (!isDefined(pair)) {
           return;
         }
+
+        // Save the direction of the pair: either base -> final or final -> base.
+        const baseForFinal = pair.tokens[0] === baseToken.index;
         // Take the tokens from TOKEN_SYMBOLS_MAP, since the spot meta `evmContract` does not necessarily point to the ERC20 address.
         const castSymbol = (symbol: string) => (symbol === "USDT0" ? "USDT" : symbol);
         const baseTokenAddress = TOKEN_SYMBOLS_MAP[castSymbol(baseToken.name)].addresses[this.chainId];
@@ -147,6 +145,7 @@ export class HyperliquidExecutor {
         const pairId = `${baseToken.name}-${finalToken.name}`;
         this.pairs[pairId] = {
           name: pair.name,
+          baseForFinal,
           swapHandler: EvmAddress.from(swapHandler),
           baseToken: EvmAddress.from(baseTokenAddress),
           baseTokenId: baseToken.index,
@@ -187,63 +186,26 @@ export class HyperliquidExecutor {
 
   /*
    * @notice Main entrypoint for the HyperliquidFinalizer service
-   * @dev The finalizer must derive accurate `limitOrderOuts` when finalizing swap flows on Hypercore. This is roughly done
-   * by taking a snapshot block on HyperEVM, looking at the input/base token balance on Hypercore, and then determining how much
-   * input tokens were swapped into the current output/final token balance on Hypercore. This gives us an average exchange rate up
-   * to that block, which we use as the `limitOrderOut`.
+   * @dev The finalizer gets `limitOrderOuts` by checking the current prices in the HL orderbook.
    */
   public async finalizeSwapFlows(): Promise<void> {
-    const snapshotBlock = await this.clients.dstProvider.getBlock("latest");
-
     // For each pair the finalizer handles, create a single transaction which bundles together all limit orders which have sufficient finalToken liquidity.
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
-      // There is a slight delay between the time a token is deposited to a spot balance on HyperEVM and the time a Hypercore balance is credited.
-      // We _must_ find the exact timestamp in ms when the Hypercore account is credited if the snapshot block contains any action which would influence the
-      // hypercore balance (i.e. any `SwapFlowInitialized` or `SwapFlowFinalized` event).
-      const snapshotTimestampInMs = await this.getValidSnapshotTimestamp(pair, snapshotBlock);
-
+      const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
       // PairIds are formatted as `BASE_TOKEN-FINAL_TOKEN`.
-      const [baseTokenSymbol, finalTokenSymbol] = pairId.split("-");
+      const [, finalTokenSymbol] = pairId.split("-");
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
-      const [inputSpotBalance, _outputSpotBalance, outstandingOrders] = await Promise.all([
-        this.querySpotBalanceAtTimestamp(
-          baseTokenSymbol,
-          pair.swapHandler,
-          pair.baseTokenDecimals,
-          snapshotTimestampInMs,
-          false
-        ),
-        this.querySpotBalanceAtTimestamp(
-          finalTokenSymbol,
-          pair.swapHandler,
-          pair.finalTokenDecimals,
-          snapshotTimestampInMs,
-          true
-        ),
-        this.getOutstandingOrdersOnPair(pair, snapshotBlock.number),
+      const [_outputSpotBalance, outstandingOrders, l2Book] = await Promise.all([
+        this.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals),
+        this.getOutstandingOrdersOnPair(pair),
+        getL2Book(this.infoClient, { coin: pair.name }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
-      // The swapped input amount is calculated by `totalInputBalance` - `currentInputBalance`, where `totalInputBalance` is the amount of input tokens that have been sent
-      // into the contract which have no corresponding outflow. In other words, it's the sum of the input amounts of all currently outstanding crosschain mint/burn swaps.
-      const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
-      const totalInputBalanceInRange = outstandingOrders.reduce((sum, order) => sum.add(order.evmAmountIn), bnZero);
-      const totalInputBalanceInRangeCore = ConvertDecimals(
-        inputTokenDecimals,
-        pair.baseTokenDecimals
-      )(totalInputBalanceInRange);
-      const swappedInputAmount = totalInputBalanceInRangeCore.sub(inputSpotBalance);
-      this.logger.debug({
-        at: "HyperliquidExecutor#finalizeSwapFlows",
-        message: "Snapshot data",
-        snapshotBlock,
-        inputSpotBalance,
-        outputSpotBalance,
-        totalInputBalanceInRangeCore,
-        outstandingOrders: outstandingOrders.length,
-      });
+      const currentPx = pair.baseForFinal ? l2Book.levels[0][0].px : l2Book.levels[1][0].px;
+      const currentPxFixed = toBN(Math.floor(Number(currentPx) * HL_FIXED_ADJUSTMENT));
 
-      // We must derive `limitOrderOuts` by finding the realized price of `outputToken` in terms of `inputToken`. This can be done by comparing how much input token we have swapped
-      // with how much output token the contract owns.
+      // limitOrderOut is taken from current prices.
+      // Fill orders FIFO.
       const quoteNonces = [];
       const outputAmounts = [];
       for (const outstandingOrder of outstandingOrders) {
@@ -251,29 +213,8 @@ export class HyperliquidExecutor {
           inputTokenDecimals,
           pair.baseTokenDecimals
         )(outstandingOrder.evmAmountIn);
-        // `limitOrderOut` is calculated using the realized price of _all_ orders over the time frame.
-        const limitOrderOut = _outputSpotBalance.mul(convertedInputAmount).div(swappedInputAmount);
-        // If for some reason this bot is deriving a limitOrderOut which deviates from the inputAmount by greater than a configured precision, then abort.
-        // @dev This assumes that `limitOrderOut` and `convertedInputAmount` are denominated in the same decimals, which is true for all currently supported Hypercore stablecoins.
-        const deviationPct = limitOrderOut
-          .sub(convertedInputAmount)
-          .mul(fixedPointAdjustment)
-          .div(convertedInputAmount);
-        const absDeviationPct = deviationPct.lt(bnZero) ? deviationPct.mul(-1) : deviationPct;
-        if (absDeviationPct.gt(this.config.maxAllowedSlippage)) {
-          const formatter = createFormatFunction(2, 4);
-          this.logger.warn({
-            at: "HyperliquidExecutor#finalizeSwapFlows",
-            message: `Finalization amount has slippage ${formatter(
-              absDeviationPct
-            )} which is greater than max allowed slippage ${formatter(
-              this.config.maxAllowedSlippage
-            )}. Aborting finalizations.`,
-            outstandingOrder,
-            outstandingOrders: outstandingOrders.length,
-          });
-          break;
-        }
+        // LimitOrderOut = inputAmount * exchangeRate.
+        const limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
           quoteNonces.push(outstandingOrder.quoteNonce);
@@ -429,7 +370,8 @@ export class HyperliquidExecutor {
 
     // Set the price as the best ask.
     const existingOrder = openOrders[0];
-    const bestAsk = Number(l2Book.levels[0][0].px);
+    const level = pair.baseForFinal ? 0 : 1;
+    const bestAsk = Number(l2Book.levels[level][0].px);
     const priceXe8 = Math.floor(bestAsk * 10 ** pair.finalTokenDecimals);
 
     const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
@@ -477,187 +419,6 @@ export class HyperliquidExecutor {
       return toBN(Math.floor(Number(balance.total) * 10 ** decimals));
     }
     return bnZero;
-  }
-
-  /*
-   * @notice Queries spot balance at a specific timestamp by taking the current balance and subtracting all spotSends which have occurred since.
-   * @param tokenSymbol The token symbol to query.
-   * @param owner The address whose balance should be queried.
-   * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
-   * @param timestampInMs The timestamp to query the snapshot balance, defined in milliseconds.
-   * @param isOutput boolean indicating whether the token to query is an output token of the swap handler.
-   */
-  private async querySpotBalanceAtTimestamp(
-    tokenSymbol: string,
-    owner: EvmAddress,
-    decimals: number,
-    timestampInMs: number,
-    isOutput: boolean
-  ): Promise<BigNumber> {
-    // Query the current balance along with all ledger updates of the owner since the input timestamp.
-    const [currentBalance, userNonFundingLedgerUpdates, _historicalOrders] = await Promise.all([
-      this.querySpotBalance(tokenSymbol, owner, decimals),
-      getUserNonFundingLedgerUpdates(this.infoClient, {
-        user: owner.toNative(),
-        startTime: timestampInMs,
-      }),
-      getHistoricalOrders(this.infoClient, {
-        user: owner.toNative(),
-      }),
-    ]);
-    const historicalOrders = _historicalOrders.filter(
-      (order) => order.status === "filled" && order.statusTimestamp >= timestampInMs
-    );
-    // Exclude all transfers to the owner which occurred after the timestamp to query.
-    // i.e. treat the balance query as though the receipt of funds did not occur yet.
-    const totalSpotToDeduct = userNonFundingLedgerUpdates
-      .filter(
-        ({ delta }) =>
-          delta.type === "spotTransfer" &&
-          delta.token === tokenSymbol &&
-          delta.destination === owner.toNative().toLowerCase()
-      )
-      .reduce((sum, { delta }) => {
-        assert(delta.type === "spotTransfer");
-        const { amount } = delta;
-        return sum.add(toBN(Math.floor(Number(amount) * 10 ** 8)));
-      }, bnZero);
-    // Include all transfers from the owner which occurred after time timestamp to query.
-    // i.e. treat the balance query as if the transfer from this account did not occur yet.
-    const totalSpotToAdd = userNonFundingLedgerUpdates
-      .filter(
-        ({ delta }) =>
-          delta.type === "spotTransfer" && delta.token === tokenSymbol && delta.user === owner.toNative().toLowerCase()
-      )
-      .reduce((sum, { delta }) => {
-        assert(delta.type === "spotTransfer");
-        const { amount } = delta;
-        return sum.add(toBN(Math.floor(Number(amount) * 10 ** 8)));
-      }, bnZero);
-
-    // Also exclude all orders which have been filled since the timestamp in the balance query.
-    // @dev The input token amount is unlikely to be filled precisely at 1:1, so the output token amount
-    // will be slightly different than the amount calculated here. However, it is assumed that the execution
-    // price is close enough to 1:1 (and the block we are querying is late such that the number of orders we must
-    // account for is quite low), so we approximate that the output amount = input amount.
-    const totalOrderAmountToAdjust = historicalOrders.reduce((sum, { order }) => {
-      const filledAmount = Number(order.origSz) - Number(order.sz);
-      return sum.add(toBN(Math.floor(filledAmount * 10 ** 8)));
-    }, bnZero);
-    // If the balance we are querying is the outputToken, then we need to subtract the orderAmount (since we need to treat the balance query as though
-    // the order did not execute yet). If it is the input token, then we need to add the order amount for the same reason (treat it as though the input amount
-    // was not converted to the output token yet).
-    const totalToDeduct = isOutput
-      ? totalSpotToDeduct.sub(totalOrderAmountToAdjust)
-      : totalSpotToDeduct.add(totalOrderAmountToAdjust);
-    return currentBalance.sub(totalToDeduct).add(totalSpotToAdd);
-  }
-
-  /*
-   * @notice Finds a precise snapshot timestamp for an input block.
-   * @param snapshotBlock The block whose precise timestamp we need to find.
-   */
-  private async getValidSnapshotTimestamp(pair: Pair, snapshotBlock: Block): Promise<number> {
-    const blockNumber = snapshotBlock.number;
-    const baseTokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
-    const associatedHandler = baseTokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
-
-    // We only need to check if this specific block has `SwapFlowInitialized` or `SwapFlowFinalized` events in it.
-    // @dev Filtering on `pair.finalToken` should ensure that we only take events which correspond to the input pair,
-    // since each recipient swap handler is uniquely identified by the baseToken (associatedHandler) and finalToken.
-    const [initEvents, finalizeEvents] = await Promise.all([
-      paginatedEventQuery(
-        associatedHandler,
-        associatedHandler.filters.SwapFlowInitialized(undefined, undefined, pair.finalToken.toNative()),
-        { from: blockNumber, to: blockNumber, maxLookBack: 1 }
-      ),
-      paginatedEventQuery(
-        associatedHandler,
-        associatedHandler.filters.SwapFlowFinalized(undefined, undefined, pair.finalToken.toNative()),
-        { from: blockNumber, to: blockNumber, maxLookBack: 1 }
-      ),
-    ]);
-    let validTimestampMs = snapshotBlock.timestamp * 1000;
-
-    // If either of these events exist in the snapshot block, then we need to take the latest snapshot timestamp of the two.
-    // E.g. if both occurred and the account transferred USDC at t=100 and received at t=101, then the valid timestamp is t=101.
-    // If only one is nonzero in length, then that transfer event timestamp is the valid timestamp.
-    if (initEvents.length !== 0 || finalizeEvents.length !== 0) {
-      // Only query spot transfers if we need to, i.e. if there is an event which occurred on the snapshot block.
-      const spotTransfersFromHyperEvm = await getUserNonFundingLedgerUpdates(this.infoClient, {
-        user: pair.swapHandler.toNative(),
-        startTime: validTimestampMs,
-        endTime: validTimestampMs + 750, // End time is hardcoded as 0.75s. This assumes that the core state update from HyperEVM will not take more than 0.75s after the timestamp of the HyperEVM block.
-      });
-      const finalTokenInfo = this._getTokenInfo(pair.finalToken, this.chainId);
-      const initiatedAmounts = spotTransfersFromHyperEvm
-        .filter(
-          ({ delta }) =>
-            delta.type === "spotTransfer" &&
-            delta.token === baseTokenInfo.symbol &&
-            delta.destination === pair.swapHandler.toNative().toLowerCase() &&
-            delta.user === CONTRACT_ADDRESSES[this.chainId].hypercoreSpotSendAccount!.address
-        )
-        .map((transfer) => {
-          validTimestampMs = validTimestampMs < transfer.time ? transfer.time : validTimestampMs;
-          assert(transfer.delta.type === "spotTransfer");
-          return toBNWei(transfer.delta.amount, pair.baseTokenDecimals).toString();
-        });
-      const finalizedAmounts = spotTransfersFromHyperEvm
-        .filter(
-          ({ delta }) =>
-            delta.type === "spotTransfer" &&
-            delta.token === finalTokenInfo.symbol &&
-            delta.user === pair.swapHandler.toNative().toLowerCase()
-        )
-        .map((transfer) => {
-          validTimestampMs = validTimestampMs < transfer.time ? transfer.time : validTimestampMs;
-          assert(transfer.delta.type === "spotTransfer");
-          return toBNWei(transfer.delta.amount, pair.finalTokenDecimals).toString();
-        });
-
-      // Go through all events and make sure all events are accounted for. Assert that we can find the associated core transfer.
-      const filteredEvents = [];
-      filteredEvents.push(
-        ...initEvents.filter((initEvent) => {
-          const eventAmount = initEvent.args.coreAmountIn;
-          // Remove the first match. This handles scenarios where are collisions by amount.
-          const index = initiatedAmounts.indexOf(eventAmount.toString());
-          if (index > -1) {
-            initiatedAmounts.splice(index, 1);
-            return false;
-          }
-          return true;
-        })
-      );
-      filteredEvents.push(
-        ...finalizeEvents.filter((finalizeEvent) => {
-          const amountSponsoredInCore = ConvertDecimals(
-            finalTokenInfo.decimals,
-            pair.finalTokenDecimals
-          )(finalizeEvent.args.evmAmountSponsored);
-          const eventAmount = finalizeEvent.args.totalSent.sub(amountSponsoredInCore); // In this case, the expected deduction in our account is the amount we do not sponsor.
-          // Remove the first match. This handles scenarios where are collisions by amount.
-          const index = finalizedAmounts.indexOf(eventAmount.toString());
-          if (index > -1) {
-            finalizedAmounts.splice(index, 1);
-            return false;
-          }
-          return true;
-        })
-      );
-      if (filteredEvents.length !== 0) {
-        this.logger.error({
-          at: "HyperliquidExecutor#getValidSnapshotTimestamp",
-          message: "Detected HyperEVM event with no associated transfer event.",
-          initEvents,
-          finalizeEvents,
-          spotTransfersFromHyperEvm,
-        });
-        throw new Error("Cannot continue with desynced balances");
-      }
-    }
-    return validTimestampMs;
   }
 
   // Spot sends a token to the swap handler.
