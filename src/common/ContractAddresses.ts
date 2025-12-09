@@ -312,7 +312,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: undefined, // TODO: Deploy and add mainnet address
+      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     hypercoreSpotSendAccount: {
