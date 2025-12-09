@@ -385,11 +385,12 @@ export class HyperliquidExecutor {
     const level = pair.baseForFinal ? 0 : 1;
     const bestAsk = Number(l2Book.levels[level][0].px);
     const priceXe8 = Math.floor(bestAsk * 10 ** pair.finalTokenDecimals);
+    // No need to update prices.
 
     const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
     // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
     if (isDefined(existingOrder)) {
-      this.cancelLimitOrderByCloid(baseToken, finalToken, existingOrder.oid);
+      this.cancelLimitOrderByCloid(baseToken, finalToken, BigNumber.from(existingOrder.cloid));
     }
     // Only place an order if it is greater than the minimum.
     if (sizeXe8.lt(MIN_ORDER_AMOUNT)) {
@@ -454,12 +455,12 @@ export class HyperliquidExecutor {
   }
 
   // Cancels a limit order via the handler contract.
-  private cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, oid: number) {
+  private cancelLimitOrderByCloid(baseToken: EvmAddress, finalToken: EvmAddress, oid: BigNumber) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
+    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
