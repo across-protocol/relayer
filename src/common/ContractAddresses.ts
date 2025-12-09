@@ -318,6 +318,12 @@ export const CONTRACT_ADDRESSES: {
     hypercoreSpotSendAccount: {
       address: "0x200000000000000000000000000000000000010c",
     },
+    dstCctpHandler: {
+      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
+    },
+    dstOftHandler: {
+      address: "0xc8786D517b4e224bB43985A38dBeF8588D7354CD",
+    },
   },
   [CHAIN_IDs.ZK_SYNC]: {
     nativeTokenVault: {
