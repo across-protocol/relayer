@@ -216,7 +216,10 @@ export class HyperliquidExecutor {
           pair.baseTokenDecimals
         )(outstandingOrder.evmAmountIn);
         // LimitOrderOut = inputAmount * exchangeRate.
-        const limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
+        const _limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
+        const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
+          ? outstandingOrder.maxAmountToSend
+          : _limitOrderOut;
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
           quoteNonces.push(outstandingOrder.quoteNonce);
@@ -232,6 +235,7 @@ export class HyperliquidExecutor {
             pairId,
             outputSpotBalance,
             nextOrderUp: outstandingOrder,
+            amountNeededToCover: limitOrderOut.sub(outputSpotBalance),
           });
           break;
         }
@@ -409,7 +413,7 @@ export class HyperliquidExecutor {
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n oid: ${oid}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
@@ -441,7 +445,7 @@ export class HyperliquidExecutor {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n amount: ${amount}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n amount: ${amount}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
@@ -460,7 +464,7 @@ export class HyperliquidExecutor {
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
@@ -512,7 +516,7 @@ export class HyperliquidExecutor {
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
