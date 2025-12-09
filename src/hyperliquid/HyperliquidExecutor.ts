@@ -217,7 +217,9 @@ export class HyperliquidExecutor {
         )(outstandingOrder.evmAmountIn);
         // LimitOrderOut = inputAmount * exchangeRate.
         const _limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
-        const limitOrderOut = limitOrderOut.gt(outstandingOrder.maxAmountToSend) ? outstandingOrder.maxAmountToSend : limitOrderOut;
+        const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
+          ? outstandingOrder.maxAmountToSend
+          : _limitOrderOut;
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
           quoteNonces.push(outstandingOrder.quoteNonce);
