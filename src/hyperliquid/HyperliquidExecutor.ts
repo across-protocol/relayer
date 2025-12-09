@@ -222,6 +222,12 @@ export class HyperliquidExecutor {
           outputSpotBalance = outputSpotBalance.sub(limitOrderOut);
         } else {
           // Outstanding orders are treated as a FIFO queue. As soon as there is insufficient liquidity to fill one, do not attempt to fill any more recent orders.
+          this.logger.debug({
+            at: "HyperliquidExecutor#finalizeSwapFlows",
+            message: "Cannot finalize any more orders",
+            amountToFinalize: quoteNonces.length,
+            remainingAmount: outstandingOrders.length - quoteNonces.length,
+          });
           break;
         }
       }
