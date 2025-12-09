@@ -66,6 +66,8 @@ export type Pair = {
 const BASE_TOKENS = ["USDT0", "USDC"];
 const abortController = new AbortController();
 const HL_FIXED_ADJUSTMENT = 10 ** 8;
+// There is a minimum order placement requirement of 10 USD.
+const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -227,6 +229,9 @@ export class HyperliquidExecutor {
             message: "Cannot finalize any more orders",
             amountToFinalize: quoteNonces.length,
             remainingAmount: outstandingOrders.length - quoteNonces.length,
+            pairId,
+            outputSpotBalance,
+            nextOrderUp: outstandingOrder,
           });
           break;
         }
@@ -367,11 +372,12 @@ export class HyperliquidExecutor {
 
     // The amount to swap to finalToken should always be the inputSpotBalance, since every swapHandler
     // must attempt to swap all inputToken amounts to `finalToken`s.
-    const [openOrders, l2Book, sizeXe8] = await Promise.all([
+    const [openOrders, l2Book, _sizeXe8] = await Promise.all([
       getOpenOrders(this.infoClient, { user: pair.swapHandler.toNative() }),
       getL2Book(this.infoClient, { coin: pair.name }),
       this.querySpotBalance(baseTokenSymbol, pair.swapHandler, pair.baseTokenDecimals),
     ]);
+    const sizeXe8 = this.roundSize(_sizeXe8);
     const { baseToken, finalToken } = pair;
 
     // Set the price as the best ask.
@@ -384,7 +390,9 @@ export class HyperliquidExecutor {
     // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
     if (isDefined(existingOrder)) {
       this.cancelLimitOrderByCloid(baseToken, finalToken, existingOrder.oid);
-    } else if (sizeXe8.eq(bnZero)) {
+    }
+    // Only place an order if it is greater than the minimum.
+    if (sizeXe8.lt(MIN_ORDER_AMOUNT)) {
       // If the inputSpotBalance is 0, then there is nothing to do.
       return { actionable: false, mrkdwn: "No order updates required" };
     }
@@ -500,15 +508,16 @@ export class HyperliquidExecutor {
   ) {
     // limitOrderOutputs is the amount of final tokens received for each limit order associated with a quoteNonce.
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
+    const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
 
-    const mrkdwn = `finalToken: ${l2TokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    const mrkdwn = `baseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
       method: "finalizeSwapFlows",
       args: [finalToken.toNative(), quoteNonces, limitOrderOutputs],
-      message: `Finalized ${quoteNonces.length} limit orders and sending output tokens to the user.`,
+      message: `Finalized ${quoteNonces.length} limit orders.`,
       mrkdwn,
       nonMulticall: true, // Cannot multicall this since it is a permissioned action.
     });
@@ -522,6 +531,12 @@ export class HyperliquidExecutor {
       ...tokenInfo,
       symbol: updatedSymbol,
     };
+  }
+
+  // Rounds an input size to two "decimals" of precision (that is, XX.XXXX USDC -> XX.XX USDC).
+  private roundSize(sizeXe8: BigNumber): BigNumber {
+    const roundAmount = 10 ** 6; // 8-2 decimals to use when rounding.
+    return sizeXe8.div(roundAmount).mul(roundAmount);
   }
 
   // Task utilities
