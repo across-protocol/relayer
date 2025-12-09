@@ -24,6 +24,7 @@ import {
   getBlockForTimestamp,
   getSpotClearinghouseState,
   getChainQuorum,
+  getHistoricalOrders,
   getUserNonFundingLedgerUpdates,
   toBN,
   assert,
@@ -209,13 +210,15 @@ export class HyperliquidExecutor {
           baseTokenSymbol,
           pair.swapHandler,
           pair.baseTokenDecimals,
-          snapshotTimestampInMs
+          snapshotTimestampInMs,
+          false
         ),
         this.querySpotBalanceAtTimestamp(
           finalTokenSymbol,
           pair.swapHandler,
           pair.finalTokenDecimals,
-          snapshotTimestampInMs
+          snapshotTimestampInMs,
+          true
         ),
         this.getOutstandingOrdersOnPair(pair, snapshotBlock.number),
       ]);
@@ -482,36 +485,72 @@ export class HyperliquidExecutor {
    * @param owner The address whose balance should be queried.
    * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
    * @param timestampInMs The timestamp to query the snapshot balance, defined in milliseconds.
+   * @param isOutput boolean indicating whether the token to query is an output token of the swap handler.
    */
   private async querySpotBalanceAtTimestamp(
     tokenSymbol: string,
     owner: EvmAddress,
     decimals: number,
-    timestampInMs: number
+    timestampInMs: number,
+    isOutput: boolean
   ): Promise<BigNumber> {
     // Query the current balance along with all ledger updates of the owner since the input timestamp.
-    const [currentBalance, userNonFundingLedgerUpdates] = await Promise.all([
+    const [currentBalance, userNonFundingLedgerUpdates, _historicalOrders] = await Promise.all([
       this.querySpotBalance(tokenSymbol, owner, decimals),
       getUserNonFundingLedgerUpdates(this.infoClient, {
         user: owner.toNative(),
         startTime: timestampInMs,
       }),
+      getHistoricalOrders(this.infoClient, {
+        user: owner.toNative(),
+      }),
     ]);
-    // Out of scope transactions are spot sends to the owner which occurred since the input timestamp.
-    const outOfScopeTransactions = userNonFundingLedgerUpdates.filter(
-      ({ delta }) =>
-        delta.type === "spotTransfer" &&
-        delta.token === tokenSymbol &&
-        delta.destination === owner.toNative().toLowerCase()
+    const historicalOrders = _historicalOrders.filter(
+      (order) => order.status === "filled" && order.statusTimestamp >= timestampInMs
     );
-    // Deduct all spot sends to the owner from the final amount.
-    const outOfScopeBalance = outOfScopeTransactions.reduce((sum, txn) => {
-      // Need to type check to ensure `amount` is a field of `txn.delta`.
-      assert(txn.delta.type === "spotTransfer");
-      const { amount } = txn.delta;
-      return toBN(Math.floor(Number(amount) * 10 ** 8));
+    // Exclude all transfers to the owner which occurred after the timestamp to query.
+    // i.e. treat the balance query as though the receipt of funds did not occur yet.
+    const totalSpotToDeduct = userNonFundingLedgerUpdates
+      .filter(
+        ({ delta }) =>
+          delta.type === "spotTransfer" &&
+          delta.token === tokenSymbol &&
+          delta.destination === owner.toNative().toLowerCase()
+      )
+      .reduce((sum, { delta }) => {
+        assert(delta.type === "spotTransfer");
+        const { amount } = delta;
+        return sum.add(toBN(Math.floor(Number(amount) * 10 ** 8)));
+      }, bnZero);
+    // Include all transfers from the owner which occurred after time timestamp to query.
+    // i.e. treat the balance query as if the transfer from this account did not occur yet.
+    const totalSpotToAdd = userNonFundingLedgerUpdates
+      .filter(
+        ({ delta }) =>
+          delta.type === "spotTransfer" && delta.token === tokenSymbol && delta.user === owner.toNative().toLowerCase()
+      )
+      .reduce((sum, { delta }) => {
+        assert(delta.type === "spotTransfer");
+        const { amount } = delta;
+        return sum.add(toBN(Math.floor(Number(amount) * 10 ** 8)));
+      }, bnZero);
+
+    // Also exclude all orders which have been filled since the timestamp in the balance query.
+    // @dev The input token amount is unlikely to be filled precisely at 1:1, so the output token amount
+    // will be slightly different than the amount calculated here. However, it is assumed that the execution
+    // price is close enough to 1:1 (and the block we are querying is late such that the number of orders we must
+    // account for is quite low), so we approximate that the output amount = input amount.
+    const totalOrderAmountToAdjust = historicalOrders.reduce((sum, { order }) => {
+      const filledAmount = Number(order.origSz) - Number(order.sz);
+      return sum.add(toBN(Math.floor(filledAmount * 10 ** 8)));
     }, bnZero);
-    return currentBalance.sub(outOfScopeBalance);
+    // If the balance we are querying is the outputToken, then we need to subtract the orderAmount (since we need to treat the balance query as though
+    // the order did not execute yet). If it is the input token, then we need to add the order amount for the same reason (treat it as though the input amount
+    // was not converted to the output token yet).
+    const totalToDeduct = isOutput
+      ? totalSpotToDeduct.sub(totalOrderAmountToAdjust)
+      : totalSpotToDeduct.add(totalOrderAmountToAdjust);
+    return currentBalance.sub(totalToDeduct).add(totalSpotToAdd);
   }
 
   /*
