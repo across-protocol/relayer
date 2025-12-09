@@ -9,6 +9,7 @@ import {
   chainIsEvm,
   chainIsSvm,
   Contract,
+  delay,
   ERC20,
   EvmAddress,
   formatUnits,
@@ -516,6 +517,25 @@ export class Refiller {
       `No L2 provider found for chain ${swapRoute.originChainId}, have you overridden the spoke pool chains?`
     );
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
+    const approval = await this.acrossSwapApiClient.getApproval(swapRoute, amount, this.baseSignerAddress, recipient);
+    if (approval) {
+      const txnReceipt = await sendRawTransaction(
+        this.logger,
+        new Contract(approval.target.toNative(), [], originSigner),
+        approval.value,
+        approval.calldata
+      );
+      this.logger.info({
+        at: "Monitor#refillBalances",
+        message: "Submitted approval transaction for swap route.",
+        transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
+        swapRoute,
+        swapper: this.baseSignerAddress,
+      });
+      await delay(1);
+      await txnReceipt.wait();
+    }
+
     const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
     if (!swapData) {
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
