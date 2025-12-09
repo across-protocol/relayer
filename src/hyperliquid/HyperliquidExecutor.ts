@@ -235,6 +235,7 @@ export class HyperliquidExecutor {
             pairId,
             outputSpotBalance,
             nextOrderUp: outstandingOrder,
+            amountNeededToCover: limitOrderOut.sub(outputSpotBalance),
           });
           break;
         }
