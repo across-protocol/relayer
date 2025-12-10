@@ -312,7 +312,7 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879",
+      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstOftHandler: {
