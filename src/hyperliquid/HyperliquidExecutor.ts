@@ -497,10 +497,10 @@ export class HyperliquidExecutor {
         searchConfig
       ),
     ]);
+
+    const finalized = orderFinalizedEvents.map(({ args }) => args.quoteNonce);
     return orderInitializedEvents
-      .filter(
-        (initEvent) => !orderFinalizedEvents.map(({ args }) => args.quoteNonce).includes(initEvent.args.quoteNonce)
-      )
+      .filter(({ args }) => !finalized.includes(args.quoteNonce))
       .map(({ args }) => args as SwapFlowInitialized);
   }
 
