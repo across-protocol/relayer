@@ -59,6 +59,7 @@ import {
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
+  sortEventsAscending,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -71,6 +72,8 @@ import {
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
+import { HyperliquidExecutor } from "../hyperliquid/HyperliquidExecutor";
+import { HyperliquidExecutorConfig } from "../hyperliquid/HyperliquidExecutorConfig";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -342,6 +345,46 @@ export class Monitor {
 
     if (mrkdwn) {
       this.logger.info({ at: "Monitor#reportUnfilledDeposits", message: "Unfilled deposits ⏱", mrkdwn });
+    }
+  }
+
+  async reportOpenHyperliquidOrders(): Promise<void> {
+    // Piggyback off of the hyperliquid executor logic so that we can call `getOutstandingOrdersOnPair` for each configured pair.
+    const hyperEvmSpoke = this.clients.spokePoolClients[CHAIN_IDs.HYPEREVM];
+    assert(isEVMSpokePoolClient(hyperEvmSpoke));
+    const dstProvider = hyperEvmSpoke.spokePool.provider;
+
+    const hyperliquidExecutorConfig = new HyperliquidExecutorConfig(process.env);
+    const hyperliquidExecutor = new HyperliquidExecutor(
+      this.logger,
+      {
+        ...hyperliquidExecutorConfig,
+        supportedTokens: this.monitorConfig.hyperliquidTokens,
+        lookback: this.monitorConfig.hyperliquidOrderMaximumLifetime * 3, // Lookback is a function of lifetime.
+      } as HyperliquidExecutorConfig,
+      { ...this.clients, dstProvider }
+    );
+
+    const outstandingOrders = await mapAsync(Object.values(hyperliquidExecutor.pairs), async (pair) =>
+      hyperliquidExecutor.getOutstandingOrdersOnPair(pair)
+    );
+    const _oldHyperliquidOrders = await mapAsync(outstandingOrders, async (orderSet) => {
+      const sortedOrders = sortEventsAscending(orderSet);
+      const earliestOrder = sortedOrders[0];
+      const orderBlock = await dstProvider.getBlock(earliestOrder.blockNumber);
+      if (Date.now() - orderBlock.timestamp > this.monitorConfig.hyperliquidOrderMaximumLifetime) {
+        return earliestOrder;
+      }
+      return undefined;
+    });
+
+    const oldHyperliquidOrders = _oldHyperliquidOrders.filter(isDefined);
+    if (oldHyperliquidOrders.length !== 0) {
+      this.logger.error({
+        at: "Monitor#reportOpenHyperliquidOrders",
+        message: "Old outstanding Hyperliquid orders",
+        oldHyperliquidOrders,
+      });
     }
   }
 
