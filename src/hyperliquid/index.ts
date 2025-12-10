@@ -1,4 +1,5 @@
-import { winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import { EventListener } from "../clients";
+import { CHAIN_IDs, delay, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
@@ -38,6 +39,17 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
   const finalizer = new HyperliquidExecutor(logger, config, clients);
   await finalizer.initialize();
 
+  const onBlock = (blockNumber: number, timestamp: number) => {
+    if (blockNumber % 5 === 0) {
+      setTimeout(() => finalizer.finalizeSwapFlows(blockNumber));
+    }
+  };
+
+  const listener = new EventListener(CHAIN_IDs.HYPEREVM, logger, 1);
+  listener.onBlock(onBlock);
+
+  await delay(1000);
+
   try {
     logger[startupLogLevel(config)]({
       at: "HyperliquidFinalizer#index",
@@ -47,7 +59,6 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
 
     const start = Date.now();
 
-    await finalizer.finalizeSwapFlows();
 
     logger.debug({ at: "HyperliquidFinalizer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
