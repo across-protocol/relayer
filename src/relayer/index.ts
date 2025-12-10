@@ -41,7 +41,6 @@ const sighup = () => {
   });
 };
 
-
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const at = "runRelayer";
   logger = _logger;
