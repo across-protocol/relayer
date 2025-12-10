@@ -67,7 +67,7 @@ export const CONFIG_STORE_VERSION = 6;
 export const RELAYER_MIN_FEE_PCT = 0.0001;
 
 // The maximum amount of USDC permitted to be sent over CCTP in a single transaction.
-export const CCTP_MAX_SEND_AMOUNT = toBN(1_000_000_000_000); // 1MM USDC.
+export const CCTP_MAX_SEND_AMOUNT = toBN(10_000_000_000_000); // 10MM USDC.
 
 // max(uint256) - 1
 export const INFINITE_FILL_DEADLINE = bnUint32Max;

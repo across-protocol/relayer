@@ -651,7 +651,8 @@ export class Monitor {
             }
             if (trippedThreshold !== null) {
               let symbol;
-              if (!isDefined(token)) {
+              const nativeTokenForChain = getNativeTokenAddressForChain(chainId);
+              if (token.eq(nativeTokenForChain)) {
                 symbol = getNativeTokenSymbol(chainId);
               } else {
                 const spokePoolClient = this.clients.spokePoolClients[chainId];

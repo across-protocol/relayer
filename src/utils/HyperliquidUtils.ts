@@ -37,6 +37,24 @@ export async function getSpotMeta(
   return await _callWithRetry(infoClient.spotMeta.bind(infoClient), [], nRetries, maxRetries);
 }
 
+export async function getSpotClearinghouseState(
+  infoClient: hl.InfoClient,
+  params: hl.SpotClearinghouseStateParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.SpotClearinghouseStateResponse> {
+  return await _callWithRetry(infoClient.spotClearinghouseState.bind(infoClient), [params], nRetries, maxRetries);
+}
+
+export async function getUserNonFundingLedgerUpdates(
+  infoClient: hl.InfoClient,
+  params: hl.UserNonFundingLedgerUpdatesParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserNonFundingLedgerUpdatesResponse> {
+  return await _callWithRetry(infoClient.userNonFundingLedgerUpdates.bind(infoClient), [params], nRetries, maxRetries);
+}
+
 export async function getOpenOrders(
   infoClient: hl.InfoClient,
   params: hl.OpenOrdersParameters,

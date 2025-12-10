@@ -176,6 +176,13 @@ export async function runTransaction(
         await delay(0.5); // Unclear whether we'll ever hit this in practice.
         break;
 
+      // Likely irrecoverable error due to native token wrap/unwrap collision.
+      case errors.INSUFFICIENT_FUNDS: {
+        message = "Cannot execute transaction due to insufficent native token balance.";
+        logger.warn({ at, message, code, reason, ...commonFields });
+        throw error;
+      }
+
       // Bad errors - likely something wrong in the codebase.
       case errors.INVALID_ARGUMENT: // fallthrough
       case errors.MISSING_ARGUMENT: // fallthrough
@@ -222,8 +229,20 @@ export async function sendRawTransaction(
   return await runTransaction(logger, contract, "", calldata, value, gasLimit, nonce, retries);
 }
 
+export async function signAndSendTransaction(provider: SVMProvider, _unsignedTxn: SolanaTransaction) {
+  const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
+  const unsignedTxn = isDefined(priorityFeeOverride)
+    ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTxn)
+    : _unsignedTxn;
+  const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
+  const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
+  return provider
+    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
+    .send();
+}
+
 export async function sendAndConfirmSolanaTransaction(
-  _unsignedTransaction: SolanaTransaction,
+  unsignedTransaction: SolanaTransaction,
   provider: SVMProvider,
   cycles = 25,
   pollingDelay = 600 // 1.5 slots on Solana.
@@ -231,15 +250,7 @@ export async function sendAndConfirmSolanaTransaction(
   const delay = (ms: number) => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   };
-  const priorityFeeOverride = process.env["SVM_PRIORITY_FEE_OVERRIDE"];
-  const unsignedTx = isDefined(priorityFeeOverride)
-    ? updateOrAppendSetComputeUnitPriceInstruction(BigInt(priorityFeeOverride) as MicroLamports, _unsignedTransaction)
-    : _unsignedTransaction;
-  const signedTx = await signTransactionMessageWithSigners(unsignedTx);
-  const serializedTx = getBase64EncodedWireTransaction(signedTx);
-  const txSignature = await provider
-    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
-    .send();
+  const txSignature = await signAndSendTransaction(provider, unsignedTransaction);
   let confirmed = false;
   let _cycles = 0;
   while (!confirmed && _cycles < cycles) {
