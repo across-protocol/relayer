@@ -442,7 +442,7 @@ export class HyperliquidExecutor {
    * @param owner The address whose balance should be queried.
    * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
    */
-  private async querySpotBalance(tokenSymbol: string, owner: EvmAddress, decimals: number): Promise<BigNumber> {
+  async querySpotBalance(tokenSymbol: string, owner: EvmAddress, decimals: number): Promise<BigNumber> {
     const { balances } = await getSpotClearinghouseState(this.infoClient, { user: owner.toNative() });
     const balance = balances.find((balance) => balance.coin === tokenSymbol);
     if (isDefined(balance)) {
