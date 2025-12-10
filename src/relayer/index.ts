@@ -31,22 +31,27 @@ const {
 const maxStartupDelay = Number(RELAYER_MAX_STARTUP_DELAY);
 const abortController = new AbortController();
 
-process.on("SIGHUP", () => {
-  logger.debug({
-    at: "Relayer#run",
-    message: "Received SIGHUP, stopping...",
+const sighup = () => {
+  process.on("SIGHUP", () => {
+    logger.debug({
+      at: "Relayer#run",
+      message: "Received SIGHUP, stopping...",
+    });
+    abortController.abort();
   });
-  abortController.abort();
-});
+};
+
 
 export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const at = "runRelayer";
+  logger = _logger;
+  sighup();
+
   const profiler = new Profiler({
     at: "Relayer#run",
-    logger: _logger,
+    logger,
   });
 
-  logger = _logger;
   const config = new RelayerConfig(process.env);
   const { eventListener, externalListener, pollingDelay } = config;
 
@@ -212,8 +217,9 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const personality = "Rebalancer";
   const at = `${personality}::run`;
-
   logger = _logger;
+  sighup();
+
   const config = new RelayerConfig(process.env);
 
   // Explicitly don't log addressFilter because it can be huge and can overwhelm log transports.
