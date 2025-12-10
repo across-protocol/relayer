@@ -403,7 +403,9 @@ export class HyperliquidExecutor {
     }
     // If the price is too low, do not submit a limit order anymore. The bot should essentially back off of making orders.
     // e.g. if we back off of a price which is below peg by 10bps, then if the price we were submitting was at 0.99899, we would abort.
-    if (priceXe8.sub(HL_FIXED_ADJUSTMENT).lt(this.config.maxSlippageBps.mul(-1))) {
+    // @dev We multiply by -1 if the pair "sells" the base token since unfavorable slippage will occur when the price we are selling is < 1.
+    // We multiply by 1 when the pair "sells" the final token since unfavorable slippage will occur when the price we are buying is > 1.
+    if (priceXe8.sub(HL_FIXED_ADJUSTMENT).lt(this.config.maxSlippageBps.mul(pair.baseForFinal ? -1 : 1))) {
       this.logger.warn({
         at: "HyperliquidExecutor#updateOrderAmount",
         message: "Not submitting new limit order due to excessive slippage",
