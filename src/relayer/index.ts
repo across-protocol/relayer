@@ -47,6 +47,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
   });
 
   logger = _logger;
+
   const config = new RelayerConfig(process.env);
   const { eventListener, externalListener, pollingDelay } = config;
 
