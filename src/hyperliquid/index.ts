@@ -59,7 +59,6 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
 
     const start = Date.now();
 
-
     logger.debug({ at: "HyperliquidFinalizer#index", message: `Time to run: ${(Date.now() - start) / 1000}s` });
   } finally {
     await disconnectRedisClients(logger);
