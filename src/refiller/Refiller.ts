@@ -403,87 +403,13 @@ export class Refiller {
       return;
     }
 
-    const { trigger, target, checkOriginChainBalance, account } = refillBalanceData;
-    const triggerThreshold = parseUnits(trigger.toString(), decimals);
-    const targetThreshold = parseUnits(target.toString(), decimals);
-    const accountAddress = account.toNative();
-
-    // Early exit check: If checking destination chain balance, verify it's below trigger
-    if (!checkOriginChainBalance) {
-      const shouldRefill = currentBalance.lt(triggerThreshold);
-      this.logger.debug({
-        at: "Refiller#refillUsdh",
-        message: "Checking destination chain (HyperEVM) USDH balance",
-        destinationChainBalance: formatUnits(currentBalance, decimals),
-        triggerThreshold: formatUnits(triggerThreshold, decimals),
-        targetThreshold: formatUnits(targetThreshold, decimals),
-        shouldRefill,
-      });
-
-      // Early exit if destination chain balance is above trigger
-      if (!shouldRefill) {
-        this.logger.debug({
-          at: "Refiller#refillUsdh",
-          message: "Destination chain balance above trigger, skipping transfer",
-          destinationChainBalance: formatUnits(currentBalance, decimals),
-          triggerThreshold: formatUnits(triggerThreshold, decimals),
-        });
-        return;
-      }
-    }
-
-    // Get origin chain (Arbitrum) USDC balance
-    const srcProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ARBITRUM];
-    const usdc = new Contract(
-      TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM],
-      ERC20_ABI,
-      this.baseSigner.connect(srcProvider)
-    );
-    const originChainBalance = await usdc.balanceOf(this.baseSignerAddress.toNative());
-
-    // Calculate deficit for destination balance check (only needed when not checking origin)
-    const deficit = targetThreshold.sub(currentBalance);
-
-    const originChainBalanceOverThreshold = originChainBalance.gt(this.config.minUsdhRebalanceAmount);
-    // Determine if we should send tokens and how much based on the check type
-    const shouldSendTokens = checkOriginChainBalance ? originChainBalanceOverThreshold : deficit.gt(bnZero);
-
-    const amountToTransfer = checkOriginChainBalance ? originChainBalance : deficit;
-
-    if (!checkOriginChainBalance && amountToTransfer.gt(originChainBalance)) {
-      this.logger.warn({
-        at: "Refiller#refillUsdh",
-        message: "Amount to transfer is greater than origin chain balance, skipping transfer",
-        amountToTransfer: formatUnits(amountToTransfer, decimals),
-        originChainBalance: formatUnits(originChainBalance, decimals),
-      });
+    // Check if we should refill and get the transfer details
+    const refillData = await this.shouldRefillUsdh(currentBalance, decimals, refillBalanceData);
+    if (!refillData) {
       return;
     }
 
-    this.logger.debug({
-      at: "Refiller#refillUsdh",
-      message: "Determining if we should send tokens and how much to send",
-      destinationChainBalance: formatUnits(currentBalance, decimals),
-      targetThreshold: formatUnits(targetThreshold, decimals),
-      deficit: formatUnits(deficit, decimals),
-      originChainBalance: formatUnits(originChainBalance, decimals),
-      amountToTransfer: formatUnits(amountToTransfer, decimals),
-      minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
-      shouldSendTokens,
-    });
-
-    // Early exit if we shouldn't send tokens
-    if (!shouldSendTokens || amountToTransfer.lte(bnZero)) {
-      this.logger.debug({
-        at: "Refiller#refillUsdh",
-        message: "Skipping transfer",
-        reason: "Origin chain balance insufficient or no deficit",
-        originChainBalance: formatUnits(originChainBalance, decimals),
-        minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
-        amountToTransfer: formatUnits(amountToTransfer, decimals),
-      });
-      return;
-    }
+    const { usdc, amountToTransfer, accountAddress } = refillData;
 
     // If we reach here, we need to send tokens - proceed with API calls
     const { apiUrl: nativeMarketsApiUrl, apiKey: nativeMarketsApiKey } = this.config.nativeMarketsApiConfig;
@@ -573,6 +499,87 @@ export class Refiller {
       nonMulticall: true,
       mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
     });
+  }
+
+  /**
+   * Determines if a USDH refill should occur and calculates the amount to transfer.
+   * @returns Object with usdc contract, amount, and account address if refill should happen; null otherwise.
+   */
+  private async shouldRefillUsdh(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalanceData: RefillBalanceData
+  ): Promise<{ usdc: Contract; amountToTransfer: BigNumber; accountAddress: string } | null> {
+    const { trigger, target, checkOriginChainBalance, account } = refillBalanceData;
+    const triggerThreshold = parseUnits(trigger.toString(), decimals);
+    const targetThreshold = parseUnits(target.toString(), decimals);
+    const accountAddress = account.toNative();
+
+    // Early exit check: If checking destination chain balance, verify it's below trigger
+    if (!checkOriginChainBalance && currentBalance.gt(triggerThreshold)) {
+      this.logger.debug({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Destination chain balance above trigger, skipping transfer",
+        destinationChainBalance: formatUnits(currentBalance, decimals),
+        triggerThreshold: formatUnits(triggerThreshold, decimals),
+      });
+      return null;
+    }
+
+    // Get origin chain (Arbitrum) USDC balance
+    const srcProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ARBITRUM];
+    const usdc = new Contract(
+      TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM],
+      ERC20_ABI,
+      this.baseSigner.connect(srcProvider)
+    );
+    const originChainBalance = await usdc.balanceOf(this.baseSignerAddress.toNative());
+
+    // Calculate deficit for destination balance check (only needed when not checking origin)
+    const deficit = targetThreshold.sub(currentBalance);
+
+    const originChainBalanceOverThreshold = originChainBalance.gt(this.config.minUsdhRebalanceAmount);
+    // Determine if we should send tokens and how much based on the check type
+    const shouldSendTokens = checkOriginChainBalance ? originChainBalanceOverThreshold : deficit.gt(bnZero);
+
+    const amountToTransfer = checkOriginChainBalance ? originChainBalance : deficit;
+
+    if (!checkOriginChainBalance && amountToTransfer.gt(originChainBalance)) {
+      this.logger.warn({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Amount to transfer is greater than origin chain balance, skipping transfer",
+        amountToTransfer: formatUnits(amountToTransfer, decimals),
+        originChainBalance: formatUnits(originChainBalance, decimals),
+      });
+      return null;
+    }
+
+    this.logger.debug({
+      at: "Refiller#shouldRefillUsdh",
+      message: "Determining if we should send tokens and how much to send",
+      destinationChainBalance: formatUnits(currentBalance, decimals),
+      targetThreshold: formatUnits(targetThreshold, decimals),
+      deficit: formatUnits(deficit, decimals),
+      originChainBalance: formatUnits(originChainBalance, decimals),
+      amountToTransfer: formatUnits(amountToTransfer, decimals),
+      minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
+      shouldSendTokens,
+    });
+
+    // Return null if we shouldn't send tokens
+    if (!shouldSendTokens || amountToTransfer.lte(bnZero)) {
+      this.logger.debug({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Skipping transfer",
+        reason: "Origin chain balance insufficient or no deficit",
+        originChainBalance: formatUnits(originChainBalance, decimals),
+        minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
+        amountToTransfer: formatUnits(amountToTransfer, decimals),
+      });
+      return null;
+    }
+
+    return { usdc, amountToTransfer, accountAddress };
   }
 
   private async _swapToRefill(
