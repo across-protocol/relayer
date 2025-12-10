@@ -312,11 +312,8 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
+      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
-    },
-    dstCctpHandler: {
-      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
     },
     dstOftHandler: {
       address: "0xc8786D517b4e224bB43985A38dBeF8588D7354CD",

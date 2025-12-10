@@ -107,7 +107,7 @@ export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
   const artifact = beta["HyperCoreFlowExecutor__factory"];
   const address =
-    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.sponsoredCCTPDstPeriphery?.address ??
     beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
