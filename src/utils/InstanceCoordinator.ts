@@ -17,7 +17,7 @@ export class InstanceCoordinator extends EventEmitter {
     return (await this.redis.get(this.identifier)) ?? Promise.resolve(undefined);
   }
 
-  async initiateHandover(onHandover: (newInstance: string) => void): Promise<void> {
+  async initiateHandover(): Promise<void> {
     const activeInstance = await this.getActiveInstance();
     this.logger.debug({
       at: "Coordinator::initiateHandover",
@@ -35,7 +35,7 @@ export class InstanceCoordinator extends EventEmitter {
         at: "Coordinator::monitorInstance",
         message: `Handover requested by ${this.identifier} instance ${activeInstance}.`,
       });
-      onHandover(activeInstance);
+      this.emit("handover", activeInstance);
     };
 
     await this.redis.set(this.identifier, this.instance, this.instanceExpiry);

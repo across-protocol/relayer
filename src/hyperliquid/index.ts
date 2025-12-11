@@ -59,7 +59,6 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
 
   const redis = await getRedisCache();
   const instanceCoordinator = new InstanceCoordinator(logger, redis, botIdentifier, runIdentifier);
-  const handoverMonitor = () => abortController.abort();
 
   const config = new HyperliquidExecutorConfig(process.env);
   const clients = await constructHyperliquidExecutorClients(config, logger, baseSigner);
@@ -80,7 +79,8 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
     config,
   });
 
-  await instanceCoordinator.initiateHandover(handoverMonitor);
+  instanceCoordinator.on("handover", () => abortController.abort());
+  await instanceCoordinator.initiateHandover();
 
   const start = performance.now();
   return new Promise((resolve) =>
