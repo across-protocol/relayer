@@ -1,3 +1,4 @@
+import { getDeployedAddress } from "@across-protocol/contracts-beta";
 import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
@@ -312,14 +313,14 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
     },
     dstOftHandler: {
-      address: "0xc8786D517b4e224bB43985A38dBeF8588D7354CD",
+      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
