@@ -317,7 +317,7 @@ export const CONTRACT_ADDRESSES: {
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
     },
     dstOftHandler: {
       address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
