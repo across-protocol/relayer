@@ -12,6 +12,16 @@ import {
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import {
+  NoAttestationFoundError,
+  AttestationNotReadyError,
+  AlreadyProcessedError,
+  SvmPrivateKeyNotConfiguredError,
+  RpcUrlNotConfiguredError,
+  MintTransactionFailedError,
+  PrivateKeyNotFoundError,
+  isCCTPError,
+} from "../errors";
 
 export class CCTPService {
   private evmPrivateKey: string;
@@ -40,7 +50,7 @@ export class CCTPService {
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = Uint8Array.from(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = utils.bs58.decode(await this.getPrivateKey("svm"));
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
@@ -94,19 +104,13 @@ export class CCTPService {
         const attestations = attestationResponse[burnTransactionHash];
 
         if (!attestations?.messages?.length) {
-          return {
-            success: false,
-            error: "No attestation found for the burn transaction",
-          };
+          throw new NoAttestationFoundError(burnTransactionHash);
         }
 
         attestation = attestations.messages[0];
 
         if (!this.isAttestationReady(attestation.status!)) {
-          return {
-            success: false,
-            error: `Attestation not ready. Status: ${attestation.status}`,
-          };
+          throw new AttestationNotReadyError(attestation.status!);
         }
 
         if (providedDestinationChainId) {
@@ -120,24 +124,37 @@ export class CCTPService {
       const isAlreadyProcessed = await this.checkIfAlreadyProcessed(destinationChainId, attestation.message);
 
       if (isAlreadyProcessed) {
-        return {
-          success: true,
-          mintTxHash: "ALREADY_PROCESSED",
-          error: "Message has already been processed on-chain",
-        };
+        throw new AlreadyProcessedError();
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation, signature);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature);
     } catch (error) {
+      if (isCCTPError(error)) {
+        if (error instanceof AlreadyProcessedError) {
+          return {
+            success: true,
+            mintTxHash: "ALREADY_PROCESSED",
+            error: error.message,
+            shouldRetry: error.shouldRetry,
+          };
+        }
+        return {
+          success: false,
+          error: error.message,
+          shouldRetry: error.shouldRetry,
+        };
+      }
+
       this.logger.error({
         at: "CCTPService#processBurnTransaction",
-        message: "Error processing burn transaction",
+        message: "Unexpected error processing burn transaction",
         error,
       });
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error occurred",
+        shouldRetry: true,
       };
     }
   }
@@ -190,51 +207,60 @@ export class CCTPService {
   }
 
   private async processMint(
-    chainId: number,
+    destinationChainId: number,
+    originChainId: number,
     attestation: any,
     signature?: string
   ): Promise<ProcessBurnTransactionResponse> {
-    const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
+    const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
-      message: `Calling receiveMessage on ${chainName} (${chainId})`,
+      message: `Calling receiveMessage on ${chainName} (${destinationChainId})`,
     });
 
     try {
-      if (chainIsSvm(chainId)) {
+      if (chainIsSvm(destinationChainId)) {
         if (!this.svmPrivateKey) {
-          return {
-            success: false,
-            error: "SVM private key not configured for Solana CCTP finalization",
-          };
+          throw new SvmPrivateKeyNotConfiguredError();
         }
 
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
-        const result = await processMintSvm(attestation, this.svmPrivateKey, svmProvider, this.logger);
+        const result = await processMintSvm(
+          attestation,
+          this.svmPrivateKey,
+          svmProvider,
+          destinationChainId,
+          originChainId,
+          this.logger
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
+          shouldRetry: false,
         };
       } else {
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.evmPrivateKey, this.logger, signature);
+        const result = await processMintEvm(
+          destinationChainId,
+          attestation,
+          provider,
+          this.evmPrivateKey,
+          this.logger,
+          signature
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
+          shouldRetry: false,
         };
       }
     } catch (error) {
-      this.logger.error({
-        at: "CCTPService#processMint",
-        message: "Mint transaction failed",
-        error,
-      });
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Mint transaction failed",
-      };
+      if (isCCTPError(error)) {
+        throw error;
+      }
+      throw new MintTransactionFailedError(error);
     }
   }
 
@@ -270,7 +296,7 @@ export class CCTPService {
 
     const rpcUrl = rpcUrlMap[chainId];
     if (!rpcUrl) {
-      throw new Error(`No RPC URL configured for chain ID ${chainId}`);
+      throw new RpcUrlNotConfiguredError(chainId);
     }
     return rpcUrl;
   }
@@ -280,7 +306,7 @@ export class CCTPService {
       getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
     );
     if (privateKeys.length === 0) {
-      throw new Error(`No private key found for ${type}`);
+      throw new PrivateKeyNotFoundError(type);
     }
     return privateKeys[0].slice(2);
   }

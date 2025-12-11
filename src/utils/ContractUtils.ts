@@ -12,6 +12,7 @@ import {
   SvmAddress,
   Address,
 } from ".";
+import { CONTRACT_ADDRESSES } from "../common";
 
 // Return an ethers contract instance for a deployed contract, imported from the Across-protocol contracts repo.
 export function getDeployedContract(contractName: string, networkId: number, signer?: Signer): Contract {
@@ -96,13 +97,19 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
   const artifact = beta["HyperCoreFlowExecutor__factory"];
-  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
+  const address =
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
+    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  return new Contract(address, artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
   const artifact = beta["HyperCoreFlowExecutor__factory"];
-  return new Contract(beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM), artifact.abi);
+  const address =
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
+    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+  return new Contract(address, artifact.abi);
 }
 
 export function getSrcOftPeriphery(chainId: number): Contract {

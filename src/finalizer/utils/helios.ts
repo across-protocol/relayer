@@ -70,6 +70,7 @@ export async function heliosL1toL2Finalizer(
   const l2ChainId = l2SpokePoolClient.chainId;
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
+  const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
   const actions = await identifyRequiredActions(
@@ -99,7 +100,8 @@ export async function heliosL1toL2Finalizer(
     l2SpokePoolClient,
     l1SpokePoolClient,
     sp1HeliosHead,
-    sp1HeliosHeader
+    sp1HeliosHeader,
+    sp1HeliosVkey
   );
 
   if (readyActions.length === 0) {
@@ -271,7 +273,8 @@ async function enrichHeliosActions(
   l2SpokePoolClient: EVMSpokePoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
-  currentL2HeliosHeader: string
+  currentL2HeliosHeader: string,
+  vkey: string
 ): Promise<HeliosAction[]> {
   const l2ChainId = l2SpokePoolClient.chainId;
   const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
@@ -306,6 +309,7 @@ async function enrichHeliosActions(
           src_chain_block_number: action.l1Event.blockNumber,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       case "UpdateOnly":
@@ -319,6 +323,7 @@ async function enrichHeliosActions(
           src_chain_block_number: 0,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       default: {
