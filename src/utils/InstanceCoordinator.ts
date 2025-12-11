@@ -29,7 +29,6 @@ export class InstanceCoordinator extends EventEmitter {
       do {
         await delay(1);
         activeInstance = await this.redis.get<string>(this.identifier);
-        console.log(`xxx got active instance ${activeInstance}`);
       } while (activeInstance === this.instance);
 
       this.logger.debug({
@@ -40,6 +39,6 @@ export class InstanceCoordinator extends EventEmitter {
     };
 
     await this.redis.set(this.identifier, this.instance, this.instanceExpiry);
-    return monitorInstance();
+    monitorInstance();
   }
 }
