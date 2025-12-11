@@ -26,7 +26,7 @@ interface RebalancerAllocation {
   [token: string]: TokenAllocation;
 }
 
-interface RebalanceRoute {
+export interface RebalanceRoute {
   sourceChain: number;
   destinationChain: number;
   sourceToken: string;
@@ -41,19 +41,28 @@ interface RebalanceRoute {
  * across all chains given the current and configured target allocations.
  */
 export class RebalancerClient {
+
+  // private rebalancesRoutes: { [token: string]: { [chainId: number]: RebalanceRoute[] } } = {};
+
   constructor(readonly config: RebalancerConfig) {
     // TODO
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async rebalanceInventory(currentAllocations: RebalancerAllocation): Promise<void> {
-    // Proposed heuristic:
+    // Setup:
+    // - For each adapter:
+    //   - Call finalizeRebalances() to sweep up any pending rebalances.
     // - For each token:
-    // - Load all current balances per chain, including spot balances, pending rebalances, shortfalls, etc, and
-    //   store in memory within this function.
+    //   - Load all current balances per chain, including spot balances, pending rebalances, shortfalls, etc, and
+    //     store in memory within this function.
+    // Run:
+    // - For each token:
     // - Filter all chains that are UNDER target balance and sort by largest deficit.
     // - For each chain, query all rebalance routes TO the current chain that have an "excess" balance 
     //   large enough to cover the deficit (excess = current balance - target balance).
+    //    - Note: This should include both swap and bridge routes, so you could theoretically fill deficits in USDC using
+    //      by drawing from excesses in USDT.
     // - If resultant route list is empty, log a warning.
     // - Otherwise, enqueue calldata for the rebalance route to execute, and decrement the current balance for
     //   the source chain so we don't overdraw the source chain when trying to rebalance to another chain.
@@ -73,12 +82,21 @@ export class RebalancerClient {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async executeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
     // TODO:
-    // - Load rebalance route function from some adapter that we'll need to call.
+    // - Call adapter for specific rebalacne route.
   }
 
   async getPendingRebalances(): Promise<RebalanceRoute[]> {
-    // TODO:
-    // - Should we fetch this data fresh or should we cache pending rebalances in a data layer like Redis?
     return Promise.resolve([]);
   }
+}
+
+export interface RebalancerAdapter {
+  // Callable by RebalancerClient. Initializes a specific rebalance.
+  initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
+  // Callable by anyone, finalizes all pending rebalances lazily. Rebalances might have more than 2 steps, so we should
+  // always call this function before reading getPendingRebalances().
+  finalizeRebalances(): Promise<void>;
+
+  // Get all currently unfinalized rebalances.
+  getPendingRebalances(): Promise<RebalanceRoute[]>;
 }
