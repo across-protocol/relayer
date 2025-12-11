@@ -28,6 +28,13 @@ contract HyperliquidHelper is ReentrancyGuard, Ownable {
         int8 decimalDiff;
     }
 
+    struct Call {
+        address target;
+        bytes callData;
+        uint256 value;
+    }
+
+
     // Stores hardcoded Hypercore configurations for tokens that this handler supports.
     mapping(address => TokenInfo) public supportedTokens;
 
@@ -65,13 +72,22 @@ contract HyperliquidHelper is ReentrancyGuard, Ownable {
         _withdrawToHyperevm(token, coreAmount, user);
     }
 
-    function bridgeToEvm(
-        address token,
-        uint256 amount,
-        uint256 destinationChain
-    ) external nonReentrant onlyOwner {
-        _bridgeToEvm(token, amount, destinationChain);
+    function attemptCalls(Call[] memory calls) external onlyOwner {
+        uint256 length = calls.length;
+        for (uint256 i = 0; i < length; ++i) {
+            Call memory call = calls[i];
+
+            // If we are calling an EOA with calldata, assume target was incorrectly specified and revert.
+            if (call.callData.length > 0 && call.target.code.length == 0) {
+                revert InvalidCall(i, calls);
+            }
+
+            (bool success, ) = call.target.call{ value: call.value }(call.callData);
+            if (!success) revert CallReverted(i, calls);
+        }
     }
+
+
 
     /**
      * @notice Adds a new token to the supported tokens list.
@@ -151,13 +167,6 @@ contract HyperliquidHelper is ReentrancyGuard, Ownable {
         uint64 tokenIndex = tokenInfo.tokenId;
         // To withdraw to EVM, spot send tokens to the HyperEVM token address on Core.
         HyperCoreLib.transferERC20CoreToCore(tokenIndex, token, coreAmount);
-    }
-
-    function _bridgeToEvm(address token, uint256 amount, uint256 destinationChain) internal {
-        // TODO:
-        // If USDC, use CCTP
-        // If USDT, use OFT
-        // Else, revert.
     }
 
     function _getTokenInfo(address evmAddress) internal view returns (TokenInfo memory) {

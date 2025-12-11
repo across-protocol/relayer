@@ -46,11 +46,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // _withdrawToHyperevm() and save order with status PENDING_WITHDRAWAL_TO_DESTINATION_CHAIN.
     // For all orders PENDING_BRIDGE_TO_DESTINATION_CHAIN, check if HyperEVM balance is sufficient and then
     // initiate CCTP/OFT transfer to destination chain, and then delete order.
-    // this.hyperliquidHelper.bridgeToEvm(
-    //   toHyperEvmAddress(rebalanceRoute.destinationToken),
-    //   rebalanceRoute.amount,
-    //   rebalanceRoute.destinationChain
-    // )
+    // this._bridgeToEvm()
   }
 
   private _depositToHypercoreAndPlaceOrder(rebalanceRoute: RebalanceRoute): Promise<void> {
@@ -75,6 +71,24 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     this.user
     //   )
   }
+
+  private _bridgeToEvm(rebalanceRoute: RebalanceRoute): Promise<void> {
+    // TODO
+    // const calls = [
+    //     {
+    //         target: toHyperEvmAddress(rebalanceRoute.destinationToken),
+    //         calldata: abi.encodeFunctionData("approve", [cctpAddress, amount]),
+    //         value: 0,
+    //     },
+    //     {
+    //         target: cctpAddressToBytes32,
+    //         calldata: abi.encodeFunctionData("depositForBurn", [...]),
+    //         value: 0
+    //     }
+    // ]
+    //   this.hyperliquidHelper.attemptCalls(
+    //     calls
+    //   )
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
     return Promise.resolve([]);
