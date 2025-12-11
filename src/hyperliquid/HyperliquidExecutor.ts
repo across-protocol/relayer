@@ -191,7 +191,7 @@ export class HyperliquidExecutor {
    * @notice Main entrypoint for the HyperliquidFinalizer service
    * @dev The finalizer gets `limitOrderOuts` by checking the current prices in the HL orderbook.
    */
-  public async finalizeSwapFlows(): Promise<void> {
+  public async finalizeSwapFlows(toBlock?: number): Promise<void> {
     // For each pair the finalizer handles, create a single transaction which bundles together all limit orders which have sufficient finalToken liquidity.
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
       const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
@@ -200,7 +200,7 @@ export class HyperliquidExecutor {
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
       const [_outputSpotBalance, outstandingOrders, l2Book] = await Promise.all([
         this.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals),
-        this.getOutstandingOrdersOnPair(pair),
+        this.getOutstandingOrdersOnPair(pair, toBlock),
         getL2Book(this.infoClient, { coin: pair.name }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
@@ -494,10 +494,10 @@ export class HyperliquidExecutor {
    * @param pair The baseToken -> finalToken pair whose outstanding orders are queried.
    * @param toBlock optional toBlock (defaults to "latest") to use when querying outstanding orders.
    */
-  async getOutstandingOrdersOnPair(pair: Pair, toBlock?: number): Promise<SwapFlowInitialized[]> {
+  async getOutstandingOrdersOnPair(pair: Pair, to = this.dstSearchConfig.to): Promise<SwapFlowInitialized[]> {
     const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
-    const searchConfig = { ...this.dstSearchConfig, to: toBlock ?? this.dstSearchConfig.to };
+    const searchConfig = { ...this.dstSearchConfig, to };
     const [orderInitializedEvents, orderFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         dstHandler,
@@ -510,10 +510,10 @@ export class HyperliquidExecutor {
         searchConfig
       ),
     ]);
+
+    const finalized = orderFinalizedEvents.map(({ args }) => args.quoteNonce);
     return orderInitializedEvents
-      .filter(
-        (initEvent) => !orderFinalizedEvents.map(({ args }) => args.quoteNonce).includes(initEvent.args.quoteNonce)
-      )
+      .filter(({ args }) => !finalized.includes(args.quoteNonce))
       .map((log) => spreadEventWithBlockNumber(log) as SwapFlowInitialized);
   }
 
