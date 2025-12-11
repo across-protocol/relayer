@@ -74,13 +74,13 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
   };
   listener.onBlock(onBlock);
 
-  await instanceCoordinator.initiateHandover(handoverMonitor);
-
   logger[startupLogLevel(config)]({
     at: "HyperliquidFinalizer#index",
     message: "HyperliquidFinalizer started",
     config,
   });
+
+  await instanceCoordinator.initiateHandover(handoverMonitor);
 
   const start = performance.now();
   return new Promise((resolve) =>
