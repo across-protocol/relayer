@@ -39,8 +39,6 @@ export class InstanceCoordinator extends EventEmitter {
       onHandover(activeInstance);
     };
 
-    // this.subInterface.sub(this.identifier, (message: string, channel: string) => console.log(`xxx handover on ${channel} from ${message}`));
-
     await this.redis.set(this.identifier, this.instance, this.instanceExpiry);
     return monitorInstance();
   }
