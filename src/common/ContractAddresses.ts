@@ -312,14 +312,14 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+      address: "0x1c709Fd0Db6A6B877Ddb19ae3D485B7b4ADD879f",
     },
     dstOftHandler: {
-      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+      address: "0xc8786D517b4e224bB43985A38dBeF8588D7354CD",
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
