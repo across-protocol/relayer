@@ -31,7 +31,7 @@ export interface RebalanceRoute {
   destinationChain: number;
   sourceToken: string;
   destinationToken: string;
-  maxAmountToTransfer: BigNumber; // Should this be a nornmalized value or in the units of the destination token on the 
+  maxAmountToTransfer: BigNumber; // Should this be a nornmalized value or in the units of the destination token on the
   // destination chain?
   fee: BigNumber;
 }
@@ -41,7 +41,6 @@ export interface RebalanceRoute {
  * across all chains given the current and configured target allocations.
  */
 export class RebalancerClient {
-
   // private rebalancesRoutes: { [token: string]: { [chainId: number]: RebalanceRoute[] } } = {};
 
   constructor(readonly config: RebalancerConfig) {
@@ -59,7 +58,7 @@ export class RebalancerClient {
     // Run:
     // - For each token:
     // - Filter all chains that are UNDER target balance and sort by largest deficit.
-    // - For each chain, query all rebalance routes TO the current chain that have an "excess" balance 
+    // - For each chain, query all rebalance routes TO the current chain that have an "excess" balance
     //   large enough to cover the deficit (excess = current balance - target balance).
     //    - Note: This should include both swap and bridge routes, so you could theoretically fill deficits in USDC using
     //      by drawing from excesses in USDT.

@@ -1,2 +1,1 @@
-
-export class BinanceRebalancerAdapter implements RebalancerAdapter { }
+export class BinanceRebalancerAdapter implements RebalancerAdapter {}
