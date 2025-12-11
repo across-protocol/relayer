@@ -159,6 +159,9 @@ contract HyperliquidHelper is ReentrancyGuard, Ownable {
         uint32 asset = tokenInfo.spotIndex;
         bool isBuy = tokenInfo.isBuy;
 
+        // Might want to set this with a short expiration time, so that rebalancer can just re-issue rebalances
+        // if the order expires.
+
         HyperCoreLib.submitLimitOrder(asset, isBuy, limitPriceX1e8, sizeX1e8, false /* reduceOnly */, IOC_ORDER_TYPE, cloid);
     }
 

@@ -1,6 +1,7 @@
-import { RedisClient } from "../../caching/RedisCache";
-import { Contract } from "../../utils";
+import { RedisCache, RedisClient } from "../../caching/RedisCache";
+import { Contract, EvmAddress, getRedisCache, Signer } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import * as hl from "@nktkas/hyperliquid";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
@@ -10,7 +11,7 @@ enum STATUS {
 
 // This adapter can be used to swap stables in Hyperliquid
 export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
-  private redisClient: RedisClient;
+  private redisCache: RedisCache;
 
   REDIS_PREFIX = "hyperliquid-stablecoin-swap";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
@@ -26,11 +27,18 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   // intermediate states so that balances don't get confused with main user balances.
   private hyperliquidHelper: Contract;
 
-  constructor() {
+  private baseSignerAddress: EvmAddress;
+
+  constructor(readonly baseSigner: Signer) {
     // TODO
   }
 
-  async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
+  async initialize(): Promise<void> {
+    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.redisCache = (await getRedisCache()) as RedisCache;
+  }
+
+  async initializeRebalance(): Promise<void> {
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.
     // If source token is USDH then throw if source chain is not HyperEVM.
@@ -42,7 +50,48 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     HyperliquidHelper contract to deposit into Hypercore.
   }
 
-  async finalizeRebalance(): Promise<void> {
+  async pollForRebalanceCompletion(): Promise<void> {
+    const subsClient = new hl.SubscriptionClient({
+      transport: new hl.WebSocketTransport(),
+    });
+    console.log(`Created new subscription client, ${subsClient.transport.socket.url}`);
+    console.log(`Polling for user fills for user: ${this.baseSignerAddress.toNative()}`);
+    await subsClient.userFills({ user: this.baseSignerAddress.toNative() }, async (data) => {
+      console.log("Received new user fills:", data);
+      for (const fill of data.fills) {
+        // Find order for fill.cloid:
+        const order = await this._redisGetOrder(fill.oid);
+        if (!order) {
+          continue;
+        }
+        console.log(`Found order for fill.cloid: ${fill.oid}`, fill);
+        // e.g. USDT-USDC sell limit order fill (sell USDT for USDC)
+        // {
+        //   coin: '@166',
+        //   px: '0.99987',
+        //   sz: '12.0',
+        //   side: 'A',
+        //   time: 1762442654786,
+        //   startPosition: '20.75879498',
+        //   dir: 'Sell',
+        //   closedPnl: '-0.00266345',
+        //   hash: '0x12bac8ba533cb3641434042ef5f8990207c6009fee3fd236b683740d12308d4e',
+        //   oid: 225184674691,
+        //   crossed: false,
+        //   fee: '0.00095987',
+        //   tid: 854069469806140,
+        //   feeToken: 'USDC',
+        //   twapId: null
+        // }
+      }
+    });
+    // For some reason, without the second allMids subscription set up below, the first one above
+    // doesn't log anything???
+    await subsClient.allMids((data) => {
+      console.log("Received new all mids:", data);
+    });
+    console.log("Set up subscriptions");
+
     // Setup:
     // - Load all user fills from Hyperliquid API: https://nktkas.gitbook.io/hyperliquid/api-reference/subscription-methods/userfills
     // For all orders with status PENDING_BRIDGE_TO_HYPEREVM, check if transfer has completed to HyperEVM, and if
@@ -54,7 +103,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // this._bridgeToEvm()
   }
 
-  private _depositToHypercoreAndPlaceOrder(rebalanceRoute: RebalanceRoute): Promise<void> {
+  private _depositToHypercoreAndPlaceOrder() {
     // For USDC, we need a contract that calls special CoreDepositWallet contract and then places an order on
     // HyperCore.
     // For other ERC20's, we need a contract that deposits into Hypercore and then places an order on Hypercore.
@@ -67,7 +116,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //   )
   }
 
-  private _withdrawToHyperevm(rebalanceRoute: RebalanceRoute): Promise<void> {
+  private _withdrawToHyperevm() {
     // TODO
     //   this.hyperliquidHelper.withdrawToHyperevm(
     //     toHyperEvmAddress(rebalanceRoute.destinationToken),
@@ -77,7 +126,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //   )
   }
 
-  private _bridgeToEvm(rebalanceRoute: RebalanceRoute): Promise<void> {
+  private _bridgeToEvm() {
     // TODO
     // const calls = [
     //     {
@@ -108,39 +157,49 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   async _redisGetOrderStatusKey(status: STATUS): Promise<string> {
     let orderStatusKey: string;
-    switch(status) {
-        case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
-            orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM;
-            break;
-        case STATUS.PENDING_SWAP:
-            orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
-            break;
-        case STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN:
-            orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN;
-            break;
-        default:
-            throw new Error(`Invalid status: ${status}`);
+    switch (status) {
+      case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
+        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM;
+        break;
+      case STATUS.PENDING_SWAP:
+        orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
+        break;
+      case STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN:
+        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN;
+        break;
+      default:
+        throw new Error(`Invalid status: ${status}`);
     }
     return orderStatusKey;
   }
 
+  async _redisGetOrder(oid: number): Promise<{ status: STATUS; rebalanceRoute: RebalanceRoute } | undefined> {
+    const orderKey = `${this.REDIS_KEY_ORDER}:${oid}`;
+    const order = await this.redisCache.get<string>(orderKey);
+    if (!order) {
+      return undefined;
+    }
+    const orderParsed = JSON.parse(order) as { status: STATUS; rebalanceRoute: RebalanceRoute };
+    return orderParsed;
+  }
+
   async _redisCreateOrder(status: STATUS, rebalanceRoute: RebalanceRoute): Promise<void> {
     // Increment and get the latest nonce from Redis:
-    const nonce = await this.redisClient.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
+    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
 
     const orderStatusKey = await this._redisGetOrderStatusKey(status);
 
     // Create a new order in Redis.
     const newOrderKey = `${this.REDIS_KEY_ORDER}:${nonce}`;
     await Promise.all([
-      this.redisClient.set(
+      this.redisCache.set(
         newOrderKey,
         JSON.stringify({
           status,
           rebalanceRoute,
         })
       ),
-      this.redisClient.sAdd(orderStatusKey, nonce.toString()),
+      this.redisCache.sAdd(orderStatusKey, nonce.toString()),
     ]);
   }
 
@@ -148,25 +207,25 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const oldOrderStatusKey = await this._redisGetOrderStatusKey(oldStatus);
     const newOrderStatusKey = await this._redisGetOrderStatusKey(status);
     await Promise.all([
-      this.redisClient.sRem(oldOrderStatusKey, nonce.toString()),
-      this.redisClient.sAdd(newOrderStatusKey, nonce.toString()),
+      this.redisCache.sRem(oldOrderStatusKey, nonce.toString()),
+      this.redisCache.sAdd(newOrderStatusKey, nonce.toString()),
     ]);
   }
 
   async _redisGetPendingOrderNonces(): Promise<number[]> {
     // Add all pending order nonces for all statuses to a single set and return the set.
     const pendingOrderNonces = await Promise.all([
-      this.redisClient.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM),
-      this.redisClient.sMembers(this.REDIS_KEY_PENDING_SWAP),
-      this.redisClient.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN),
+      this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM),
+      this.redisCache.sMembers(this.REDIS_KEY_PENDING_SWAP),
+      this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN),
     ]);
     return pendingOrderNonces.flat().map((nonce) => parseInt(nonce));
   }
 
   async _redisDeleteOrder(nonce: number, status: STATUS): Promise<void> {
     const orderKey = `${this.REDIS_KEY_ORDER}:${nonce}`;
-    await this.redisClient.del(orderKey);
+    await this.redisCache.del(orderKey);
     const orderStatusKey = await this._redisGetOrderStatusKey(status);
-    await this.redisClient.sRem(orderStatusKey, nonce.toString());
+    await this.redisCache.sRem(orderStatusKey, nonce.toString());
   }
 }

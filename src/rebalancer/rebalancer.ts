@@ -1,4 +1,4 @@
-import { BigNumber } from "../utils";
+import { BigNumber, Signer } from "../utils";
 
 interface ChainConfig {
   // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
@@ -33,7 +33,7 @@ export interface RebalanceRoute {
   destinationToken: string;
   maxAmountToTransfer: BigNumber; // Should this be a nornmalized value or in the units of the destination token on the
   // destination chain?
-  fee: BigNumber;
+  adapter: string; // Name of adapter to use for this rebalance.
 }
 
 /**
@@ -41,17 +41,23 @@ export interface RebalanceRoute {
  * across all chains given the current and configured target allocations.
  */
 export class RebalancerClient {
-  // private rebalancesRoutes: { [token: string]: { [chainId: number]: RebalanceRoute[] } } = {};
+  constructor(
+    readonly config: RebalancerConfig,
+    readonly adapters: { [name: string]: RebalancerAdapter },
+    readonly rebalanceRoutes: RebalanceRoute[],
+    readonly baseSigner: Signer
+  ) {}
 
-  constructor(readonly config: RebalancerConfig) {
-    // TODO
+  async initialize(): Promise<void> {
+    for (const [name, adapter] of Object.entries(this.adapters)) {
+      await adapter.initialize();
+      console.log(`Initialized adapter: ${name}`);
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async rebalanceInventory(currentAllocations: RebalancerAllocation): Promise<void> {
     // Setup:
-    // - For each adapter:
-    //   - Call finalizeRebalances() to sweep up any pending rebalances.
     // - For each token:
     //   - Load all current balances per chain, including spot balances, pending rebalances, shortfalls, etc, and
     //     store in memory within this function.
@@ -90,11 +96,13 @@ export class RebalancerClient {
 }
 
 export interface RebalancerAdapter {
+  initialize(): Promise<void>;
   // Callable by RebalancerClient. Initializes a specific rebalance.
   initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
-  // Callable by anyone, finalizes all pending rebalances lazily. Rebalances might have more than 2 steps, so we should
-  // always call this function before reading getPendingRebalances().
-  finalizeRebalances(): Promise<void>;
+
+  // Callable by anyone, performs work continuously necessary to finalize rebalances. Also keeps
+  // balance allocations up to date.
+  pollForRebalanceCompletion(): Promise<void>;
 
   // Get all currently unfinalized rebalances.
   getPendingRebalances(): Promise<RebalanceRoute[]>;
