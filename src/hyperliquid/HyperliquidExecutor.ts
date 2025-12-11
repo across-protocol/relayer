@@ -210,7 +210,9 @@ export class HyperliquidExecutor {
       // The exchange rate must be in units of baseToken/finalToken. If we are selling the final token,
       // then we need to invert the current price to get to this.
       const hlFixedAdjustment = toBN(HL_FIXED_ADJUSTMENT);
-      const exchangeRate = hlFixedAdjustment.mul(hlFixedAdjustment).div(currentPxFixed);
+      const exchangeRate = pair.baseForFinal
+        ? currentPxFixed
+        : hlFixedAdjustment.mul(hlFixedAdjustment).div(currentPxFixed);
 
       // limitOrderOut is taken from current prices.
       // Fill orders FIFO.
