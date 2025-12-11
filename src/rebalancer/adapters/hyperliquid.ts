@@ -1,4 +1,4 @@
-import { RedisCache, RedisClient } from "../../caching/RedisCache";
+import { RedisCache } from "../../caching/RedisCache";
 import { Contract, EvmAddress, getRedisCache, Signer } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
