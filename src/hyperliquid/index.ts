@@ -5,6 +5,7 @@ import {
   getRedisCache,
   winston,
   config,
+  scheduleTask,
   startupLogLevel,
   Signer,
   disconnectRedisClients,
@@ -44,21 +45,19 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
 }
 
 export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const at = "runHyperLiquidFinalizer";
   const { BOT_IDENTIFIER: botIdentifier = "across-hyperliquid-finalizer" } = process.env;
 
   const abortController = new AbortController();
   logger = _logger;
 
   process.on("SIGHUP", () => {
-    logger.debug({
-      at: "hyperliquid",
-      message: "Received SIGHUP, stopping...",
-    });
+    logger.debug({ at, message: "Received SIGHUP, stopping..." });
     abortController.abort();
   });
 
   const redis = await getRedisCache();
-  const instanceCoordinator = new InstanceCoordinator(logger, redis, botIdentifier, runIdentifier);
+  const instanceCoordinator = new InstanceCoordinator(logger, redis, botIdentifier, runIdentifier, abortController);
 
   const config = new HyperliquidExecutorConfig(process.env);
   const clients = await constructHyperliquidExecutorClients(config, logger, baseSigner);
@@ -79,8 +78,14 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
     config,
   });
 
-  instanceCoordinator.on("handover", () => abortController.abort());
   await instanceCoordinator.initiateHandover();
+  setTimeout(async () => {
+    const activeInstance = await instanceCoordinator.subscribe();
+    if (activeInstance) {
+      logger.debug({ at, message: `Handing over to ${botIdentifier} instance ${activeInstance}.` });
+    }
+    abortController.abort();
+  });
 
   const start = performance.now();
   return new Promise((resolve) =>
