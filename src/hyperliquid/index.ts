@@ -68,7 +68,7 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
 
   const listener = new EventListener(CHAIN_IDs.HYPEREVM, logger, 1);
   const onBlock = (blockNumber: number) => {
-    if (blockNumber % 5 === 0) {
+    if (blockNumber % config.settlementInterval === 0) {
       setTimeout(() => finalizer.finalizeSwapFlows(blockNumber));
     }
   };
