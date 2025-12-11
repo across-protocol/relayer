@@ -1,4 +1,5 @@
 import { RedisClient } from "../../caching/RedisCache";
+import { Contract } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 
 enum STATUS {
@@ -10,7 +11,11 @@ enum STATUS {
 // This adapter can be used to swap stables in Hyperliquid
 export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     private redisClient: RedisClient;
-    
+
+    // Contract used to deposit and withdraw tokens to and from Hypercore. This contract will custody all funds in
+    // intermediate states so that balances don't get confused with main user balances.
+    private hyperliquidHelper: Contract;
+
     constructor() {
       // TODO
     }
@@ -19,10 +24,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         // If source token is not USDC, USDT, or USDH, throw.
         // If destination token is same as source token, throw.
         // If source token is USDH then throw if source chain is not HyperEVM.
-        // If source chain is not HyperEVM, then initiate CCTP/OFT transfer to HyperEVN and save order
-        //     with status PENDING_BRIDGE_TO_HYPEREVM.
+        // If source chain is not HyperEVM, then initiate CCTP/OFT transfer to HyperEVM and save order
+        //     with status PENDING_BRIDGE_TO_HYPEREVM. Note: the transfer should be received at the HyperliquidHelper
+        //     contract on HyperEVM.
         // Else source chain is HyperEVM, so atomically deposit into Hypercore and place order for destination token,
-        //     and save order with status PENDING_SWAP. Call _depositToHypercoreAndPlaceOrder().
+        //     and save order with status PENDING_SWAP. Call _depositToHypercoreAndPlaceOrder(). Use the 
+        //     HyperliquidHelper contract to deposit into Hypercore.
     }
   
     async finalizeRebalance(): Promise<void> {
@@ -34,6 +41,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
       // For all orders PENDING_BRIDGE_TO_DESTINATION_CHAIN, check if HyperEVM balance is sufficient and then
       // initiate CCTP/OFT transfer to destination chain, and then delete order.
+      // this.hyperliquidHelper.bridgeToEvm(
+      //   toHyperEvmAddress(rebalanceRoute.destinationToken),
+      //   rebalanceRoute.amount,
+      //   rebalanceRoute.destinationChain
+      // )
       }
 
     private _depositToHypercoreAndPlaceOrder(rebalanceRoute: RebalanceRoute): Promise<void> {
@@ -41,10 +53,23 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       // HyperCore.
 
       // For other ERC20's, we need a contract that deposits into Hypercore and then places an order on Hypercore.
+    //   this.hyperliquidHelper.depositToHypercore(
+    //     toHyperEvmAddress(rebalanceRoute.sourceToken),
+    //     toHyperEvmAddress(rebalanceRoute.destinationToken),
+    //     rebalanceRoute.amount,
+    //     latestSpotPriceX1e8,
+    //     cloid
+    //   )
     }
 
     private _withdrawToHyperevm(rebalanceRoute: RebalanceRoute): Promise<void> {
       // TODO
+    //   this.hyperliquidHelper.withdrawToHyperevm(
+    //     toHyperEvmAddress(rebalanceRoute.destinationToken),
+    //     // Figure out how many tokens we received on core after the order settled:
+    //     toUint64(rebalanceRoute.amount),
+    //     this.user
+    //   )
     }
   
     getPendingRebalances(): Promise<RebalanceRoute[]> {
