@@ -5,7 +5,6 @@ import {
   getRedisCache,
   winston,
   config,
-  scheduleTask,
   startupLogLevel,
   Signer,
   disconnectRedisClients,
