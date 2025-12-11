@@ -204,8 +204,15 @@ export class HyperliquidExecutor {
         getL2Book(this.infoClient, { coin: pair.name }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
+      // The market price is dependent on whether we are selling the base token or the final token.
       const currentPx = pair.baseForFinal ? l2Book.levels[0][0].px : l2Book.levels[1][0].px;
       const currentPxFixed = toBN(Math.floor(Number(currentPx) * HL_FIXED_ADJUSTMENT));
+      // The exchange rate must be in units of baseToken/finalToken. If we are selling the final token,
+      // then we need to invert the current price to get to this.
+      const hlFixedAdjustment = toBN(HL_FIXED_ADJUSTMENT);
+      const exchangeRate = pair.baseForFinal
+        ? currentPxFixed
+        : hlFixedAdjustment.mul(hlFixedAdjustment).div(currentPxFixed);
 
       // limitOrderOut is taken from current prices.
       // Fill orders FIFO.
@@ -217,7 +224,7 @@ export class HyperliquidExecutor {
           pair.baseTokenDecimals
         )(outstandingOrder.evmAmountIn);
         // LimitOrderOut = inputAmount * exchangeRate.
-        const _limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
+        const _limitOrderOut = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
         const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
           ? outstandingOrder.maxAmountToSend
           : _limitOrderOut;
