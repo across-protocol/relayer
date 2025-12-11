@@ -15,8 +15,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   REDIS_PREFIX = "hyperliquid-stablecoin-swap";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
-  // Returns all nonces corresponding to pending orders.
-  REDIS_KEY_PENDING_ORDER_NONCES = thjis.REDIS_PREFIX + "pending-orders";
+  // The following three keys map to Sets of order nonces where the order has the relevant status.
+  REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "pending-bridge-to-hyperliquid";
+  REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
+  REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN = this.REDIS_PREFIX + "pending-bridge-to-destination-chain";
+  // The following stores the full order object for a given nonce.
   REDIS_KEY_ORDER = this.REDIS_PREFIX + "order";
 
   // Contract used to deposit and withdraw tokens to and from Hypercore. This contract will custody all funds in
@@ -40,6 +43,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   }
 
   async finalizeRebalance(): Promise<void> {
+    // Setup:
+    // - Load all user fills from Hyperliquid API: https://nktkas.gitbook.io/hyperliquid/api-reference/subscription-methods/userfills
     // For all orders with status PENDING_BRIDGE_TO_HYPEREVM, check if transfer has completed to HyperEVM, and if
     // it has then call _depositToHypercoreAndPlaceOrder(). Save the order with status PENDING_SWAP.
     // For all orders with status PENDING_SWAP, check if order has been filled, and if it has then call
@@ -89,6 +94,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //   this.hyperliquidHelper.attemptCalls(
     //     calls
     //   )
+  }
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
     return Promise.resolve([]);
@@ -100,9 +106,29 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
    *
    ****************************************************/
 
+  async _redisGetOrderStatusKey(status: STATUS): Promise<string> {
+    let orderStatusKey: string;
+    switch(status) {
+        case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
+            orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM;
+            break;
+        case STATUS.PENDING_SWAP:
+            orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
+            break;
+        case STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN:
+            orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN;
+            break;
+        default:
+            throw new Error(`Invalid status: ${status}`);
+    }
+    return orderStatusKey;
+  }
+
   async _redisCreateOrder(status: STATUS, rebalanceRoute: RebalanceRoute): Promise<void> {
     // Increment and get the latest nonce from Redis:
     const nonce = await this.redisClient.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
+
+    const orderStatusKey = await this._redisGetOrderStatusKey(status);
 
     // Create a new order in Redis.
     const newOrderKey = `${this.REDIS_KEY_ORDER}:${nonce}`;
@@ -114,23 +140,33 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           rebalanceRoute,
         })
       ),
-      this.redisClient.sAdd(this.REDIS_KEY_PENDING_ORDER_NONCES, nonce.toString()),
+      this.redisClient.sAdd(orderStatusKey, nonce.toString()),
+    ]);
+  }
+
+  async _redisUpdateOrderStatus(nonce: number, oldStatus: STATUS, status: STATUS): Promise<void> {
+    const oldOrderStatusKey = await this._redisGetOrderStatusKey(oldStatus);
+    const newOrderStatusKey = await this._redisGetOrderStatusKey(status);
+    await Promise.all([
+      this.redisClient.sRem(oldOrderStatusKey, nonce.toString()),
+      this.redisClient.sAdd(newOrderStatusKey, nonce.toString()),
     ]);
   }
 
   async _redisGetPendingOrderNonces(): Promise<number[]> {
-    const pendingOrderNonces = await this.redisClient.sMembers(this.REDIS_KEY_PENDING_ORDER_NONCES);
-    const pendingOrders = await Promise.all(
-      pendingOrderNonces.map((nonce) => this.redisClient.get(`${this.REDIS_KEY_ORDER}:${nonce}`))
-    );
-    return pendingOrders.map((order) => JSON.parse(order));
+    // Add all pending order nonces for all statuses to a single set and return the set.
+    const pendingOrderNonces = await Promise.all([
+      this.redisClient.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM),
+      this.redisClient.sMembers(this.REDIS_KEY_PENDING_SWAP),
+      this.redisClient.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN),
+    ]);
+    return pendingOrderNonces.flat().map((nonce) => parseInt(nonce));
   }
 
-  async _redisDeleteOrder(nonce: number): Promise<void> {
+  async _redisDeleteOrder(nonce: number, status: STATUS): Promise<void> {
     const orderKey = `${this.REDIS_KEY_ORDER}:${nonce}`;
-    await Promise.all([
-      this.redisClient.del(orderKey),
-      this.redisClient.sRem(this.REDIS_KEY_PENDING_ORDER_NONCES, nonce.toString()),
-    ]);
+    await this.redisClient.del(orderKey);
+    const orderStatusKey = await this._redisGetOrderStatusKey(status);
+    await this.redisClient.sRem(orderStatusKey, nonce.toString());
   }
 }
