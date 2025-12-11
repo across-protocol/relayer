@@ -69,6 +69,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
       }
 
+      if (config.botModes.reportOpenHyperliquidOrders) {
+        await acrossMonitor.reportOpenHyperliquidOrders();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Hyperliquid order monitoring disabled" });
+      }
+
       await clients.multiCallerClient.executeTxnQueues();
 
       logger.debug({ at: "Monitor#index", message: `Time to loop: ${(Date.now() - loopStart) / 1000}s` });
