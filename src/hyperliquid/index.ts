@@ -1,10 +1,21 @@
 import { EventListener } from "../clients";
-import { CHAIN_IDs, winston, config, startupLogLevel, Signer, disconnectRedisClients } from "../utils";
+import {
+  CHAIN_IDs,
+  InstanceCoordinator,
+  getRedisCache,
+  winston,
+  config,
+  startupLogLevel,
+  Signer,
+  disconnectRedisClients,
+} from "../utils";
 import { HyperliquidExecutor } from "./HyperliquidExecutor";
 import { constructHyperliquidExecutorClients } from "./HyperliquidExecutorClientHelper";
 import { HyperliquidExecutorConfig } from "./HyperliquidExecutorConfig";
 config();
 let logger: winston.Logger;
+
+const { RUN_IDENTIFIER: runIdentifier } = process.env;
 
 export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
@@ -33,6 +44,8 @@ export async function runHyperliquidExecutor(_logger: winston.Logger, baseSigner
 }
 
 export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  const { BOT_IDENTIFIER: botIdentifier = "across-hyperliquid-finalizer" } = process.env;
+
   const abortController = new AbortController();
   logger = _logger;
 
@@ -43,6 +56,10 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
     });
     abortController.abort();
   });
+
+  const redis = await getRedisCache();
+  const instanceCoordinator = new InstanceCoordinator(logger, redis, botIdentifier, runIdentifier);
+  const handoverMonitor = () => abortController.abort();
 
   const config = new HyperliquidExecutorConfig(process.env);
   const clients = await constructHyperliquidExecutorClients(config, logger, baseSigner);
@@ -56,6 +73,8 @@ export async function runHyperliquidFinalizer(_logger: winston.Logger, baseSigne
     }
   };
   listener.onBlock(onBlock);
+
+  await instanceCoordinator.initiateHandover(handoverMonitor);
 
   logger[startupLogLevel(config)]({
     at: "HyperliquidFinalizer#index",
