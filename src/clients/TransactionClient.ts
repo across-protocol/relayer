@@ -12,6 +12,7 @@ import {
   TransactionSimulationResult,
   willSucceed,
   stringifyThrownValue,
+  delay,
 } from "../utils";
 
 export interface AugmentedTransaction {
@@ -98,7 +99,6 @@ export class TransactionClient {
       let response: TransactionResponse;
       try {
         response = await this._submit(txn, nonce);
-        txn.ensureConfirmation ? await response.wait() : undefined;
       } catch (error) {
         delete this.nonces[chainId];
         this.logger.info({
@@ -117,6 +117,22 @@ export class TransactionClient {
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
+
+      if (txn.ensureConfirmation) {
+        for (let checks = 0; checks < 5; ++checks) {
+          try {
+            await response.wait();
+            break;
+          } catch (error) {
+            this.logger.warn({
+              at: "TransactionClient#submit",
+              message: `Transaction ${idx + 1} submission on ${networkName} not found on attempt ${checks}`,
+              errorMessage: error,
+            });
+            await delay(1);
+          }
+        }
+      }
     }
 
     this.logger.info({
