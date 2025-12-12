@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { bnUint256Max, CHAIN_IDs, Contract, ERC20, EvmAddress, getRedisCache, Signer, toBNWei, TOKEN_SYMBOLS_MAP } from "../../utils";
+import { bnUint256Max, CHAIN_IDs, Contract, ERC20, ethers, EvmAddress, getRedisCache, Signer, toBNWei, TOKEN_SYMBOLS_MAP } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 
@@ -7,6 +7,15 @@ enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
   PENDING_SWAP,
   PENDING_BRIDGE_TO_DESTINATION_CHAIN,
+}
+
+interface SPOT_MARKET_META {
+    index: number;
+    quoteAssetIndex: number;
+    baseAssetIndex: number;
+    baseAssetName: string;
+    quoteAssetName: string;
+    minimumOrderSize: number;
 }
 
 // This adapter can be used to swap stables in Hyperliquid
@@ -28,6 +37,17 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private hyperliquidHelper: Contract;
 
   private baseSignerAddress: EvmAddress;
+
+  private spotMarketMeta: { [name: string]: SPOT_MARKET_META } =  {
+    "USDT-USDC": {
+      index: 166,
+      quoteAssetIndex: 268,
+      baseAssetIndex: 0,
+      quoteAssetName: "USDT",
+      baseAssetName: "USDC",
+      minimumOrderSize: 10,
+    },
+  }
 
   constructor(readonly baseSigner: Signer) {
     // TODO
@@ -55,12 +75,21 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // }
   }
 
-  async initializeRebalance(): Promise<void> {
+  async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
     const marketData = spotMarketData[1].find((market) => market.coin === "@166");
     console.log(`Market data`, marketData);
+
+    const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
+    console.log(`Open orders`, openOrders);
+
+    const spotClearingHouseState = await infoClient.spotClearinghouseState({ user: this.baseSignerAddress.toNative() });
+    console.log(`Spot clearing house state`, spotClearingHouseState);
+
+    await this._depositToHypercoreAndPlaceOrder(rebalanceRoute);
+
     // const spotMarketData = await getSpotMarketData(rebalanceRoute.sourceChain);
     // console.log(`Initializing rebalance for route: ${JSON.stringify(rebalanceRoute)}`);
     // if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
@@ -91,32 +120,32 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     console.log(`Polling for user fills for user: ${this.baseSignerAddress.toNative()}`);
     await subsClient.userFills({ user: this.baseSignerAddress.toNative() }, async (data) => {
       console.log("Received new user fills:", data);
-      for (const fill of data.fills) {
-        // Find order for fill.cloid:
-        const order = await this._redisGetOrder(fill.oid);
-        if (!order) {
-          continue;
-        }
-        console.log(`Found order for fill.cloid: ${fill.oid}`, fill);
-        // e.g. USDT-USDC sell limit order fill (sell USDT for USDC)
-        // {
-        //   coin: '@166',
-        //   px: '0.99987',
-        //   sz: '12.0',
-        //   side: 'A',
-        //   time: 1762442654786,
-        //   startPosition: '20.75879498',
-        //   dir: 'Sell',
-        //   closedPnl: '-0.00266345',
-        //   hash: '0x12bac8ba533cb3641434042ef5f8990207c6009fee3fd236b683740d12308d4e',
-        //   oid: 225184674691,
-        //   crossed: false,
-        //   fee: '0.00095987',
-        //   tid: 854069469806140,
-        //   feeToken: 'USDC',
-        //   twapId: null
-        // }
-      }
+    //   for (const fill of data.fills) {
+    //     // Find order for fill.cloid:
+    //     const order = await this._redisGetOrder(fill.oid);
+    //     if (!order) {
+    //       continue;
+    //     }
+    //     console.log(`Found order for fill.cloid: ${fill.oid}`, fill);
+    //     // e.g. USDT-USDC sell limit order fill (sell USDT for USDC)
+    //     // {
+    //     //   coin: '@166',
+    //     //   px: '0.99987',
+    //     //   sz: '12.0',
+    //     //   side: 'A',
+    //     //   time: 1762442654786,
+    //     //   startPosition: '20.75879498',
+    //     //   dir: 'Sell',
+    //     //   closedPnl: '-0.00266345',
+    //     //   hash: '0x12bac8ba533cb3641434042ef5f8990207c6009fee3fd236b683740d12308d4e',
+    //     //   oid: 225184674691,
+    //     //   crossed: false,
+    //     //   fee: '0.00095987',
+    //     //   tid: 854069469806140,
+    //     //   feeToken: 'USDC',
+    //     //   twapId: null
+    //     // }
+    //   }
     });
     // For some reason, without the second allMids subscription set up below, the first one above
     // doesn't log anything???
@@ -136,17 +165,39 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // this._bridgeToEvm()
   }
 
-  private _depositToHypercoreAndPlaceOrder() {
-    // For USDC, we need a contract that calls special CoreDepositWallet contract and then places an order on
-    // HyperCore.
-    // For other ERC20's, we need a contract that deposits into Hypercore and then places an order on Hypercore.
-    //   this.hyperliquidHelper.depositToHypercore(
-    //     toHyperEvmAddress(rebalanceRoute.sourceToken),
-    //     toHyperEvmAddress(rebalanceRoute.destinationToken),
-    //     rebalanceRoute.amount,
-    //     latestSpotPriceX1e8,
-    //     cloid
-    //   )
+  private async _depositToHypercoreAndPlaceOrder(rebalanceRoute: RebalanceRoute) {
+    // Maybe just call API
+    const exchangeClient = new hl.ExchangeClient({
+        transport: new hl.HttpTransport(),
+        wallet: ethers.Wallet.fromMnemonic(process.env.MNEMONIC)
+      });
+      const cloid = await this._redisGetNextCloid();
+      console.log(`Placing order with cloid: ${cloid}`);
+      const spotMarketMeta = this.spotMarketMeta["USDT-USDC"];
+      try {
+        const result = await exchangeClient.order({
+            orders: [{
+              a: 10000 + spotMarketMeta.index, // Asset index + spot asset index prefix
+              b: false, // Buy side (if true, buys quote asset else sells quote asset for base asset)
+              p: "0.999", // Price
+              s: spotMarketMeta.minimumOrderSize.toString(), // Size
+              r: false, // Reduce only
+              t: { limit: { tif: "Gtc" } },
+              c: cloid
+            }],
+            grouping: "na"
+          });
+          console.log(`Order result: ${JSON.stringify(result)}`);  
+          await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
+      } catch (error: unknown) {
+        if (error instanceof hl.ApiRequestError) {
+          console.error(`API request error with status ${JSON.stringify(error.response)}`, error);
+        } else if (error instanceof hl.TransportError) {
+          console.error("Transport error", error);
+        }  else {
+          console.error("Unknown error", error);
+        }
+      }
   }
 
   private _withdrawToHyperevm() {
@@ -206,6 +257,13 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return orderStatusKey;
   }
 
+  async _redisGetNextCloid(): Promise<string> {
+    // Increment and get the latest nonce from Redis:
+    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
+
+    return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
+  }
+
   async _redisGetOrder(oid: number): Promise<{ status: STATUS; rebalanceRoute: RebalanceRoute } | undefined> {
     const orderKey = `${this.REDIS_KEY_ORDER}:${oid}`;
     const order = await this.redisCache.get<string>(orderKey);
@@ -216,14 +274,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return orderParsed;
   }
 
-  async _redisCreateOrder(status: STATUS, rebalanceRoute: RebalanceRoute): Promise<void> {
-    // Increment and get the latest nonce from Redis:
-    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
-
+  async _redisCreateOrder(cloid: string, status: STATUS, rebalanceRoute: RebalanceRoute): Promise<void> {
     const orderStatusKey = await this._redisGetOrderStatusKey(status);
 
     // Create a new order in Redis.
-    const newOrderKey = `${this.REDIS_KEY_ORDER}:${nonce}`;
+    const newOrderKey = `${this.REDIS_KEY_ORDER}:${cloid}`;
     await Promise.all([
       this.redisCache.set(
         newOrderKey,
@@ -232,8 +287,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           rebalanceRoute,
         })
       ),
-      this.redisCache.sAdd(orderStatusKey, nonce.toString()),
+      this.redisCache.sAdd(orderStatusKey, cloid.toString()),
     ]);
+    console.log(`Saved new order in redis with key: ${newOrderKey}`);
+    console.log(`Added order to status set: ${orderStatusKey}`);
   }
 
   async _redisUpdateOrderStatus(nonce: number, oldStatus: STATUS, status: STATUS): Promise<void> {

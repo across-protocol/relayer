@@ -27,15 +27,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   await rebalancerClient.initialize();
   await hyperliquidAdapter.pollForRebalanceCompletion();
 
+  let loop = 0;
   try {
     do {
       // Resync balances
       // Execute rebalances
       // Delay for some time before next loop.
-      await rebalancerClient.rebalanceInventory({});
+      if (loop === 0) {
+        await rebalancerClient.rebalanceInventory({});
+      }
       console.log(`Delaying 10 seconds before next loop...`)
       await delay(10); // Delaying 10 seconds
       // eslint-disable-next-line no-constant-condition
+      loop++;
     } while (true);
   } catch (error) {
     console.error("Error running rebalancer", error);
