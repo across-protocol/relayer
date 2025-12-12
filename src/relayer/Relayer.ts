@@ -150,7 +150,7 @@ export class Relayer {
   /**
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
-  async runMaintenance(activeRelayer: boolean): Promise<void> {
+  async runMaintenance(): Promise<void> {
     const { inventoryClient, profitClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
@@ -161,9 +161,9 @@ export class Relayer {
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.update(this.inventoryChainIds);
-    // If the current relayer is the active relayer, then run inventory rebalancing maintenance as usual. Otherwise,
-    // assume currently active relayer is handling inventory management.
-    if (activeRelayer) {
+    // Only on the first maintenance run should we not do any wraps/unwraps. This is because maintenance has been handled by the previously active relayer, and so running
+    // on the newly active relayer's startup only replaces other rebalancing transactions from parallel processes.
+    if (this.lastMaintenance !== 0) {
       await inventoryClient.wrapL2EthIfAboveThreshold();
 
       // Unwrap WETH after filling deposits, but before rebalancing.
