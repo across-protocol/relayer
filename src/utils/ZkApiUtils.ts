@@ -19,6 +19,7 @@ export function calculateProofId(request: ApiProofRequest): string {
     blockNumberHex,
     headHex,
     request.dst_chain_contract_from_header,
+    request.vkey,
   ]);
   return ethers.utils.keccak256(encoded);
 }

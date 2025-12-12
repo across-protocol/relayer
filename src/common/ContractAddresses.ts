@@ -1,3 +1,4 @@
+import { getDeployedAddress } from "@across-protocol/contracts-beta";
 import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
@@ -312,8 +313,14 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: undefined, // TODO: Deploy and add mainnet address
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    dstCctpHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
+    },
+    dstOftHandler: {
+      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {

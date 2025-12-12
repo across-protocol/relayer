@@ -1,6 +1,7 @@
 import { BigNumber } from "../utils";
+import { SortableEvent } from "./";
 
-export interface SwapFlowInitialized {
+export interface SwapFlowInitialized extends SortableEvent {
   quoteNonce: string;
   finalRecipient: string;
   finalToken: string;

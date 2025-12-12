@@ -19,6 +19,7 @@ export interface BotModes {
   spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
   closePDAsEnabled: boolean;
+  reportOpenHyperliquidOrders: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -46,6 +47,8 @@ export class MonitorConfig extends CommonConfig {
   readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
+  readonly hyperliquidOrderMaximumLifetime: number;
+  readonly hyperliquidTokens: string[];
   constructor(env: ProcessEnv) {
     super(env);
 
@@ -72,6 +75,8 @@ export class MonitorConfig extends CommonConfig {
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
       CLOSE_PDAS_ENABLED,
+      HYPERLIQUID_ORDER_MAXIMUM_LIFETIME,
+      HYPERLIQUID_SUPPORTED_TOKENS,
     } = env;
 
     this.botModes = {
@@ -84,6 +89,7 @@ export class MonitorConfig extends CommonConfig {
       closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
+      reportOpenHyperliquidOrders: isDefined(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME),
     };
 
     if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
@@ -105,6 +111,9 @@ export class MonitorConfig extends CommonConfig {
     });
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
+
+    this.hyperliquidTokens = JSON.parse(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
