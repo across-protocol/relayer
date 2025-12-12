@@ -32,6 +32,8 @@ export interface AugmentedTransaction {
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
   // with other transactions.
   nonMulticall?: boolean;
+  // Flag indicating whether the client should await the transaction response for onchain confirmation.
+  ensureConfirmation?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -96,6 +98,7 @@ export class TransactionClient {
       let response: TransactionResponse;
       try {
         response = await this._submit(txn, nonce);
+        txn.ensureConfirmation ? await response.wait() : undefined;
       } catch (error) {
         delete this.nonces[chainId];
         this.logger.info({

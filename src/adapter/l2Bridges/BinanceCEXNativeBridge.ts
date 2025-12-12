@@ -38,6 +38,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
+      ensureConfirmation: true,
       message: `🎰 Unwrapped WETH on ${network} before withdrawing to L1`,
       mrkdwn: `Unwrapped ${formatter(amount)} ${l2TokenInfo.symbol} before withdrawing from ${network} to L1`,
     };
