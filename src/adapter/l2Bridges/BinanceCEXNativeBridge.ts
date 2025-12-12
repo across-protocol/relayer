@@ -6,6 +6,7 @@ import {
   Contract,
   EvmAddress,
   getTokenInfo,
+  toBN,
 } from "../../utils";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -48,6 +49,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       method: "",
       args: undefined,
       nonMulticall: true,
+      gasLimit: toBN(21000), // gas limit is 21000 for a base transaction.
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
       message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1`,
