@@ -150,7 +150,7 @@ export class Relayer {
   /**
    * @description Perform inventory management as needed. This is capped to 1/minute in looping mode.
    */
-  async runMaintenance(): Promise<void> {
+  async runMaintenance(activeRelayer: boolean): Promise<void> {
     const { inventoryClient, profitClient, tokenClient } = this.clients;
 
     const currentTime = getCurrentTime();
@@ -161,10 +161,14 @@ export class Relayer {
     tokenClient.clearTokenData();
     await Promise.all([tokenClient.update(), profitClient.update()]);
     await inventoryClient.update(this.inventoryChainIds);
-    await inventoryClient.wrapL2EthIfAboveThreshold();
+    // If the current relayer is the active relayer, then run inventory rebalancing maintenance as usual. Otherwise,
+    // assume currently active relayer is handling inventory management.
+    if (activeRelayer) {
+      await inventoryClient.wrapL2EthIfAboveThreshold();
 
-    // Unwrap WETH after filling deposits, but before rebalancing.
-    await inventoryClient.unwrapWeth();
+      // Unwrap WETH after filling deposits, but before rebalancing.
+      await inventoryClient.unwrapWeth();
+    }
 
     // Flush any stale state (i.e. deposit/fill events that are outside of the configured lookback window?)
     this.ignoredDeposits = {};

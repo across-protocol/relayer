@@ -166,7 +166,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
 
       if (!abortController.signal.aborted) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
-        await relayer.runMaintenance();
+        await relayer.runMaintenance(activeRelayerUpdated);
       }
 
       if (!loop) {
