@@ -124,7 +124,7 @@ export async function runTransaction(
 
   try {
     return sendRawTxn
-      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, ...gas })
+      ? await signer.sendTransaction({ to, value, data: args as ethers.utils.BytesLike, gasLimit, ...gas })
       : await contract[method](...(args as Array<unknown>), txConfig);
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
