@@ -1,4 +1,4 @@
-import { config, disconnectRedisClients, Signer, startupLogLevel, toBNWei, winston } from "../utils";
+import { config, delay, disconnectRedisClients, Signer, startupLogLevel, toBNWei, winston } from "../utils";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerClient } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
@@ -14,7 +14,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     { hyperliquid: hyperliquidAdapter },
     [
       {
-        sourceChain: 8453,
+        sourceChain: 999,
         destinationChain: 42161,
         sourceToken: "USDC",
         destinationToken: "USDT",
@@ -32,6 +32,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       // Resync balances
       // Execute rebalances
       // Delay for some time before next loop.
+      await rebalancerClient.rebalanceInventory({});
+      console.log(`Delaying 10 seconds before next loop...`)
+      await delay(10); // Delaying 10 seconds
       // eslint-disable-next-line no-constant-condition
     } while (true);
   } catch (error) {

@@ -57,6 +57,11 @@ export class RebalancerClient {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async rebalanceInventory(currentAllocations: RebalancerAllocation): Promise<void> {
+    const hyperliquidRoute = this.rebalanceRoutes.find((route) => route.adapter === "hyperliquid");
+    if (hyperliquidRoute) {
+        console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
+        await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
+    }
     // Setup:
     // - For each token:
     //   - Load all current balances per chain, including spot balances, pending rebalances, shortfalls, etc, and

@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { Contract, EvmAddress, getRedisCache, Signer } from "../../utils";
+import { bnUint256Max, CHAIN_IDs, Contract, ERC20, EvmAddress, getRedisCache, Signer, toBNWei, TOKEN_SYMBOLS_MAP } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 
@@ -36,9 +36,42 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   async initialize(): Promise<void> {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = (await getRedisCache()) as RedisCache;
+    // this.hyperliquidHelper = new Contract(
+    //     "todo",
+    //     [],
+    //     this.baseSigner
+    // );
+
+    // const usdcHyperEvm = new Contract(
+    //     TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM],
+    //     ERC20.abi,
+    //     this.baseSigner
+    // );
+    // const allowance = await usdcHyperEvm.allowance(this.baseSignerAddress.toNative(), this.hyperliquidHelper.address);
+    // if (allowance.lt(toBNWei("1"))) {
+    //     const txn = await usdcHyperEvm.approve(this.hyperliquidHelper.address, bnUint256Max);
+    //     await txn.wait();
+    //     console.log(`Approved USDC for HyperliquidHelper: ${txn.hash}`);
+    // }
   }
 
   async initializeRebalance(): Promise<void> {
+
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
+    const marketData = spotMarketData[1].find((market) => market.coin === "@166");
+    console.log(`Market data`, marketData);
+    // const spotMarketData = await getSpotMarketData(rebalanceRoute.sourceChain);
+    // console.log(`Initializing rebalance for route: ${JSON.stringify(rebalanceRoute)}`);
+    // if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
+    //     throw new Error("Source chain is not HyperEVM");
+    // }
+
+    // Spot Market Asset ID's:
+    // - USDH-USDC: 230
+    // - USDT-USDC: 166
+    // - Set isBuy if buying quote asset, otherwise false.
+
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.
     // If source token is USDH then throw if source chain is not HyperEVM.
@@ -87,8 +120,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     });
     // For some reason, without the second allMids subscription set up below, the first one above
     // doesn't log anything???
-    await subsClient.allMids((data) => {
-      console.log("Received new all mids:", data);
+    await subsClient.allMids(() => {
+    //   console.log("Received new all mids:", data);
     });
     console.log("Set up subscriptions");
 
