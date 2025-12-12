@@ -1,0 +1,24 @@
+[
+  {
+    "inputs": [
+      {
+        "components": [
+          { "internalType": "uint256", "name": "chainId", "type": "uint256" },
+          { "internalType": "uint256", "name": "l2BatchNumber", "type": "uint256" },
+          { "internalType": "uint256", "name": "l2MessageIndex", "type": "uint256" },
+          { "internalType": "address", "name": "l2Sender", "type": "address" },
+          { "internalType": "uint16", "name": "l2TxNumberInBatch", "type": "uint16" },
+          { "internalType": "bytes", "name": "message", "type": "bytes" },
+          { "internalType": "bytes32[]", "name": "merkleProof", "type": "bytes32[]" }
+        ],
+        "internalType": "struct FinalizeL1DepositParams",
+        "name": "_finalizeWithdrawalParams",
+        "type": "tuple"
+      }
+    ],
+    "name": "finalizeDeposit",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
