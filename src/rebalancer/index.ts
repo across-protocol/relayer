@@ -50,10 +50,10 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   console.log("hyperliquidAdapter updated order statuses");
 
   try {
-      // Resync balances
-      // Execute rebalances
-        // await rebalancerClient.rebalanceInventory();
-        // console.log("rebalancer sent rebalances")
+    // Resync balances
+    // Execute rebalances
+    // await rebalancerClient.rebalanceInventory();
+    // console.log("rebalancer sent rebalances")
   } catch (error) {
     console.error("Error running rebalancer", error);
   } finally {

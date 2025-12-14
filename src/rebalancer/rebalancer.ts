@@ -59,8 +59,8 @@ export class RebalancerClient {
   async rebalanceInventory(): Promise<void> {
     const hyperliquidRoute = this.rebalanceRoutes.find((route) => route.adapter === "hyperliquid");
     if (hyperliquidRoute) {
-        console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
-        await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
+      console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
+      await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
     }
     // Setup:
     // - We can only rebalance via rebalance routes from source chains + tokens to destination chains + tokens.

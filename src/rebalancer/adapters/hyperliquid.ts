@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { BigNumber, ethers, EvmAddress, getRedisCache, Signer} from "../../utils";
+import { BigNumber, ethers, EvmAddress, getRedisCache, Signer } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 
@@ -13,13 +13,13 @@ enum STATUS {
 }
 
 interface SPOT_MARKET_META {
-    index: number;
-    quoteAssetIndex: number;
-    baseAssetIndex: number;
-    baseAssetName: string;
-    quoteAssetName: string;
-    minimumOrderSize: number;
-    isBuy: boolean;
+  index: number;
+  quoteAssetIndex: number;
+  baseAssetIndex: number;
+  baseAssetName: string;
+  quoteAssetName: string;
+  minimumOrderSize: number;
+  isBuy: boolean;
 }
 
 interface TOKEN_META {
@@ -51,7 +51,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   // @dev Every market is saved in here twice, where the base and quote asset are reversed in the dictionary key
   // and the isBuy is flipped.
-  private spotMarketMeta: { [name: string]: SPOT_MARKET_META } =  {
+  private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
     "USDT-USDC": {
       index: 166,
       quoteAssetIndex: 268,
@@ -59,7 +59,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
       minimumOrderSize: 10,
-      isBuy: false
+      isBuy: false,
     },
     "USDC-USDT": {
       index: 166,
@@ -68,21 +68,21 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
       minimumOrderSize: 10,
-      isBuy: true
-    }
-  }
+      isBuy: true,
+    },
+  };
 
   private tokenMeta: { [symbol: string]: TOKEN_META } = {
-    "USDT0": {
+    USDT0: {
       evmSystemAddress: EvmAddress.from("0x200000000000000000000000000000000000010c"),
     },
-    "USDH": {
+    USDH: {
       evmSystemAddress: EvmAddress.from("0x2000000000000000000000000000000000000168"),
     },
-    "USDC": {
+    USDC: {
       evmSystemAddress: EvmAddress.from("0x2000000000000000000000000000000000000000"),
-    }
-  }
+    },
+  };
 
   private availableRoutes: RebalanceRoute[];
 
@@ -96,12 +96,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     this.availableRoutes = _availableRoutes;
 
     for (const route of this.availableRoutes) {
-        // Initialize a provider for the source chain and check if we have spot market data
-        // and token data for that source token and destination token.
-        const expectedName = `${route.sourceToken}-${route.destinationToken}`;
-        if (!this.spotMarketMeta[expectedName]) {
-          throw new Error(`Missing spotMarketMeta data for ${expectedName}`)
-        }
+      // Initialize a provider for the source chain and check if we have spot market data
+      // and token data for that source token and destination token.
+      const expectedName = `${route.sourceToken}-${route.destinationToken}`;
+      if (!this.spotMarketMeta[expectedName]) {
+        throw new Error(`Missing spotMarketMeta data for ${expectedName}`);
+      }
     }
 
     // Tasks:
@@ -136,19 +136,18 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
     const marketData = spotMarketData[1].find((market) => market.coin === "@166");
-    console.log(`Market data`, marketData);
+    console.log("Market data", marketData);
 
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
-    console.log(`Open orders`, openOrders);
+    console.log("Open orders", openOrders);
 
     const spotClearingHouseState = await infoClient.spotClearinghouseState({ user: this.baseSignerAddress.toNative() });
-    console.log(`Spot clearing house state`, spotClearingHouseState);
+    console.log("Spot clearing house state", spotClearingHouseState);
 
     // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
     // is sufficient, then place order.
 
     await this._depositToHypercoreAndPlaceOrder(rebalanceRoute);
-
   }
 
   async updateRebalanceStatuses(): Promise<void> {
@@ -197,43 +196,49 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // await sub1.unsubscribe();
 
     const sub1 = await subsClient.userEvents({ user: this.baseSignerAddress.toNative() }, async (event) => {
-      console.log(`Received new user event`, event)
-    })
+      console.log("Received new user event", event);
+    });
     // const sub1 = await subsClient.openOrders({ user: this.baseSignerAddress.toNative() }, async (order) => {
     //   console.log(`User open order`, order)
     // })
     const sub2 = await subsClient.orderUpdates({ user: this.baseSignerAddress.toNative() }, async (updates) => {
-        for (const update of updates) {
-                console.log(`Received an order update for order ${update.order.oid}`, update)
-                
-                // TODO: Update order status now:
-        }
+      for (const update of updates) {
+        console.log(`Received an order update for order ${update.order.oid}`, update);
+
+        // TODO: Update order status now:
+      }
     });
 
     // This can be used to track deposits and withdrawals to/from Hypercore
-    const sub4 = await subsClient.userNonFundingLedgerUpdates({ user: this.baseSignerAddress.toNative() }, async (data) => {
-      for (const update of data.nonFundingLedgerUpdates) {
-        // "deposits" from EVM to Core have type "spotTransfer" and the "user" initiating the transfer is the ERC20
-        // system contract on Hyperevm
-        if (update.delta.type === "spotTransfer" && this.tokenMeta[update.delta.token]?.evmSystemAddress.eq(EvmAddress.from(update.delta.user))) {
-          console.log(`Received new deposit to Hypercore at time ${update.time}:`, update.delta);
-        }
+    const sub4 = await subsClient.userNonFundingLedgerUpdates(
+      { user: this.baseSignerAddress.toNative() },
+      async (data) => {
+        for (const update of data.nonFundingLedgerUpdates) {
+          // "deposits" from EVM to Core have type "spotTransfer" and the "user" initiating the transfer is the ERC20
+          // system contract on Hyperevm
+          if (
+            update.delta.type === "spotTransfer" &&
+            this.tokenMeta[update.delta.token]?.evmSystemAddress.eq(EvmAddress.from(update.delta.user))
+          ) {
+            console.log(`Received new deposit to Hypercore at time ${update.time}:`, update.delta);
+          }
 
-        // TODO: IDK What a USDC deposit from CoreDepositWallet looks like.
+          // TODO: IDK What a USDC deposit from CoreDepositWallet looks like.
+        }
       }
-    });
+    );
     // await sub4.unsubscribe();
 
-      // For some reason, without the second allMids subscription set up below, the first one above
-      // doesn't log anything???
-      const sub3 = await subsClient.allMids(() => {
-          //   console.log("Received new all mids:", data);
-      });
-      // await sub3.unsubscribe();
+    // For some reason, without the second allMids subscription set up below, the first one above
+    // doesn't log anything???
+    const sub3 = await subsClient.allMids(() => {
+      //   console.log("Received new all mids:", data);
+    });
+    // await sub3.unsubscribe();
 
     // Check for on-chain events marking end of BRIDGE_FROM_HYPERCORE.
     // - We should be able to set the startBlock equal to the current time minus the lookback.
-    
+
     // - TODO: I think this can all be done in a single "serverless" loop. As long as all order statuses are up to date
     //   before we send anymore rebalances, its fine, we won't duplicate send anything.
     // - Load all orders with status equal to PENDING_SWAPS and check if there are open orders matching the cloid.
@@ -270,38 +275,40 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // Deposit into Hypercore:
 
     // Place order:
-      const exchangeClient = new hl.ExchangeClient({
-          transport: new hl.HttpTransport(),
-          wallet: ethers.Wallet.fromMnemonic(process.env.MNEMONIC)
+    const exchangeClient = new hl.ExchangeClient({
+      transport: new hl.HttpTransport(),
+      wallet: ethers.Wallet.fromMnemonic(process.env.MNEMONIC),
+    });
+    const cloid = await this._redisGetNextCloid();
+    console.log(`Placing order with cloid: ${cloid}`, rebalanceRoute);
+    const expectedName = `${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}`;
+    const spotMarketMeta = this.spotMarketMeta[expectedName];
+    try {
+      const result = await exchangeClient.order({
+        orders: [
+          {
+            a: 10000 + spotMarketMeta.index, // Asset index + spot asset index prefix
+            b: spotMarketMeta.isBuy, // Buy side (if true, buys quote asset else sells quote asset for base asset)
+            p: "0.999", // Price
+            s: spotMarketMeta.minimumOrderSize.toString(), // Size
+            r: false, // Reduce only
+            t: { limit: { tif: "Gtc" } },
+            c: cloid,
+          },
+        ],
+        grouping: "na",
       });
-      const cloid = await this._redisGetNextCloid();
-      console.log(`Placing order with cloid: ${cloid}`, rebalanceRoute);
-      const expectedName = `${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}`;
-      const spotMarketMeta = this.spotMarketMeta[expectedName];
-      try {
-        const result = await exchangeClient.order({
-            orders: [{
-              a: 10000 + spotMarketMeta.index, // Asset index + spot asset index prefix
-              b: spotMarketMeta.isBuy, // Buy side (if true, buys quote asset else sells quote asset for base asset)
-              p: "0.999", // Price
-              s: spotMarketMeta.minimumOrderSize.toString(), // Size
-              r: false, // Reduce only
-              t: { limit: { tif: "Gtc" } },
-              c: cloid
-            }],
-            grouping: "na"
-          });
-          console.log(`Order result: ${JSON.stringify(result)}`);  
-          await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP);
-      } catch (error: unknown) {
-        if (error instanceof hl.ApiRequestError) {
-          console.error(`API request error with status ${JSON.stringify(error.response)}`, error);
-        } else if (error instanceof hl.TransportError) {
-          console.error("Transport error", error);
-        }  else {
-          console.error("Unknown error", error);
-        }
+      console.log(`Order result: ${JSON.stringify(result)}`);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP);
+    } catch (error: unknown) {
+      if (error instanceof hl.ApiRequestError) {
+        console.error(`API request error with status ${JSON.stringify(error.response)}`, error);
+      } else if (error instanceof hl.TransportError) {
+        console.error("Transport error", error);
+      } else {
+        console.error("Unknown error", error);
       }
+    }
   }
 
   private _withdrawToHyperevm() {
