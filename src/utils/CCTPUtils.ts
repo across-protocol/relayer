@@ -879,8 +879,8 @@ export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undef
       deadline: decoded[1].toString(),
       maxBpsToSponsor: decoded[2].toNumber(),
       maxUserSlippageBps: decoded[3].toNumber(),
-      finalRecipient: ethers.utils.getAddress("0x" + decoded[4].slice(-40)), // Take last 20 bytes of bytes32
-      finalToken: ethers.utils.getAddress("0x" + decoded[5].slice(-40)), // Take last 20 bytes of bytes32
+      finalRecipient: EvmAddress.from(decoded[4]).toNative(),
+      finalToken: EvmAddress.from(decoded[5]).toNative(),
       executionMode: decoded[6],
       actionData: decoded[7],
     };
