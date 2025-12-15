@@ -1,4 +1,14 @@
-import { Signer, isSignerWallet, assert, delay, CHAIN_IDs, runTransaction, TOKEN_SYMBOLS_MAP, winston, bnZero } from "./";
+import {
+  Signer,
+  isSignerWallet,
+  assert,
+  delay,
+  CHAIN_IDs,
+  runTransaction,
+  TOKEN_SYMBOLS_MAP,
+  winston,
+  bnZero,
+} from "./";
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
@@ -97,12 +107,12 @@ async function _callWithRetry<T, A extends any[]>(
 }
 
 export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
-  const contract = new ethers.Contract(CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.address, CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.abi, signer);
-  const depositToHypercoreArgs = [
-    TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], 
-    bnZero,
-    account
-  ];
+  const contract = new ethers.Contract(
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.address,
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.abi,
+    signer
+  );
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
   const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
   const receipt = await depositToHypercoreTx.wait();
   return receipt.transactionHash;

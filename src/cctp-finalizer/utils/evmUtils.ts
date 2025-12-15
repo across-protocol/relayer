@@ -1,6 +1,13 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
-import { winston, runTransaction, getCctpV2MessageTransmitter, CHAIN_IDs, isHlAccountActive, depositToHypercore } from "../../utils";
+import {
+  winston,
+  runTransaction,
+  getCctpV2MessageTransmitter,
+  CHAIN_IDs,
+  isHlAccountActive,
+  depositToHypercore,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 
 /**
@@ -28,7 +35,11 @@ export async function checkIfAlreadyProcessedEvm(
   return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
 }
 
-export async function createHyperCoreAccountIfNotExists(message: string, signer: ethers.Wallet, logger: winston.Logger): Promise<void> {
+export async function createHyperCoreAccountIfNotExists(
+  message: string,
+  signer: ethers.Wallet,
+  logger: winston.Logger
+): Promise<void> {
   const messageBytes = ethers.utils.arrayify(message);
 
   // Extract recipient address: starts at byte 36, 32 bytes long (bytes32 format)
@@ -65,7 +76,7 @@ export async function processMintEvm(
   const isHyperCoreDestination = isHyperEVM && signature;
 
   if (isHyperCoreDestination) {
-    await createHyperCoreAccountIfNotExists(attestation.message,signer,logger);
+    await createHyperCoreAccountIfNotExists(attestation.message, signer, logger);
     // Use SponsoredCCTPDstPeriphery for HyperCore destinations (both sponsored and non-sponsored flows)
     const { address, abi } = CONTRACT_ADDRESSES[chainId].sponsoredCCTPDstPeriphery;
     if (!address) {
