@@ -10,7 +10,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const config = new RebalancerConfig(process.env);
 
   // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(baseSigner);
+  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, config, baseSigner);
   const adapters = { hyperliquid: hyperliquidAdapter };
 
   // Initialize list of rebalance routes:
@@ -20,7 +20,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       destinationChain: 999,
       sourceToken: "USDC",
       destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("11", 6),
+      maxAmountToTransfer: toBNWei("10.5", 6),
       adapter: "hyperliquid",
     },
   ];

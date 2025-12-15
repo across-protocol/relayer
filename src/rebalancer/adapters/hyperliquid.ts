@@ -1,4 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
+import { MultiCallerClient } from "../../clients";
 import {
   BigNumber,
   CHAIN_IDs,
@@ -9,11 +10,14 @@ import {
   fromWei,
   getProvider,
   getRedisCache,
+  Provider,
   Signer,
   toBNWei,
+  winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
+import { RebalancerConfig } from "../RebalancerConfig";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
@@ -41,7 +45,7 @@ interface TOKEN_META {
   coreDecimals: number;
 }
 
-// This adapter can be used to swap stables in Hyperliquid. This is preferablet to swapping on source or destination
+// This adapter can be used to swap stables in Hyperliquid. This is preferable to swapping on source or destination
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
 // into HyperEVM is free (or 0.01% for fast transfers) and then swapping on Hyperliquid is very cheap compared to DEX's.
 // We should continually re-evaluate whether hyperliquid stablecoin swaps are indeed the cheapest option.
@@ -112,7 +116,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   private availableRoutes: RebalanceRoute[];
 
-  constructor(readonly baseSigner: Signer) {
+  private multicallerClient: MultiCallerClient;
+
+  private providers: { [chainId: number]: Provider };
+
+  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     // TODO
   }
 
@@ -120,6 +128,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     this.redisCache = (await getRedisCache()) as RedisCache;
     this.availableRoutes = _availableRoutes;
+    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
 
     for (const route of this.availableRoutes) {
       // Initialize a provider for the source chain and check if we have spot market data
@@ -453,8 +462,17 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     console.log(`Withdrawing ${amountToWithdrawCorePrecision} ${destinationToken} from Core to Evm`, spotSendBytes);
 
-    const txn = await coreWriterContract.sendRawAction(spotSendBytes);
-    console.log("- Transferred USDT from EVM to Core. Transaction hash", txn);
+
+    const amountToWithdraw = fromWei(amountToWithdrawCorePrecision, tokenMeta.coreDecimals)
+    this.multicallerClient.enqueueTransaction({
+      contract: coreWriterContract,
+      chainId: HYPEREVM,
+      method: "sendRawAction",
+      args: [spotSendBytes],
+      message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
+      mrkdwn: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
+    })
+    await this.multicallerClient.executeTxnQueues();
   }
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
