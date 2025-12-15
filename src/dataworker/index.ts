@@ -31,7 +31,7 @@ import {
   DataworkerClients,
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
-import { PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
+import { ProposedRootBundle, BundleData } from "../interfaces";
 import { Disputer } from "./Disputer";
 
 config();
@@ -100,14 +100,25 @@ async function getProposal(
 ): Promise<
   Pick<
     ProposedRootBundle,
-    "poolRebalanceRoot" | "relayerRefundRoot" | "slowRelayRoot" | "challengePeriodEndTimestamp" | "proposer"
+    | "poolRebalanceRoot"
+    | "relayerRefundRoot"
+    | "slowRelayRoot"
+    | "challengePeriodEndTimestamp"
+    | "proposer"
+    | "poolRebalanceLeafCount"
   > & { currentTime: number; currentBlock: number }
 > {
   const { number: currentBlock, timestamp: currentTime } = await provider.getBlock(blockTag);
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
-  const { poolRebalanceRoot, relayerRefundRoot, slowRelayRoot, proposer, challengePeriodEndTimestamp } =
-    await hubPool.rootBundleProposal({ blockTag: currentBlock });
+  const {
+    poolRebalanceRoot,
+    relayerRefundRoot,
+    slowRelayRoot,
+    proposer,
+    challengePeriodEndTimestamp,
+    unclaimedPoolRebalanceLeafCount,
+  } = await hubPool.rootBundleProposal({ blockTag: currentBlock });
 
   return {
     currentTime,
@@ -116,6 +127,7 @@ async function getProposal(
     relayerRefundRoot,
     slowRelayRoot,
     challengePeriodEndTimestamp,
+    poolRebalanceLeafCount: unclaimedPoolRebalanceLeafCount,
     proposer: EvmAddress.from(proposer),
   };
 }
@@ -288,19 +300,18 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
     // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
     // leaves to be executed but the proposed bundle was already executed, then exit early.
-    const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
+    const pendingProposal = await getProposal(clients.hubPoolClient.hubPool.provider);
+    const hubPoolClientHasPendingProposal = clients.hubPoolClient.hasPendingProposal();
 
     const proposalCollision =
-      isDefined(proposedBundleData) &&
-      pendingProposal.unclaimedPoolRebalanceLeafCount > 0 &&
-      !config.awaitChallengePeriod;
+      isDefined(proposedBundleData) && pendingProposal.poolRebalanceLeafCount > 0 && !config.awaitChallengePeriod;
     // The pending root bundle that we want to execute has already been executed if its unclaimed leaf count
     // does not match the number of leaves the executor wants to execute, or the pending root bundle's
     // challenge period timestamp is in the future. This latter case is rarer but it can
     // happen if a proposal in addition to the root bundle execution happens in the middle of this executor run.
     const executorCollision =
       poolRebalanceLeafExecutionCount > 0 &&
-      (pendingProposal.unclaimedPoolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
+      (pendingProposal.poolRebalanceLeafCount !== poolRebalanceLeafExecutionCount ||
         (pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime &&
           !config.awaitChallengePeriod));
     if (proposalCollision || executorCollision) {
@@ -311,10 +322,22 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         proposedBundleDataDefined: isDefined(proposedBundleData),
         executorCollision,
         poolRebalanceLeafExecutionCount,
-        unclaimedPoolRebalanceLeafCount: pendingProposal.unclaimedPoolRebalanceLeafCount,
+        unclaimedPoolRebalanceLeafCount: pendingProposal.poolRebalanceLeafCount,
         challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
         pendingProposal,
       });
+    } else if (!hubPoolClientHasPendingProposal) {
+      // If the hub pool client does not having a pending proposal, then propose subject to a configured dispute cooldown period.
+      // The most recent root bundle was disputed if there is no root bundle data in the hub pool (since the root bundle data is ejected from storage post-dispute).
+      const mostRecentRootBundleWasDisputed = pendingProposal.poolRebalanceRoot === ZERO_BYTES;
+      if (mostRecentRootBundleWasDisputed) {
+        const latestProposedRootBundle = clients.hubPoolClient.getLatestProposedRootBundle();
+        const timeSinceDispute = pendingProposal.currentBlock - latestProposedRootBundle.blockNumber;
+        if (timeSinceDispute < config.disputeCooldown) {
+          // Dispute cooldown not passed. Do not propose.
+          return;
+        }
+      }
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
