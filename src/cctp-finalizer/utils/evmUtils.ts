@@ -51,6 +51,11 @@ export async function createHyperCoreAccountIfNotExists(
 
   const isHypercoreAccountActive = await isHlAccountActive(recipientAddress);
   if (!isHypercoreAccountActive) {
+    logger.debug({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Recipient address does not exist, depositing to Hypercore",
+      recipientAddress,
+    });
     await depositToHypercore(recipientAddress, signer, logger);
   }
 }

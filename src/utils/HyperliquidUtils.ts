@@ -8,6 +8,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
   bnZero,
+  blockExplorerLink,
 } from "./";
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -115,5 +116,10 @@ export async function depositToHypercore(account: string, signer: Signer, logger
   const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
   const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
   const receipt = await depositToHypercoreTx.wait();
+  logger.info({
+    at: "HyperliquidUtils#depositToHypercore",
+    message: `HyperCore account ${account} created 🫡!`,
+    transactionHash: blockExplorerLink(receipt.transactionHash, CHAIN_IDs.HYPEREVM),
+  });
   return receipt.transactionHash;
 }
