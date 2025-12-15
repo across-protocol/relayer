@@ -1,6 +1,6 @@
 import { config, disconnectRedisClients, Signer, startupLogLevel, toBNWei, winston } from "../utils";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
-import { RebalancerClient } from "./rebalancer";
+import { RebalancerClient, RebalanceRoute } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
 let logger: winston.Logger;
@@ -8,22 +8,24 @@ let logger: winston.Logger;
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const config = new RebalancerConfig(process.env);
+
+  // Construct adapters:
   const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(baseSigner);
-  const rebalancerClient = new RebalancerClient(
-    {},
-    { hyperliquid: hyperliquidAdapter },
-    [
-      {
-        sourceChain: 999,
-        destinationChain: 42161,
-        sourceToken: "USDC",
-        destinationToken: "USDT",
-        maxAmountToTransfer: toBNWei("1", 6),
-        adapter: "hyperliquid",
-      },
-    ],
-    baseSigner
-  );
+  const adapters = { hyperliquid: hyperliquidAdapter };
+
+  // Initialize list of rebalance routes:
+  const rebalanceRoutes: RebalanceRoute[] = [
+    {
+      sourceChain: 999,
+      destinationChain: 999,
+      sourceToken: "USDC",
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("11", 6),
+      adapter: "hyperliquid",
+    },
+  ];
+
+  const rebalancerClient = new RebalancerClient({}, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
   console.log("rebalancer initialized");
 
@@ -45,15 +47,16 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Follow that with CCTP routes as destination chain.
 
-  // Start polling. This probably will go in the rebalancerClient.initialize() loop.
+  // Update all adapter order statuses so we can get the most accurate latest balances:
   await hyperliquidAdapter.updateRebalanceStatuses();
   console.log("hyperliquidAdapter updated order statuses");
 
+  // Finally, send out new rebalances:
   try {
     // Resync balances
     // Execute rebalances
     // await rebalancerClient.rebalanceInventory();
-    // console.log("rebalancer sent rebalances")
+    // console.log("rebalancer sent rebalances");
   } catch (error) {
     console.error("Error running rebalancer", error);
   } finally {
