@@ -42,9 +42,9 @@ export async function createHyperCoreAccountIfNotExists(
 ): Promise<void> {
   const messageBytes = ethers.utils.arrayify(message);
 
-  // Extract recipient address: starts at byte 36, 32 bytes long (bytes32 format)
+  // Extract recipient address: starts at byte 36 of messageBody (that starts at 148), 32 bytes long (bytes32 format)
   // The address is the last 20 bytes of the 32-byte value
-  const recipientBytes32 = messageBytes.slice(36, 68);
+  const recipientBytes32 = messageBytes.slice(184, 216);
   const recipientAddress = ethers.utils.getAddress(
     ethers.utils.hexlify(recipientBytes32.slice(12)) // Take last 20 bytes
   );
