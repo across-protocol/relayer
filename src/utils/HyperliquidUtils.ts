@@ -20,6 +20,12 @@ export function getHlInfoClient(transport: hl.HttpTransport | hl.WebSocketTransp
   return new hl.InfoClient({ transport });
 }
 
+export async function isHlAccountActive(account: string): Promise<boolean> {
+  const client = getHlInfoClient();
+  const userRole = await client.userRole({ user: account });
+  return userRole.role !== "missing";
+}
+
 export async function getL2Book(
   infoClient: hl.InfoClient,
   params: hl.L2BookParameters,
