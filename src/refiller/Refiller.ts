@@ -518,13 +518,13 @@ export class Refiller {
     );
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
 
-    const swap = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
-    if (swap.approval) {
+    const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
+    if (swapData.approval) {
       const txnReceipt = await sendRawTransaction(
         this.logger,
-        new Contract(swap.approval.target.toNative(), [], originSigner),
+        new Contract(swapData.approval.target.toNative(), [], originSigner),
         bnZero,
-        swap.approval.calldata
+        swapData.approval.calldata
       );
       this.logger.info({
         at: "Monitor#refillBalances",
@@ -537,7 +537,8 @@ export class Refiller {
       await txnReceipt.wait();
     }
 
-    if (!swap.swap) {
+    const { swap } = swapData;
+    if (!swap) {
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
       // can happen if the swapper doesn't have enough swap input token balance in addition to other
       // miscellaneous reasons.
@@ -554,9 +555,9 @@ export class Refiller {
 
     const txnResponse = await sendRawTransaction(
       this.logger,
-      new Contract(swap.swap.target.toNative(), [], originSigner),
-      swap.swap.value,
-      swap.swap.calldata
+      new Contract(swapData.swap.target.toNative(), [], originSigner),
+      swap.value,
+      swap.calldata
     );
     await delay(1);
     const txnReceipt = await txnResponse.wait();
