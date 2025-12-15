@@ -15,10 +15,17 @@ interface SwapApiResponse {
     value: string;
   };
 }
+
 interface SwapData {
-  target: EvmAddress;
-  calldata: string;
-  value: BigNumber;
+  approval?: {
+    target: EvmAddress;
+    calldata: string;
+  };
+  swap: {
+    target: EvmAddress;
+    calldata: string;
+    value: BigNumber;
+  };
 }
 
 /**
@@ -30,47 +37,6 @@ export class AcrossSwapApiClient {
   private readonly apiResponseTimeout = 3000;
 
   constructor(readonly logger: winston.Logger) {}
-
-  async getApproval(
-    route: SwapRoute,
-    amountOut: BigNumber,
-    swapper: EvmAddress,
-    recipient: EvmAddress
-  ): Promise<SwapData | undefined> {
-    const swapResponse = await this.getQuote(route, amountOut, swapper, recipient);
-    if (!swapResponse) {
-      return;
-    }
-
-    const [approvalData] = swapResponse.approvalTxns ?? [];
-    if (!swapResponse.swapTx.simulationSuccess && !approvalData) {
-      this.logger.warn({
-        at: "AcrossSwapApiClient",
-        message: "Swap simulation failed in API",
-        url: this.urlBase,
-        route,
-        amountOut,
-        swapper: swapper.toNative(),
-        recipient: recipient.toNative(),
-      });
-      return;
-    }
-
-    const approval = {
-      target: EvmAddress.from(approvalData.to),
-      calldata: approvalData.data,
-      value: bnZero,
-    };
-
-    this.logger.debug({
-      at: "AcrossSwapApiClient",
-      message: "Produced approval for Swap API.",
-      approval,
-      route,
-    });
-
-    return approval;
-  }
 
   /**
    * @notice Returns calldata necessary to swap exact output using the Across Swap API.
@@ -91,7 +57,8 @@ export class AcrossSwapApiClient {
       return;
     }
 
-    if (!swapResponse.swapTx.simulationSuccess) {
+    const [approval] = swapResponse.approvalTxns ?? [];
+    if (!swapResponse.swapTx.simulationSuccess && !approval) {
       this.logger.warn({
         at: "AcrossSwapApiClient",
         message: "Swap simulation failed in API",
@@ -104,11 +71,20 @@ export class AcrossSwapApiClient {
       return;
     }
 
-    const swapData = {
-      target: EvmAddress.from(swapResponse.swapTx.to),
-      calldata: swapResponse.swapTx.data,
-      value: BigNumber.from(swapResponse.swapTx.value ?? 0),
+    const swapData: SwapData = {
+      swap: {
+        target: EvmAddress.from(swapResponse.swapTx.to),
+        calldata: swapResponse.swapTx.data,
+        value: BigNumber.from(swapResponse.swapTx.value ?? 0),
+      },
     };
+
+    if (approval) {
+      swapData.approval = {
+        target: EvmAddress.from(approval.to),
+        calldata: approval.data,
+      };
+    }
 
     const { inputToken, originChainId, outputToken, destinationChainId, tradeType } = route;
     this.logger.debug({
