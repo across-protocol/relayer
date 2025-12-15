@@ -7,6 +7,7 @@ import {
   CHAIN_IDs,
   isHlAccountActive,
   depositToHypercore,
+  decodeCctpV2HookData,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 
@@ -40,23 +41,24 @@ export async function createHyperCoreAccountIfNotExists(
   signer: ethers.Wallet,
   logger: winston.Logger
 ): Promise<void> {
-  const messageBytes = ethers.utils.arrayify(message);
-
-  // Extract recipient address: starts at byte 36 of messageBody (that starts at 148), 32 bytes long (bytes32 format)
-  // The address is the last 20 bytes of the 32-byte value
-  const recipientBytes32 = messageBytes.slice(184, 216);
-  const recipientAddress = ethers.utils.getAddress(
-    ethers.utils.hexlify(recipientBytes32.slice(12)) // Take last 20 bytes
-  );
-
-  const isHypercoreAccountActive = await isHlAccountActive(recipientAddress);
+  const hookData = decodeCctpV2HookData(message);
+  if (!hookData || hookData.maxBpsToSponsor === 0) {
+    logger.debug({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Skipping deposit to Hypercore because its not sponsored flow",
+      maxBpsToSponsor: hookData?.maxBpsToSponsor,
+      finalRecipient: hookData?.finalRecipient,
+    });
+    return;
+  }
+  const isHypercoreAccountActive = await isHlAccountActive(hookData.finalRecipient);
   if (!isHypercoreAccountActive) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Recipient address does not exist, depositing to Hypercore",
-      recipientAddress,
+      finalRecipient: hookData.finalRecipient,
     });
-    await depositToHypercore(recipientAddress, signer, logger);
+    await depositToHypercore(hookData.finalRecipient, signer, logger);
   }
 }
 
