@@ -18,7 +18,6 @@ import {
   getRedisCache,
   getRedisPubSub,
   Provider,
-  ZERO_BYTES,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -148,11 +147,8 @@ async function canProposeRootBundle(chainId: number): Promise<boolean> {
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
   const proposal = await hubPool.rootBundleProposal();
-  const { unclaimedPoolRebalanceLeafCount, poolRebalanceRoot } = proposal;
-  // The unclaimed leaves will be zero when the root bundle has been executed (or disputed).
-  // To prevent proposing when the previous bundle was disputed also check that the root bundle
-  // proposal in the hub pool is not empty.
-  return unclaimedPoolRebalanceLeafCount === 0 && poolRebalanceRoot !== ZERO_BYTES;
+  const { unclaimedPoolRebalanceLeafCount } = proposal;
+  return unclaimedPoolRebalanceLeafCount === 0;
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
