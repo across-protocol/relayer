@@ -352,7 +352,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // Add 2bps to the mid price to increase probability of execution.
     const midPricePlus = toBNWei(tokenData.midPx, 6).mul(10002).div(10000);
     // TODO: Use markPx or midPx? Add a discount/premium to increase prob. of execution?
-    return Number(fromWei(midPricePlus, 6)).toFixed(4);
+
+    // Price can have up to 5 significant figures so if the price is less than 1, then there can 
+    // be 5 decimal places. If the price starts with a 1, which is realistically the highest it will be for a
+    // stablecoin swap, then there can be be 4 decimal places.
+    const fullPrice = Number(fromWei(midPricePlus, 6));
+    return fullPrice.toFixed(fullPrice < 1 ? 5 : 4);
   }
 
   private _getTokenMeta(token: string): TOKEN_META {
