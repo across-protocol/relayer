@@ -1,29 +1,16 @@
 import { Signer, isSignerWallet, assert, delay } from "./";
 import * as hl from "@nktkas/hyperliquid";
-
-export function getDefaultHlTransport(extraOptions: ConstructorParameters<typeof hl.HttpTransport> = []) {
-  return new hl.HttpTransport(...extraOptions);
-}
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export function getHlExchangeClient(
   signer: Signer,
-  transport: hl.HttpTransport | hl.WebSocketTransport = getDefaultHlTransport()
+  transport: hl.HttpTransport | hl.WebSocketTransport = sdkUtils.getDefaultHlTransport()
 ) {
   assert(
     isSignerWallet(signer),
     "HyperliquidUtils#getHlExchangeClient: Cannot define an exchange client without a wallet."
   );
   return new hl.ExchangeClient({ wallet: signer, transport });
-}
-
-export function getHlInfoClient(transport: hl.HttpTransport | hl.WebSocketTransport = getDefaultHlTransport()) {
-  return new hl.InfoClient({ transport });
-}
-
-export async function isHlAccountActive(account: string): Promise<boolean> {
-  const client = getHlInfoClient();
-  const userRole = await client.userRole({ user: account });
-  return userRole.role !== "missing";
 }
 
 export async function getL2Book(
