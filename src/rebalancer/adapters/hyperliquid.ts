@@ -13,6 +13,7 @@ import {
   getBlockForTimestamp,
   getProvider,
   getRedisCache,
+  mapAsync,
   paginatedEventQuery,
   Provider,
   Signer,
@@ -23,6 +24,7 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { Log } from "../../interfaces";
 
 // TODO: Clear out local database and order these from earliest stage to latest stage.
 // enum STATUS {
@@ -59,6 +61,9 @@ interface TOKEN_META {
 
 // Maximum number of decimal places for a price in a Hyperliquid order.
 const MAX_DECIMAL_PLACES_HL_ORDER_PX = 5;
+
+// HyperEVM address of CoreDepositWallet used to facilitates deposits and withdrawals with Hypercore.
+const USDC_CORE_DEPOSIT_WALLET_ADDRESS = "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24";
 
 // This adapter can be used to swap stables in Hyperliquid. This is preferable to swapping on source or destination
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
@@ -285,29 +290,24 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
     console.log("Open orders", openOrders);
 
-    // Refactor the following to be dynamic and query events for all ERC20's that are involved in
-    // rebalance routes:
-    const USDC = new Contract(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM], ERC20.abi, provider);
-    const CORE_DEPOSIT_WALLET = "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24";
-    const USDC_withdrawalsToHypercore = await paginatedEventQuery(
-      USDC,
-      USDC.filters.Transfer(CORE_DEPOSIT_WALLET, this.baseSignerAddress.toNative()),
-      { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
-    );
-    console.log(
-      `Found ${USDC_withdrawalsToHypercore.length} USDC withdrawals from Hypercore to user between blocks ${fromBlock} and ${toBlock.number}`
-    );
-
-    const USDT = new Contract(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.HYPEREVM], ERC20.abi, provider);
-    const USDT_withdrawalsToHypercore = await paginatedEventQuery(
-      USDT,
-      USDT.filters.Transfer(this.tokenMeta["USDT"].evmSystemAddress.toNative(), this.baseSignerAddress.toNative()),
-      { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
-    );
-    console.log(
-      `Found ${USDT_withdrawalsToHypercore.length} USDT withdrawals from Hypercore to user between blocks ${fromBlock} and ${toBlock.number}`
-    );
-    // End refactor.
+    const hyperevmTokens = Object.keys(this.tokenMeta);
+    const transfers: { [token: string]: Log[] } = {};
+    await mapAsync(hyperevmTokens, (async (token) => {
+      const evmAddress = TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.HYPEREVM];
+      const tokenContract = new Contract(evmAddress, ERC20.abi, provider);
+      const events = await paginatedEventQuery(
+        tokenContract,
+          tokenContract.filters.Transfer(
+            // USDC is a special case where the transfer comes from the Core deposit wallet
+            // but for other tokens it comes from the EVM system address.
+            token === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : this.tokenMeta[token].evmSystemAddress.toNative(),
+            this.baseSignerAddress.toNative()
+          ),
+        { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
+      );
+      console.log(`Found ${events.length} transfers representing withdrawals from Hypercore to user for token ${token}`);
+      transfers[token] = events;
+    }));
 
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
     console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
@@ -329,9 +329,9 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         destinationTokenMeta.evmDecimals
       )(matchingFill.amountToWithdraw);
       console.log(`Trying to find ERC20 transfer matching withdrawal for amount ${expectedAmountToReceive.toString()}`);
-      const transferMatchingWithdrawal = (
-        orderDetails.destinationToken === "USDC" ? USDC_withdrawalsToHypercore : USDT_withdrawalsToHypercore
-      ).find((transfer) => expectedAmountToReceive.toString() === transfer.args.value.toString());
+      const transferMatchingWithdrawal = transfers[orderDetails.destinationToken].find(
+        (transfer) => expectedAmountToReceive.toString() === transfer.args.value.toString()
+      );
       if (transferMatchingWithdrawal) {
         console.log(`Found ERC20 transfer matching withdrawal for cloid ${cloid}!`, transferMatchingWithdrawal);
         if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {

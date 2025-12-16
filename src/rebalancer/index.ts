@@ -18,9 +18,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     {
       sourceChain: 999,
       destinationChain: 999,
-      sourceToken: "USDT",
-      destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("10.5", 6),
+      sourceToken: "USDC",
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("10.1", 6),
       adapter: "hyperliquid",
     },
   ];
