@@ -330,6 +330,14 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         });
         if (disputeEvents.length !== 0) {
           // We have observed dispute events in the cooldown period, so dispute cooldown not passed. Do not propose.
+          logger.debug({
+            at: "Dataworker#index",
+            message: "Dispute event observed within the cooldown period. Not proposing.",
+            disputeEvents,
+            currentBlock,
+            cooldown: config.disputeCooldown,
+            pendingProposal,
+          });
           return;
         }
       }

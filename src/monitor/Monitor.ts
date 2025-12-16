@@ -399,6 +399,7 @@ export class Monitor {
         const pair = hyperliquidExecutor.pairs[pairId];
         return hyperliquidExecutor.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals);
       });
+      const formatter = createFormatFunction(2, 4, false, 8);
       this.logger.error({
         at: "Monitor#reportOpenHyperliquidOrders",
         message: "Old outstanding Hyperliquid orders",
@@ -409,7 +410,7 @@ export class Monitor {
           hyperliquidExecutor.pairs[pairId].swapHandler.toNative()
         ),
         approximateAmountShort: Object.values(oldHyperliquidOrders).map((order, idx) =>
-          order.maxAmountToSend.sub(finalTokenBalances[idx])
+          formatter(order.maxAmountToSend.sub(finalTokenBalances[idx]))
         ),
       });
     } else {
