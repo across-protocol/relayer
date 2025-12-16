@@ -2,30 +2,42 @@ import { RedisCache } from "../../caching/RedisCache";
 import { MultiCallerClient } from "../../clients";
 import {
   BigNumber,
+  blockExplorerLink,
   CHAIN_IDs,
   Contract,
   ConvertDecimals,
+  ERC20,
   ethers,
   EvmAddress,
   fromWei,
+  getBlockForTimestamp,
   getProvider,
   getRedisCache,
+  paginatedEventQuery,
   Provider,
   Signer,
   toBNWei,
+  TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
 
+// TODO: Clear out local database and order these from earliest stage to latest stage.
+// enum STATUS {
+//   PENDING_BRIDGE_TO_HYPEREVM,
+//   PENDING_DEPOSIT_TO_HYPERCORE,
+//   PENDING_SWAP,
+//   PENDING_WITHDRAWAL_FROM_HYPERCORE,
+//   PENDING_BRIDGE_TO_DESTINATION_CHAIN,
+// }
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
   PENDING_SWAP,
   PENDING_BRIDGE_TO_DESTINATION_CHAIN,
-  // Do we need the two following statuses? Is it possible to even track when a deposit to/from Hypercore has completed?
-  // PENDING_DEPOSIT_TO_HYPERCORE,
   PENDING_WITHDRAWAL_FROM_HYPERCORE,
+  PENDING_DEPOSIT_TO_HYPERCORE,
 }
 
 interface SPOT_MARKET_META {
@@ -205,16 +217,15 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // Fetch latest price for the market we're going to place an order for:
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
-    const tokenMetaApi = spotMarketData[0].tokens.find((token) => token.name === rebalanceRoute.sourceToken);
-    if (!tokenMetaApi) {
-      throw new Error(`No token meta found for input token: ${rebalanceRoute.sourceToken}`);
-    }
-    console.log("Token meta", tokenMetaApi);
     const tokenData = spotMarketData[1].find((market) => market.coin === `@${spotMarketMeta.index}`);
     if (!tokenData) {
       throw new Error(`No token data found for spot market: ${spotMarketMeta.index}`);
     }
-    const latestPrice = await this._getLatestPrice(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const latestPrice = await this._getLatestPrice(
+      rebalanceRoute.sourceToken,
+      rebalanceRoute.destinationToken,
+      spotMarketMeta.isBuy
+    );
     console.log(`Latest price: ${latestPrice}`);
 
     // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
@@ -223,7 +234,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const cloid = await this._redisGetNextCloid();
     console.log(`Placing order with cloid: ${cloid}`);
     await this._placeLimitOrder(cloid, rebalanceRoute, latestPrice);
-    // await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
+    await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
   }
 
   // TODO: Pass in from and to timestamps here to make sure updates across all chains are in sync.
@@ -258,47 +269,121 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //   or delete it if HyperEVM is the final destination chain. We can determine what to do based on the saved
     //   RebalanceRoute information in Redis.
 
+    // Evaluate all statuses from "latest stage" to earliest:
+    // i.e. PENDING_BRIDGE_TO_DESTINATION_CHAIN -> PENDING_WITHDRAWAL_FROM_HYPERCORE -> PENDING_SWAP -> PENDING_DEPOSIT_TO_HYPERCORE -> PENDING_BRIDGE_TO_HYPEREVM
+
+    const pendingBridgeToDestinationChain = await this._redisGetPendingBridgeToDestinationChain();
+    console.log("Orders pending bridge to destination chain", pendingBridgeToDestinationChain);
+
     // Figure out what time we last received an update so we can get all updates since then:
-    const lastPollEnd = 0;
+    const lastPollEnd = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
+    const provider = await getProvider(CHAIN_IDs.HYPEREVM);
+    const fromBlock = await getBlockForTimestamp(this.logger, CHAIN_IDs.HYPEREVM, lastPollEnd);
+    const toBlock = await provider.getBlock("latest");
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
     console.log("Open orders", openOrders);
 
-    const userFills = await infoClient.userFillsByTime({
-      user: this.baseSignerAddress.toNative(),
-      startTime: lastPollEnd,
-    });
-    console.log("Recent user fills", userFills.slice(-2));
+    // Refactor the following to be dynamic and query events for all ERC20's that are involved in
+    // rebalance routes:
+    const USDC = new Contract(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM], ERC20.abi, provider);
+    const CORE_DEPOSIT_WALLET = "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24";
+    const USDC_withdrawalsToHypercore = await paginatedEventQuery(
+      USDC,
+      USDC.filters.Transfer(CORE_DEPOSIT_WALLET, this.baseSignerAddress.toNative()),
+      { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
+    );
+    console.log(
+      `Found ${USDC_withdrawalsToHypercore.length} USDC withdrawals from Hypercore to user between blocks ${fromBlock} and ${toBlock.number}`
+    );
+
+    const USDT = new Contract(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.HYPEREVM], ERC20.abi, provider);
+    const USDT_withdrawalsToHypercore = await paginatedEventQuery(
+      USDT,
+      USDT.filters.Transfer(this.tokenMeta["USDT"].evmSystemAddress.toNative(), this.baseSignerAddress.toNative()),
+      { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
+    );
+    console.log(
+      `Found ${USDT_withdrawalsToHypercore.length} USDT withdrawals from Hypercore to user between blocks ${fromBlock} and ${toBlock.number}`
+    );
+    // End refactor.
+
+    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
+    console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
+    for (const cloid of pendingWithdrawals) {
+      // Check if transfer landed on EVM from EvmSystem address to user, and if so, then either delete the order
+      // because it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
+      // a bridge to destination chain.
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      console.log(`Final destination for order with cloid ${cloid}!`, orderDetails.destinationChain);
+
+      const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
+      if (!matchingFill) {
+        throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
+      }
+
+      const destinationTokenMeta = this._getTokenMeta(orderDetails.destinationToken);
+      const expectedAmountToReceive = ConvertDecimals(
+        destinationTokenMeta.coreDecimals,
+        destinationTokenMeta.evmDecimals
+      )(matchingFill.amountToWithdraw);
+      console.log(`Trying to find ERC20 transfer matching withdrawal for amount ${expectedAmountToReceive.toString()}`);
+      const transferMatchingWithdrawal = (
+        orderDetails.destinationToken === "USDC" ? USDC_withdrawalsToHypercore : USDT_withdrawalsToHypercore
+      ).find((transfer) => expectedAmountToReceive.toString() === transfer.args.value.toString());
+      if (transferMatchingWithdrawal) {
+        console.log(`Found ERC20 transfer matching withdrawal for cloid ${cloid}!`, transferMatchingWithdrawal);
+        if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
+          console.log(`Deleting order with cloid ${cloid} because it has completed!`);
+          await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+        } else {
+          console.log(`Sending order with cloid ${cloid} to final destination chain ${orderDetails.destinationChain}!`);
+          await this._redisUpdateOrderStatus(
+            cloid,
+            STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE,
+            STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN
+          );
+        }
+      } else {
+        console.log(`No ERC20 transfer matching withdrawal for cloid ${cloid}!`);
+      }
+
+      // TODO: Fetch all transfers on HyperEVM from system address to user, and if it exists update the order status:
+      // example https://hyperevmscan.io/tx/0x13963f183a1356851617435f836503b58ce53dd93afae22412efee2b40985446
+      // if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
+      // For USDC: transfers on HyperEVM come from Core deposit wallet: https://hyperevmscan.io/tx/0xadf4b1d14d92dedc6417b9c20c1a1dab0b2ff8a73cfffb77d5c0a67f22258dc2
+      // For other ERC20's it should come from system address
+      // }
+    }
 
     const pendingSwaps = await this._redisGetPendingSwaps();
     for (const cloid of pendingSwaps) {
-      const matchingFill = userFills.find((fill) => fill.cloid === cloid);
+      const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
       const matchingOpenOrder = openOrders.find((order) => order.cloid === cloid);
       if (matchingFill) {
-        console.log(`Open order for cloid ${cloid} filled! Updating status to PENDING_WITHDRAWAL_FROM_HYPERCORE`);
+        console.log(`Open order for cloid ${cloid} filled! Proceeding to withdraw from Hypercore.`);
 
         // Issue a withdrawal from HL now:
         const existingOrder = await this._redisGetOrderDetails(cloid);
-        const destinationTokenMeta = this._getTokenMeta(existingOrder.destinationToken);
-
-        // If fill was a buy, then received amount is denominated in base asset, same as sz.
-        // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
-        if (matchingFill.dir === "Buy") {
-          await this._withdrawToHyperevm(
-            existingOrder.destinationToken,
-            toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-          );
-        } else {
-          const receiveAmount = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-            .mul(toBNWei(matchingFill.px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
-            .div(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX);
-          await this._withdrawToHyperevm(existingOrder.destinationToken, receiveAmount);
-        }
+        console.log(
+          `Withdrawing ${matchingFill.amountToWithdraw.toString()} ${
+            existingOrder.destinationToken
+          } from Hypercore to HyperEVM.`
+        );
+        await this._withdrawToHyperevm(existingOrder.destinationToken, matchingFill.amountToWithdraw);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
       } else if (!matchingOpenOrder) {
         const existingOrder = await this._redisGetOrderDetails(cloid);
-        const latestPrice = await this._getLatestPrice(existingOrder.sourceToken, existingOrder.destinationToken);
+        const spotMarketMeta = this._getSpotMarketMetaForRoute(
+          existingOrder.sourceToken,
+          existingOrder.destinationToken
+        );
+        const latestPrice = await this._getLatestPrice(
+          existingOrder.sourceToken,
+          existingOrder.destinationToken,
+          spotMarketMeta.isBuy
+        );
         console.log(
           `Missing order for cloid ${cloid}, replacing the order with new price ${latestPrice}`,
           existingOrder
@@ -311,22 +396,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       // If it has a user fill, then update its order status to next state:
       // If it doesn't have a user fill AND doesn't have an open order, then replace its order.
     }
-
-    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
-    for (const cloid of pendingWithdrawals) {
-      // Check if transfer landed on EVM from EvmSystem address to user, and if so, then either delete the order
-      // because it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
-      // a bridge to destination chain.
-      const orderDetails = await this._redisGetOrderDetails(cloid);
-      console.log(`Final destination for order with cloid ${cloid}!`, orderDetails.destinationChain);
-
-      // TODO: Fetch all transfers on HyperEVM from system address to user, and if it exists update the order status:
-      // example https://hyperevmscan.io/tx/0x13963f183a1356851617435f836503b58ce53dd93afae22412efee2b40985446
-      // if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
-
-      // }
-    }
   }
 
   private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
@@ -338,7 +407,38 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return spotMarketMeta;
   }
 
-  private async _getLatestPrice(sourceToken: string, destinationToken: string): Promise<string> {
+  private async _getMatchingFillForCloid(
+    cloid: string,
+    startTime: number
+  ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const userFills = await infoClient.userFillsByTime({
+      user: this.baseSignerAddress.toNative(),
+      startTime,
+    });
+
+    const matchingFill = userFills.find((fill) => fill.cloid === cloid);
+    if (!matchingFill) {
+      return undefined;
+    }
+    const existingOrder = await this._redisGetOrderDetails(cloid);
+    const destinationTokenMeta = this._getTokenMeta(existingOrder.destinationToken);
+
+    // If fill was a buy, then received amount is denominated in base asset, same as sz.
+    // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
+    let amountToWithdraw: BigNumber;
+    if (matchingFill.dir === "Buy") {
+      amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals);
+    } else {
+      amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
+        .mul(toBNWei(matchingFill.px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
+        .div(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX);
+    }
+
+    return { details: matchingFill, amountToWithdraw };
+  }
+
+  private async _getLatestPrice(sourceToken: string, destinationToken: string, isBuy: boolean): Promise<string> {
     if (process.env.PX_OVERRIDE) {
       return process.env.PX_OVERRIDE;
     }
@@ -353,13 +453,17 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
 
     // Add 2bps to the mid price to increase probability of execution.
-    const midPricePlus = toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(10002).div(10000);
+    // If direction is a Buy, we'll increase the price otherwise we'll decrease.
+    const midPricePlus = isBuy
+      ? toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(10002).div(10000)
+      : toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(9998).div(10000);
     // TODO: Use markPx or midPx? Add a discount/premium to increase prob. of execution?
 
     // Price can have up to 5 significant figures so if the price is less than 1, then there can
     // be 5 decimal places. If the price starts with a 1, which is realistically the highest it will be for a
     // stablecoin swap, then there can be be 4 decimal places.
     const fullPrice = Number(fromWei(midPricePlus, MAX_DECIMAL_PLACES_HL_ORDER_PX));
+    console.log(`_getLatestPrice: fullPrice: ${fullPrice} given midPricePlus: ${midPricePlus.toString()}`);
     return fullPrice.toFixed(fullPrice < 1 ? MAX_DECIMAL_PLACES_HL_ORDER_PX : 4);
   }
 
@@ -433,11 +537,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         c: cloid,
       };
       console.log("_placeLimitOrder: Order details", orderDetails);
-      // const result = await exchangeClient.order({
-      //   orders: [orderDetails],
-      //   grouping: "na",
-      // });
-      // console.log("_placeLimitOrder: Order result", JSON.stringify(result, null, 2));
+      const result = await exchangeClient.order({
+        orders: [orderDetails],
+        grouping: "na",
+      });
+      console.log("_placeLimitOrder: Order result", JSON.stringify(result, null, 2));
     } catch (error: unknown) {
       if (error instanceof hl.ApiRequestError) {
         console.error(`API request error with status ${JSON.stringify(error.response)}`, error);
@@ -479,18 +583,16 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       ethers.utils.concat([SPOT_SEND_PREFIX_BYTES, spotSendArgBytes_withdrawFromCore])
     );
 
-    console.log(`Withdrawing ${amountToWithdrawCorePrecision} ${destinationToken} from Core to Evm`, spotSendBytes);
-
     const amountToWithdraw = fromWei(amountToWithdrawCorePrecision, tokenMeta.coreDecimals);
-    this.multicallerClient.enqueueTransaction({
-      contract: coreWriterContract,
-      chainId: HYPEREVM,
-      method: "sendRawAction",
-      args: [spotSendBytes],
-      message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
-      mrkdwn: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
-    });
-    await this.multicallerClient.executeTxnQueues();
+    console.log(`Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`, spotSendBytes);
+
+    // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
+    // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
+    const txn = await coreWriterContract.sendRawAction(spotSendBytes);
+    console.log(
+      `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
+      blockExplorerLink(txn.hash, HYPEREVM)
+    );
   }
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
@@ -570,7 +672,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       this.redisCache.sRem(oldOrderStatusKey, cloid),
       this.redisCache.sAdd(newOrderStatusKey, cloid),
     ]);
-    console.log(`Updated order status from ${oldStatus} to ${status}`, result);
+    console.log(`Updated order status from ${oldOrderStatusKey} to ${newOrderStatusKey}`, result);
   }
 
   async _redisGetPendingSwaps(): Promise<string[]> {
@@ -583,6 +685,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return sMembers;
   }
 
+  async _redisGetPendingBridgeToDestinationChain(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN);
+    return sMembers;
+  }
+
   async _redisDeleteOrder(cloid: string, currentStatus: STATUS): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(currentStatus);
     const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
@@ -591,7 +698,5 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       this.redisCache.del(orderDetailsKey),
     ]);
     console.log(`Deleted order details under key ${orderDetailsKey} and from status table ${orderStatusKey}`, result);
-
-    // Delete other order saved states
   }
 }
