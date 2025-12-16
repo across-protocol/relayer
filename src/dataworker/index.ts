@@ -324,12 +324,20 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (mostRecentRootBundleWasDisputed) {
         // Find the dispute event so we know how long it has been since the dispute.
         const currentBlock = await hubPool.provider.getBlock("latest");
-        const disputeEvents = await paginatedEventQuery(hubPool, hubPool.filters.DisputedRootBundle(), {
+        const disputeEvents = await paginatedEventQuery(hubPool, hubPool.filters.RootBundleDisputed(), {
           from: currentBlock.number - config.disputeCooldown,
           to: currentBlock.number,
         });
         if (disputeEvents.length !== 0) {
           // We have observed dispute events in the cooldown period, so dispute cooldown not passed. Do not propose.
+          logger.debug({
+            at: "Dataworker#index",
+            message: "Dispute event observed within the cooldown period. Not proposing.",
+            disputeEvents,
+            currentBlock,
+            cooldown: config.disputeCooldown,
+            pendingProposal,
+          });
           return;
         }
       }

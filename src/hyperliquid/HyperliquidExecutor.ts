@@ -27,6 +27,7 @@ import {
   getRedisCache,
   delay,
   spreadEventWithBlockNumber,
+  createFormatFunction,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
@@ -233,16 +234,17 @@ export class HyperliquidExecutor {
           outputAmounts.push(limitOrderOut);
           outputSpotBalance = outputSpotBalance.sub(limitOrderOut);
         } else {
-          // Outstanding orders are treated as a FIFO queue. As soon as there is insufficient liquidity to fill one, do not attempt to fill any more recent orders.
+          // Outstanding orders are treated as a FIFO queue. As soon as there is insufficient liquidity to fill one, do not attempt to fill any more recent orders.\
+          const formatter = createFormatFunction(2, 4, false, pair.finalTokenDecimals);
           this.logger.debug({
             at: "HyperliquidExecutor#finalizeSwapFlows",
             message: "Cannot finalize any more orders",
             amountToFinalize: quoteNonces.length,
             remainingAmount: outstandingOrders.length - quoteNonces.length,
             pairId,
-            outputSpotBalance,
+            outputSpotBalance: formatter(outputSpotBalance),
             nextOrderUp: outstandingOrder,
-            amountNeededToCover: limitOrderOut.sub(outputSpotBalance),
+            amountNeededToCover: formatter(limitOrderOut.sub(outputSpotBalance)),
           });
           break;
         }
@@ -413,11 +415,13 @@ export class HyperliquidExecutor {
     // We multiply by 1 when the pair "sells" the final token since unfavorable slippage will occur when the price we are buying is > 1.
     const bpsFromParity = priceXe8.sub(HL_FIXED_ADJUSTMENT).mul(pair.baseForFinal ? -1 : 1);
     if (bpsFromParity.gt(this.config.maxSlippageBps)) {
+      const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
+      const bpsFormatter = createFormatFunction(2, 4, false, 2); // Represent bps in %.
       this.logger.warn({
         at: "HyperliquidExecutor#updateOrderAmount",
         message: "Not submitting new limit order due to excessive slippage",
-        bestAsk,
-        maxSlippage: this.config.maxSlippageBps,
+        bestAsk: usdFormatter(priceXe8),
+        maxSlippage: bpsFormatter(this.config.maxSlippageBps),
       });
       return { actionable: false, mrkdwn: "Slippage too high to submit order" };
     }
@@ -432,8 +436,11 @@ export class HyperliquidExecutor {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const formatter = createFormatFunction(2, 4, false, 8);
 
-    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n oid: ${oid}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${formatter(
+      price
+    )}\n size: ${formatter(size)}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
@@ -535,8 +542,11 @@ export class HyperliquidExecutor {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const formatter = createFormatFunction(2, 4, false, 8);
 
-    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${
+      finalTokenInfo.symbol
+    }\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs.map(formatter)}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
