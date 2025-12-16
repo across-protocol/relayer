@@ -324,7 +324,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
       if (mostRecentRootBundleWasDisputed) {
         // Find the dispute event so we know how long it has been since the dispute.
         const currentBlock = await hubPool.provider.getBlock("latest");
-        const disputeEvents = await paginatedEventQuery(hubPool, hubPool.filters.DisputedRootBundle(), {
+        const disputeEvents = await paginatedEventQuery(hubPool, hubPool.filters.RootBundleDisputed(), {
           from: currentBlock.number - config.disputeCooldown,
           to: currentBlock.number,
         });
