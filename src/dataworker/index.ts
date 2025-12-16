@@ -18,8 +18,6 @@ import {
   getRedisCache,
   getRedisPubSub,
   Provider,
-  ZERO_BYTES,
-  paginatedEventQuery,
 } from "../utils";
 import { spokePoolClientsToProviders } from "../common";
 import { Dataworker } from "./Dataworker";
@@ -149,11 +147,8 @@ async function canProposeRootBundle(chainId: number): Promise<boolean> {
   const hubPool = getDeployedContract("HubPool", chainId).connect(provider);
 
   const proposal = await hubPool.rootBundleProposal();
-  const { unclaimedPoolRebalanceLeafCount, poolRebalanceRoot } = proposal;
-  // The unclaimed leaves will be zero when the root bundle has been executed (or disputed).
-  // To prevent proposing when the previous bundle was disputed also check that the root bundle
-  // proposal in the hub pool is not empty.
-  return unclaimedPoolRebalanceLeafCount === 0 && poolRebalanceRoot !== ZERO_BYTES;
+  const { unclaimedPoolRebalanceLeafCount } = proposal;
+  return unclaimedPoolRebalanceLeafCount === 0;
 }
 
 export async function runDataworker(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
@@ -289,8 +284,7 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
     // @dev The dataworker loop takes a long-time to run, so if the proposer is enabled, run a final check and early
     // exit if a proposal is already pending. Similarly, the executor is enabled and if there are pool rebalance
     // leaves to be executed but the proposed bundle was already executed, then exit early.
-    const { hubPool } = clients.hubPoolClient;
-    const pendingProposal: PendingRootBundle = await hubPool.rootBundleProposal();
+    const pendingProposal: PendingRootBundle = await clients.hubPoolClient.hubPool.rootBundleProposal();
 
     const proposalCollision =
       isDefined(proposedBundleData) &&
@@ -317,22 +311,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
         challengePeriodNotPassed: pendingProposal.challengePeriodEndTimestamp > clients.hubPoolClient.currentTime,
         pendingProposal,
       });
-    } else if (!clients.hubPoolClient.hasPendingProposal()) {
-      // If the hub pool client does not having a pending proposal, then propose subject to a configured dispute cooldown period.
-      // The most recent root bundle was disputed if there is no root bundle data in the hub pool (since the root bundle data is ejected from storage post-dispute).
-      const mostRecentRootBundleWasDisputed = pendingProposal.poolRebalanceRoot === ZERO_BYTES;
-      if (mostRecentRootBundleWasDisputed) {
-        // Find the dispute event so we know how long it has been since the dispute.
-        const currentBlock = await hubPool.provider.getBlock("latest");
-        const disputeEvents = await paginatedEventQuery(hubPool, hubPool.filters.DisputedRootBundle(), {
-          from: currentBlock.number - config.disputeCooldown,
-          to: currentBlock.number,
-        });
-        if (disputeEvents.length !== 0) {
-          // We have observed dispute events in the cooldown period, so dispute cooldown not passed. Do not propose.
-          return;
-        }
-      }
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).

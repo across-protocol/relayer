@@ -65,7 +65,7 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
 //      each transaction, we do not know the gas cost of each bundled transaction. Therefore, pad the resulting
 //      gasLimit. This can admittedly pad the gasLimit by a lot more than is required.
 //      See also https://docs.optimism.io/stack/differences
-const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.1;
+const MULTICALL3_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
 // The below interface is used by the TryMulticallClient to store information about successfully simulated transactions.
 // A tryMulticall call returns information about whether or not each individual transaction within the bundle succeeds.
