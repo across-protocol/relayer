@@ -55,8 +55,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   try {
     // Resync balances
     // Execute rebalances
-    // await rebalancerClient.rebalanceInventory();
-    // console.log("rebalancer sent rebalances");
+    await rebalancerClient.rebalanceInventory();
+    console.log("rebalancer sent rebalances");
   } catch (error) {
     console.error("Error running rebalancer", error);
   } finally {

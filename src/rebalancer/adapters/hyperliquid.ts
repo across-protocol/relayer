@@ -45,6 +45,9 @@ interface TOKEN_META {
   coreDecimals: number;
 }
 
+// Maximum number of decimal places for a price in a Hyperliquid order.
+const MAX_DECIMAL_PLACES_HL_ORDER_PX = 5;
+
 // This adapter can be used to swap stables in Hyperliquid. This is preferable to swapping on source or destination
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
 // into HyperEVM is free (or 0.01% for fast transfers) and then swapping on Hyperliquid is very cheap compared to DEX's.
@@ -220,7 +223,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const cloid = await this._redisGetNextCloid();
     console.log(`Placing order with cloid: ${cloid}`);
     await this._placeLimitOrder(cloid, rebalanceRoute, latestPrice);
-    await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
+    // await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
   }
 
   // TODO: Pass in from and to timestamps here to make sure updates across all chains are in sync.
@@ -279,8 +282,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         const existingOrder = await this._redisGetOrderDetails(cloid);
         const destinationTokenMeta = this._getTokenMeta(existingOrder.destinationToken);
 
-        // If fill was a buy, then the received amount is equal to sz and you ended up receiving the base asset.
-        // If fill was a sell, then the received amount is equal to sz * price, so you end up receiving the quote asset.
+        // If fill was a buy, then received amount is denominated in base asset, same as sz.
+        // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
         if (matchingFill.dir === "Buy") {
           await this._withdrawToHyperevm(
             existingOrder.destinationToken,
@@ -288,8 +291,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           );
         } else {
           const receiveAmount = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-            .mul(toBNWei(matchingFill.px, 6))
-            .div(10 ** 6);
+            .mul(toBNWei(matchingFill.px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
+            .div(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX);
           await this._withdrawToHyperevm(existingOrder.destinationToken, receiveAmount);
         }
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
@@ -350,14 +353,14 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
 
     // Add 2bps to the mid price to increase probability of execution.
-    const midPricePlus = toBNWei(tokenData.midPx, 6).mul(10002).div(10000);
+    const midPricePlus = toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(10002).div(10000);
     // TODO: Use markPx or midPx? Add a discount/premium to increase prob. of execution?
 
-    // Price can have up to 5 significant figures so if the price is less than 1, then there can 
+    // Price can have up to 5 significant figures so if the price is less than 1, then there can
     // be 5 decimal places. If the price starts with a 1, which is realistically the highest it will be for a
     // stablecoin swap, then there can be be 4 decimal places.
-    const fullPrice = Number(fromWei(midPricePlus, 6));
-    return fullPrice.toFixed(fullPrice < 1 ? 5 : 4);
+    const fullPrice = Number(fromWei(midPricePlus, MAX_DECIMAL_PLACES_HL_ORDER_PX));
+    return fullPrice.toFixed(fullPrice < 1 ? MAX_DECIMAL_PLACES_HL_ORDER_PX : 4);
   }
 
   private _getTokenMeta(token: string): TOKEN_META {
@@ -392,20 +395,31 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const sourceTokenMeta = this._getTokenMeta(sourceToken);
-    const expectedReceiveAmount = spotMarketMeta.isBuy
-      ? rebalanceRoute.maxAmountToTransfer.mul(toBNWei(px, 6)).div(10 ** 6)
-      : rebalanceRoute.maxAmountToTransfer.mul(10 ** 6).div(toBNWei(px, 6));
+
+    // Determining sz:
+    // - The rebalanceRoute.amount is the amount of source tokens that are depositing into HL. It should already be
+    // adjusted upwards to pay for any expected fees. However, sz is always specified in the base asset and px is
+    // base / quote asset (px * sz returns a value denominated in the quote asset).
+    // - Therefore, if isBuy is "true" then we are buying the "sz" amount of base asset with "rebalanceRoute.amount"
+    // of the quote asset. We need to solve for "sz" and rebalance.amount = sz * px.
+    // - If isBuy is "false" then we are selling "sz" amount of base asset to obtain the quote asset. The rebalanceRoute.amount
+    // is denominated in the base asset, so rebalance.amount can be simply set to sz.
+    const sz = spotMarketMeta.isBuy
+      ? rebalanceRoute.maxAmountToTransfer
+          .mul(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX)
+          .div(toBNWei(px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
+      : rebalanceRoute.maxAmountToTransfer;
     console.log(
-      `_placeLimitOrder: Expected receive amount: ${expectedReceiveAmount} given price ${px} and isBuy ${spotMarketMeta.isBuy}`
+      `_placeLimitOrder: sz: ${sz} given price ${px} and isBuy ${
+        spotMarketMeta.isBuy
+      } and maxAmountToTransfer ${rebalanceRoute.maxAmountToTransfer.toString()}`
     );
     const minimumOrderSize = toBNWei(
       spotMarketMeta.minimumOrderSize,
       spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals
     );
-    if (expectedReceiveAmount.lt(minimumOrderSize)) {
-      throw new Error(
-        `Order size ${expectedReceiveAmount.toString()} is less than minimum order size ${minimumOrderSize.toString()}`
-      );
+    if (sz.lt(minimumOrderSize)) {
+      throw new Error(`Order size ${sz.toString()} is less than minimum order size ${minimumOrderSize.toString()}`);
     }
     // sz is always in base units, so if we're buying the base unit then
     try {
@@ -413,17 +427,17 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         a: 10000 + spotMarketMeta.index, // Asset index + spot asset index prefix
         b: spotMarketMeta.isBuy, // Buy side (if true, buys quote asset else sells quote asset for base asset)
         p: px, // Price
-        s: fromWei(rebalanceRoute.maxAmountToTransfer, sourceTokenMeta.evmDecimals), // Size
+        s: fromWei(sz, spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals), // Size
         r: false, // Reduce only
         t: { limit: { tif: "Gtc" as const } },
         c: cloid,
       };
       console.log("_placeLimitOrder: Order details", orderDetails);
-      const result = await exchangeClient.order({
-        orders: [orderDetails],
-        grouping: "na",
-      });
-      console.log("_placeLimitOrder: Order result", JSON.stringify(result, null, 2));
+      // const result = await exchangeClient.order({
+      //   orders: [orderDetails],
+      //   grouping: "na",
+      // });
+      // console.log("_placeLimitOrder: Order result", JSON.stringify(result, null, 2));
     } catch (error: unknown) {
       if (error instanceof hl.ApiRequestError) {
         console.error(`API request error with status ${JSON.stringify(error.response)}`, error);
@@ -467,8 +481,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     console.log(`Withdrawing ${amountToWithdrawCorePrecision} ${destinationToken} from Core to Evm`, spotSendBytes);
 
-
-    const amountToWithdraw = fromWei(amountToWithdrawCorePrecision, tokenMeta.coreDecimals)
+    const amountToWithdraw = fromWei(amountToWithdrawCorePrecision, tokenMeta.coreDecimals);
     this.multicallerClient.enqueueTransaction({
       contract: coreWriterContract,
       chainId: HYPEREVM,
@@ -476,7 +489,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       args: [spotSendBytes],
       message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
       mrkdwn: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`,
-    })
+    });
     await this.multicallerClient.executeTxnQueues();
   }
 
