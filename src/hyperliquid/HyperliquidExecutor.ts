@@ -8,7 +8,6 @@ import {
   CHAIN_IDs,
   getTokenInfo,
   EvmAddress,
-  getHlInfoClient,
   getSpotMeta,
   getDstOftHandler,
   getL2Book,
@@ -32,7 +31,7 @@ import {
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
-
+import { utils as sdkUtils } from "@across-protocol/sdk";
 export interface HyperliquidExecutorClients {
   // We can further constrain the HubPoolClient type since we don't call any functions on it.
   hubPoolClient: HubPoolClient;
@@ -106,7 +105,7 @@ export class HyperliquidExecutor {
     this.dstOftMessenger = getDstOftHandler().connect(signer.connect(this.clients.dstProvider));
     this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
 
-    this.infoClient = getHlInfoClient();
+    this.infoClient = sdkUtils.getHlInfoClient();
     this.eventListener = new EventListener(this.chainId, this.logger, getChainQuorum(this.chainId));
   }
 
