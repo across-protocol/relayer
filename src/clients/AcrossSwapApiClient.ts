@@ -3,6 +3,11 @@ import { BigNumber, EvmAddress, winston } from "../utils";
 import { SWAP_ROUTES, SwapRoute } from "../common";
 
 interface SwapApiResponse {
+  approvalTxns?: {
+    chainId: number;
+    to: string;
+    data: string;
+  }[];
   swapTx: {
     simulationSuccess: boolean;
     to: string;
@@ -10,10 +15,17 @@ interface SwapApiResponse {
     value: string;
   };
 }
+
 interface SwapData {
-  target: EvmAddress;
-  calldata: string;
-  value: BigNumber;
+  approval?: {
+    target: EvmAddress;
+    calldata: string;
+  };
+  swap: {
+    target: EvmAddress;
+    calldata: string;
+    value: BigNumber;
+  };
 }
 
 /**
@@ -21,10 +33,8 @@ interface SwapData {
  */
 export class AcrossSwapApiClient {
   private routesSupported: Set<SwapRoute> = new Set(Object.values(SWAP_ROUTES));
-  private initialized = false;
   private readonly urlBase = "https://app.across.to/api/swap/approval";
   private readonly apiResponseTimeout = 3000;
-  private readonly swapExactOutputCacheTtl = 10 * 60; // Allow exactly one swap per route per 10 minutes.
 
   constructor(readonly logger: winston.Logger) {}
 
@@ -42,11 +52,59 @@ export class AcrossSwapApiClient {
     swapper: EvmAddress,
     recipient: EvmAddress
   ): Promise<SwapData | undefined> {
+    const swapResponse = await this.getQuote(route, amountOut, swapper, recipient);
+    if (!swapResponse) {
+      return;
+    }
+
+    const [approval] = swapResponse.approvalTxns ?? [];
+    if (!swapResponse.swapTx.simulationSuccess && !approval) {
+      this.logger.warn({
+        at: "AcrossSwapApiClient",
+        message: "Swap simulation failed in API",
+        url: this.urlBase,
+        route,
+        amountOut,
+        swapper: swapper.toNative(),
+        recipient: recipient.toNative(),
+      });
+      return;
+    }
+
+    const swapData: SwapData = {
+      swap: {
+        target: EvmAddress.from(swapResponse.swapTx.to),
+        calldata: swapResponse.swapTx.data,
+        value: BigNumber.from(swapResponse.swapTx.value ?? 0),
+      },
+    };
+
+    if (approval) {
+      swapData.approval = {
+        target: EvmAddress.from(approval.to),
+        calldata: approval.data,
+      };
+    }
+
+    const { inputToken, originChainId, outputToken, destinationChainId, tradeType } = route;
+    this.logger.debug({
+      at: "AcrossSwapApiClient",
+      message: `Successfully fetched ${tradeType} swap calldata for ${originChainId}-${inputToken} -> ${destinationChainId}-${outputToken}`,
+      swapData,
+    });
+
+    return swapData;
+  }
+
+  private async getQuote(
+    route: SwapRoute,
+    amountOut: BigNumber,
+    swapper: EvmAddress,
+    recipient: EvmAddress
+  ): Promise<SwapApiResponse | undefined> {
     if (!this._isRouteSupported(route)) {
       throw new Error(
-        `Route ${route.inputToken.toNative()} -> ${route.outputToken.toNative()} on ${route.originChainId} -> ${
-          route.destinationChainId
-        } is not supported`
+        `Route ${route.inputToken} -> ${route.outputToken} on ${route.originChainId} -> ${route.destinationChainId} is not supported`
       );
     }
 
@@ -60,37 +118,24 @@ export class AcrossSwapApiClient {
       depositor: swapper.toNative(),
       recipient: recipient.toNative(),
     };
-    let swapData: SwapData;
+
     try {
       const response = await axios.get<SwapApiResponse>(`${this.urlBase}`, {
         timeout: this.apiResponseTimeout,
         params,
       });
+
       if (!response?.data) {
         this.logger.warn({
           at: "AcrossAPIClient",
           message: `Invalid response from ${this.urlBase}`,
           url: this.urlBase,
           params,
-          response,
         });
         return;
       }
-      if (!response.data.swapTx.simulationSuccess) {
-        this.logger.warn({
-          at: "AcrossSwapApiClient",
-          message: "Swap simulation failed in API",
-          url: this.urlBase,
-          params,
-          response,
-        });
-        return;
-      }
-      swapData = {
-        target: EvmAddress.from(response.data.swapTx.to),
-        calldata: response.data.swapTx.data,
-        value: BigNumber.from(response.data.swapTx.value ?? 0),
-      };
+
+      return response.data;
     } catch (err) {
       this.logger.warn({
         at: "AcrossSwapApiClient",
@@ -101,16 +146,6 @@ export class AcrossSwapApiClient {
       });
       return;
     }
-
-    this.logger.debug({
-      at: "AcrossSwapApiClient",
-      message: `Successfully fetched ${route.tradeType} swap calldata for ${
-        route.originChainId
-      }-${route.inputToken.toNative()} -> ${route.destinationChainId}-${route.outputToken.toNative()}`,
-      swapData,
-    });
-
-    return swapData;
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {

@@ -9,6 +9,7 @@ import {
   chainIsEvm,
   chainIsSvm,
   Contract,
+  delay,
   ERC20,
   EvmAddress,
   formatUnits,
@@ -516,8 +517,28 @@ export class Refiller {
       `No L2 provider found for chain ${swapRoute.originChainId}, have you overridden the spoke pool chains?`
     );
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
+
     const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
-    if (!swapData) {
+    if (swapData.approval) {
+      const txnReceipt = await sendRawTransaction(
+        this.logger,
+        new Contract(swapData.approval.target.toNative(), [], originSigner),
+        bnZero,
+        swapData.approval.calldata
+      );
+      this.logger.info({
+        at: "Monitor#refillBalances",
+        message: "Submitted approval transaction for swap route.",
+        transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
+        swapRoute,
+        swapper: this.baseSignerAddress,
+      });
+      await delay(1);
+      await txnReceipt.wait();
+    }
+
+    const { swap } = swapData;
+    if (!swap) {
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
       // can happen if the swapper doesn't have enough swap input token balance in addition to other
       // miscellaneous reasons.
@@ -531,14 +552,16 @@ export class Refiller {
       });
       return;
     }
-    const txn = await (
-      await sendRawTransaction(
-        this.logger,
-        new Contract(swapData.target.toNative(), [], originSigner),
-        swapData.value,
-        swapData.calldata
-      )
-    ).wait();
+
+    const txnResponse = await sendRawTransaction(
+      this.logger,
+      new Contract(swapData.swap.target.toNative(), [], originSigner),
+      swap.value,
+      swap.calldata
+    );
+    await delay(1);
+    const txnReceipt = await txnResponse.wait();
+
     // Cache the swap for 10 minutes
     // @todo Consider caching for some time relative to the estimated fill time returned by API, but
     // 10 minutes is a reasonable conservative value to avoid duplicate swaps.
@@ -549,7 +572,7 @@ export class Refiller {
       message: `Cached swap for ${redisKey}`,
       ttl,
     });
-    return txn;
+    return txnReceipt;
   }
 
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
