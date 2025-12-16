@@ -7,8 +7,9 @@ const OUTPUT_PATH = "addresses.json";
 let logger: typeof Logger;
 
 async function run(): Promise<number> {
+  const { RISKLABS_ADDRESS_LIST_HOSTNAME: path = "https://blacklist.risklabs.foundation/api/blacklist" } = process.env;
   const addressList = new AddressAggregator(
-    [new addressAdapters.risklabs.AddressList({ throwOnError: false })],
+    [new addressAdapters.risklabs.AddressList({ path, throwOnError: false })],
     logger
   );
   const addresses = await addressList.update();
