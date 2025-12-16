@@ -292,22 +292,24 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     const hyperevmTokens = Object.keys(this.tokenMeta);
     const transfers: { [token: string]: Log[] } = {};
-    await mapAsync(hyperevmTokens, (async (token) => {
+    await mapAsync(hyperevmTokens, async (token) => {
       const evmAddress = TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.HYPEREVM];
       const tokenContract = new Contract(evmAddress, ERC20.abi, provider);
       const events = await paginatedEventQuery(
         tokenContract,
-          tokenContract.filters.Transfer(
-            // USDC is a special case where the transfer comes from the Core deposit wallet
-            // but for other tokens it comes from the EVM system address.
-            token === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : this.tokenMeta[token].evmSystemAddress.toNative(),
-            this.baseSignerAddress.toNative()
-          ),
+        tokenContract.filters.Transfer(
+          // USDC is a special case where the transfer comes from the Core deposit wallet
+          // but for other tokens it comes from the EVM system address.
+          token === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : this.tokenMeta[token].evmSystemAddress.toNative(),
+          this.baseSignerAddress.toNative()
+        ),
         { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
       );
-      console.log(`Found ${events.length} transfers representing withdrawals from Hypercore to user for token ${token}`);
+      console.log(
+        `Found ${events.length} transfers representing withdrawals from Hypercore to user for token ${token}`
+      );
       transfers[token] = events;
-    }));
+    });
 
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
     console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
