@@ -531,7 +531,7 @@ export class Refiller {
         message: "Submitted approval transaction for swap route.",
         transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
         swapRoute,
-        swapper: this.baseSignerAddress,
+        swapper: this.baseSignerAddress.toNative(),
       });
       await delay(1);
       await txnReceipt.wait();
