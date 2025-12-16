@@ -341,6 +341,8 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           return;
         }
       }
+
+      await clients.multiCallerClient.executeTxnQueues();
     } else {
       // If the proposer/executor is expected to await its challenge period:
       // - We need a defined redis instance so we can publish our botIdentifier and runIdentifier (so future instances are aware of our existence).
@@ -428,7 +430,6 @@ export async function runDataworker(_logger: winston.Logger, baseSigner: Signer)
           }
         }
       }
-
       await clients.multiCallerClient.executeTxnQueues();
     }
   } finally {
