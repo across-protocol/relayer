@@ -1,4 +1,4 @@
-import { BigNumber, Signer } from "../utils";
+import { BigNumber, Signer, toBNWei } from "../utils";
 
 interface ChainConfig {
   // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
@@ -60,6 +60,10 @@ export class RebalancerClient {
     const hyperliquidRoute = this.rebalanceRoutes.find((route) => route.adapter === "hyperliquid");
     if (hyperliquidRoute) {
       console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
+
+      // Make sure we back into the amount to transfer by using expected cost.
+      // const costToRebalance = await this.getCostToRebalance(hyperliquidRoute);
+      // const amountToRebalance = hyperliquidRoute.maxAmountToTransfer.mul(toBNWei("1")).div(toBNWei("1").sub(costToRebalance));
       await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
     }
     // Setup:
@@ -88,6 +92,11 @@ export class RebalancerClient {
     // - Otherwise, call initializeRebalance() for that route.
     // - To avoid duplicate rebalances, the adapters should correctly implement getPendingRebalances() so that this
     //   client computes current balances correctly.
+  }
+
+  async getCostToRebalance(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+    // TODO:
+    return Promise.resolve(BigNumber.from(0));
   }
 
   async getCurrentAllocations(): Promise<RebalancerAllocation> {
