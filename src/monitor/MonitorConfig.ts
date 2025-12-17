@@ -135,9 +135,7 @@ export class MonitorConfig extends CommonConfig {
         }
         // Default to monitoredRelayers if relayers is not provided or empty
         const relayerAddresses =
-          relayers && relayers.length > 0
-            ? relayers.map((r) => toAddressType(r, chainId))
-            : this.monitoredRelayers;
+          relayers?.length > 0 ? relayers.map((r) => toAddressType(r, chainId)) : this.monitoredRelayers;
         return {
           symbol,
           chainId,
