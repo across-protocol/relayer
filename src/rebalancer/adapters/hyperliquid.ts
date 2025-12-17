@@ -3,19 +3,31 @@ import { MultiCallerClient } from "../../clients";
 import {
   BigNumber,
   blockExplorerLink,
+  bnZero,
   CHAIN_IDs,
   Contract,
   ConvertDecimals,
+  createFormatFunction,
   ERC20,
   ethers,
+  EventSearchConfig,
   EvmAddress,
+  fixedPointAdjustment,
+  formatToAddress,
   fromWei,
   getBlockForTimestamp,
+  getEndpointId,
+  getMessengerEvm,
+  getNetworkName,
   getProvider,
   getRedisCache,
+  isStargateBridge,
   mapAsync,
+  MessagingFeeStruct,
   paginatedEventQuery,
   Provider,
+  roundAmountToSend,
+  SendParamStruct,
   Signer,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
@@ -25,6 +37,7 @@ import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { Log } from "../../interfaces";
+import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 
 // TODO: Clear out local database and order these from earliest stage to latest stage.
 // enum STATUS {
@@ -99,6 +112,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   REDIS_KEY_FILLS = this.REDIS_PREFIX + "fills";
 
   private baseSignerAddress: EvmAddress;
+
+  private lookbackSeconds = 60 * 60 * 24 * 7; // 7 days ago
 
   // @dev Every market is saved in here twice, where the base and quote asset are reversed in the dictionary key
   // and the isBuy is flipped.
@@ -248,6 +263,15 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
   }
 
+  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
+    const fromTimestamp = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
+    const provider = await getProvider(chainId);
+    const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
+    const toBlock = await provider.getBlock("latest");
+    const maxLookBack = this.config.maxBlockLookBack[chainId];
+    return { from: fromBlock, to: toBlock.number, maxLookBack };
+  }
+
   // TODO: Pass in from and to timestamps here to make sure updates across all chains are in sync.
   async updateRebalanceStatuses(): Promise<void> {
     // The most important thing we want this function to do so is to update state such that getPendingRebalances()
@@ -283,14 +307,19 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // Evaluate all statuses from "latest stage" to earliest:
     // i.e. PENDING_BRIDGE_TO_DESTINATION_CHAIN -> PENDING_WITHDRAWAL_FROM_HYPERCORE -> PENDING_SWAP -> PENDING_DEPOSIT_TO_HYPERCORE -> PENDING_BRIDGE_TO_HYPEREVM
 
-    const pendingBridgeToDestinationChain = await this._redisGetPendingBridgeToDestinationChain();
-    console.log("Orders pending bridge to destination chain", pendingBridgeToDestinationChain);
-
     // Figure out what time we last received an update so we can get all updates since then:
     const lastPollEnd = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
     const provider = await getProvider(CHAIN_IDs.HYPEREVM);
-    const fromBlock = await getBlockForTimestamp(this.logger, CHAIN_IDs.HYPEREVM, lastPollEnd);
-    const toBlock = await provider.getBlock("latest");
+
+    const pendingBridgeToDestinationChain = await this._redisGetPendingBridgeToDestinationChain();
+    console.log("Orders pending bridge to destination chain", pendingBridgeToDestinationChain);
+    for (const cloid of pendingBridgeToDestinationChain) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      await this._fetchOftBridgeEvents(CHAIN_IDs.HYPEREVM, orderDetails.destinationChain);
+
+      // TODO: How to identify finalized events when amount sent is identical? Do we store a mapping of initialized OFT
+      // GUIDS and cloids?
+    }
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
@@ -298,6 +327,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     const hyperevmTokens = Object.keys(this.tokenMeta);
     const transfers: { [token: string]: Log[] } = {};
+    const hyperEvmEventSearchConfig = await this._getEventSearchConfig(CHAIN_IDs.HYPEREVM);
     await mapAsync(hyperevmTokens, async (token) => {
       const evmAddress = TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.HYPEREVM];
       const tokenContract = new Contract(evmAddress, ERC20.abi, provider);
@@ -309,7 +339,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           token === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : this.tokenMeta[token].evmSystemAddress.toNative(),
           this.baseSignerAddress.toNative()
         ),
-        { from: fromBlock, to: toBlock.number, maxLookBack: this.config.maxBlockLookBack[CHAIN_IDs.HYPEREVM] }
+        hyperEvmEventSearchConfig
       );
       console.log(
         `Found ${events.length} transfers representing withdrawals from Hypercore to user for token ${token}`
@@ -633,10 +663,117 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     throw new Error(`UNIMPLEMENTED: Sending CCTP bridge from HyperEVM to ${destinationChain} for ${amountToBridge}`);
   }
 
+  private async _getOftMessenger(chainId: number): Promise<Contract> {
+    const oftMessengerAddress = getMessengerEvm(
+      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+      chainId
+    );
+    const originProvider = await getProvider(chainId);
+    return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
+  }
+
   private async _sendOftBridge(destinationChain: number, amountToBridge: BigNumber): Promise<void> {
     // Send a bridge from HyperEVM to destination chain via OFT.
+    const { HYPEREVM: originChain } = CHAIN_IDs;
     // TODO: In the future, this could re-use a OFTAdapter function.
-    throw new Error(`UNIMPLEMENTED: Sending OFT bridge from HyperEVM to ${destinationChain} for ${amountToBridge}`);
+    const oftMessenger = await this._getOftMessenger(originChain);
+    console.log(
+      `Sending OFT bridge from HyperEVM to ${destinationChain} for ${amountToBridge.toString()} using Messenger @ ${
+        oftMessenger.address
+      }`
+    );
+    const sharedDecimals = await oftMessenger.sharedDecimals();
+
+    const roundedAmount = roundAmountToSend(amountToBridge, TOKEN_SYMBOLS_MAP.USDT.decimals, sharedDecimals);
+    const defaultFeePct = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+    const appliedFee = isStargateBridge(destinationChain)
+      ? roundedAmount.mul(defaultFeePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
+    const expectedOutputAmount = roundedAmount.sub(appliedFee);
+    const destinationEid = getEndpointId(destinationChain);
+    const sendParamStruct: SendParamStruct = {
+      dstEid: destinationEid,
+      to: formatToAddress(this.baseSignerAddress),
+      amountLD: roundedAmount,
+      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
+      minAmountLD: expectedOutputAmount,
+      extraOptions: "0x",
+      composeMsg: "0x",
+      oftCmd: "0x",
+    };
+    // Get the messaging fee for this transfer
+    const feeStruct: MessagingFeeStruct = await oftMessenger.quoteSend(sendParamStruct, false);
+    const nativeFeeCap = OFT_FEE_CAP_OVERRIDES[originChain] ?? OFT_DEFAULT_FEE_CAP;
+    if (BigNumber.from(feeStruct.nativeFee).gt(nativeFeeCap)) {
+      throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${nativeFeeCap})`);
+    }
+    const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDT.decimals);
+    // Set refund address to signer's address. This should technically never be required as all of our calcs
+    // are precise, set it just in case
+    const refundAddress = this.baseSignerAddress.toNative();
+    const withdrawTxn = {
+      contract: oftMessenger,
+      chainId: originChain,
+      method: "send",
+      unpermissionsed: false,
+      nonMulticall: true,
+      args: [sendParamStruct, feeStruct, refundAddress],
+      value: BigNumber.from(feeStruct.nativeFee),
+      message: `🎰 Withdrew USDT0 from HyperEVM to ${getNetworkName(destinationChain)} via OFT`,
+      mrkdwn: `Withdrew ${formatter(amountToBridge.toString())} USDT0 from HyperEVM to ${getNetworkName(
+        destinationChain
+      )} via OFT`,
+    };
+
+    this.multicallerClient.enqueueTransaction(withdrawTxn);
+    await this.multicallerClient.executeTxnQueue(originChain);
+  }
+
+  private async _fetchOftBridgeEvents(originChain: number, destinationChain: number) {
+    const originMessenger = await this._getOftMessenger(originChain);
+    const destinationMessenger = await this._getOftMessenger(destinationChain);
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    console.log(destinationEventSearchConfig, destinationMessenger.address);
+    // Fetch OFT events to determine OFT send statuses.
+    const [sent, received] = await Promise.all([
+      paginatedEventQuery(
+        originMessenger,
+        // guid (Topic[1]) not filtered -> null, dstEid (non-indexed) -> undefined, fromAddress (Topic[3]) filtered
+        originMessenger.filters.OFTSent(null, undefined, this.baseSignerAddress.toNative()),
+        originEventSearchConfig
+      ),
+      paginatedEventQuery(
+        destinationMessenger,
+        // guid (Topic[1]) not filtered -> null, srcEid (non-indexed) -> undefined, toAddress (Topic[3]) filtered
+        destinationMessenger.filters.OFTReceived(null, undefined, this.baseSignerAddress.toNative()),
+        destinationEventSearchConfig
+      ),
+    ]);
+
+    const dstEid = getEndpointId(destinationChain);
+    const srcEid = getEndpointId(originChain);
+
+    const bridgeInitiationEvents = sent.filter((event) => event.args.dstEid === dstEid);
+    const bridgeFinalizationEvents = received.filter((event) => event.args.srcEid === srcEid);
+    const finalizedGuids = new Set<string>(bridgeFinalizationEvents.map((event) => event.args.guid));
+    const unfinalizedGuids = new Set<string>();
+
+    console.log("bridgeInitiationEvents", bridgeInitiationEvents);
+    console.log("bridgeFinalizationEvents", bridgeFinalizationEvents);
+
+    // let outstandingWithdrawalAmount = bnZero;
+    for (const events of bridgeInitiationEvents) {
+      if (!finalizedGuids.has(events.args.guid)) {
+        unfinalizedGuids.add(events.args.guid);
+        // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
+        // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
+        // outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(
+        //   this.l2ToL1AmountConverter(events.args.amountReceivedLD)
+        // );
+      }
+    }
+    console.log("unfinalizedGuids", unfinalizedGuids.values());
   }
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
