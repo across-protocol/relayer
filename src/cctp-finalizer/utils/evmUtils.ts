@@ -73,7 +73,7 @@ function getDestination(chainId: number, signature?: string): DestinationInfo {
   if (signature) {
     const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
     const isMainnet = chainId === CHAIN_IDs.MAINNET;
-    
+
     if (isHyperEVM) {
       const { address, abi } = CONTRACT_ADDRESSES[chainId]?.sponsoredCCTPDstPeriphery || {};
       if (!address || !abi) {
