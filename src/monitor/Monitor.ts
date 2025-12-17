@@ -63,7 +63,7 @@ import {
   sortEventsAscending,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
-import { MonitorConfig } from "./MonitorConfig";
+import { MonitorConfig, L2OnlyToken } from "./MonitorConfig";
 import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
@@ -94,6 +94,7 @@ export class Monitor {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private additionalL1Tokens: L1Token[] = [];
+  private l2OnlyTokens: L2OnlyToken[] = [];
   // Chains for each spoke pool client.
   public monitorChains: number[];
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
@@ -126,6 +127,7 @@ export class Monitor {
         address: l1TokenInfo.address,
       };
     });
+    this.l2OnlyTokens = monitorConfig.l2OnlyTokens;
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.clients.spokePoolClients,
@@ -454,11 +456,11 @@ export class Monitor {
   async reportRelayerBalances(): Promise<void> {
     const relayers = this.monitorConfig.monitoredRelayers;
     const allL1Tokens = this.getL1TokensForRelayerBalancesReport();
+    const l2OnlyTokens = this.l2OnlyTokens;
 
-    // @dev TODO: Handle special case for tokens that do not have an L1 token mapped to them via PoolRebalanceRoutes
     const chainIds = this.monitorChains;
     const allChainNames = chainIds.map(getNetworkName).concat([ALL_CHAINS_NAME]);
-    const reports = this.initializeBalanceReports(relayers, allL1Tokens, allChainNames);
+    const reports = this.initializeBalanceReports(relayers, allL1Tokens, l2OnlyTokens, allChainNames);
 
     await this.updateCurrentRelayerBalances(reports);
     await this.updateLatestAndFutureRelayerRefunds(reports);
@@ -467,6 +469,8 @@ export class Monitor {
       const report = reports[relayer.toNative()];
       let summaryMrkdwn = "*[Summary]*\n";
       let mrkdwn = "Token amounts: current, pending execution, cross-chain transfers, total\n";
+
+      // Report L1 tokens
       for (const token of allL1Tokens) {
         let tokenMrkdwn = "";
         for (const chainName of allChainNames) {
@@ -493,6 +497,32 @@ export class Monitor {
         }
       }
 
+      // Report L2-only tokens (only show tokens configured for this specific relayer)
+      const l2OnlyTokensForRelayer = l2OnlyTokens.filter((token) => token.relayers.some((r) => r.eq(relayer)));
+      for (const token of l2OnlyTokensForRelayer) {
+        const chainName = getNetworkName(token.chainId);
+        let tokenMrkdwn = "";
+
+        // L2-only tokens only exist on their specific chain
+        const balancesBN = Object.values(report[token.symbol]?.[chainName] ?? {});
+        if (balancesBN.find((b) => b.gt(bnZero))) {
+          const balances = balancesBN.map((balance) =>
+            balance.gt(bnZero) ? convertFromWei(balance.toString(), token.decimals) : "0"
+          );
+          tokenMrkdwn += `${chainName}: ${balances.join(", ")}\n`;
+        } else {
+          tokenMrkdwn += `${chainName}: 0\n`;
+        }
+
+        const totalBalance = report[token.symbol]?.[ALL_CHAINS_NAME]?.[BalanceType.TOTAL] ?? bnZero;
+        if (totalBalance.gt(bnZero)) {
+          mrkdwn += `*[${token.symbol} (L2-only)]*\n` + tokenMrkdwn;
+          summaryMrkdwn += `${token.symbol}: ${convertFromWei(totalBalance.toString(), token.decimals)}\n`;
+        } else {
+          summaryMrkdwn += `${token.symbol}: 0\n`;
+        }
+      }
+
       mrkdwn += summaryMrkdwn;
       this.logger.info({
         at: "Monitor#reportRelayerBalances",
@@ -500,9 +530,15 @@ export class Monitor {
         mrkdwn,
       });
     }
+
+    // Build a combined token list for decimal lookups in the debug logging
+    const allTokensWithDecimals = new Map<string, number>();
+    allL1Tokens.forEach((token) => allTokensWithDecimals.set(token.symbol, token.decimals));
+    l2OnlyTokens.forEach((token) => allTokensWithDecimals.set(token.symbol, token.decimals));
+
     Object.entries(reports).forEach(([relayer, balanceTable]) => {
       Object.entries(balanceTable).forEach(([tokenSymbol, columns]) => {
-        const decimals = allL1Tokens.find((token) => token.symbol === tokenSymbol)?.decimals;
+        const decimals = allTokensWithDecimals.get(tokenSymbol);
         if (!decimals) {
           throw new Error(`No decimals found for ${tokenSymbol}`);
         }
@@ -535,6 +571,8 @@ export class Monitor {
   // Update current balances of all tokens on each supported chain for each relayer.
   async updateCurrentRelayerBalances(relayerBalanceReport: RelayerBalanceReport): Promise<void> {
     const l1Tokens = this.getL1TokensForRelayerBalancesReport();
+    const l2OnlyTokens = this.l2OnlyTokens;
+
     for (const relayer of this.monitorConfig.monitoredRelayers) {
       for (const chainId of this.monitorChains) {
         // If the monitored relayer address is invalid on the monitored chain (e.g. the monitored relayer is a base58 address while the chain ID is mainnet),
@@ -565,6 +603,32 @@ export class Monitor {
             BalanceType.CURRENT,
             decimalConverter(tokenBalances[i])
           );
+        }
+
+        // Handle L2-only tokens for this chain and this specific relayer
+        const l2OnlyTokensForChainAndRelayer = l2OnlyTokens.filter(
+          (token) => token.chainId === chainId && token.relayers.some((r) => r.eq(relayer))
+        );
+        if (l2OnlyTokensForChainAndRelayer.length > 0) {
+          const l2OnlyBalances = await this._getBalances(
+            l2OnlyTokensForChainAndRelayer.map((token) => ({
+              token: token.address,
+              chainId: chainId,
+              account: relayer,
+            }))
+          );
+
+          for (let i = 0; i < l2OnlyTokensForChainAndRelayer.length; i++) {
+            const token = l2OnlyTokensForChainAndRelayer[i];
+            // L2-only tokens don't need decimal conversion since they don't map to L1
+            this.updateRelayerBalanceTable(
+              relayerBalanceReport[relayer.toNative()],
+              token.symbol,
+              getNetworkName(chainId),
+              BalanceType.CURRENT,
+              l2OnlyBalances[i]
+            );
+          }
         }
       }
     }
@@ -1253,10 +1317,17 @@ export class Monitor {
     return transfers.map((transfer) => transfer.value).reduce((a, b) => a.add(b));
   }
 
-  initializeBalanceReports(relayers: Address[], allL1Tokens: L1Token[], allChainNames: string[]): RelayerBalanceReport {
+  initializeBalanceReports(
+    relayers: Address[],
+    allL1Tokens: L1Token[],
+    l2OnlyTokens: L2OnlyToken[],
+    allChainNames: string[]
+  ): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};
     for (const relayer of relayers) {
       reports[relayer.toNative()] = {};
+
+      // Initialize L1 tokens for all chains
       for (const token of allL1Tokens) {
         reports[relayer.toNative()][token.symbol] = {};
         for (const chainName of allChainNames) {
@@ -1264,6 +1335,23 @@ export class Monitor {
           for (const balanceType of ALL_BALANCE_TYPES) {
             reports[relayer.toNative()][token.symbol][chainName][balanceType] = bnZero;
           }
+        }
+      }
+
+      // Initialize L2-only tokens only for their specific relayer, chain, and the "All chains" summary
+      const l2OnlyTokensForRelayer = l2OnlyTokens.filter((token) => token.relayers.some((r) => r.eq(relayer)));
+      for (const token of l2OnlyTokensForRelayer) {
+        const tokenChainName = getNetworkName(token.chainId);
+        reports[relayer.toNative()][token.symbol] = {};
+        // Initialize for the specific chain the token exists on
+        reports[relayer.toNative()][token.symbol][tokenChainName] = {};
+        for (const balanceType of ALL_BALANCE_TYPES) {
+          reports[relayer.toNative()][token.symbol][tokenChainName][balanceType] = bnZero;
+        }
+        // Initialize for "All chains" summary
+        reports[relayer.toNative()][token.symbol][ALL_CHAINS_NAME] = {};
+        for (const balanceType of ALL_BALANCE_TYPES) {
+          reports[relayer.toNative()][token.symbol][ALL_CHAINS_NAME][balanceType] = bnZero;
         }
       }
     }

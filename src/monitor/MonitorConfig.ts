@@ -7,7 +7,17 @@ import {
   TOKEN_SYMBOLS_MAP,
   Address,
   toAddressType,
+  EvmAddress,
 } from "../utils";
+
+// Interface for tokens that exist only on L2 (no L1 equivalent)
+export interface L2OnlyToken {
+  symbol: string;
+  chainId: number;
+  address: EvmAddress;
+  decimals: number;
+  relayers: Address[]; // The relayer addresses to track this token for
+}
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -45,6 +55,7 @@ export class MonitorConfig extends CommonConfig {
     token: Address;
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
+  readonly l2OnlyTokens: L2OnlyToken[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
   readonly hyperliquidOrderMaximumLifetime: number;
@@ -77,6 +88,7 @@ export class MonitorConfig extends CommonConfig {
       CLOSE_PDAS_ENABLED,
       HYPERLIQUID_ORDER_MAXIMUM_LIFETIME,
       HYPERLIQUID_SUPPORTED_TOKENS,
+      L2_ONLY_TOKENS,
     } = env;
 
     this.botModes = {
@@ -109,6 +121,33 @@ export class MonitorConfig extends CommonConfig {
         return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
       }
     });
+
+    // Parse L2-only tokens: tokens that exist only on L2 chains (no L1 equivalent).
+    // Format: [{ "symbol": "USDH", "chainId": 999, "relayers": ["0x...", "0x..."] }]
+    // - will look up address and decimals from TOKEN_SYMBOLS_MAP.
+    // - relayers specifies which addresses to track this token for.
+    // - if relayers is not provided or empty, defaults to MONITORED_RELAYERS.
+    this.l2OnlyTokens = JSON.parse(L2_ONLY_TOKENS ?? "[]")
+      .map(({ symbol, chainId, relayers }: { symbol: string; chainId: number; relayers?: string[] }) => {
+        const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+        if (!tokenInfo?.addresses?.[chainId]) {
+          return undefined;
+        }
+        // Default to monitoredRelayers if relayers is not provided or empty
+        const relayerAddresses =
+          relayers && relayers.length > 0
+            ? relayers.map((r) => toAddressType(r, chainId))
+            : this.monitoredRelayers;
+        return {
+          symbol,
+          chainId,
+          address: EvmAddress.from(tokenInfo.addresses[chainId]),
+          decimals: tokenInfo.decimals,
+          relayers: relayerAddresses,
+        };
+      })
+      .filter(isDefined);
+
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
 
