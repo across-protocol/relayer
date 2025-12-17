@@ -115,6 +115,7 @@ export async function depositToHypercore(account: string, signer: Signer, logger
   );
   const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
   const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
+  await delay(1);
   const receipt = await depositToHypercoreTx.wait();
   logger.info({
     at: "HyperliquidUtils#depositToHypercore",
