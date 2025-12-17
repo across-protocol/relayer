@@ -613,7 +613,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       throw new Error("Cannot bridge from HyperEVM to HyperEVM");
     } else {
       const tokenMeta = this._getTokenMeta(orderDetails.destinationToken);
-      switch(tokenMeta.bridgeName) {
+      switch (tokenMeta.bridgeName) {
         case "OFT":
           await this._sendOftBridge(destinationChain, expectedAmountToReceive);
           break;
