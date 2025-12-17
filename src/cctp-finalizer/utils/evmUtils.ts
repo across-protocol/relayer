@@ -5,7 +5,6 @@ import {
   runTransaction,
   getCctpV2MessageTransmitter,
   CHAIN_IDs,
-  isHlAccountActive,
   depositToHypercore,
   decodeCctpV2HookData,
 } from "../../utils";
@@ -51,7 +50,7 @@ export async function createHyperCoreAccountIfNotExists(
     });
     return;
   }
-  const isHypercoreAccountActive = await isHlAccountActive(hookData.finalRecipient);
+  const isHypercoreAccountActive = await utils.isHlAccountActive(hookData.finalRecipient);
   if (!isHypercoreAccountActive) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
