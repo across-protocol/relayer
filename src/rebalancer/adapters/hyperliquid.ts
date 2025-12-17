@@ -57,6 +57,7 @@ interface TOKEN_META {
   tokenIndex: number;
   evmDecimals: number;
   coreDecimals: number;
+  bridgeName: BRIDGE_NAME;
 }
 
 // Maximum number of decimal places for a price in a Hyperliquid order.
@@ -64,6 +65,9 @@ const MAX_DECIMAL_PLACES_HL_ORDER_PX = 5;
 
 // HyperEVM address of CoreDepositWallet used to facilitates deposits and withdrawals with Hypercore.
 const USDC_CORE_DEPOSIT_WALLET_ADDRESS = "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24";
+
+// Bridges we can use to bridge into and out of HyperEVM.
+type BRIDGE_NAME = "OFT" | "CCTP";
 
 // This adapter can be used to swap stables in Hyperliquid. This is preferable to swapping on source or destination
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
@@ -125,12 +129,14 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       tokenIndex: 268,
       evmDecimals: 6,
       coreDecimals: 8,
+      bridgeName: "OFT",
     },
     USDC: {
       evmSystemAddress: EvmAddress.from("0x2000000000000000000000000000000000000000"),
       tokenIndex: 0,
       evmDecimals: 6,
       coreDecimals: 8,
+      bridgeName: "CCTP",
     },
   };
 
@@ -341,6 +347,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
         } else {
           console.log(`Sending order with cloid ${cloid} to final destination chain ${orderDetails.destinationChain}!`);
+          await this._bridgeToDestinationChain(orderDetails, expectedAmountToReceive);
           await this._redisUpdateOrderStatus(
             cloid,
             STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE,
@@ -595,6 +602,41 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       blockExplorerLink(txn.hash, HYPEREVM)
     );
+  }
+
+  private async _bridgeToDestinationChain(
+    orderDetails: RebalanceRoute,
+    expectedAmountToReceive: BigNumber
+  ): Promise<void> {
+    const { destinationChain } = orderDetails;
+    if (destinationChain === CHAIN_IDs.HYPEREVM) {
+      throw new Error("Cannot bridge from HyperEVM to HyperEVM");
+    } else {
+      const tokenMeta = this._getTokenMeta(orderDetails.destinationToken);
+      switch(tokenMeta.bridgeName) {
+        case "OFT":
+          await this._sendOftBridge(destinationChain, expectedAmountToReceive);
+          break;
+        case "CCTP":
+          await this._sendCctpBridge(destinationChain, expectedAmountToReceive);
+          break;
+        default:
+          // This should be impossible because `bridgeName` is type BRIDGE_NAME.
+          throw new Error(`Should never happen: Unsupported bridge name: ${tokenMeta.bridgeName}`);
+      }
+    }
+  }
+
+  private async _sendCctpBridge(destinationChain: number, amountToBridge: BigNumber): Promise<void> {
+    // Send a bridge from HyperEVM to destination chain via CCTP.
+    // TODO: In the future, this could re-use a CCTPAdapter function.
+    throw new Error(`UNIMPLEMENTED: Sending CCTP bridge from HyperEVM to ${destinationChain} for ${amountToBridge}`);
+  }
+
+  private async _sendOftBridge(destinationChain: number, amountToBridge: BigNumber): Promise<void> {
+    // Send a bridge from HyperEVM to destination chain via OFT.
+    // TODO: In the future, this could re-use a OFTAdapter function.
+    throw new Error(`UNIMPLEMENTED: Sending OFT bridge from HyperEVM to ${destinationChain} for ${amountToBridge}`);
   }
 
   getPendingRebalances(): Promise<RebalanceRoute[]> {
