@@ -1,6 +1,13 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
-import { winston, runTransaction, getCctpV2MessageTransmitter, CHAIN_IDs } from "../../utils";
+import {
+  winston,
+  runTransaction,
+  getCctpV2MessageTransmitter,
+  CHAIN_IDs,
+  depositToHypercore,
+  decodeCctpV2HookData,
+} from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 
 /**
@@ -28,6 +35,32 @@ export async function checkIfAlreadyProcessedEvm(
   return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
 }
 
+export async function createHyperCoreAccountIfNotExists(
+  message: string,
+  signer: ethers.Wallet,
+  logger: winston.Logger
+): Promise<void> {
+  const hookData = decodeCctpV2HookData(message);
+  if (!hookData || hookData.maxBpsToSponsor === 0) {
+    logger.debug({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Skipping deposit to Hypercore because its not sponsored flow",
+      maxBpsToSponsor: hookData?.maxBpsToSponsor,
+      finalRecipient: hookData?.finalRecipient,
+    });
+    return;
+  }
+  const isHypercoreAccountActive = await utils.isHlAccountActive(hookData.finalRecipient);
+  if (!isHypercoreAccountActive) {
+    logger.debug({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Recipient address does not exist, depositing to Hypercore",
+      finalRecipient: hookData.finalRecipient,
+    });
+    await depositToHypercore(hookData.finalRecipient, signer, logger);
+  }
+}
+
 /**
  * Processes a CCTP mint transaction on EVM chain (CCTP V2)
  */
@@ -49,6 +82,7 @@ export async function processMintEvm(
   const isHyperCoreDestination = isHyperEVM && signature;
 
   if (isHyperCoreDestination) {
+    await createHyperCoreAccountIfNotExists(attestation.message, signer, logger);
     // Use SponsoredCCTPDstPeriphery for HyperCore destinations (both sponsored and non-sponsored flows)
     const { address, abi } = CONTRACT_ADDRESSES[chainId].sponsoredCCTPDstPeriphery;
     if (!address) {

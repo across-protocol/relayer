@@ -1,6 +1,19 @@
-import { Signer, isSignerWallet, assert, delay } from "./";
+import {
+  Signer,
+  isSignerWallet,
+  assert,
+  delay,
+  CHAIN_IDs,
+  runTransaction,
+  TOKEN_SYMBOLS_MAP,
+  winston,
+  bnZero,
+  blockExplorerLink,
+} from "./";
 import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
+import { ethers } from "ethers";
+import { CONTRACT_ADDRESSES } from "../common/ContractAddresses";
 
 export function getHlExchangeClient(
   signer: Signer,
@@ -92,4 +105,22 @@ async function _callWithRetry<T, A extends any[]>(
     // @todo Once we have a better idea on the types of errors we can suppress/retry on, then choose appropriate action based on the error thrown.
     return await _callWithRetry(apiCall, args, ++nRetries, maxRetries);
   }
+}
+
+export async function depositToHypercore(account: string, signer: Signer, logger: winston.Logger): Promise<string> {
+  const contract = new ethers.Contract(
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.address,
+    CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM].hyperliquidDepositHandler.abi,
+    signer
+  );
+  const depositToHypercoreArgs = [TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM], bnZero, account];
+  const depositToHypercoreTx = await runTransaction(logger, contract, "depositToHypercore", depositToHypercoreArgs);
+  await delay(1);
+  const receipt = await depositToHypercoreTx.wait();
+  logger.info({
+    at: "HyperliquidUtils#depositToHypercore",
+    message: `HyperCore account ${account} created 🫡!`,
+    transactionHash: blockExplorerLink(receipt.transactionHash, CHAIN_IDs.HYPEREVM),
+  });
+  return receipt.transactionHash;
 }
