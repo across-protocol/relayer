@@ -336,6 +336,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
   const submitted = performance.now();
   let confirmed: number, filled: number;
 
+  const delta = (start: number, finish: number, decimals = 1) => ((finish - start) / 1000).toFixed(decimals);
+
   srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
     const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
     const deposit = {
@@ -349,7 +351,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
       confirmed = performance.now();
       const depositTxn = blockExplorerLink(deposit.txnRef, fromChainId);
       printRelayData(deposit, deposit.destinationChainId, deposit.txnRef);
-      console.log(`Deposit confirmed after ${(confirmed - submitted) / 1000} seconds: ${depositTxn}.`);
+      console.log(`Deposit confirmed after ${delta(submitted, confirmed)} seconds: ${depositTxn}.`);
     }
   });
 
@@ -358,7 +360,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     if (fill.depositor.eq(depositor)) {
       filled = performance.now();
       const fillTxn = blockExplorerLink(fill.txnRef, toChainId);
-      console.log(`Fill confirmed after ${(filled - confirmed) / 1000} seconds: ${fillTxn}.`);
+      console.log(`Fill confirmed after ${delta(confirmed, filled)} seconds: ${fillTxn}.`);
       abortController.abort();
     }
   });

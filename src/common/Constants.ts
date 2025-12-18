@@ -99,7 +99,7 @@ export const UNIVERSAL_CHAINS = [CHAIN_IDs.BSC, CHAIN_IDs.HYPEREVM, CHAIN_IDs.PL
 // ORU will not be finalized until after 7 days, so there is little difference in following behind 0 blocks versus
 // anything under 7 days. OP stack chains are auto-populated based on chain family.
 const OP_STACK_MIN_DEPOSIT_CONFIRMATIONS = 1;
-const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
+const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 0;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
@@ -118,7 +118,7 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.SCROLL]: 8,
   },
   100: {
-    [CHAIN_IDs.HYPEREVM]: 1,
+    [CHAIN_IDs.HYPEREVM]: 0,
     [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.

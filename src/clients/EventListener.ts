@@ -1,9 +1,24 @@
 import assert from "assert";
 import { EventEmitter } from "node:events";
 import * as chains from "viem/chains";
-import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
+import {
+  AbiEvent,
+  BaseError,
+  Block,
+  createPublicClient,
+  http,
+  Log as viemLog,
+  parseAbiItem,
+  WatchEventReturnType,
+  webSocket,
+} from "viem";
 import { Log } from "../interfaces";
 import { EventManager, getNetworkName, getNodeUrlList, getOriginFromURL, getProviderHeaders, winston } from "../utils";
+
+// Teach BigInt how to be represented as JSON.
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
 
 function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";

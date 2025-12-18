@@ -91,6 +91,10 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       this.#eventEmitter.on("block", handler);
     }
 
+    onDeposit(handler: (event: Log) => void): void {
+      this.#eventEmitter.on("FundsDeposited", handler);
+    }
+
     /**
      * Fork a child process to independently scrape events.
      * @returns void
@@ -208,6 +212,10 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           );
 
           this.#pendingEvents[eventIdx].push(event);
+          // Other events to be emitted in future.
+          if (this.isUpdated && event.event === "FundsDeposited") {
+            this.#eventEmitter.emit(event.event, event);
+          }
         });
       }
     }

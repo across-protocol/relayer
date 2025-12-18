@@ -102,6 +102,7 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
     hubChainSpoke.onBlock(newBlock);
   }
 
+  let listen = false;
   try {
     for (let run = 1; !abortController.signal.aborted; ++run) {
       if (loop) {
@@ -164,7 +165,12 @@ export async function runRelayer(_logger: winston.Logger, baseSigner: Signer): P
         }
       }
 
-      if (!abortController.signal.aborted) {
+      if (eventListener && !listen) {
+        listen = true;
+        relayer.setupListeners();
+      }
+
+      if (!abortController.signal.aborted && false) {
         txnReceipts = await relayer.checkForUnfilledDepositsAndFill(config.sendingSlowRelaysEnabled, simulate);
         await relayer.runMaintenance();
       }
