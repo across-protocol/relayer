@@ -67,8 +67,9 @@ export type Pair = {
 };
 
 const BASE_TOKENS = ["USDT0", "USDC"];
+const USD_DECIMALS = 8;
 const abortController = new AbortController();
-const HL_FIXED_ADJUSTMENT = 10 ** 8;
+const HL_FIXED_ADJUSTMENT = 10 ** USD_DECIMALS;
 const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
@@ -232,7 +233,7 @@ export class HyperliquidExecutor {
         const limitOrderOutNoFees = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
         // @dev the STABLE_SWAP_DISCOUNT (0.2) is applied to all stable pairs. We need to use the `userSpotCrossRate` fee
         // parameter since all placed orders are market orders at the best ask.
-        const stableSwapFeeRate = toBNWei(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT, 8);
+        const stableSwapFeeRate = toBNWei(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT, USD_DECIMALS);
         const realizedFeesInInputTokens = convertedInputAmount.mul(stableSwapFeeRate).div(HL_FIXED_ADJUSTMENT);
         const realizedFees = ConvertDecimals(
           pair.baseTokenDecimals,
