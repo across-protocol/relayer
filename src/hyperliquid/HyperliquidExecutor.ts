@@ -232,7 +232,9 @@ export class HyperliquidExecutor {
         const limitOrderOutNoFees = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
         // @dev the STABLE_SWAP_DISCOUNT (0.2) is applied to all stable pairs. We need to use the `userSpotCrossRate` fee
         // parameter since all placed orders are market orders at the best ask.
-        const stableSwapFeeRate = toBN(Math.floor(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT * HL_FIXED_ADJUSTMENT));
+        const stableSwapFeeRate = toBN(
+          Math.floor(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT * HL_FIXED_ADJUSTMENT)
+        );
         const realizedFeesInInputTokens = convertedInputAmount.mul(stableSwapFeeRate).div(HL_FIXED_ADJUSTMENT);
         const realizedFees = ConvertDecimals(
           pair.baseTokenDecimals,
