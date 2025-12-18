@@ -118,6 +118,7 @@ function printRelayData(
   console.log(
     `${eventType} # ${relayData.depositId} on ${getNetworkName(chainId)}:\n` +
       Object.entries(fields)
+        .filter(([, value]) => isDefined(value))
         .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
         .join("\n") +
       "\n"
