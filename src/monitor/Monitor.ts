@@ -139,17 +139,10 @@ export class Monitor {
   }
 
   /**
-   * Returns L2-only tokens that are configured for a specific relayer.
+   * Returns L2-only tokens for a specific chain.
    */
-  private getL2OnlyTokensForRelayer(relayer: Address): L2OnlyToken[] {
-    return this.l2OnlyTokens.filter((token) => token.relayers.some((r) => r.eq(relayer)));
-  }
-
-  /**
-   * Returns L2-only tokens for a specific relayer and chain.
-   */
-  private getL2OnlyTokensForRelayerAndChain(relayer: Address, chainId: number): L2OnlyToken[] {
-    return this.l2OnlyTokens.filter((token) => token.chainId === chainId && token.relayers.some((r) => r.eq(relayer)));
+  private getL2OnlyTokensForChain(chainId: number): L2OnlyToken[] {
+    return this.l2OnlyTokens.filter((token) => token.chainId === chainId);
   }
 
   /**
@@ -525,7 +518,7 @@ export class Monitor {
       }
 
       // Report L2-only tokens (only their specific chain)
-      for (const token of this.getL2OnlyTokensForRelayer(relayer)) {
+      for (const token of l2OnlyTokens) {
         const { mrkdwn: tokenMrkdwn, summaryEntry } = this.generateTokenBalanceMarkdown(
           report,
           token,
@@ -617,8 +610,8 @@ export class Monitor {
           );
         }
 
-        // Handle L2-only tokens for this chain and this specific relayer
-        const l2OnlyTokensForChain = this.getL2OnlyTokensForRelayerAndChain(relayer, chainId);
+        // Handle L2-only tokens for this chain
+        const l2OnlyTokensForChain = this.getL2OnlyTokensForChain(chainId);
         if (l2OnlyTokensForChain.length > 0) {
           const l2OnlyBalances = await this._getBalances(
             l2OnlyTokensForChain.map((token) => ({
@@ -1348,9 +1341,8 @@ export class Monitor {
         }
       }
 
-      // Initialize L2-only tokens only for their specific relayer, chain, and the "All chains" summary
-      const l2OnlyTokensForRelayer = l2OnlyTokens.filter((token) => token.relayers.some((r) => r.eq(relayer)));
-      for (const token of l2OnlyTokensForRelayer) {
+      // Initialize L2-only tokens for their specific chain and the "All chains" summary
+      for (const token of l2OnlyTokens) {
         const tokenChainName = getNetworkName(token.chainId);
         reports[relayer.toNative()][token.symbol] = {};
         // Initialize for the specific chain the token exists on

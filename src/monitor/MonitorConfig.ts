@@ -16,7 +16,6 @@ export interface L2OnlyToken {
   chainId: number;
   address: EvmAddress;
   decimals: number;
-  relayers: Address[]; // The relayer addresses to track this token for
 }
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
@@ -123,25 +122,20 @@ export class MonitorConfig extends CommonConfig {
     });
 
     // Parse L2-only tokens: tokens that exist only on L2 chains (no L1 equivalent).
-    // Format: [{ "symbol": "USDH", "chainId": 999, "relayers": ["0x...", "0x..."] }]
+    // Format: [{ "symbol": "USDH", "chainId": 999 }]
     // - will look up address and decimals from TOKEN_SYMBOLS_MAP.
-    // - relayers specifies which addresses to track this token for.
-    // - if relayers is not provided or empty, defaults to MONITORED_RELAYERS.
+    // - all monitored relayers (MONITORED_RELAYERS) will be tracked for these tokens.
     this.l2OnlyTokens = JSON.parse(L2_ONLY_TOKENS ?? "[]")
-      .map(({ symbol, chainId, relayers }: { symbol: string; chainId: number; relayers?: string[] }) => {
+      .map(({ symbol, chainId }: { symbol: string; chainId: number }) => {
         const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
         if (!tokenInfo?.addresses?.[chainId]) {
           return undefined;
         }
-        // Default to monitoredRelayers if relayers is not provided or empty
-        const relayerAddresses =
-          relayers?.length > 0 ? relayers.map((r) => toAddressType(r, chainId)) : this.monitoredRelayers;
         return {
           symbol,
           chainId,
           address: EvmAddress.from(tokenInfo.addresses[chainId]),
           decimals: tokenInfo.decimals,
-          relayers: relayerAddresses,
         };
       })
       .filter(isDefined);
