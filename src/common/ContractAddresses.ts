@@ -236,6 +236,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x5616194d65638086a3191b1fef436f503ff329ec",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.MONAD]: {
     cctpV2MessageTransmitter: {
