@@ -29,6 +29,7 @@ import {
   delay,
   spreadEventWithBlockNumber,
   createFormatFunction,
+  toBNWei,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
