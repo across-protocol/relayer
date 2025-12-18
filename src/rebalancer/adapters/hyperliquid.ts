@@ -29,7 +29,6 @@ import {
   getV2DepositForBurnMaxFee,
   isDefined,
   isStargateBridge,
-  mapAsync,
   MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
@@ -189,9 +188,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     this.baseSigner
     // );
 
+    // CoreDepositWallet required to deposit USDC to Hypercore.
     const usdc = new Contract(TOKEN_SYMBOLS_MAP.USDC.addresses[HYPEREVM], ERC20.abi, connectedSigner_999);
     const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
-    if (allowance.lt(MAX_SAFE_ALLOWANCE)) {
+    if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
       this.multicallerClient.enqueueTransaction({
         contract: usdc,
         chainId: HYPEREVM,
@@ -203,18 +203,36 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         mrkdwn: "Approved USDC for CoreDepositWallet",
       });
     }
+    const cctpMessenger = await this._getCctpMessenger(HYPEREVM);
+    const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
+    if (cctpAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
+      this.multicallerClient.enqueueTransaction({
+        contract: usdc,
+        chainId: HYPEREVM,
+        method: "approve",
+        nonMulticall: true,
+        unpermissioned: false,
+        args: [cctpMessenger.address, MAX_SAFE_ALLOWANCE],
+        message: "Approved USDC for CCTP Messenger",
+        mrkdwn: "Approved USDC for CCTP Messenger",
+      });
+    }
 
-    // const usdcHyperEvm = new Contract(
-    //     TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM],
-    //     ERC20.abi,
-    //     this.baseSigner
-    // );
-    // const allowance = await usdcHyperEvm.allowance(this.baseSignerAddress.toNative(), this.hyperliquidHelper.address);
-    // if (allowance.lt(toBNWei("1"))) {
-    //     const txn = await usdcHyperEvm.approve(this.hyperliquidHelper.address, bnUint256Max);
-    //     await txn.wait();
-    //     console.log(`Approved USDC for HyperliquidHelper: ${txn.hash}`);
-    // }
+    const usdt = new Contract(TOKEN_SYMBOLS_MAP.USDT.addresses[HYPEREVM], ERC20.abi, connectedSigner_999);
+    const oftMessenger = await this._getOftMessenger(HYPEREVM);
+    const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
+    if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
+      this.multicallerClient.enqueueTransaction({
+        contract: usdt,
+        chainId: HYPEREVM,
+        method: "approve",
+        nonMulticall: true,
+        unpermissioned: false,
+        args: [oftMessenger.address, MAX_SAFE_ALLOWANCE],
+        message: "Approved USDT for OFT Messenger",
+        mrkdwn: "Approved USDT for OFT Messenger",
+      });
+    }
 
     await this.multicallerClient.executeTxnQueues();
   }
@@ -696,10 +714,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const hyperevmToken = TOKEN_SYMBOLS_MAP[sourceToken].addresses[HYPEREVM];
     const provider = await getProvider(HYPEREVM);
     const connectedSigner = this.baseSigner.connect(provider);
+    const erc20 = new Contract(hyperevmToken, ERC20.abi, connectedSigner);
     const amountReadable = fromWei(amountToDepositEvmPrecision, TOKEN_SYMBOLS_MAP[sourceToken]?.decimals);
     if (sourceToken === "USDC") {
-      const usdc = new Contract(hyperevmToken, ERC20.abi, connectedSigner);
-      const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
+      const allowance = await erc20.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
       if (allowance.lt(amountToDepositEvmPrecision)) {
         throw new Error("Insufficient allowance to bridge USDC into Hypercore via CoreDepositWallet.deposit()");
       }
@@ -724,12 +742,25 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         )}`,
       };
       this.multicallerClient.enqueueTransaction(transaction);
-      await this.multicallerClient.executeTxnQueue(HYPEREVM);
     } else {
+      const tokenMeta = this._getTokenMeta(sourceToken);
+      const transaction = {
+        contract: erc20,
+        chainId: HYPEREVM,
+        method: "transfer",
+        unpermissioned: false,
+        nonMulticall: true,
+        args: [tokenMeta.evmSystemAddress.toNative(), amountToDepositEvmPrecision],
+        message: `Deposited ${sourceToken} into Hypercore from ${getNetworkName(HYPEREVM)}`,
+        mrkdwn: `Deposited ${amountReadable} ${sourceToken} into Hypercore from ${getNetworkName(HYPEREVM)}`,
+      };
+      this.multicallerClient.enqueueTransaction(transaction);
+      console.log("deposit ERC20 into core via direct transfer", transaction);
       throw new Error(
         `Unimplemented _depositToHypercore() for token ${hyperevmToken} and amount ${amountToDepositEvmPrecision.toString()}`
       );
     }
+    await this.multicallerClient.executeTxnQueue(HYPEREVM);
   }
 
   private async _bridgeToChain(
