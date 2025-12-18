@@ -22,6 +22,7 @@ import {
   paginatedEventQuery,
   getBlockForTimestamp,
   getSpotClearinghouseState,
+  getUserFees,
   getChainQuorum,
   toBN,
   getRedisCache,
@@ -198,10 +199,11 @@ export class HyperliquidExecutor {
       // PairIds are formatted as `BASE_TOKEN-FINAL_TOKEN`.
       const [, finalTokenSymbol] = pairId.split("-");
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
-      const [_outputSpotBalance, outstandingOrders, l2Book] = await Promise.all([
+      const [_outputSpotBalance, outstandingOrders, l2Book, userFees] = await Promise.all([
         this.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals),
         this.getOutstandingOrdersOnPair(pair, toBlock),
         getL2Book(this.infoClient, { coin: pair.name }),
+        getUserFees(this.infoClient, { user: pair.swapHandler.toNative() }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
       // The market price is dependent on whether we are selling the base token or the final token.
@@ -224,7 +226,13 @@ export class HyperliquidExecutor {
           pair.baseTokenDecimals
         )(outstandingOrder.evmAmountIn);
         // LimitOrderOut = inputAmount * exchangeRate.
-        const _limitOrderOut = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
+        // This is the price _before_ fees have been accounted for.
+        const limitOrderOutNoFees = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
+        // @dev 0.2 discount is applied to all stable pairs. We need to use the `userSpotCrossRate` fee
+        // parameter since all placed orders are market orders at the best ask.
+        const stableSwapFeeRate = toBNWei(Number(userFees.userSpotCrossRate) * 0.2, 8);
+        const realizedFees = convertedInputAmount.mul(stableSwapFeeRate).div(HL_FIXED_ADJUSTMENT);
+        const _limitOrderOut = limitOrderOutNoFees.sub(realizedFees);
         const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
           ? outstandingOrder.maxAmountToSend
           : _limitOrderOut;
