@@ -108,9 +108,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   // through the EVM -> HL -> EVM lifecycle.
   REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
 
-  // This table associates HL cloid's with the amount filled, so we can figure out how much to withdraw.
-  REDIS_KEY_FILLS = this.REDIS_PREFIX + "fills";
-
   private baseSignerAddress: EvmAddress;
 
   private lookbackSeconds = 60 * 60 * 24 * 7; // 7 days ago
@@ -311,11 +308,27 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const lastPollEnd = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
     const provider = await getProvider(CHAIN_IDs.HYPEREVM);
 
+    // Delete any pending bridge to destination chain orders that are finalized. There are no more statuses to update to.
+    // This means that getPendingRebalances() can stop adding a virtual credit to the destination chain for these orders.
     const pendingBridgeToDestinationChain = await this._redisGetPendingBridgeToDestinationChain();
     console.log("Orders pending bridge to destination chain", pendingBridgeToDestinationChain);
     for (const cloid of pendingBridgeToDestinationChain) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       await this._fetchOftBridgeEvents(CHAIN_IDs.HYPEREVM, orderDetails.destinationChain);
+
+      // Are there any unfinalized OFT GUID's? If so, then subtract the cloid's expected transfer amount from the pending
+      // finalized amount. If all bridge initiated events are finalized AND one matches the expected amount to transfer
+      // then we can consider this cloid as finalized and delete it.
+
+      // const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
+      // if (!matchingFill) {
+      //   throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
+      // }
+      // const destinationTokenMeta = this._getTokenMeta(orderDetails.destinationToken);
+      // const expectedAmountToReceive = ConvertDecimals(
+      //   destinationTokenMeta.coreDecimals,
+      //   destinationTokenMeta.evmDecimals
+      // )(matchingFill.amountToWithdraw);
 
       // TODO: How to identify finalized events when amount sent is identical? Do we store a mapping of initialized OFT
       // GUIDS and cloids?
