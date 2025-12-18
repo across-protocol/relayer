@@ -697,6 +697,7 @@ if (require.main === module) {
       process.exitCode = result;
     })
     .catch(async (error) => {
+      console.error("Process exited with", error);
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
