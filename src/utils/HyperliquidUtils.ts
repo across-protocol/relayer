@@ -70,6 +70,15 @@ export async function getOpenOrders(
   return _callWithRetry(infoClient.openOrders.bind(infoClient), [params], nRetries, maxRetries);
 }
 
+export async function getUserFees(
+  infoClient: hl.InfoClient,
+  params: hl.UserFeesParameters,
+  nRetries = 0,
+  maxRetries = 3
+): Promise<hl.UserFeesResponse> {
+  return _callWithRetry(infoClient.userFees.bind(infoClient), [params], nRetries, maxRetries);
+}
+
 export async function getHistoricalOrders(
   infoClient: hl.InfoClient,
   params: hl.HistoricalOrdersParameters,
