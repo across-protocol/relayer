@@ -72,16 +72,27 @@ export class EventListener extends EventEmitter {
     });
   }
 
+  stop(event: string): void {
+    this.removeAllListeners(event);
+    const watchers = this.watchers[event] ?? [];
+    watchers.forEach((unwatch) => {
+      unwatch();
+    });
+  }
+
   onEvent(address: string, event: string, handler: (log: Log) => void): void {
     this.onEvents(address, [event], handler);
   }
 
+  private watchers: { [event: string]: WatchEventReturnType[] } = {};
+
   onEvents(address: string, events: string[], handler: (log: Log) => void): void {
-    const { eventMgr, providers } = this;
+    const { eventMgr, providers, watchers } = this;
     events.forEach((eventDescriptor) => {
       // Viem is unhappy with "tuple" in the event descriptor; sub it out.
       // Viem also complains about the return type of parseAbiItem() (@todo: why), so coerce it.
       const event = parseAbiItem(eventDescriptor.replace("tuple", "")) as AbiEvent;
+      watchers[event.name] ??= [];
       this.on(event.name, handler);
 
       providers.forEach((provider) => {
@@ -107,11 +118,12 @@ export class EventListener extends EventEmitter {
           });
         };
 
-        provider.watchEvent({
+        const unwatch = provider.watchEvent({
           address: address as `0x${string}`,
           event,
           onLogs,
         });
+        watchers[event.name].push(unwatch);
       });
     });
   }
