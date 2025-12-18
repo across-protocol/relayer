@@ -85,52 +85,56 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
           return [key, log.args[key]];
       }
     })
-  ) as RelayData;
+  ) as Omit<RelayData, "originChainId">;
 
-  return relayData;
+  return {
+    ...relayData,
+    originChainId,
+  };
 }
 
-function printDeposit(originChainId: number, log: LogDescription, transactionHash?: string): void {
-  const { destinationChainId, message } = log.args;
-  const relayData = decodeRelayData(originChainId, destinationChainId, log);
-  const relayDataHash = sdkUtils.getRelayDataHash({ ...relayData, originChainId }, destinationChainId);
+function printRelayData(
+  relayData: RelayData & { message?: string; messageHash?: string },
+  destinationChainId: number,
+  transactionHash?: string
+): void {
+  const relayDataHash = relayData.message ? sdkUtils.getRelayDataHash({ ...relayData }, destinationChainId) : undefined;
+
+  let { messageHash } = relayData;
+  messageHash ??= relayData.message ? getMessageHash(relayData.message) : undefined;
 
   const fields = {
-    tokenSymbol: resolveTokenSymbols([relayData.inputToken.toNative()], originChainId)[0],
+    tokenSymbol: resolveTokenSymbols([relayData.inputToken.toNative()], relayData.originChainId)[0],
     ...relayData,
-    messageHash: getMessageHash(message),
+    messageHash,
     relayDataHash,
     transactionHash,
   };
   const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
+  const [eventType, chainId] = relayData.message
+    ? ["Deposit", relayData.originChainId]
+    : [`Fill for ${getNetworkName(relayData.originChainId)} deposit`, destinationChainId];
 
   console.log(
-    `Deposit # ${log.args.depositId} on ${getNetworkName(originChainId)}:\n` +
+    `${eventType} # ${relayData.depositId} on ${getNetworkName(chainId)}:\n` +
       Object.entries(fields)
+        .filter(([, value]) => isDefined(value))
         .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
         .join("\n") +
       "\n"
   );
+}
+
+function printDeposit(originChainId: number, log: LogDescription, transactionHash?: string): void {
+  const { destinationChainId } = log.args;
+  const relayData = decodeRelayData(originChainId, destinationChainId, log);
+  printRelayData(relayData, destinationChainId, transactionHash);
 }
 
 function printFill(destinationChainId: number, log: LogDescription, transactionHash?: string): void {
   const { originChainId } = log.args;
   const relayData = decodeRelayData(originChainId, destinationChainId, log);
-
-  const fields = {
-    tokenSymbol: resolveTokenSymbols([relayData.outputToken.toNative()], destinationChainId)[0],
-    ...relayData,
-    transactionHash,
-  };
-  const padLeft = Object.keys(fields).reduce((acc, cur) => (cur.length > acc ? cur.length : acc), 0);
-
-  console.log(
-    `Fill for ${getNetworkName(originChainId)} deposit # ${log.args.depositId}:\n` +
-      Object.entries(fields)
-        .map(([k, v]) => `\t${k.padEnd(padLeft)} : ${v}`)
-        .join("\n") +
-      "\n"
-  );
+  printRelayData(relayData, destinationChainId, transactionHash);
 }
 
 async function getSuggestedFees(params: RelayerFeeQuery, timeout: number) {
