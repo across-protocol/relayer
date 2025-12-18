@@ -267,7 +267,6 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     console.log(`Invalid set of chain IDs (${fromChainId}, ${toChainId}).`);
     return false;
   }
-  // const network = getNetworkName(fromChainId);
 
   // todo: only EVM `fromChainId`s are supported now
   assert(chainIsEvm(fromChainId));
@@ -333,7 +332,9 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     [fromChainId, toChainId].map((chainId) => utils.getSpokePoolContract(chainId))
   );
 
-  let submitted: number, confirmed: number, filled: number;
+  const submitted = performance.now();
+  let confirmed: number, filled: number;
+
   srcListener.onEvent(srcSpokePool.address, fundsDeposited, (log) => {
     const _deposit = unpackDepositEvent(spreadEventWithBlockNumber(log), fromChainId);
     const deposit = {
@@ -361,7 +362,6 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     }
   });
 
-  submitted = performance.now();
   await spokePool.deposit(
     depositor.toBytes32(),
     recipient.toBytes32(),
