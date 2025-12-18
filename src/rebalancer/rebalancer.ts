@@ -96,6 +96,11 @@ export class RebalancerClient {
 
   async getCostToRebalance(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
     // TODO:
+
+    // Return sum of:
+    // - Fee + Opportunity cost of each leg of rebalance route ([bridge] + deposit + swap + withdrawal + [bridge])
+    // For example, the OFT bridges starting from HyperEVM take a long time (~11 hours) so should be priced more than
+    // other bridges
     return Promise.resolve(BigNumber.from(0));
   }
 
@@ -126,6 +131,7 @@ export interface RebalancerAdapter {
   initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
   updateRebalanceStatuses(): Promise<void>;
 
-  // Get all currently unfinalized rebalances.
-  getPendingRebalances(): Promise<RebalanceRoute[]>;
+  // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
+  // + token in question.
+  getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }>;
 }

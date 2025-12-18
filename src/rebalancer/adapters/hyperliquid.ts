@@ -1,8 +1,10 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { MultiCallerClient } from "../../clients";
 import {
+  Address,
   BigNumber,
   blockExplorerLink,
+  bnUint32Max,
   bnZero,
   CHAIN_IDs,
   Contract,
@@ -16,19 +18,26 @@ import {
   formatToAddress,
   fromWei,
   getBlockForTimestamp,
+  getCctpDomainForChainId,
+  getCctpV2TokenMessenger,
   getEndpointId,
   getMessengerEvm,
   getNetworkName,
   getProvider,
   getRedisCache,
+  getTokenInfo,
+  getV2DepositForBurnMaxFee,
+  isDefined,
   isStargateBridge,
   mapAsync,
+  MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
   Provider,
   roundAmountToSend,
   SendParamStruct,
   Signer,
+  toBN,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
   winston,
@@ -36,8 +45,7 @@ import {
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { Log } from "../../interfaces";
-import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 
 // TODO: Clear out local database and order these from earliest stage to latest stage.
 // enum STATUS {
@@ -50,7 +58,6 @@ import { IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../..
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
   PENDING_SWAP,
-  PENDING_BRIDGE_TO_DESTINATION_CHAIN,
   PENDING_WITHDRAWAL_FROM_HYPERCORE,
   PENDING_DEPOSIT_TO_HYPERCORE,
 }
@@ -92,17 +99,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   REDIS_PREFIX = "hyperliquid-stablecoin-swap:";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
-  // The following three keys map to Sets of order nonces where the order has the relevant status.
+  // The following keys map to Sets of order nonces where the order has the relevant status.
   REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "pending-bridge-to-hyperliquid";
+  REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE = this.REDIS_PREFIX + "pending-deposit-to-hypercore";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
-  REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN = this.REDIS_PREFIX + "pending-bridge-to-destination-chain";
   REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE = this.REDIS_PREFIX + "pending-withdrawal-from-hypercore";
-
-  // The following two tables keep track of pending transfers. The exact amounts expected to be received are important
-  // so we can correctly update order statuses.
-  REDIS_KEY_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "bridge-to-hyperevm";
-  REDIS_KEY_BRIDGE_FROM_HYPEREVM = this.REDIS_PREFIX + "bridge-from-hyperevm";
-  REDIS_KEY_BRIDGE_FROM_HYPERCORE = this.REDIS_PREFIX + "bridge-from-hypercore";
 
   // This table associates HL cloid's with rebalance route information, so we can correctly progress the pending order
   // through the EVM -> HL -> EVM lifecycle.
@@ -163,7 +164,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   }
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
+    const { HYPEREVM } = CHAIN_IDs;
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    const provider_999 = await getProvider(HYPEREVM);
+    const connectedSigner_999 = this.baseSigner.connect(provider_999);
     this.redisCache = (await getRedisCache()) as RedisCache;
     this.availableRoutes = _availableRoutes;
     this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
@@ -185,6 +189,21 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     this.baseSigner
     // );
 
+    const usdc = new Contract(TOKEN_SYMBOLS_MAP.USDC.addresses[HYPEREVM], ERC20.abi, connectedSigner_999);
+    const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
+    if (allowance.lt(MAX_SAFE_ALLOWANCE)) {
+      this.multicallerClient.enqueueTransaction({
+        contract: usdc,
+        chainId: HYPEREVM,
+        method: "approve",
+        nonMulticall: true,
+        unpermissioned: false,
+        args: [USDC_CORE_DEPOSIT_WALLET_ADDRESS, MAX_SAFE_ALLOWANCE],
+        message: "Approved USDC for CoreDepositWallet",
+        mrkdwn: "Approved USDC for CoreDepositWallet",
+      });
+    }
+
     // const usdcHyperEvm = new Contract(
     //     TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM],
     //     ERC20.abi,
@@ -196,6 +215,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     await txn.wait();
     //     console.log(`Approved USDC for HyperliquidHelper: ${txn.hash}`);
     // }
+
+    await this.multicallerClient.executeTxnQueues();
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
@@ -205,7 +226,34 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // If source chain is not HyperEVM, then initiate CCTP/OFT transfer to HyperEVM and save order
     //     with status PENDING_BRIDGE_TO_HYPEREVM. Save the transfer under BRIDGE_TO_HYPEREVM in order to correctly
     //     mark the order status.
+    const cloid = await this._redisGetNextCloid();
+    if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
+      // Bridge this token into HyperEVM first
+      console.log(
+        `Creating new order ${cloid} by first bridging ${rebalanceRoute.sourceToken} into HyperEVM from ${rebalanceRoute.sourceChain}`
+      );
 
+      // TODO: If depositing via CCTP, we can actually deposit directly into Hypercore and if so then we should progress
+      // the status to PENDING_SWAP: https://developers.circle.com/cctp/transfer-usdc-from-ethereum-to-hypercore
+      await this._bridgeToChain(
+        rebalanceRoute.sourceToken,
+        rebalanceRoute.sourceChain,
+        CHAIN_IDs.HYPEREVM,
+        rebalanceRoute.maxAmountToTransfer
+      );
+      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute);
+    } else {
+      // TODO: Need to actually submit an HL deposit here instead of immediately placing an order.
+      console.log(
+        `Creating new order ${cloid} by submitting LO on HyperEVM for ${rebalanceRoute.sourceToken} -> ${rebalanceRoute.destinationToken}`
+      );
+
+      await this._createHlOrder(rebalanceRoute, cloid);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
+    }
+  }
+
+  private async _createHlOrder(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {
     const tokenMeta = this._getTokenMeta(rebalanceRoute.sourceToken);
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
@@ -254,10 +302,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
     // is sufficient, then place order.
 
-    const cloid = await this._redisGetNextCloid();
     console.log(`Placing order with cloid: ${cloid}`);
     await this._placeLimitOrder(cloid, rebalanceRoute, latestPrice);
-    await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
   }
 
   private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
@@ -301,115 +347,58 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //   or delete it if HyperEVM is the final destination chain. We can determine what to do based on the saved
     //   RebalanceRoute information in Redis.
 
-    // Evaluate all statuses from "latest stage" to earliest:
-    // i.e. PENDING_BRIDGE_TO_DESTINATION_CHAIN -> PENDING_WITHDRAWAL_FROM_HYPERCORE -> PENDING_SWAP -> PENDING_DEPOSIT_TO_HYPERCORE -> PENDING_BRIDGE_TO_HYPEREVM
-
     // Figure out what time we last received an update so we can get all updates since then:
     const lastPollEnd = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
-    const provider = await getProvider(CHAIN_IDs.HYPEREVM);
-
-    // Delete any pending bridge to destination chain orders that are finalized. There are no more statuses to update to.
-    // This means that getPendingRebalances() can stop adding a virtual credit to the destination chain for these orders.
-    const pendingBridgeToDestinationChain = await this._redisGetPendingBridgeToDestinationChain();
-    console.log("Orders pending bridge to destination chain", pendingBridgeToDestinationChain);
-    for (const cloid of pendingBridgeToDestinationChain) {
-      const orderDetails = await this._redisGetOrderDetails(cloid);
-      await this._fetchOftBridgeEvents(CHAIN_IDs.HYPEREVM, orderDetails.destinationChain);
-
-      // Are there any unfinalized OFT GUID's? If so, then subtract the cloid's expected transfer amount from the pending
-      // finalized amount. If all bridge initiated events are finalized AND one matches the expected amount to transfer
-      // then we can consider this cloid as finalized and delete it.
-
-      // const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
-      // if (!matchingFill) {
-      //   throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
-      // }
-      // const destinationTokenMeta = this._getTokenMeta(orderDetails.destinationToken);
-      // const expectedAmountToReceive = ConvertDecimals(
-      //   destinationTokenMeta.coreDecimals,
-      //   destinationTokenMeta.evmDecimals
-      // )(matchingFill.amountToWithdraw);
-
-      // TODO: How to identify finalized events when amount sent is identical? Do we store a mapping of initialized OFT
-      // GUIDS and cloids?
-    }
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
     console.log("Open orders", openOrders);
 
-    const hyperevmTokens = Object.keys(this.tokenMeta);
-    const transfers: { [token: string]: Log[] } = {};
-    const hyperEvmEventSearchConfig = await this._getEventSearchConfig(CHAIN_IDs.HYPEREVM);
-    await mapAsync(hyperevmTokens, async (token) => {
-      const evmAddress = TOKEN_SYMBOLS_MAP[token].addresses[CHAIN_IDs.HYPEREVM];
-      const tokenContract = new Contract(evmAddress, ERC20.abi, provider);
-      const events = await paginatedEventQuery(
-        tokenContract,
-        tokenContract.filters.Transfer(
-          // USDC is a special case where the transfer comes from the Core deposit wallet
-          // but for other tokens it comes from the EVM system address.
-          token === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : this.tokenMeta[token].evmSystemAddress.toNative(),
-          this.baseSignerAddress.toNative()
-        ),
-        hyperEvmEventSearchConfig
-      );
-      console.log(
-        `Found ${events.length} transfers representing withdrawals from Hypercore to user for token ${token}`
-      );
-      transfers[token] = events;
-    });
-
-    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
-    for (const cloid of pendingWithdrawals) {
-      // Check if transfer landed on EVM from EvmSystem address to user, and if so, then either delete the order
-      // because it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
-      // a bridge to destination chain.
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
+    console.log("Orders pending bridge to HyperEVM", pendingBridgeToHyperevm);
+    for (const cloid of pendingBridgeToHyperevm) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      console.log(`Final destination for order with cloid ${cloid}!`, orderDetails.destinationChain);
-
-      const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
-      if (!matchingFill) {
-        throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
-      }
-
-      const destinationTokenMeta = this._getTokenMeta(orderDetails.destinationToken);
-      const expectedAmountToReceive = ConvertDecimals(
-        destinationTokenMeta.coreDecimals,
-        destinationTokenMeta.evmDecimals
-      )(matchingFill.amountToWithdraw);
-      console.log(`Trying to find ERC20 transfer matching withdrawal for amount ${expectedAmountToReceive.toString()}`);
-      const transferMatchingWithdrawal = transfers[orderDetails.destinationToken].find(
-        (transfer) => expectedAmountToReceive.toString() === transfer.args.value.toString()
+      // Check if we have enough balance on HyperEVM to progress the order status:
+      const hyperevmBalance = await this._getBalance(
+        CHAIN_IDs.HYPEREVM,
+        TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[CHAIN_IDs.HYPEREVM]
       );
-      if (transferMatchingWithdrawal) {
-        console.log(`Found ERC20 transfer matching withdrawal for cloid ${cloid}!`, transferMatchingWithdrawal);
-        if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
-          console.log(`Deleting order with cloid ${cloid} because it has completed!`);
-          await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
-        } else {
-          console.log(`Sending order with cloid ${cloid} to final destination chain ${orderDetails.destinationChain}!`);
-          await this._bridgeToDestinationChain(orderDetails, expectedAmountToReceive);
-          await this._redisUpdateOrderStatus(
-            cloid,
-            STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE,
-            STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN
-          );
-        }
+      const amountConverter = this._getAmountConverter(
+        orderDetails.sourceChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.sourceToken].addresses[orderDetails.sourceChain]),
+        CHAIN_IDs.HYPEREVM,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[CHAIN_IDs.HYPEREVM])
+      );
+      const expectedAmountOnHyperevm = amountConverter(orderDetails.maxAmountToTransfer);
+      if (hyperevmBalance.lt(expectedAmountOnHyperevm)) {
+        console.log(
+          `Not enough balance on HyperEVM to progress the order ${cloid} with status PENDING_BRIDGE_TO_HYPEREVM: ${expectedAmountOnHyperevm.toString()}`
+        );
+        return;
       } else {
-        console.log(`No ERC20 transfer matching withdrawal for cloid ${cloid}!`);
+        console.log("We have balance on HyperEVM to bridge into Hypercore, initiating a deposit now:");
+        await this._depositToHypercore(orderDetails.sourceToken, expectedAmountOnHyperevm);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_BRIDGE_TO_HYPEREVM,
+          STATUS.PENDING_DEPOSIT_TO_HYPERCORE
+        );
       }
 
-      // TODO: Fetch all transfers on HyperEVM from system address to user, and if it exists update the order status:
-      // example https://hyperevmscan.io/tx/0x13963f183a1356851617435f836503b58ce53dd93afae22412efee2b40985446
-      // if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
-      // For USDC: transfers on HyperEVM come from Core deposit wallet: https://hyperevmscan.io/tx/0xadf4b1d14d92dedc6417b9c20c1a1dab0b2ff8a73cfffb77d5c0a67f22258dc2
-      // For other ERC20's it should come from system address
-      // }
+      // Otherwise, update the order status to pending bridge to Hypercore.
     }
 
+    const pendingBridgeToHypercore = await this._redisGetPendingDepositsToHypercore();
+    console.log("Orders pending bridge to Hypercore", pendingBridgeToHypercore);
+    // for (const cloid of pendingBridgeToHypercore) {
+    //   const orderDetails = await this._redisGetOrderDetails(cloid);
+    //   // Check if we have enough balance to place a limit order, if so, then create an order and update its status
+    //   // to PENDING_SWAP
+    //   await this._createHlOrder(orderDetails, cloid);
+    // }
+
     const pendingSwaps = await this._redisGetPendingSwaps();
+    console.log("Orders pending swap", pendingSwaps);
     for (const cloid of pendingSwaps) {
       const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
       const matchingOpenOrder = openOrders.find((order) => order.cloid === cloid);
@@ -448,6 +437,61 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       // If it has a user fill, then update its order status to next state:
       // If it doesn't have a user fill AND doesn't have an open order, then replace its order.
     }
+
+    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
+    console.log("Orders pending withdrawal from Hypercore", pendingWithdrawals);
+    for (const cloid of pendingWithdrawals) {
+      // Check if we have enough balance on HyperEVM to cover the expected withdrawal amount, and if so, then either delete the order
+      // because it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
+      // a bridge to destination chain.
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      console.log(`Final destination for order with cloid ${cloid}!`, orderDetails.destinationChain);
+
+      const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
+      if (!matchingFill) {
+        throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
+      }
+
+      const destinationTokenMeta = this._getTokenMeta(orderDetails.destinationToken);
+      const expectedAmountToReceive = ConvertDecimals(
+        destinationTokenMeta.coreDecimals,
+        destinationTokenMeta.evmDecimals
+      )(matchingFill.amountToWithdraw);
+      console.log(`Trying to find ERC20 transfer matching withdrawal for amount ${expectedAmountToReceive.toString()}`);
+      const hyperevmBalance = await this._getBalance(
+        CHAIN_IDs.HYPEREVM,
+        TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[CHAIN_IDs.HYPEREVM]
+      );
+      if (hyperevmBalance.lt(expectedAmountToReceive)) {
+        console.log(
+          `Not enough balance on HyperEVM to cover the expected withdrawal amount: ${expectedAmountToReceive.toString()}`
+        );
+        return;
+      }
+      if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
+        console.log(`Deleting order details from Redis with cloid ${cloid} because it has completed!`);
+      } else {
+        console.log(
+          `Sending order with cloid ${cloid} to final destination chain ${orderDetails.destinationChain}, and deleting order details from Redis!`
+        );
+        await this._bridgeToChain(
+          orderDetails.destinationToken,
+          CHAIN_IDs.HYPEREVM,
+          orderDetails.destinationChain,
+          expectedAmountToReceive
+        );
+      }
+      // We no longer need this order information, so we can delete it:
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+    }
+  }
+
+  private async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
+    const provider = await getProvider(chainId);
+    const connectedSigner = this.baseSigner.connect(provider);
+    const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
+    const balance = await erc20.balanceOf(this.baseSignerAddress.toNative());
+    return BigNumber.from(balance.toString());
   }
 
   private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
@@ -647,33 +691,138 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     );
   }
 
-  private async _bridgeToDestinationChain(
-    orderDetails: RebalanceRoute,
-    expectedAmountToReceive: BigNumber
-  ): Promise<void> {
-    const { destinationChain } = orderDetails;
-    if (destinationChain === CHAIN_IDs.HYPEREVM) {
-      throw new Error("Cannot bridge from HyperEVM to HyperEVM");
-    } else {
-      const tokenMeta = this._getTokenMeta(orderDetails.destinationToken);
-      switch (tokenMeta.bridgeName) {
-        case "OFT":
-          await this._sendOftBridge(destinationChain, expectedAmountToReceive);
-          break;
-        case "CCTP":
-          await this._sendCctpBridge(destinationChain, expectedAmountToReceive);
-          break;
-        default:
-          // This should be impossible because `bridgeName` is type BRIDGE_NAME.
-          throw new Error(`Should never happen: Unsupported bridge name: ${tokenMeta.bridgeName}`);
+  private async _depositToHypercore(sourceToken: string, amountToDepositEvmPrecision: BigNumber): Promise<void> {
+    const { HYPEREVM } = CHAIN_IDs;
+    const hyperevmToken = TOKEN_SYMBOLS_MAP[sourceToken].addresses[HYPEREVM];
+    const provider = await getProvider(HYPEREVM);
+    const connectedSigner = this.baseSigner.connect(provider);
+    const amountReadable = fromWei(amountToDepositEvmPrecision, TOKEN_SYMBOLS_MAP[sourceToken]?.decimals);
+    if (sourceToken === "USDC") {
+      const usdc = new Contract(hyperevmToken, ERC20.abi, connectedSigner);
+      const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
+      if (allowance.lt(amountToDepositEvmPrecision)) {
+        throw new Error("Insufficient allowance to bridge USDC into Hypercore via CoreDepositWallet.deposit()");
       }
+      const coreDepositWallet = new ethers.Contract(
+        USDC_CORE_DEPOSIT_WALLET_ADDRESS,
+        ["function deposit(uint256 amount, uint32 destinationDex)"],
+        connectedSigner
+      );
+      const transaction = {
+        contract: coreDepositWallet,
+        chainId: HYPEREVM,
+        method: "deposit",
+        unpermissioned: false,
+        nonMulticall: true,
+        args: [
+          amountToDepositEvmPrecision,
+          bnUint32Max, // type(uint32).max, used to deposit into spot account
+        ],
+        message: `Deposited USDC into Hypercore via CoreDepositWallet from ${getNetworkName(HYPEREVM)}`,
+        mrkdwn: `Deposited ${amountReadable} USDC into Hypercore via CoreDepositWallet from ${getNetworkName(
+          HYPEREVM
+        )}`,
+      };
+      this.multicallerClient.enqueueTransaction(transaction);
+      await this.multicallerClient.executeTxnQueue(HYPEREVM);
+    } else {
+      throw new Error(
+        `Unimplemented _depositToHypercore() for token ${hyperevmToken} and amount ${amountToDepositEvmPrecision.toString()}`
+      );
     }
   }
 
-  private async _sendCctpBridge(destinationChain: number, amountToBridge: BigNumber): Promise<void> {
-    // Send a bridge from HyperEVM to destination chain via CCTP.
+  private async _bridgeToChain(
+    token: string,
+    originChain: number,
+    destinationChain: number,
+    expectedAmountToTransfer: BigNumber
+  ): Promise<void> {
+    if (destinationChain === originChain) {
+      throw new Error("origin and destination chain are the same");
+    }
+
+    const balance = await this._getBalance(originChain, TOKEN_SYMBOLS_MAP[token].addresses[originChain]);
+    if (balance.lt(expectedAmountToTransfer)) {
+      throw new Error(
+        `Not enough balance on ${originChain} to bridge ${token} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
+      );
+    }
+
+    console.log(
+      `_bridgeToChain: bridging ${token} from ${originChain} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
+    );
+
+    const tokenMeta = this._getTokenMeta(token);
+    switch (tokenMeta.bridgeName) {
+      case "OFT":
+        await this._sendOftBridge(originChain, destinationChain, expectedAmountToTransfer);
+        break;
+      case "CCTP":
+        await this._sendCctpBridge(originChain, destinationChain, expectedAmountToTransfer);
+        break;
+      default:
+        // This should be impossible because `bridgeName` is type BRIDGE_NAME.
+        throw new Error(`Should never happen: Unsupported bridge name: ${tokenMeta.bridgeName}`);
+    }
+  }
+
+  private async _sendCctpBridge(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<void> {
     // TODO: In the future, this could re-use a CCTPAdapter function.
-    throw new Error(`UNIMPLEMENTED: Sending CCTP bridge from HyperEVM to ${destinationChain} for ${amountToBridge}`);
+    const cctpMessenger = await this._getCctpMessenger(originChain);
+    const originUsdcToken = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[originChain]);
+    // TODO: Don't always use fast mode, we should switch based on the expected fee and transfer size
+    // incase a portion of the fee is fixed. The expected fee should be 1bp.
+    const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
+      originUsdcToken,
+      originChain,
+      destinationChain,
+      amountToBridge
+    );
+    const amountToSend = amountToBridge.sub(maxFee);
+    if (amountToSend.gt(CCTP_MAX_SEND_AMOUNT)) {
+      // TODO: Handle this case by sending multiple transactions.
+      throw new Error(
+        `Amount to send ${amountToSend.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
+      );
+    }
+    const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDC.decimals);
+    const transaction = {
+      contract: cctpMessenger,
+      chainId: originChain,
+      method: "depositForBurn",
+      unpermissioned: false,
+      nonMulticall: true,
+      args: [
+        amountToSend,
+        getCctpDomainForChainId(destinationChain),
+        this.baseSignerAddress.toBytes32(),
+        originUsdcToken.toNative(),
+        ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+        maxFee,
+        finalityThreshold,
+      ],
+      message: `🎰 Bridged USDC via CCTP from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)}`,
+      mrkdwn: `Bridged ${formatter(amountToBridge.toString())} USDC from ${getNetworkName(
+        originChain
+      )} to ${getNetworkName(destinationChain)} via CCTP`,
+    };
+    this.multicallerClient.enqueueTransaction(transaction);
+    await this.multicallerClient.executeTxnQueue(originChain);
+  }
+
+  private async _getCctpMessenger(chainId: number): Promise<Contract> {
+    const cctpMessengerAddress = getCctpV2TokenMessenger(chainId);
+    const originProvider = await getProvider(chainId);
+    return new Contract(
+      cctpMessengerAddress.address,
+      cctpMessengerAddress.abi,
+      this.baseSigner.connect(originProvider)
+    );
   }
 
   private async _getOftMessenger(chainId: number): Promise<Contract> {
@@ -685,16 +834,13 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
   }
 
-  private async _sendOftBridge(destinationChain: number, amountToBridge: BigNumber): Promise<void> {
-    // Send a bridge from HyperEVM to destination chain via OFT.
-    const { HYPEREVM: originChain } = CHAIN_IDs;
+  private async _sendOftBridge(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<void> {
     // TODO: In the future, this could re-use a OFTAdapter function.
     const oftMessenger = await this._getOftMessenger(originChain);
-    console.log(
-      `Sending OFT bridge from HyperEVM to ${destinationChain} for ${amountToBridge.toString()} using Messenger @ ${
-        oftMessenger.address
-      }`
-    );
     const sharedDecimals = await oftMessenger.sharedDecimals();
 
     const roundedAmount = roundAmountToSend(amountToBridge, TOKEN_SYMBOLS_MAP.USDT.decimals, sharedDecimals);
@@ -728,26 +874,30 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       contract: oftMessenger,
       chainId: originChain,
       method: "send",
-      unpermissionsed: false,
+      unpermissioned: false,
       nonMulticall: true,
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
-      message: `🎰 Withdrew USDT0 from HyperEVM to ${getNetworkName(destinationChain)} via OFT`,
-      mrkdwn: `Withdrew ${formatter(amountToBridge.toString())} USDT0 from HyperEVM to ${getNetworkName(
-        destinationChain
-      )} via OFT`,
+      message: `🎰 Withdrew USDT0 from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)} via OFT`,
+      mrkdwn: `Withdrew ${formatter(amountToBridge.toString())} USDT0 from ${getNetworkName(
+        originChain
+      )} to ${getNetworkName(destinationChain)} via OFT`,
     };
 
     this.multicallerClient.enqueueTransaction(withdrawTxn);
     await this.multicallerClient.executeTxnQueue(originChain);
   }
 
-  private async _fetchOftBridgeEvents(originChain: number, destinationChain: number) {
+  private async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
     const originMessenger = await this._getOftMessenger(originChain);
     const destinationMessenger = await this._getOftMessenger(destinationChain);
     const originEventSearchConfig = await this._getEventSearchConfig(originChain);
     const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
-    console.log(destinationEventSearchConfig, destinationMessenger.address);
+    console.log(
+      `Searching for OFT bridge events using event search configs: (chain: ${originChain}: ${JSON.stringify(
+        originEventSearchConfig
+      )}) and (chain: ${destinationChain}: ${JSON.stringify(destinationEventSearchConfig)})`
+    );
     // Fetch OFT events to determine OFT send statuses.
     const [sent, received] = await Promise.all([
       paginatedEventQuery(
@@ -769,28 +919,159 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
     const bridgeInitiationEvents = sent.filter((event) => event.args.dstEid === dstEid);
     const bridgeFinalizationEvents = received.filter((event) => event.args.srcEid === srcEid);
+    console.log(`Found ${bridgeInitiationEvents.length} OFT bridge initialization events`);
+    console.log(`Found ${bridgeFinalizationEvents.length} OFT bridge finalization events`);
     const finalizedGuids = new Set<string>(bridgeFinalizationEvents.map((event) => event.args.guid));
-    const unfinalizedGuids = new Set<string>();
 
-    console.log("bridgeInitiationEvents", bridgeInitiationEvents);
-    console.log("bridgeFinalizationEvents", bridgeFinalizationEvents);
-
-    // let outstandingWithdrawalAmount = bnZero;
-    for (const events of bridgeInitiationEvents) {
-      if (!finalizedGuids.has(events.args.guid)) {
-        unfinalizedGuids.add(events.args.guid);
-        // Convert `amountReceivedLD` from event from LD (local decimals of the sending chain, which is the L2) into the
-        // decimals of receiving chain (mainnet) to aggregate these amounts correctly upstream
-        // outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(
-        //   this.l2ToL1AmountConverter(events.args.amountReceivedLD)
-        // );
+    // We want to make sure that amounts are denominated in destination chain decimals, in case origin and destination
+    // tokens have different decimal precision:
+    const amountConverter = this._getAmountConverter(
+      originChain,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[originChain]),
+      destinationChain,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[destinationChain])
+    );
+    let outstandingWithdrawalAmount = bnZero;
+    for (const event of bridgeInitiationEvents) {
+      if (!finalizedGuids.has(event.args.guid)) {
+        console.log(
+          `Found unfinalized OFT BridgeInitiated event for guid ${
+            event.args.guid
+          } with amount ${event.args.amountReceivedLD.toString()}`,
+          event
+        );
+        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(amountConverter(event.args.amountReceivedLD));
+      } else {
+        console.log(`OFT bridge event with guid ${event.args.guid} is finalized!`, event);
       }
     }
-    console.log("unfinalizedGuids", unfinalizedGuids.values());
+    return outstandingWithdrawalAmount;
   }
 
-  getPendingRebalances(): Promise<RebalanceRoute[]> {
-    return Promise.resolve([]);
+  private async _getUnfinalizedCctpBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
+    const originMessenger = await this._getCctpMessenger(originChain);
+    const destinationMessenger = await this._getCctpMessenger(destinationChain);
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    console.log(
+      `Searching for CCTP bridge events using event search configs: (chain: ${originChain}: ${JSON.stringify(
+        originEventSearchConfig
+      )}) and (chain: ${destinationChain}: ${JSON.stringify(destinationEventSearchConfig)})`
+    );
+    // Fetch CCTP events to determine CCTP send statuses.
+    const [sent, received] = await Promise.all([
+      paginatedEventQuery(
+        originMessenger,
+        originMessenger.filters.DepositForBurn(null, undefined, this.baseSignerAddress.toNative()),
+        originEventSearchConfig
+      ),
+      // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
+      // for all use cases of this adapter.
+      paginatedEventQuery(
+        destinationMessenger,
+        destinationMessenger.filters.MintAndWithdraw(this.baseSignerAddress.toNative()),
+        destinationEventSearchConfig
+      ),
+    ]);
+    const counted = new Set<number>();
+    const withdrawalAmount = sent.reduce((totalAmount, { args: sendArgs }) => {
+      const matchingFinalizedEvent = received.find(({ args: receiveArgs }, idx) => {
+        // Protect against double-counting the same l1 withdrawal events.
+        const receivedAmount = toBN(receiveArgs.amount.toString()).add(toBN(receiveArgs.feeCollected.toString()));
+        if (counted.has(idx) || !receivedAmount.eq(toBN(sendArgs.amount.toString()))) {
+          return false;
+        }
+
+        counted.add(idx);
+        return true;
+      });
+      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(sendArgs.amount);
+    }, bnZero);
+    return withdrawalAmount;
+  }
+
+  async getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }> {
+    const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
+    console.group(
+      `getPendingRebalances for ${sourceChain} and ${sourceToken} to ${destinationChain} and ${destinationToken}`
+    );
+    const pendingRebalances: { [chainId: number]: BigNumber } = {};
+    // This function returns the total virtual balance of token that is in flight to chain.
+    // The value should be:
+    // + pending bridges to destination chain
+    // + pending bridges to hyper EVM
+    // + all statuses for orders that are currently on Hypercore (including depositing into and withdrawing from)
+
+    // For pending bridges to destination chain and to HyperEVM, query CCTP + OFT balances. (We might be able to
+    // re-use CCTP/OFT adapter logic here.)
+    if (destinationChain !== CHAIN_IDs.HYPEREVM) {
+      let _pendingRebalanceAmount = bnZero;
+      if (destinationToken === "USDT") {
+        _pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(CHAIN_IDs.HYPEREVM, destinationChain);
+        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM`);
+      } else if (destinationToken === "USDC") {
+        _pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(CHAIN_IDs.HYPEREVM, destinationChain);
+        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM`);
+      } else {
+        throw new Error(
+          `Unimplemented token ${destinationToken} logical branch in getPendingRebalances() for bridges from HyperEVM`
+        );
+      }
+      pendingRebalances[destinationChain] = _pendingRebalanceAmount;
+    }
+
+    // Now, add bridges into HyperEVM
+    if (sourceChain !== CHAIN_IDs.HYPEREVM) {
+      if (sourceToken === "USDC") {
+        const _pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, CHAIN_IDs.HYPEREVM);
+        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending CCTP rebalances into HyperEVM`);
+        pendingRebalances[CHAIN_IDs.HYPEREVM] = _pendingRebalanceAmount;
+      } else {
+        throw new Error(
+          `Unimplemented token ${sourceToken} logical branch in getPendingRebalances() for bridges into HyperEVM`
+        );
+      }
+    }
+
+    // TODO: For orders with status: { PENDING_WITHDRAWAL_FROM_HYPERCORE }: How to handle?
+
+    // For orders with statuses: { PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE },
+    const pendingSwaps = await this._redisGetPendingSwaps();
+    const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
+    // const pendingDepositsToHypercore = await this._redisGetPendingDeposits();
+    console.log(`- Pending swap cloids: ${pendingSwaps.join(", ")}`);
+    console.log(`- Pending withdrawal from Hypercore cloids: ${pendingWithdrawalsFromHypercore.join(", ")}`);
+    const pendingCloids = new Set<string>(pendingSwaps.concat(pendingWithdrawalsFromHypercore)).values();
+    for (const cloid of pendingCloids) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+
+      // Convert maxAmountToTransfer to destination chain precision:
+      const amountConverter = this._getAmountConverter(
+        orderDetails.sourceChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.sourceToken].addresses[orderDetails.sourceChain]),
+        orderDetails.destinationChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[orderDetails.destinationChain])
+      );
+      const convertedAmount = amountConverter(orderDetails.maxAmountToTransfer);
+      console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid} with status`);
+
+      const existingPendingRebalanceAmountDestinationChain = pendingRebalances[destinationChain] ?? bnZero;
+      pendingRebalances[destinationChain] = existingPendingRebalanceAmountDestinationChain.add(convertedAmount);
+    }
+    console.log("- Total pending rebalance amounts", pendingRebalances);
+    console.groupEnd();
+    return pendingRebalances;
+  }
+
+  private _getAmountConverter(
+    originChain: number,
+    originToken: Address,
+    destinationChain: number,
+    destinationToken: Address
+  ): ReturnType<typeof ConvertDecimals> {
+    const originTokenInfo = getTokenInfo(originToken, originChain);
+    const destinationTokenInfo = getTokenInfo(destinationToken, destinationChain);
+    return ConvertDecimals(originTokenInfo.decimals, destinationTokenInfo.decimals);
   }
 
   /** ****************************************************
@@ -805,14 +1086,14 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
         orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM;
         break;
+      case STATUS.PENDING_DEPOSIT_TO_HYPERCORE:
+        orderStatusKey = this.REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE;
+        break;
       case STATUS.PENDING_SWAP:
         orderStatusKey = this.REDIS_KEY_PENDING_SWAP;
         break;
       case STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE:
         orderStatusKey = this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE;
-        break;
-      case STATUS.PENDING_BRIDGE_TO_DESTINATION_CHAIN:
-        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN;
         break;
       default:
         throw new Error(`Invalid status: ${status}`);
@@ -834,7 +1115,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     console.log(`_redisCreateOrder: Saving order to status set: ${orderStatusKey}`);
     console.log(`_redisCreateOrder: Saving new order details under key ${orderDetailsKey}`, rebalanceRoute);
 
-    // Create a new order in Redis.
+    // Create a new order in Redis. We use infinite expiry because we will delete this order after its no longer
+    // used.
     const results = await Promise.all([
       this.redisCache.sAdd(orderStatusKey, cloid.toString()),
       this.redisCache.set(
@@ -874,13 +1156,18 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return sMembers;
   }
 
-  async _redisGetPendingWithdrawals(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE);
+  async _redisGetPendingBridgeToHyperevm(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM);
     return sMembers;
   }
 
-  async _redisGetPendingBridgeToDestinationChain(): Promise<string[]> {
-    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_DESTINATION_CHAIN);
+  async _redisGetPendingDepositsToHypercore(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE);
+    return sMembers;
+  }
+
+  async _redisGetPendingWithdrawals(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE);
     return sMembers;
   }
 
