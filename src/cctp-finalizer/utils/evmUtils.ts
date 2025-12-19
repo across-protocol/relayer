@@ -7,6 +7,8 @@ import {
   CHAIN_IDs,
   depositToHypercore,
   decodeCctpV2HookData,
+  TOKEN_SYMBOLS_MAP,
+  CCTPHookData,
 } from "../../utils";
 import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
@@ -36,13 +38,19 @@ export async function checkIfAlreadyProcessedEvm(
   return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
 }
 
+export function shouldCreateHyperCoreAccount(hookData?: CCTPHookData): boolean {
+  const isDestinationUsdc = hookData?.finalToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM];
+  const isSponsoredFlow = hookData?.maxBpsToSponsor > 0;
+  return isSponsoredFlow || isDestinationUsdc;
+}
+
 export async function createHyperCoreAccountIfNotExists(
   message: string,
   signer: ethers.Wallet,
   logger: winston.Logger
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
-  if (!hookData || hookData.maxBpsToSponsor === 0) {
+  if (shouldCreateHyperCoreAccount(hookData)) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Skipping deposit to Hypercore because its not sponsored flow",
