@@ -50,7 +50,7 @@ export async function createHyperCoreAccountIfNotExists(
   logger: winston.Logger
 ): Promise<void> {
   const hookData = decodeCctpV2HookData(message);
-  if (shouldCreateHyperCoreAccount(hookData)) {
+  if (!shouldCreateHyperCoreAccount(hookData)) {
     logger.debug({
       at: "evmUtils#createHyperCoreAccountIfNotExists",
       message: "Skipping deposit to Hypercore because its not sponsored flow",
