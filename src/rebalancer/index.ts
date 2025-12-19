@@ -16,7 +16,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
     {
-      sourceChain: 42161,
+      sourceChain: 999,
       destinationChain: 999,
       sourceToken: "USDT",
       destinationToken: "USDC",
