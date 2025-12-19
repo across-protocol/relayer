@@ -118,15 +118,15 @@ export class EventManager {
       return this.quorum === 1;
     }
 
-    if (!storedEvent.providers.includes(provider)) {
-      // Event has been seen before, but not from this provider. Store it.
-      storedEvent.providers.push(provider);
-
-      // If the event just hit quorum, notify the caller.
-      return storedEvent.providers.length === this.quorum;
+    if (storedEvent.providers.includes(provider)) {
+      return false;
     }
 
-    return false;
+    // Event has been seen before, but not from this provider. Store it.
+    storedEvent.providers.push(provider);
+
+    // If the event just hit quorum, notify the caller.
+    return storedEvent.providers.length === this.quorum;
   }
 
   /**
