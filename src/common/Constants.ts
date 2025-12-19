@@ -344,7 +344,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH", "ezETH"],
   [CHAIN_IDs.BSC]: ["CAKE", "WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
-  [CHAIN_IDs.INK]: ["ETH", "WETH"],
+  [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
@@ -371,7 +371,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
-  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "ezETH"],
+  [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT", "ezETH"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD", "POOL"],
   [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
@@ -496,6 +496,8 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.INK]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.LENS]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
@@ -545,6 +547,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
   },
@@ -658,6 +661,11 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.UNICHAIN]: {
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20BridgeL2,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+  },
+  [CHAIN_IDs.INK]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.PLASMA]: {
@@ -1021,7 +1029,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
-      [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")], // @TODO: Check with Monad team if this is correct
+      [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")],
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
       [CHAIN_IDs.INK, EvmAddress.from("0x1cB6De532588fCA4a21B7209DE7C456AF8434A65")],
