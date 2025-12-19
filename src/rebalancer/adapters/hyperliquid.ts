@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { MultiCallerClient } from "../../clients";
+import { AugmentedTransaction, MultiCallerClient, TransactionClient } from "../../clients";
 import {
   Address,
   BigNumber,
@@ -46,14 +46,6 @@ import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 
-// TODO: Clear out local database and order these from earliest stage to latest stage.
-// enum STATUS {
-//   PENDING_BRIDGE_TO_HYPEREVM,
-//   PENDING_DEPOSIT_TO_HYPERCORE,
-//   PENDING_SWAP,
-//   PENDING_WITHDRAWAL_FROM_HYPERCORE,
-//   PENDING_BRIDGE_TO_DESTINATION_CHAIN,
-// }
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
   PENDING_SWAP,
@@ -68,6 +60,8 @@ interface SPOT_MARKET_META {
   baseAssetName: string;
   quoteAssetName: string;
   minimumOrderSize: number;
+  szDecimals: number;
+  pxDecimals: number;
   isBuy: boolean;
 }
 
@@ -78,9 +72,6 @@ interface TOKEN_META {
   coreDecimals: number;
   bridgeName: BRIDGE_NAME;
 }
-
-// Maximum number of decimal places for a price in a Hyperliquid order.
-const MAX_DECIMAL_PLACES_HL_ORDER_PX = 5;
 
 // HyperEVM address of CoreDepositWallet used to facilitates deposits and withdrawals with Hypercore.
 const USDC_CORE_DEPOSIT_WALLET_ADDRESS = "0x6B9E773128f453f5c2C60935Ee2DE2CBc5390A24";
@@ -122,6 +113,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
       minimumOrderSize: 10,
+      szDecimals: 2,
+      pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: false,
     },
     "USDC-USDT": {
@@ -131,6 +124,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
       minimumOrderSize: 10,
+      szDecimals: 2,
+      pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: true,
     },
   };
@@ -155,6 +150,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private availableRoutes: RebalanceRoute[];
 
   private multicallerClient: MultiCallerClient;
+  private transactionClient: TransactionClient;
 
   private providers: { [chainId: number]: Provider };
 
@@ -170,6 +166,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     this.redisCache = (await getRedisCache()) as RedisCache;
     this.availableRoutes = _availableRoutes;
     this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+    this.transactionClient = new TransactionClient(this.logger);
 
     for (const route of this.availableRoutes) {
       // Initialize a provider for the source chain and check if we have spot market data
@@ -245,6 +242,9 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     //     with status PENDING_BRIDGE_TO_HYPEREVM. Save the transfer under BRIDGE_TO_HYPEREVM in order to correctly
     //     mark the order status.
     const cloid = await this._redisGetNextCloid();
+
+    // When initializing a rebalance, the order status should be set either to PENDING_BRIDGE_TO_HYPEREVM or PENDING_DEPOSIT_TO_HYPERCORE
+    // depending on the source chain.
     if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
       // Bridge this token into HyperEVM first
       console.log(
@@ -261,13 +261,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       );
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute);
     } else {
-      // TODO: Need to actually submit an HL deposit here instead of immediately placing an order.
-      console.log(
-        `Creating new order ${cloid} by submitting LO on HyperEVM for ${rebalanceRoute.sourceToken} -> ${rebalanceRoute.destinationToken}`
-      );
+      console.log(`Creating new order ${cloid} by depositing ${rebalanceRoute.sourceToken} from HyperEVM to HyperCore`);
 
-      await this._createHlOrder(rebalanceRoute, cloid);
-      await this._redisCreateOrder(cloid, STATUS.PENDING_SWAP, rebalanceRoute);
+      await this._depositToHypercore(rebalanceRoute.sourceToken, rebalanceRoute.maxAmountToTransfer);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, rebalanceRoute);
     }
   }
 
@@ -302,6 +299,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       );
       return;
     }
+    console.log(
+      `Available balance ${balanceInputToken.total} is sufficient to place order with input size ${fromWei(
+        rebalanceRoute.maxAmountToTransfer,
+        tokenMeta.evmDecimals
+      ).toString()} ${rebalanceRoute.sourceToken}`
+    );
 
     // Fetch latest price for the market we're going to place an order for:
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
@@ -392,7 +395,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         console.log(
           `Not enough balance on HyperEVM to progress the order ${cloid} with status PENDING_BRIDGE_TO_HYPEREVM: ${expectedAmountOnHyperevm.toString()}`
         );
-        return;
       } else {
         console.log("We have balance on HyperEVM to bridge into Hypercore, initiating a deposit now:");
         await this._depositToHypercore(orderDetails.sourceToken, expectedAmountOnHyperevm);
@@ -407,13 +409,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
 
     const pendingBridgeToHypercore = await this._redisGetPendingDepositsToHypercore();
-    console.log("Orders pending bridge to Hypercore", pendingBridgeToHypercore);
-    // for (const cloid of pendingBridgeToHypercore) {
-    //   const orderDetails = await this._redisGetOrderDetails(cloid);
-    //   // Check if we have enough balance to place a limit order, if so, then create an order and update its status
-    //   // to PENDING_SWAP
-    //   await this._createHlOrder(orderDetails, cloid);
-    // }
+    console.log("Orders pending deposit to Hypercore", pendingBridgeToHypercore);
+    for (const cloid of pendingBridgeToHypercore) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      await this._createHlOrder(orderDetails, cloid);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
+    }
 
     const pendingSwaps = await this._redisGetPendingSwaps();
     console.log("Orders pending swap", pendingSwaps);
@@ -475,7 +476,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         destinationTokenMeta.coreDecimals,
         destinationTokenMeta.evmDecimals
       )(matchingFill.amountToWithdraw);
-      console.log(`Trying to find ERC20 transfer matching withdrawal for amount ${expectedAmountToReceive.toString()}`);
       const hyperevmBalance = await this._getBalance(
         CHAIN_IDs.HYPEREVM,
         TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[CHAIN_IDs.HYPEREVM]
@@ -537,6 +537,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
     const existingOrder = await this._redisGetOrderDetails(cloid);
     const destinationTokenMeta = this._getTokenMeta(existingOrder.destinationToken);
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(existingOrder.sourceToken, existingOrder.destinationToken);
 
     // If fill was a buy, then received amount is denominated in base asset, same as sz.
     // If fill was a sell, then received amount is denominated in quote asset, so receivedAmount = px * sz.
@@ -545,8 +546,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals);
     } else {
       amountToWithdraw = toBNWei(matchingFill.sz, destinationTokenMeta.coreDecimals)
-        .mul(toBNWei(matchingFill.px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
-        .div(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX);
+        .mul(toBNWei(matchingFill.px, spotMarketMeta.pxDecimals))
+        .div(10 ** spotMarketMeta.pxDecimals);
     }
 
     return { details: matchingFill, amountToWithdraw };
@@ -566,19 +567,27 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       throw new Error(`No token data found for spot market: ${spotMarketMeta.index}`);
     }
 
+    console.log("_getLatestPrice: latest price details from API:", tokenData);
+
     // Add 2bps to the mid price to increase probability of execution.
     // If direction is a Buy, we'll increase the price otherwise we'll decrease.
+    // @dev: We add one to the toWei/fromWei precision because the midPx can have 1 more decimal than we are allowed
+    // to use for pxDecimals, probably because midPx is the average of the best bid and ask px's.
     const midPricePlus = isBuy
-      ? toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(10002).div(10000)
-      : toBNWei(tokenData.midPx, MAX_DECIMAL_PLACES_HL_ORDER_PX).mul(9998).div(10000);
-    // TODO: Use markPx or midPx? Add a discount/premium to increase prob. of execution?
+      ? toBNWei(tokenData.midPx, spotMarketMeta.pxDecimals + 1)
+          .mul(10002)
+          .div(10000)
+      : toBNWei(tokenData.midPx, spotMarketMeta.pxDecimals + 1)
+          .mul(9998)
+          .div(10000); // @dev prices can have up to 5 sig figs but mid price can have 6.
 
     // Price can have up to 5 significant figures so if the price is less than 1, then there can
     // be 5 decimal places. If the price starts with a 1, which is realistically the highest it will be for a
     // stablecoin swap, then there can be be 4 decimal places.
-    const fullPrice = Number(fromWei(midPricePlus, MAX_DECIMAL_PLACES_HL_ORDER_PX));
+    console.log(`_getLatestPrice: midPricePlus: ${midPricePlus.toString()}`);
+    const fullPrice = Number(fromWei(midPricePlus, spotMarketMeta.pxDecimals + 1));
     console.log(`_getLatestPrice: fullPrice: ${fullPrice} given midPricePlus: ${midPricePlus.toString()}`);
-    return fullPrice.toFixed(fullPrice < 1 ? MAX_DECIMAL_PLACES_HL_ORDER_PX : 4);
+    return fullPrice.toFixed(fullPrice < 1 ? spotMarketMeta.pxDecimals : spotMarketMeta.pxDecimals - 1);
   }
 
   private _getTokenMeta(token: string): TOKEN_META {
@@ -598,6 +607,30 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
   }
 
+  private _getSzForOrder(rebalanceRoute: RebalanceRoute, px: string): { sz: number; minimumOrderSize: number } {
+    const { sourceToken, destinationToken } = rebalanceRoute;
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+
+    // Determining sz:
+    // - The rebalanceRoute.amount is the amount of source tokens that are depositing into HL. It should already be
+    // adjusted upwards to pay for any expected fees. However, sz is always specified in the base asset and px is
+    // base / quote asset (px * sz returns a value denominated in the quote asset).
+    // - Therefore, if isBuy is "true" then we are buying the "sz" amount of base asset with "rebalanceRoute.amount"
+    // of the quote asset. We need to solve for "sz" and rebalance.amount = sz * px.
+    // - If isBuy is "false" then we are selling "sz" amount of base asset to obtain the quote asset. The rebalanceRoute.amount
+    // is denominated in the base asset, so rebalance.amount can be simply set to sz.
+    const sz = spotMarketMeta.isBuy
+      ? rebalanceRoute.maxAmountToTransfer
+          .mul(10 ** spotMarketMeta.pxDecimals)
+          .div(toBNWei(px, spotMarketMeta.pxDecimals))
+      : rebalanceRoute.maxAmountToTransfer;
+    const destinationTokenMeta = this._getTokenMeta(destinationToken);
+    const sourceTokenMeta = this._getTokenMeta(sourceToken);
+    const evmDecimals = spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals;
+    const szFormatted = Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals);
+    return { sz: Number(szFormatted), minimumOrderSize: spotMarketMeta.minimumOrderSize };
+  }
+
   private async _placeLimitOrder(cloid: string, rebalanceRoute: RebalanceRoute, px: string): Promise<void> {
     const { sourceToken, destinationToken } = rebalanceRoute;
     console.log(`_placeLimitOrder: placing new order for cloid ${cloid}`);
@@ -611,9 +644,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 
-    const destinationTokenMeta = this._getTokenMeta(destinationToken);
-    const sourceTokenMeta = this._getTokenMeta(sourceToken);
-
     // Determining sz:
     // - The rebalanceRoute.amount is the amount of source tokens that are depositing into HL. It should already be
     // adjusted upwards to pay for any expected fees. However, sz is always specified in the base asset and px is
@@ -622,21 +652,13 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     // of the quote asset. We need to solve for "sz" and rebalance.amount = sz * px.
     // - If isBuy is "false" then we are selling "sz" amount of base asset to obtain the quote asset. The rebalanceRoute.amount
     // is denominated in the base asset, so rebalance.amount can be simply set to sz.
-    const sz = spotMarketMeta.isBuy
-      ? rebalanceRoute.maxAmountToTransfer
-          .mul(10 ** MAX_DECIMAL_PLACES_HL_ORDER_PX)
-          .div(toBNWei(px, MAX_DECIMAL_PLACES_HL_ORDER_PX))
-      : rebalanceRoute.maxAmountToTransfer;
+    const { sz, minimumOrderSize } = this._getSzForOrder(rebalanceRoute, px);
     console.log(
       `_placeLimitOrder: sz: ${sz} given price ${px} and isBuy ${
         spotMarketMeta.isBuy
-      } and maxAmountToTransfer ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      } and maxAmountToTransfer ${rebalanceRoute.maxAmountToTransfer.toString()}, minimumOrderSize ${minimumOrderSize}`
     );
-    const minimumOrderSize = toBNWei(
-      spotMarketMeta.minimumOrderSize,
-      spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals
-    );
-    if (sz.lt(minimumOrderSize)) {
+    if (sz < minimumOrderSize) {
       throw new Error(`Order size ${sz.toString()} is less than minimum order size ${minimumOrderSize.toString()}`);
     }
     // sz is always in base units, so if we're buying the base unit then
@@ -645,7 +667,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         a: 10000 + spotMarketMeta.index, // Asset index + spot asset index prefix
         b: spotMarketMeta.isBuy, // Buy side (if true, buys quote asset else sells quote asset for base asset)
         p: px, // Price
-        s: fromWei(sz, spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals), // Size
+        s: sz, // Size
         r: false, // Reduce only
         t: { limit: { tif: "Gtc" as const } },
         c: cloid,
@@ -716,6 +738,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const connectedSigner = this.baseSigner.connect(provider);
     const erc20 = new Contract(hyperevmToken, ERC20.abi, connectedSigner);
     const amountReadable = fromWei(amountToDepositEvmPrecision, TOKEN_SYMBOLS_MAP[sourceToken]?.decimals);
+    let transaction: AugmentedTransaction;
     if (sourceToken === "USDC") {
       const allowance = await erc20.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
       if (allowance.lt(amountToDepositEvmPrecision)) {
@@ -726,7 +749,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         ["function deposit(uint256 amount, uint32 destinationDex)"],
         connectedSigner
       );
-      const transaction = {
+      transaction = {
         contract: coreDepositWallet,
         chainId: HYPEREVM,
         method: "deposit",
@@ -741,10 +764,9 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
           HYPEREVM
         )}`,
       };
-      this.multicallerClient.enqueueTransaction(transaction);
     } else {
       const tokenMeta = this._getTokenMeta(sourceToken);
-      const transaction = {
+      transaction = {
         contract: erc20,
         chainId: HYPEREVM,
         method: "transfer",
@@ -754,13 +776,28 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         message: `Deposited ${sourceToken} into Hypercore from ${getNetworkName(HYPEREVM)}`,
         mrkdwn: `Deposited ${amountReadable} ${sourceToken} into Hypercore from ${getNetworkName(HYPEREVM)}`,
       };
-      this.multicallerClient.enqueueTransaction(transaction);
-      console.log("deposit ERC20 into core via direct transfer", transaction);
+    }
+    await this._submitTransaction(transaction);
+  }
+
+  private async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
+    const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
+    const { contract: targetContract, method, ...txnRequestData } = txnRequest;
+    if (!succeed) {
+      const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
+        txnRequest.chainId
+      }`;
+      throw new Error(`${message} (${reason})`);
+    }
+
+    const response = await this.transactionClient.submit(transaction.chainId, [transaction]);
+    if (response.length === 0) {
       throw new Error(
-        `Unimplemented _depositToHypercore() for token ${hyperevmToken} and amount ${amountToDepositEvmPrecision.toString()}`
+        `Transaction succeeded simulation but failed to submit onchain to ${
+          targetContract.address
+        }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
       );
     }
-    await this.multicallerClient.executeTxnQueue(HYPEREVM);
   }
 
   private async _bridgeToChain(
@@ -842,8 +879,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         originChain
       )} to ${getNetworkName(destinationChain)} via CCTP`,
     };
-    this.multicallerClient.enqueueTransaction(transaction);
-    await this.multicallerClient.executeTxnQueue(originChain);
+    await this._submitTransaction(transaction);
   }
 
   private async _getCctpMessenger(chainId: number): Promise<Contract> {
@@ -915,8 +951,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       )} to ${getNetworkName(destinationChain)} via OFT`,
     };
 
-    this.multicallerClient.enqueueTransaction(withdrawTxn);
-    await this.multicallerClient.executeTxnQueue(originChain);
+    await this._submitTransaction(withdrawTxn);
   }
 
   private async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
@@ -993,19 +1028,30 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const [sent, received] = await Promise.all([
       paginatedEventQuery(
         originMessenger,
-        originMessenger.filters.DepositForBurn(null, undefined, this.baseSignerAddress.toNative()),
+        originMessenger.filters.DepositForBurn(
+          TOKEN_SYMBOLS_MAP.USDC.addresses[originChain],
+          undefined,
+          this.baseSignerAddress.toNative()
+        ),
         originEventSearchConfig
       ),
       // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
       // for all use cases of this adapter.
       paginatedEventQuery(
         destinationMessenger,
-        destinationMessenger.filters.MintAndWithdraw(this.baseSignerAddress.toNative()),
+        destinationMessenger.filters.MintAndWithdraw(
+          this.baseSignerAddress.toNative(),
+          undefined,
+          TOKEN_SYMBOLS_MAP.USDC.addresses[destinationChain]
+        ),
         destinationEventSearchConfig
       ),
     ]);
+    const dstDomain = getCctpDomainForChainId(destinationChain);
+    const bridgeInitiationEvents = sent.filter((event) => event.args.destinationDomain === dstDomain);
+    console.log(`Found ${sent.length} CCTP bridge initialization events from ${originChain} to ${destinationChain}`);
     const counted = new Set<number>();
-    const withdrawalAmount = sent.reduce((totalAmount, { args: sendArgs }) => {
+    const withdrawalAmount = bridgeInitiationEvents.reduce((totalAmount, { args: sendArgs }) => {
       const matchingFinalizedEvent = received.find(({ args: receiveArgs }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         const receivedAmount = toBN(receiveArgs.amount.toString()).add(toBN(receiveArgs.feeCollected.toString()));
@@ -1023,59 +1069,95 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   async getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }> {
     const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
+    const { HYPEREVM } = CHAIN_IDs;
     console.group(
       `getPendingRebalances for ${sourceChain} and ${sourceToken} to ${destinationChain} and ${destinationToken}`
     );
     const pendingRebalances: { [chainId: number]: BigNumber } = {};
     // This function returns the total virtual balance of token that is in flight to chain.
-    // The value should be:
-    // + pending bridges to destination chain
-    // + pending bridges to hyper EVM
-    // + all statuses for orders that are currently on Hypercore (including depositing into and withdrawing from)
 
-    // For pending bridges to destination chain and to HyperEVM, query CCTP + OFT balances. (We might be able to
-    // re-use CCTP/OFT adapter logic here.)
-    if (destinationChain !== CHAIN_IDs.HYPEREVM) {
-      let _pendingRebalanceAmount = bnZero;
+    // If there are any unfinalized bridges on the way to the destination chain, add virtual balances for them.
+    if (destinationChain !== HYPEREVM) {
+      let pendingRebalanceAmount = bnZero;
       if (destinationToken === "USDT") {
-        _pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(CHAIN_IDs.HYPEREVM, destinationChain);
-        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM`);
+        pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(HYPEREVM, destinationChain);
+        console.log(`- Adding ${pendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM`);
       } else if (destinationToken === "USDC") {
-        _pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(CHAIN_IDs.HYPEREVM, destinationChain);
-        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM`);
+        pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(HYPEREVM, destinationChain);
+        console.log(`- Adding ${pendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM`);
       } else {
         throw new Error(
           `Unimplemented token ${destinationToken} logical branch in getPendingRebalances() for bridges from HyperEVM`
         );
       }
-      pendingRebalances[destinationChain] = _pendingRebalanceAmount;
+      pendingRebalances[destinationChain] = pendingRebalanceAmount;
     }
 
-    // Now, add bridges into HyperEVM
-    if (sourceChain !== CHAIN_IDs.HYPEREVM) {
-      if (sourceToken === "USDC") {
-        const _pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, CHAIN_IDs.HYPEREVM);
-        console.log(`- Adding ${_pendingRebalanceAmount.toString()} for pending CCTP rebalances into HyperEVM`);
-        pendingRebalances[CHAIN_IDs.HYPEREVM] = _pendingRebalanceAmount;
-      } else {
-        throw new Error(
-          `Unimplemented token ${sourceToken} logical branch in getPendingRebalances() for bridges into HyperEVM`
-        );
+    // If there are any finalized bridges to HyperEVM that correspond to orders that should subsequently be deposited
+    // into Hypercore, we should subtract their virtual balance from HyperEVM.
+    const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
+    console.log(`- Pending bridge to Hypercore cloids: ${pendingBridgeToHyperevm.join(", ")}`);
+    const [unfinalizedCctpBridgesToHyperevm, unfinalizedOftBridgesToHyperevm] = await Promise.all([
+      this._getUnfinalizedCctpBridgeAmount(sourceChain, CHAIN_IDs.HYPEREVM),
+      this._getUnfinalizedOftBridgeAmount(sourceChain, CHAIN_IDs.HYPEREVM),
+    ]);
+
+    // The algorithm here is a bit subtle. We can't easily associate pending OFT/CCTP rebalances with order cloids,
+    // unless we saved the transaction hash down at the time of creating the cloid and initiating the bridge to
+    // hyperevm. (If we did do that, then we'd need to keep track of pending rebalances and we'd have to
+    // update them in the event queries above). The alternative implementation we use is to track the total
+    // pending unfinalized amount, and subtract any order expected amounts from the pending amount. We can then
+    // back into how many of these pending bridges to HyperEVM have finalized.
+    let unfinalizedBridgeAmountToHyperevm = unfinalizedCctpBridgesToHyperevm.add(unfinalizedOftBridgesToHyperevm);
+    console.log(`- Total unfinalized bridge amount to HyperEVM: ${unfinalizedBridgeAmountToHyperevm.toString()}`);
+    // Convert maxAmountToTransfer to hyperevm chain precision:
+    const amountConverter = this._getAmountConverter(
+      sourceChain,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+      HYPEREVM,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[HYPEREVM])
+    );
+    for (const cloid of pendingBridgeToHyperevm) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      if (
+        orderDetails.sourceChain !== sourceChain ||
+        orderDetails.sourceToken !== sourceToken ||
+        orderDetails.destinationChain !== destinationChain ||
+        orderDetails.destinationToken !== destinationToken
+      ) {
+        continue;
       }
+
+      // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
+      // its balance from HyperEVM.
+      const convertedOrderAmount = amountConverter(orderDetails.maxAmountToTransfer);
+      if (unfinalizedBridgeAmountToHyperevm.gt(convertedOrderAmount)) {
+        console.log(
+          `- Order cloid ${cloid} is possibly pending finalization to Hyperevm still (remaining pending amount: ${unfinalizedBridgeAmountToHyperevm.toString()}, order expected amount: ${convertedOrderAmount.toString()})`
+        );
+        unfinalizedBridgeAmountToHyperevm = unfinalizedBridgeAmountToHyperevm.sub(convertedOrderAmount);
+        continue;
+      }
+
+      // Order has finalized, subtract virtual balance from HyperEVM:
+      console.log(`- Subtracting ${convertedOrderAmount.toString()} for order cloid ${cloid} that has finalized`);
+      const existingPendingRebalanceAmountDestinationChain = pendingRebalances[destinationChain] ?? bnZero;
+      pendingRebalances[destinationChain] = existingPendingRebalanceAmountDestinationChain.sub(convertedOrderAmount);
     }
 
-    // TODO: For orders with status: { PENDING_WITHDRAWAL_FROM_HYPERCORE }: How to handle?
-
-    // For orders with statuses: { PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE },
+    // For any pending orders at all, we should add a virtual balance to the destination chain. This includes
+    // orders with statuses: { PENDING_BRIDGE_TO_HYPEREVM, PENDING_SWAP, PENDING_DEPOSIT_TO_HYPERCORE, PENDING_WITHDRAWAL_FROM_HYPERCORE },
     const pendingSwaps = await this._redisGetPendingSwaps();
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
-    // const pendingDepositsToHypercore = await this._redisGetPendingDeposits();
+    const pendingDepositsToHypercore = await this._redisGetPendingDepositsToHypercore();
     console.log(`- Pending swap cloids: ${pendingSwaps.join(", ")}`);
     console.log(`- Pending withdrawal from Hypercore cloids: ${pendingWithdrawalsFromHypercore.join(", ")}`);
-    const pendingCloids = new Set<string>(pendingSwaps.concat(pendingWithdrawalsFromHypercore)).values();
+    console.log(`- Pending deposit to Hypercore cloids: ${pendingDepositsToHypercore.join(", ")}`);
+    const pendingCloids = new Set<string>(
+      pendingSwaps.concat(pendingWithdrawalsFromHypercore).concat(pendingDepositsToHypercore)
+    ).values();
     for (const cloid of pendingCloids) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-
       // Convert maxAmountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
         orderDetails.sourceChain,
