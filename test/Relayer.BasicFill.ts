@@ -670,7 +670,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       }));
       originChainConfirmations.push({
         usdThreshold: bnUint256Max,
-        minConfirmations: originChainConfirmations.length + 1,
+        minConfirmations: originChainConfirmations.at(-1).minConfirmations + 1,
       });
 
       relayerInstance = new Relayer(
@@ -784,7 +784,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
       expect(originChainLimits.slice(0, -1).every(({ limit }) => limit.lt(bnZero))).to.be.true;
     });
 
-    it("Ignores deposits with quote times in future", async function () {
+    it("Ignores deposits that would overcommit the relayer to an origin chain", async function () {
       await erc20_2.connect(relayer).approve(spokePool_2.address, MAX_SAFE_ALLOWANCE);
 
       const outputAmount = toBNWei("0.5");
@@ -794,11 +794,17 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       // Simple escalating confirmation requirements; cap off with a default upper limit.
       const fillAmount = outputAmount.mul(tokenPrice).div(fixedPoint);
-      const originChainConfirmations = [1, 4, 8].map((n) => ({ usdThreshold: fillAmount.mul(n), minConfirmations: n }));
+      const originChainConfirmations = [0, 1, 4, 8].map((n) => ({
+        usdThreshold: fillAmount.mul(n + 1),
+        minConfirmations: n,
+      }));
       originChainConfirmations.push({
         usdThreshold: bnUint256Max,
-        minConfirmations: originChainConfirmations.length + 1,
+        minConfirmations: originChainConfirmations.at(-1).minConfirmations + 1,
       });
+
+      const targetIdx = 2;
+      const targetMDCs = originChainConfirmations.at(targetIdx);
 
       relayerInstance = new Relayer(
         relayer.address,
@@ -827,7 +833,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
         } as unknown as RelayerConfig
       );
 
-      // Make a deposit; the relayer should refuse to fill it until it is no longer overcommitted.
+      // Make a deposit; the relayer should fill it instantly.
       const deposit1 = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -841,78 +847,73 @@ describe("Relayer: Check for Unfilled Deposits and Fill", async function () {
 
       let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       let fills = await (txnReceipts[destinationChainId] ?? Promise.resolve([]));
-      expect(fills.length).to.equal(0);
+      expect(fills.length).to.equal(1);
 
-      // And a 2nd deposit; the relayer should defer filling this one after the first deposit.
+      // Update clients to ensure deposit1's fill is recorded in spoke pool clients
+      await updateAllClients();
+
+      // Dynamically compute available capacity in target tier after deposit1 is filled
+      const limitsAfterDeposit1 = relayerInstance.computeOriginChainLimits(originChainId);
+      const targetFillAmount = limitsAfterDeposit1[targetIdx].limit;
+
+      // And a 2nd deposit that would require at least `targetMDCs.minConfirmations` confirmations.
       const deposit2 = await depositV3(
         spokePool_1,
         destinationChainId,
         depositor,
         inputToken,
-        inputAmount,
+        targetFillAmount.mul(101).div(100),
         outputToken,
-        outputAmount
+        targetFillAmount
       );
       await updateAllClients();
 
-      // Make an invalid fills to crank the chain forward until the initial deposit has enough confirmations.
-      while (
-        originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestHeightSearched - deposit1.blockNumber
-      ) {
+      // Verify that the relayer does not fill the deposit.
+      txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+      fills = await (txnReceipts[destinationChainId] ?? Promise.resolve([]));
+      expect(fills.length).to.equal(0);
+
+      // Make zero-value fills to crank the chain forward, stopping just before deposit2 reaches enough confirmations.
+      while (spokePoolClient_2.latestHeightSearched - deposit2.blockNumber < targetMDCs.minConfirmations - 1) {
         await fillV3Relay(
           spokePool_2,
           { ...deposit1, depositId: BigNumber.from(randomNumber()), outputAmount: bnZero },
           relayer
         );
         await updateAllClients();
+
+        // Verify that the relayer continues to refuse to fill.
+        txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        fills = await (txnReceipts[destinationChainId] ?? Promise.resolve([]));
+        expect(fills.length).to.equal(0);
       }
+
+      // Advance one more block so deposit2 reaches exactly the required confirmations.
+      await fillV3Relay(
+        spokePool_2,
+        { ...deposit1, depositId: BigNumber.from(randomNumber()), outputAmount: bnZero },
+        relayer
+      );
+      await updateAllClients();
+
+      // Compute pre-fill limits at the current head (where deposit2 has enough confirmations but hasn't been filled yet).
       const originChainLimits = relayerInstance.computeOriginChainLimits(originChainId);
 
-      // Verify that the relayer now fills the latest deposit.
+      // Now fill deposit2.
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       fills = await (txnReceipts[destinationChainId] ?? Promise.resolve([]));
       expect(fills.length).to.equal(1);
 
+      // Compute post-fill limits at the same head value.
       await updateAllClients();
+      const newLimits = relayerInstance.computeOriginChainLimits(originChainId);
 
-      // Verify the updated limits. Skip the first index because it's already in the past.
-      relayerInstance
-        .computeOriginChainLimits(originChainId)
-        .slice(1)
-        .forEach(({ limit: newLimit }, idx) => {
-          const { limit: oldLimit } = originChainLimits.slice(1)[idx];
-          expect(newLimit.eq(oldLimit.sub(fillAmount))).to.be.true;
-        });
-
-      // Make an invalid fills to crank the chain forward until the 2nd deposit has enough confirmations.
-      while (
-        originChainConfirmations[0].minConfirmations >
-        spokePoolClient_2.latestHeightSearched - deposit2.blockNumber
-      ) {
-        await fillV3Relay(
-          spokePool_2,
-          { ...deposit2, depositId: BigNumber.from(randomNumber()), outputAmount: bnZero },
-          relayer
-        );
-        await updateAllClients();
-      }
-
-      // Verify that the relayer now fills the latest deposit.
-      txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-      fills = await (txnReceipts[destinationChainId] ?? Promise.resolve([]));
-      expect(fills.length).to.equal(1);
-
-      await updateAllClients();
-
-      // Verify the updated limits. Skip the first index because it's already in the past.
-      relayerInstance
-        .computeOriginChainLimits(originChainId)
-        .slice(1)
-        .forEach(({ limit: newLimit }, idx) => {
-          const { limit: oldLimit } = originChainLimits.slice(1)[idx];
-          expect(newLimit.eq(oldLimit.sub(fillAmount.mul(2)))).to.be.true;
-        });
+      // Verify that tier targetIdx and all subsequent tiers have their limits reduced by targetFillAmount.
+      originChainLimits.forEach(({ limit: oldLimit }, idx) => {
+        const newLimit = newLimits[idx].limit;
+        const expectedLimit = idx < targetIdx ? oldLimit : oldLimit.sub(targetFillAmount);
+        expect(newLimit.eq(expectedLimit)).to.be.true;
+      });
     });
 
     it("Ignores deposits with quote times in future", async function () {
