@@ -1131,7 +1131,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
       // its balance from HyperEVM.
       const convertedOrderAmount = amountConverter(orderDetails.maxAmountToTransfer);
-      if (unfinalizedBridgeAmountToHyperevm.gt(convertedOrderAmount)) {
+      if (unfinalizedBridgeAmountToHyperevm.gte(convertedOrderAmount)) {
         console.log(
           `- Order cloid ${cloid} is possibly pending finalization to Hyperevm still (remaining pending amount: ${unfinalizedBridgeAmountToHyperevm.toString()}, order expected amount: ${convertedOrderAmount.toString()})`
         );
