@@ -17,7 +17,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const rebalanceRoutes: RebalanceRoute[] = [
     {
       sourceChain: 999,
-      destinationChain: 999,
+      destinationChain: 42161,
       sourceToken: "USDT",
       destinationToken: "USDC",
       maxAmountToTransfer: toBNWei("10.3", 6),
