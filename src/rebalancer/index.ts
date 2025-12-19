@@ -16,8 +16,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
     {
-      sourceChain: 999,
-      destinationChain: 42161,
+      sourceChain: 42161,
+      destinationChain: 8453,
       sourceToken: "USDT",
       destinationToken: "USDC",
       maxAmountToTransfer: toBNWei("10.3", 6),
@@ -48,8 +48,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Follow that with CCTP routes as destination chain.
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
-  // await hyperliquidAdapter.updateRebalanceStatuses();
-  // console.log("hyperliquidAdapter updated order statuses");
+  await hyperliquidAdapter.updateRebalanceStatuses();
+  console.log("hyperliquidAdapter updated order statuses");
 
   await hyperliquidAdapter.getPendingRebalances(rebalanceRoutes[0]);
   console.log("hyperliquidAdapter got pending rebalances");
