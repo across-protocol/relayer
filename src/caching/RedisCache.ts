@@ -17,7 +17,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
  * RedisCache is a caching mechanism that uses Redis as the backing store. It is used by the
  * Across SDK to cache data that is expensive to compute or retrieve from the blockchain. It
  * is designed to use the `CachingMechanismInterface` interface so that it can be used as a
- * drop-in in the SDK without the SDK needing to reason about the implementation details.
+ * drop-in replacement in the SDK without the SDK needing to reason about the implementation details.
  */
 export class RedisCache implements RedisCacheInterface {
   constructor(
