@@ -16,6 +16,7 @@ import {
   winston,
   chainIsSvm,
   delay,
+  signAndSendTransaction,
 } from "../utils";
 import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
@@ -238,17 +239,6 @@ export class SvmFillerClient {
     return base64StrToByteSize(serializedTx);
   }
 }
-
-const signAndSendTransaction = async (
-  provider: arch.svm.SVMProvider,
-  unsignedTxn: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime
-) => {
-  const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
-  const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-  return provider
-    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
-    .send();
-};
 
 const signAndSimulateTransaction = async (
   provider: arch.svm.SVMProvider,

@@ -38,7 +38,8 @@ import {
   forEachAsync,
   max,
 } from "../utils";
-import { BundleDataApproxClient, HubPoolClient, TokenClient } from ".";
+import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
+import { HubPoolClient, TokenClient } from ".";
 import { Deposit, ProposedRootBundle } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import lodash from "lodash";
@@ -62,6 +63,12 @@ export type Rebalance = {
 
 const DEFAULT_TOKEN_OVERAGE = toBNWei("1.5");
 
+export type InventoryClientState = {
+  bundleDataState: BundleDataState;
+  pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } };
+  inventoryConfig: InventoryConfig;
+};
+
 export class InventoryClient {
   private logDisabledManagement = false;
   private readonly scalar: BigNumber;
@@ -69,12 +76,13 @@ export class InventoryClient {
   private excessRunningBalancePromises: { [l1Token: string]: Promise<{ [chainId: number]: BigNumber }> } = {};
   private profiler: InstanceType<typeof Profiler>;
   private bundleDataApproxClient: BundleDataApproxClient;
+  private inventoryConfig: InventoryConfig;
   private pendingL2Withdrawals: { [l1Token: string]: { [chainId: number]: BigNumber } } = {};
 
   constructor(
     readonly relayer: EvmAddress,
     readonly logger: winston.Logger,
-    readonly inventoryConfig: InventoryConfig,
+    inventoryConfig: InventoryConfig,
     readonly tokenClient: TokenClient,
     readonly chainIdList: number[],
     readonly hubPoolClient: HubPoolClient,
@@ -83,6 +91,7 @@ export class InventoryClient {
     readonly simMode = false,
     readonly prioritizeLpUtilization = true
   ) {
+    this.inventoryConfig = inventoryConfig;
     this.scalar = sdkUtils.fixedPointAdjustment;
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
@@ -105,6 +114,44 @@ export class InventoryClient {
   }
 
   /**
+   * Export current InventoryClient state.
+   * @returns InventoryClient state. This can be subsequently ingested by InventoryClient.import().
+   */
+  export(): InventoryClientState {
+    const { upcomingDeposits, upcomingRefunds } = this.bundleDataApproxClient.export();
+    const state = {
+      inventoryConfig: this.inventoryConfig,
+      bundleDataState: {
+        upcomingDeposits,
+        upcomingRefunds,
+      },
+      pendingL2Withdrawals: this.pendingL2Withdrawals,
+    };
+
+    this.logger.debug({ at: "InventoryClient::export", message: "Exported inventory client state." });
+    return state;
+  }
+
+  /**
+   * Import InventoryClient state.
+   * @returns void
+   */
+  import(state: InventoryClientState) {
+    const { bundleDataState, pendingL2Withdrawals } = state;
+    this.inventoryConfig = state.inventoryConfig;
+    this.bundleDataApproxClient.import(bundleDataState);
+    this.pendingL2Withdrawals = pendingL2Withdrawals;
+    this.logger.debug({ at: "InventoryClient::import", message: "Imported inventory client state." });
+  }
+
+  /**
+   * Get the cache key for the InventoryClient state.
+   * @returns Cache key for the InventoryClient state
+   */
+  getInventoryCacheKey(inventoryTopic: string): string {
+    return `${inventoryTopic}-${this.relayer}`;
+  }
+  /**
    * Resolve the token balance configuration for `l1Token` on `chainId`. If `l1Token` maps to multiple tokens on
    * `chainId` then `l2Token` must be supplied.
    * @param l1Token L1 token address to query.
@@ -123,6 +170,16 @@ export class InventoryClient {
     } else {
       return tokenConfig[chainId];
     }
+  }
+
+  isSwapSupported(inputToken: Address, outputToken: Address, inputChainId: number, outputChainId: number): boolean {
+    return (this.inventoryConfig?.allowedSwapRoutes ?? []).some(
+      (swapRoute) =>
+        (swapRoute.fromChain === "ALL" || swapRoute.fromChain === inputChainId) &&
+        swapRoute.fromToken === inputToken.toNative() &&
+        (swapRoute.toChain === "ALL" || swapRoute.toChain === outputChainId) &&
+        swapRoute.toToken === outputToken.toNative()
+    );
   }
 
   /*
@@ -360,13 +417,44 @@ export class InventoryClient {
    * @param deposit Deposit
    * @returns list of chain IDs that are possible repayment chains for the deposit.
    */
+  /**
+   * Determines if origin chain repayment is forced for a deposit.
+   * Priority: forceOriginRepaymentPerChain[originChainId] > forceOriginRepayment > protocol rules
+   * @param deposit The deposit to check
+   * @returns true if origin chain repayment is forced
+   */
+  private shouldForceOriginRepayment(deposit: Deposit): boolean {
+    const protocolForcesOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
+    const perChainForceOriginRepayment = this.inventoryConfig?.forceOriginRepaymentPerChain?.[deposit.originChainId];
+    const globalForceOriginRepayment = this.inventoryConfig?.forceOriginRepayment ?? false;
+    // Per-chain config takes priority over global config
+    const configForcesOriginRepayment = perChainForceOriginRepayment ?? globalForceOriginRepayment;
+    return protocolForcesOriginRepayment || configForcesOriginRepayment;
+  }
+
+  /**
+   * Gets the repayment chain override for a given origin chain.
+   * Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+   * @param originChainId The origin chain ID
+   * @returns The repayment chain override chain ID, or undefined if not set
+   */
+  private getRepaymentChainOverride(originChainId: number): number | undefined {
+    const perChainRepaymentOverride = this.inventoryConfig?.repaymentChainOverridePerChain?.[originChainId];
+    const globalRepaymentOverride = this.inventoryConfig?.repaymentChainOverride;
+    return perChainRepaymentOverride ?? globalRepaymentOverride;
+  }
+
   getPossibleRepaymentChainIds(deposit: Deposit): number[] {
     // Origin chain is always included in the repayment chain list.
     const { originChainId, destinationChainId, inputToken } = deposit;
     const chainIds = new Set<number>();
     chainIds.add(originChainId);
-    if (depositForcesOriginChainRepayment(deposit, this.hubPoolClient)) {
-      return [...chainIds];
+
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
+    if (forceOriginRepayment) {
+      return [originChainId];
     }
 
     if (this.canTakeDestinationChainRepayment(deposit)) {
@@ -387,6 +475,12 @@ export class InventoryClient {
         }
       });
     }
+    // Check per-chain override first, then global override
+    const chainOverride = this.getRepaymentChainOverride(originChainId);
+    if (isDefined(chainOverride)) {
+      chainIds.add(chainOverride);
+    }
+
     chainIds.add(this.hubPoolClient.chainId);
     return [...chainIds];
   }
@@ -423,6 +517,11 @@ export class InventoryClient {
       destinationChainId
     );
     if (equivalentTokens) {
+      return true;
+    }
+
+    // Return true if the input and output tokens are defined as equivalent according to a user-defined swap config.
+    if (this.isSwapSupported(inputToken, outputToken, originChainId, destinationChainId)) {
       return true;
     }
 
@@ -504,10 +603,12 @@ export class InventoryClient {
       );
     }
 
+    // Check if origin chain repayment is forced by protocol rules or config overrides
+    const forceOriginRepayment = this.shouldForceOriginRepayment(deposit);
+
     // If the deposit forces origin chain repayment but the origin chain is one we can easily rebalance inventory from,
     // then don't ignore this deposit based on perceived over-allocation. For example, the hub chain and chains connected
     // to the user's Binance API are easy to move inventory from so we should never skip filling these deposits.
-    const forceOriginRepayment = depositForcesOriginChainRepayment(deposit, this.hubPoolClient);
     if (forceOriginRepayment && repaymentChainCanBeQuicklyRebalanced(originChainId, inputToken, this.hubPoolClient)) {
       return [originChainId];
     }
@@ -520,6 +621,17 @@ export class InventoryClient {
         `InventoryClient#determineRefundChainId: No L1 token found for input token ${inputToken} on origin chain ${originChainId}`
       );
     }
+
+    // If we have defined an override repayment chain in inventory config and we do not need to take origin chain repayment,
+    // then short-circuit this check.
+    // Priority: repaymentChainOverridePerChain[originChainId] > repaymentChainOverride
+    if (!forceOriginRepayment) {
+      const chainOverride = this.getRepaymentChainOverride(originChainId);
+      if (isDefined(chainOverride)) {
+        return [chainOverride];
+      }
+    }
+
     const { decimals: l1TokenDecimals } = getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: inputTokenDecimals } = this.hubPoolClient.getTokenInfoForAddress(inputToken, originChainId);
     const inputAmountInL1TokenDecimals = sdkUtils.ConvertDecimals(inputTokenDecimals, l1TokenDecimals)(inputAmount);
@@ -1405,7 +1517,7 @@ export class InventoryClient {
             }`,
             {
               l1Token: l1Token.toEvmAddress(),
-              l2Token: l2Token.toEvmAddress(),
+              l2Token: l2Token.toNative(),
               cumulativeBalance: formatter(cumulativeBalance),
               currentAllocPct: formatUnits(currentAllocPct, 18),
               excessWithdrawThresholdPct: formatUnits(excessWithdrawThresholdPct, 18),
@@ -1496,7 +1608,7 @@ export class InventoryClient {
             withdrawals.map((withdrawal) => {
               return {
                 ...withdrawal,
-                l2Token: withdrawal.l2Token.toEvmAddress(),
+                l2Token: withdrawal.l2Token.toNative(),
               };
             }),
           ];

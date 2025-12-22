@@ -11,6 +11,7 @@ import {
   RelayerBalanceTable,
   TokenTransfer,
   TokenInfo,
+  SwapFlowInitialized,
 } from "../interfaces";
 import {
   BigNumber,
@@ -59,6 +60,7 @@ import {
   getFillStatusPda,
   getKitKeypairFromEvmSigner,
   getRelayDataFromFill,
+  sortEventsAscending,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
 import { MonitorConfig } from "./MonitorConfig";
@@ -71,6 +73,8 @@ import {
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
+import { HyperliquidExecutor } from "../hyperliquid/HyperliquidExecutor";
+import { HyperliquidExecutorConfig } from "../hyperliquid/HyperliquidExecutorConfig";
 
 // 60 minutes, which is the length of the challenge window, so if a rebalance takes longer than this to finalize,
 // then its finalizing after the subsequent challenge period has started, which is sub-optimal.
@@ -184,7 +188,7 @@ export class Monitor {
         const mrkdwn = `${l1TokenUtilization.poolCollateralSymbol} pool token at \
           ${blockExplorerLink(l1TokenUtilization.l1Token.toEvmAddress(), l1TokenUtilization.chainId)} on \
           ${getNetworkName(l1TokenUtilization.chainId)} is at \
-          ${createFormatFunction(0, 2)(utilizationString)}% utilization!"`;
+          ${createFormatFunction(0, 2)(utilizationString)}% utilization!`;
         this.logger.debug({ at: "Monitor#checkUtilization", message: "High pool utilization warning 🏊", mrkdwn });
       }
     }
@@ -345,90 +349,77 @@ export class Monitor {
     }
   }
 
-  // @dev This is a temporary function to report invalid fills related to SVM deposits. It will be removed once
-  // we gain enough confidence that the SVM fills are working correctly.
-  async reportInvalidFillsRelatedToSvm(): Promise<void> {
-    const { spokePoolClients } = this.clients;
-    const svmClient = spokePoolClients[CHAIN_IDs.SOLANA];
-    const svmDeposits = svmClient.getDeposits();
+  async reportOpenHyperliquidOrders(): Promise<void> {
+    // Piggyback off of the hyperliquid executor logic so that we can call `getOutstandingOrdersOnPair` for each configured pair.
+    const hyperEvmSpoke = this.clients.spokePoolClients[CHAIN_IDs.HYPEREVM];
+    assert(isEVMSpokePoolClient(hyperEvmSpoke));
+    const dstProvider = hyperEvmSpoke.spokePool.provider;
 
-    this.logger.debug({
-      at: "Monitor#reportInvalidFillsRelatedToSvm",
-      message: "Checking for invalid fills related to SVM deposits",
-      svmDeposits: svmDeposits.length,
-    });
+    const hyperliquidExecutorConfig = new HyperliquidExecutorConfig(process.env);
+    const hyperliquidExecutor = new HyperliquidExecutor(
+      this.logger,
+      {
+        ...hyperliquidExecutorConfig,
+        supportedTokens: this.monitorConfig.hyperliquidTokens,
+        lookback: this.monitorConfig.hyperliquidOrderMaximumLifetime * 12, // Lookback is a function of lifetime.
+      } as HyperliquidExecutorConfig,
+      { ...this.clients, dstProvider }
+    );
+    await hyperliquidExecutor.initialize();
 
-    // Check for invalid fills related to svm deposits.
-    await mapAsync(
-      svmDeposits.filter(({ destinationChainId }) => destinationChainId !== CHAIN_IDs.SOLANA),
-      async (deposit) => {
-        const { destinationChainId, depositId, originChainId } = deposit;
-        const destinationClient = spokePoolClients[destinationChainId];
-        if (!destinationClient) {
-          return;
-        }
-        const { invalidFills: invalid } = destinationClient.getValidUnfilledAmountForDeposit(deposit);
-        if (depositId < bnUint32Max && invalid.length > 0) {
-          const invalidFills = Object.fromEntries(
-            invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
-              return [relayer, { destinationChainId, depositId, txnRef }];
-            })
-          );
-          this.logger.warn({
-            at: "Monitor##reportInvalidFillsRelatedToSvm",
-            destinationChainId,
-            message: `Invalid ${invalid.length} fills found matching SVM ${getNetworkName(originChainId)} deposit.`,
-            deposit,
-            invalidFills,
-            notificationPath: "across-invalid-fills",
-          });
-        }
-      }
+    const outstandingOrders = Object.fromEntries(
+      await mapAsync(Object.entries(hyperliquidExecutor.pairs), async ([pairId, pair]) => [
+        pairId,
+        await hyperliquidExecutor.getOutstandingOrdersOnPair(pair),
+      ])
+    );
+    const oldHyperliquidOrders: { [pairId: string]: SwapFlowInitialized & { age: number } } = Object.fromEntries(
+      (
+        await mapAsync(Object.entries(outstandingOrders), async ([pairId, orderSet]) => {
+          // If no outstanding orders. Nothing to do, so return.
+          if (orderSet.length === 0) {
+            return undefined;
+          }
+          const sortedOrders = sortEventsAscending(orderSet);
+          const earliestOrder = sortedOrders[0];
+          const orderBlock = await dstProvider.getBlock(earliestOrder.blockNumber);
+          const orderAge = Date.now() / 1000 - orderBlock.timestamp;
+          if (orderAge > this.monitorConfig.hyperliquidOrderMaximumLifetime) {
+            return [pairId, { ...earliestOrder, age: orderAge }];
+          }
+          return undefined;
+        })
+      ).filter(isDefined)
     );
 
-    this.logger.debug({
-      at: "Monitor#reportInvalidFillsRelatedToSvm",
-      message: "Checking for invalid SVM fills related to EVM deposits",
-      svmFills: svmClient.getFills().length,
-    });
-
-    // Check for invalid SVM fills related to EVM deposits.
-    svmClient.getFills().map((fill) => {
-      const { originChainId, destinationChainId } = fill;
-      const originClient = spokePoolClients[originChainId];
-      if (!originClient) {
-        return;
-      }
-      const deposit = originClient.getDepositForFill(fill);
-      if (!deposit) {
-        this.logger.warn({
-          at: "Monitor##reportInvalidFillsRelatedToSvm",
-          originChainId,
-          message: `Invalid SVM fill found with no matching deposit for origin chain ${getNetworkName(originChainId)}.`,
-          fill,
-          notificationPath: "across-invalid-fills",
-        });
-        return;
-      }
-      const { invalidFills: invalid } = svmClient.getValidUnfilledAmountForDeposit(deposit);
-      if (deposit.depositId < bnUint32Max && invalid.length > 0) {
-        const invalidFills = Object.fromEntries(
-          invalid.map(({ relayer, destinationChainId, depositId, txnRef }) => {
-            return [relayer, { destinationChainId, depositId, txnRef }];
-          })
-        );
-        this.logger.warn({
-          at: "Reporter#reportInvalidFillsRelatedToSvm",
-          destinationChainId,
-          message: `Found ${invalidFills.length} invalid SVM fills found matching ${getNetworkName(
-            originChainId
-          )} deposit.`,
-          deposit,
-          invalidFills,
-          notificationPath: "across-invalid-fills",
-        });
-      }
-    });
+    const nOutstandingOrders = Object.values(oldHyperliquidOrders).flat().length;
+    if (Object.values(oldHyperliquidOrders).length !== 0) {
+      const finalTokenBalances = await mapAsync(Object.keys(oldHyperliquidOrders), async (pairId) => {
+        const [, finalTokenSymbol] = pairId.split("-");
+        const pair = hyperliquidExecutor.pairs[pairId];
+        return hyperliquidExecutor.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals);
+      });
+      const formatter = createFormatFunction(2, 4, false, 8);
+      this.logger.error({
+        at: "Monitor#reportOpenHyperliquidOrders",
+        message: "Old outstanding Hyperliquid orders",
+        oldHyperliquidOrders,
+        outstandingOrders: nOutstandingOrders,
+        affectedPairs: Object.keys(oldHyperliquidOrders),
+        affectedSwapHandlers: Object.keys(oldHyperliquidOrders).map((pairId) =>
+          hyperliquidExecutor.pairs[pairId].swapHandler.toNative()
+        ),
+        approximateAmountShort: Object.values(oldHyperliquidOrders).map((order, idx) =>
+          formatter(order.maxAmountToSend.sub(finalTokenBalances[idx]))
+        ),
+      });
+    } else {
+      this.logger.debug({
+        at: "Monitor#reportOpenHyperliquidOrders",
+        message: "No old outstanding Hyperliquid orders",
+        outstandingOrders: outstandingOrders.length,
+      });
+    }
   }
 
   l2TokenAmountToL1TokenAmountConverter(l2Token: Address, chainId: number): (BigNumber) => BigNumber {
@@ -650,9 +641,9 @@ export class Monitor {
               trippedThreshold = { level: "error", threshold: errorThreshold };
             }
             if (trippedThreshold !== null) {
-              const gasTokenAddressForChain = getNativeTokenAddressForChain(chainId);
               let symbol;
-              if (gasTokenAddressForChain) {
+              const nativeTokenForChain = getNativeTokenAddressForChain(chainId);
+              if (token.eq(nativeTokenForChain)) {
                 symbol = getNativeTokenSymbol(chainId);
               } else {
                 const spokePoolClient = this.clients.spokePoolClients[chainId];

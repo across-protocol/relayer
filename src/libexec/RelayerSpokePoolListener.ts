@@ -1,9 +1,8 @@
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import { BaseError, Block, createPublicClient, Log as viemLog, webSocket } from "viem";
+import { BaseError, Block, createPublicClient, http, Log as viemLog, webSocket } from "viem";
 import * as chains from "viem/chains";
-import { utils as sdkUtils } from "@across-protocol/sdk";
 import * as utils from "../../scripts/utils";
 import {
   disconnectRedisClients,
@@ -17,24 +16,27 @@ import {
   getNodeUrlList,
   getOriginFromURL,
   getProvider,
+  getProviderHeaders,
   getSpokePool,
   getRedisCache,
   Logger,
+  Provider,
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
-import { postEvents, removeEvent } from "./util/ipc";
-import { getEventFilterArgs, scrapeEvents as _scrapeEvents } from "./util/evm";
+import { postBlock, postEvents, removeEvent } from "./util/ipc";
+import { scrapeEvents as _scrapeEvents } from "./util/evm";
 
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 
 const PROGRAM = "RelayerSpokePoolListener";
-const INDEXER_POLLING_PERIOD = 2_000; // ms; time to sleep between checking for exit request via SIGHUP.
+const abortController = new AbortController();
 
+let providers: ReturnType<typeof resolveProviders>;
+let spokePool: Contract;
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
-let stop = false;
 
 // Teach BigInt how to be represented as JSON.
 (BigInt.prototype as any).toJSON = function () {
@@ -42,46 +44,83 @@ let stop = false;
 };
 
 /**
+ * Instantiate websocket providers.
+ * @param chainId Chain ID of network.
+ * @param quorum Minimum number of providers required.
+ * @returns An array of websocket providers.
+ */
+function resolveProviders(chainId: number, quorum = 1) {
+  const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
+  assert(protocol === "wss" || protocol === "https");
+
+  const urls = Object.values(getNodeUrlList(chainId, quorum, protocol));
+  const nProviders = urls.length;
+  assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
+
+  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
+  const providers = Object.entries(urls).map(([provider, url]) => {
+    const headers = getProviderHeaders(provider, chainId);
+    const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
+
+    return createPublicClient({
+      chain: viemChain,
+      transport,
+      name: getOriginFromURL(url),
+    });
+  });
+
+  return providers;
+}
+
+/**
  * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
- * @param eventNames The array of events to be queried.
+ * @param address A contract address to query.
+ * @param eventSignatures An array of event signatures to be queried.
+ * @param provider An Ethers provider instance.
  * @param opts Options to configure event scraping behaviour.
  * @returns void
  */
-async function scrapeEvents(spokePool: Contract, eventNames: string[], opts: ScraperOpts): Promise<void> {
-  const { number: toBlock, timestamp: currentTime } = await spokePool.provider.getBlock("latest");
-  const events = await Promise.all(
-    eventNames.map((eventName) => _scrapeEvents(spokePool, eventName, { ...opts, toBlock }, logger))
-  );
+async function scrapeEvents(
+  address: string,
+  eventSignatures: string[],
+  provider: Provider,
+  opts: ScraperOpts
+): Promise<void> {
+  const at = `${PROGRAM}::scrapeEvents`;
+  const { number: toBlock, timestamp: currentTime } = await provider.getBlock("latest");
 
-  if (!stop) {
-    postEvents(toBlock, currentTime, events.flat());
+  const events = (
+    await Promise.all(
+      eventSignatures.map(async (sig) => {
+        try {
+          return await _scrapeEvents(provider, address, sig, { ...opts, toBlock }, logger);
+        } catch {
+          logger.warn({ at, message: `Failed to scrape ${chain} events.`, event: sig });
+          return Promise.resolve([]);
+        }
+      })
+    )
+  ).flat();
+
+  if (!abortController.signal.aborted) {
+    let stop = !postBlock(toBlock, currentTime);
+    if (events.length > 0) {
+      stop ||= !postEvents(events);
+    }
+
+    if (stop) {
+      abortController.abort();
+    }
   }
 }
 
 /**
- * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
- * Periodically transmit received events to the parent process (if defined).
- * @param eventMgr Ethers Contract instance.
- * @param eventName The name of the event to be filtered.
- * @param opts Options to configure event scraping behaviour.
+ * Setup a newHeads subscription.
+ * @param eventMgr Event Manager instance.
  * @returns void
  */
-async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: string[], quorum = 1): Promise<void> {
-  const at = `${PROGRAM}::listen`;
-
-  const urls = Object.values(getNodeUrlList(chainId, quorum, "wss"));
-  const nProviders = urls.length;
-  assert(nProviders >= quorum, `Insufficient providers for ${chain} (required ${quorum} by quorum)`);
-
-  const viemChain = Object.values(chains).find(({ id }) => id === chainId);
-  const providers = urls.map((url) =>
-    createPublicClient({
-      chain: viemChain,
-      transport: webSocket(url),
-      name: getOriginFromURL(url),
-    })
-  );
+function subNewHeads(): void {
+  const at = `${PROGRAM}::newHeads`;
 
   // On each new block, submit any "finalised" events.
   const newBlock = (block: Block, provider: string) => {
@@ -91,9 +130,8 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
       return;
     }
     const [blockNumber, currentTime] = [parseInt(block.number.toString()), parseInt(block.timestamp.toString())];
-    const events = eventMgr.tick();
-    if (!postEvents(blockNumber, currentTime, events)) {
-      stop = true;
+    if (!postBlock(blockNumber, currentTime)) {
+      abortController.abort();
     }
   };
 
@@ -103,16 +141,26 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
     logger.debug({ at, message, errorMessage, shortMessage, provider, details, metaMessages });
   };
 
-  providers.forEach((provider, idx) => {
-    if (idx === 0) {
-      provider.watchBlocks({
-        emitOnBegin: true,
-        onBlock: (block: Block) => newBlock(block, provider.name),
-        onError: (error: Error) => blockError(error, provider.name),
-      });
-    }
+  const [provider] = providers;
+  provider.watchBlocks({
+    emitOnBegin: true,
+    onBlock: (block: Block) => newBlock(block, provider.name),
+    onError: (error: Error) => blockError(error, provider.name),
+  });
+}
 
-    const abi = JSON.parse(spokePool.interface.format(ethersUtils.FormatTypes.json) as string);
+/**
+ * Given a SpokePool contract instance and an array of event names, subscribe to all future event emissions.
+ * Periodically transmit received events to the parent process (if defined).
+ * @param eventMgr Ethers Contract instance.
+ * @param spokePool ethers SpokePool contract instances.
+ * @param eventName The name of the event to be filtered.
+ * @returns void
+ */
+function subEvents(eventMgr: EventManager, spokePool: Contract, eventNames: string[]): void {
+  const abi = JSON.parse(spokePool.interface.format(ethersUtils.FormatTypes.json) as string);
+
+  providers.forEach((provider) => {
     eventNames.forEach((eventName) => {
       provider.watchContractEvent({
         address: spokePool.address as `0x${string}`,
@@ -130,17 +178,19 @@ async function listen(eventMgr: EventManager, spokePool: Contract, eventNames: s
             if (log.removed) {
               eventMgr.remove(event, provider.name);
               removeEvent(event);
-            } else {
-              eventMgr.add(event, provider.name);
+              return;
+            }
+
+            const hasQuorum = eventMgr.add(event, provider.name);
+            if (hasQuorum) {
+              if (!postEvents([event])) {
+                abortController.abort();
+              }
             }
           }),
       });
     });
   });
-
-  do {
-    await sdkUtils.delay(INDEXER_POLLING_PERIOD);
-  } while (!stop);
 }
 
 /**
@@ -150,15 +200,14 @@ async function run(argv: string[]): Promise<void> {
   const at = `${PROGRAM}::run`;
 
   const minimistOpts = {
-    string: ["lookback", "relayer", "spokepool"],
+    string: ["lookback", "spokepool"],
   };
   const args = minimist(argv, minimistOpts);
 
   ({ chainid: chainId } = args);
-  const { lookback, relayer = null, blockrange: maxBlockRange = 10_000 } = args;
+  const { lookback, blockrange: maxBlockRange = 10_000 } = args;
   assert(Number.isInteger(chainId), "chainId must be numeric ");
   assert(Number.isInteger(maxBlockRange), "maxBlockRange must be numeric");
-  assert(!isDefined(relayer) || ethersUtils.isAddress(relayer), `relayer address is invalid (${relayer})`);
 
   const { quorum = getChainQuorum(chainId) } = args;
   assert(Number.isInteger(quorum), "quorum must be numeric ");
@@ -192,7 +241,7 @@ async function run(argv: string[]): Promise<void> {
     logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
-  const spokePool = getSpokePool(chainId, spokePoolAddr);
+  spokePool = getSpokePool(chainId, spokePoolAddr);
   if (!isDefined(spokePoolAddr)) {
     ({ address: spokePoolAddr } = spokePool);
   }
@@ -202,7 +251,6 @@ async function run(argv: string[]): Promise<void> {
     deploymentBlock,
     lookback: latestBlock.number - startBlock,
     maxBlockRange,
-    filterArgs: getEventFilterArgs(relayer),
     quorum,
   };
 
@@ -210,12 +258,12 @@ async function run(argv: string[]): Promise<void> {
 
   process.on("SIGHUP", () => {
     logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
-    stop = true;
+    abortController.abort();
   });
 
   process.on("disconnect", () => {
     logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
-    stop = true;
+    abortController.abort();
   });
 
   // Note: An event emitted between scrapeEvents() and listen(). @todo: Ensure that there is overlap and deduplication.
@@ -229,16 +277,24 @@ async function run(argv: string[]): Promise<void> {
       "RelayedRootBundle",
       "ExecutedRelayerRefundRoot",
     ];
+
     const _spokePool = spokePool.connect(quorumProvider);
-    await scrapeEvents(_spokePool, events, opts);
+    const { address, interface: abi, provider } = _spokePool;
+    const signatures = events.map((event) => abi.getEvent(event).format(ethersUtils.FormatTypes.full));
+    await scrapeEvents(address, signatures, provider, opts);
   }
 
   // Events to listen for.
   const events = ["FundsDeposited", "FilledRelay"];
   const eventMgr = new EventManager(logger, chainId, quorum);
+  providers = resolveProviders(chainId, quorum);
 
   logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
-  await listen(eventMgr, spokePool, events, quorum);
+
+  subNewHeads();
+  subEvents(eventMgr, spokePool, events);
+
+  return new Promise((resolve) => abortController.signal.addEventListener("abort", () => resolve()));
 }
 
 if (require.main === module) {

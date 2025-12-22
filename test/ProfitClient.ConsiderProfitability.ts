@@ -92,7 +92,7 @@ describe("ProfitClient: Consider relay profit", () => {
   };
 
   const tokens = Object.fromEntries(
-    ["MATIC", "USDC", "WBTC", "WETH"].map((symbol) => {
+    ["POL", "USDC", "WBTC", "WETH"].map((symbol) => {
       const { decimals, addresses } = TOKEN_SYMBOLS_MAP[symbol];
       return [symbol, { symbol, decimals, address: addresses[CHAIN_IDs.MAINNET] }];
     })

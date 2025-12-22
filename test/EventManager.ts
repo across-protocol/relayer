@@ -27,6 +27,7 @@ describe("EventManager: Event Handling ", async function () {
     blockHash: makeHash(),
     event: "randomEvent",
   };
+  let eventHash: string;
 
   let logger: winston.Logger;
   let eventMgr: EventManager;
@@ -36,22 +37,23 @@ describe("EventManager: Event Handling ", async function () {
     ({ spyLogger: logger } = createSpyLogger());
     quorum = 2;
     eventMgr = new EventManager(logger, chainId, quorum);
+    eventHash = eventMgr.hashEvent(eventTemplate);
   });
 
   it("Correctly applies quorum on added events", async function () {
     providers.forEach((provider, idx) => {
       // Verify initial quorum.
-      let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+      let eventQuorum = eventMgr.getEventQuorum(eventHash);
       expect(eventQuorum).to.equal(idx);
 
       // Add the event from the current provider and verify that quorum updates.
       eventMgr.add(eventTemplate, provider);
-      eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+      eventQuorum = eventMgr.getEventQuorum(eventHash);
       expect(eventQuorum).to.equal(idx + 1);
 
       // Try re-adding the same event from the same provider => shouldn't affect quorum.
-      eventMgr.add(eventTemplate, providers[0]);
-      eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+      eventMgr.add(eventTemplate, provider);
+      eventQuorum = eventMgr.getEventQuorum(eventHash);
       expect(eventQuorum).to.equal(idx + 1);
     });
   });
@@ -60,24 +62,16 @@ describe("EventManager: Event Handling ", async function () {
     const [provider1, provider2] = providers;
     expect(quorum).to.equal(2);
 
-    eventMgr.add(eventTemplate, provider1);
+    let metQuorum = eventMgr.add(eventTemplate, provider1);
+    expect(metQuorum).to.be.false;
 
-    // The added event should not be returned despite the blockNumber increasing.
-    let blockNumber: number;
-    for (blockNumber = 0; blockNumber < 10; ++blockNumber) {
-      const events = eventMgr.tick(blockNumber);
-      expect(events.length).to.equal(0);
-    }
+    // The added event should not be returned despite re-adding the same event.
+    metQuorum = eventMgr.add(eventTemplate, provider1);
+    expect(metQuorum).to.be.false;
 
-    // At `finalisedBlock` the event should be returned.
-    eventMgr.add(eventTemplate, provider2);
-    let events = eventMgr.tick(blockNumber);
-    expect(events.length).to.equal(1);
-    expect(events[0]).to.deep.equal(eventTemplate);
-
-    // No further events are available.
-    events = eventMgr.tick(++blockNumber);
-    expect(events.length).to.equal(0);
+    // Add same event from another provider; should have quorum now.
+    metQuorum = eventMgr.add(eventTemplate, provider2);
+    expect(metQuorum).to.be.true;
   });
 
   it("Drops removed events before quorum", async function () {
@@ -87,33 +81,31 @@ describe("EventManager: Event Handling ", async function () {
     const [provider1, provider2] = providers;
 
     // Add the event once (not finalised).
-    eventMgr.add(eventTemplate, provider1);
-    let events = eventMgr.tick(eventTemplate.blockNumber + 1);
-    expect(events.length).to.equal(0);
-    let eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+    let metQuorum = eventMgr.add(eventTemplate, provider1);
+    expect(metQuorum).to.be.false;
+
+    let eventQuorum = eventMgr.getEventQuorum(eventHash);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by the same provider.
     eventMgr.remove({ ...eventTemplate, removed }, provider1);
-    eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+    eventQuorum = eventMgr.getEventQuorum(eventHash);
     expect(eventQuorum).to.equal(0);
 
     // Re-add the same event.
-    eventMgr.add(eventTemplate, provider1);
-    events = eventMgr.tick(eventTemplate.blockNumber + 1);
-    expect(events.length).to.equal(0);
-    eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+    metQuorum = eventMgr.add(eventTemplate, provider1);
+    expect(metQuorum).to.be.false;
+    eventQuorum = eventMgr.getEventQuorum(eventHash);
     expect(eventQuorum).to.equal(1);
 
     // Remove the event after notification by a different provider.
     eventMgr.remove({ ...eventTemplate, removed }, "randomProvider");
-    eventQuorum = eventMgr.getEventQuorum(eventTemplate);
+    eventQuorum = eventMgr.getEventQuorum(eventHash);
     expect(eventQuorum).to.equal(0);
 
     // Add the same event from provider2. There should be no quorum.
-    eventMgr.add(eventTemplate, provider2);
-    events = eventMgr.tick(eventTemplate.blockNumber + 1);
-    expect(events.length).to.equal(0);
+    metQuorum = eventMgr.add(eventTemplate, provider2);
+    expect(eventQuorum).to.equal(0);
   });
 
   it("Hashes events correctly: uniqueness", async function () {
@@ -173,24 +165,21 @@ describe("EventManager: Event Handling ", async function () {
     expect(quorum).to.equal(2);
 
     const [provider1, provider2, provider3, provider4] = providers;
-    let { blockNumber } = eventTemplate;
 
     // Add the event once (not finalised).
-    eventMgr.add(eventTemplate, provider1);
-    let events = eventMgr.tick(++blockNumber);
-    expect(events.length).to.equal(0);
+    let metQuorum = eventMgr.add(eventTemplate, provider1);
+    expect(metQuorum).to.be.false;
 
-    // Add the same event from a different provider.
-    eventMgr.add(eventTemplate, provider2);
-    events = eventMgr.tick(++blockNumber);
-    expect(events.length).to.equal(1);
+    // Add the same event from a different provider. Should now meet quorum.
+    metQuorum = eventMgr.add(eventTemplate, provider2);
+    expect(metQuorum).to.be.true;
 
-    // Re-add the same event again, from two new providers.
-    eventMgr.add(eventTemplate, provider3);
-    eventMgr.add(eventTemplate, provider4);
-
+    // Re-add the same event again, from two new providers. Does not re-trigger quorum.
     // Verify that the same event was not replayed.
-    events = eventMgr.tick(++blockNumber);
-    expect(events.length).to.equal(0);
+    metQuorum = eventMgr.add(eventTemplate, provider3);
+    expect(metQuorum).to.be.false;
+
+    metQuorum = eventMgr.add(eventTemplate, provider4);
+    expect(metQuorum).to.be.false;
   });
 });

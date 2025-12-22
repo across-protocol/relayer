@@ -1,4 +1,5 @@
 import winston from "winston";
+import axios from "axios";
 import { RefillerConfig, RefillBalanceData } from "./RefillerConfig";
 import {
   Address,
@@ -8,6 +9,7 @@ import {
   chainIsEvm,
   chainIsSvm,
   Contract,
+  delay,
   ERC20,
   EvmAddress,
   formatUnits,
@@ -33,8 +35,10 @@ import {
   Provider,
   bnZero,
   getL1TokenAddress,
+  CHAIN_IDs,
 } from "../utils";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
 import { AcrossSwapApiClient, BalanceAllocator, MultiCallerClient } from "../clients";
 import { RedisCache } from "../caching/RedisCache";
@@ -102,11 +106,18 @@ export class Refiller {
       const { token, chainId } = refillBalanceData;
       const l2Provider = this.clients.balanceAllocator.providers[chainId];
       assert(l2Provider, `No L2 provider found for chain ${chainId}, have you overridden the spoke pool chains?`);
-      const refillHandler = token.eq(getNativeTokenAddressForChain(chainId))
-        ? this.refillNativeTokenBalances.bind(this)
-        : this.refillTokenBalances.bind(this);
-
-      return refillHandler(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
+      let refillHandler;
+      switch (token.toNative()) {
+        case getNativeTokenAddressForChain(chainId).toNative():
+          refillHandler = this.refillNativeTokenBalances;
+          break;
+        case TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]:
+          refillHandler = this.refillUsdh;
+          break;
+        default:
+          refillHandler = this.refillTokenBalances;
+      }
+      return refillHandler.bind(this)(currentBalances[i], decimalValues[i], refillBalanceData, l2Provider);
     });
   }
 
@@ -282,7 +293,7 @@ export class Refiller {
     l2Provider: Provider
   ): Promise<void> {
     const { chainId, token, account, target, trigger, refillPeriod = 10 * 60 } = refillBalanceData;
-    assert(!chainIsL1(chainId), "Cannot refil mainnet non-native token balance.");
+    assert(!chainIsL1(chainId), "Cannot refill mainnet non-native token balance.");
     const redisKey = `refill:${account.toNative()}->${chainId}-${token.toNative()}`;
     const isRefillProcessed = await this._isRefillProcessed(redisKey);
     if (isRefillProcessed) {
@@ -379,6 +390,116 @@ export class Refiller {
     }
   }
 
+  private async refillUsdh(currentBalance: BigNumber, decimals: number): Promise<void> {
+    // If either the apiUrl or apiKey is undefined, then return, since we can't do anything.
+    if (!isDefined(this.config.nativeMarketsApiConfig)) {
+      this.logger.warn({
+        at: "Refiller#refillUsdh",
+        message: "Native markets api key and base URL are missing from .env. Unable to rebalance USDH.",
+      });
+      return;
+    }
+    const { apiUrl: nativeMarketsApiUrl, apiKey: nativeMarketsApiKey } = this.config.nativeMarketsApiConfig;
+    const headers = {
+      "Api-Version": "2025-11-01",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${nativeMarketsApiKey}`,
+    };
+    const day = 24 * 60 * 60;
+
+    // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
+    let addressId;
+    // If we have the address ID for the base signer and token combo in cache, then do not request it from native markets.
+    const addressIdCacheKey = `nativeMarketsAddressId:${this.baseSignerAddress.toNative()}`;
+    const addressIdCache = await this.redisCache.get(addressIdCacheKey);
+    if (isDefined(addressIdCache)) {
+      addressId = addressIdCache;
+    } else {
+      const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
+      addressId = registeredAddresses.items.find(
+        ({ chain, token, address_hex }) =>
+          chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
+      )?.id;
+      // In the event the address is not currently available, create a new one by posting to the native markets API.
+      if (!isDefined(addressId)) {
+        const newAddressIdData = {
+          address: this.baseSignerAddress.toNative(),
+          chain: "hyper_evm",
+          name: "across-refiller-test",
+          token: "usdh",
+        };
+
+        this.logger.info({
+          at: "Refiller#refillNativeTokenBalances",
+          message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
+          address: this.baseSignerAddress.toNative(),
+        });
+        const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
+          headers,
+        });
+        addressId = _addressId.id;
+      }
+      await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
+    }
+
+    // Next, get the transfer route deposit address on Arbitrum.
+    const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
+    let availableTransferRoute = transferRoutes.items
+      .filter((route) => isDefined(route.source_address))
+      .find(
+        ({ source_address, destination_address }) =>
+          source_address.chain === "arbitrum" &&
+          source_address.token === "usdc" &&
+          destination_address.address_hex === this.baseSignerAddress.toNative()
+      );
+    // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
+    if (!isDefined(availableTransferRoute)) {
+      const newTransferRouteData = {
+        destination_address_id: addressId,
+        name: "Arbitrum USDC -> HyperEVM USDH",
+        source_currency: "usdc",
+        source_payment_rail: "arbitrum",
+      };
+
+      this.logger.info({
+        at: "Refiller#refillNativeTokenBalances",
+        message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
+        address: this.baseSignerAddress.toNative(),
+        addressId,
+      });
+      const { data: _availableTransferRoute } = await axios.post(
+        `${nativeMarketsApiUrl}/transfer_routes`,
+        newTransferRouteData,
+        {
+          headers,
+        }
+      );
+      availableTransferRoute = _availableTransferRoute;
+    }
+
+    // Create the transfer transaction.
+    const srcProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ARBITRUM];
+    const usdc = new Contract(
+      TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM],
+      ERC20_ABI,
+      this.baseSigner.connect(srcProvider)
+    );
+    // By default, sweep the entire USDC balance of the base signer to HyperEVM USDH.
+    const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
+
+    if (amountToTransfer.gt(this.config.minUsdhRebalanceAmount)) {
+      this.clients.multiCallerClient.enqueueTransaction({
+        contract: usdc,
+        chainId: CHAIN_IDs.ARBITRUM,
+        method: "transfer",
+        args: [availableTransferRoute.source_address.address_hex, amountToTransfer],
+        message: "Rebalanced Arbitrum USDC to HyperEVM USDH",
+        nonMulticall: true,
+        mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
+      });
+    }
+  }
+
   private async _swapToRefill(
     swapRoute: SwapRoute,
     amount: BigNumber,
@@ -396,8 +517,28 @@ export class Refiller {
       `No L2 provider found for chain ${swapRoute.originChainId}, have you overridden the spoke pool chains?`
     );
     const originSigner = this.baseSigner.connect(this.clients.balanceAllocator.providers[swapRoute.originChainId]);
+
     const swapData = await this.acrossSwapApiClient.swapWithRoute(swapRoute, amount, this.baseSignerAddress, recipient);
-    if (!swapData) {
+    if (swapData.approval) {
+      const txnReceipt = await sendRawTransaction(
+        this.logger,
+        new Contract(swapData.approval.target.toNative(), [], originSigner),
+        bnZero,
+        swapData.approval.calldata
+      );
+      this.logger.info({
+        at: "Monitor#refillBalances",
+        message: "Submitted approval transaction for swap route.",
+        transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
+        swapRoute,
+        swapper: this.baseSignerAddress.toNative(),
+      });
+      await delay(1);
+      await txnReceipt.wait();
+    }
+
+    const { swap } = swapData;
+    if (!swap) {
       // swapData will be undefined if the transaction simulation fails on the Across Swap API side, which
       // can happen if the swapper doesn't have enough swap input token balance in addition to other
       // miscellaneous reasons.
@@ -411,14 +552,16 @@ export class Refiller {
       });
       return;
     }
-    const txn = await (
-      await sendRawTransaction(
-        this.logger,
-        new Contract(swapData.target.toNative(), [], originSigner),
-        swapData.value,
-        swapData.calldata
-      )
-    ).wait();
+
+    const txnResponse = await sendRawTransaction(
+      this.logger,
+      new Contract(swapData.swap.target.toNative(), [], originSigner),
+      swap.value,
+      swap.calldata
+    );
+    await delay(1);
+    const txnReceipt = await txnResponse.wait();
+
     // Cache the swap for 10 minutes
     // @todo Consider caching for some time relative to the estimated fill time returned by API, but
     // 10 minutes is a reasonable conservative value to avoid duplicate swaps.
@@ -429,7 +572,7 @@ export class Refiller {
       message: `Cached swap for ${redisKey}`,
       ttl,
     });
-    return txn;
+    return txnReceipt;
   }
 
   private async _getBalances(balanceRequests: BalanceRequest[]): Promise<BigNumber[]> {
