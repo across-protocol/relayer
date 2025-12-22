@@ -1,4 +1,5 @@
 import winston from "winston";
+import { MAINNET_CHAIN_IDs } from "@across-protocol/constants";
 import { CommonConfig, ProcessEnv } from "../common";
 import {
   CHAIN_IDs,
@@ -123,23 +124,26 @@ export class MonitorConfig extends CommonConfig {
     });
 
     // Parse L2-only tokens: tokens that exist only on L2 chains (no L1 equivalent).
-    // Format: [{ "symbol": "USDH", "chainId": 999 }]
-    // - will look up address and decimals from TOKEN_SYMBOLS_MAP.
-    // - all monitored relayers (MONITORED_RELAYERS) will be tracked for these tokens.
-    this.l2OnlyTokens = JSON.parse(L2_ONLY_TOKENS ?? "[]")
-      .map(({ symbol, chainId }: { symbol: string; chainId: number }) => {
-        const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
-        if (!tokenInfo?.addresses?.[chainId]) {
-          return undefined;
-        }
-        return {
+    // Format: ["USDH", "OTHER_TOKEN"] - array of token symbols
+    // - will look up token info from TOKEN_SYMBOLS_MAP
+    // - will create entries for all chains in MAINNET_CHAIN_IDs where the token has an address
+    // - all monitored relayers (MONITORED_RELAYERS) will be tracked for these tokens
+    const l2OnlySymbols: string[] = JSON.parse(L2_ONLY_TOKENS ?? "[]");
+    const mainnetChainIds = Object.values(MAINNET_CHAIN_IDs) as number[];
+    this.l2OnlyTokens = l2OnlySymbols.flatMap((symbol) => {
+      const tokenInfo = TOKEN_SYMBOLS_MAP[symbol];
+      if (!tokenInfo?.addresses) {
+        return [];
+      }
+      return mainnetChainIds
+        .filter((chainId) => isDefined(tokenInfo.addresses[chainId]))
+        .map((chainId) => ({
           symbol,
           chainId,
           address: EvmAddress.from(tokenInfo.addresses[chainId]),
           decimals: tokenInfo.decimals,
-        };
-      })
-      .filter(isDefined);
+        }));
+    });
 
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
