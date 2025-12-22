@@ -63,7 +63,7 @@ import {
   sortEventsAscending,
 } from "../utils";
 import { MonitorClients, updateMonitorClients } from "./MonitorClientHelper";
-import { MonitorConfig, L2OnlyToken } from "./MonitorConfig";
+import { MonitorConfig, L2Token } from "./MonitorConfig";
 import { getImpliedBundleBlockRanges } from "../dataworker/DataworkerUtils";
 import { PUBLIC_NETWORKS, TOKEN_EQUIVALENCE_REMAPPING } from "@across-protocol/constants";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
@@ -94,7 +94,7 @@ export class Monitor {
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
   private additionalL1Tokens: L1Token[] = [];
-  private l2OnlyTokens: L2OnlyToken[] = [];
+  private l2OnlyTokens: L2Token[] = [];
   // Chains for each spoke pool client.
   public monitorChains: number[];
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
@@ -141,7 +141,7 @@ export class Monitor {
   /**
    * Returns L2-only tokens for a specific chain.
    */
-  private getL2OnlyTokensForChain(chainId: number): L2OnlyToken[] {
+  private getL2OnlyTokensForChain(chainId: number): L2Token[] {
     return this.l2OnlyTokens.filter((token) => token.chainId === chainId);
   }
 
@@ -1323,7 +1323,7 @@ export class Monitor {
   initializeBalanceReports(
     relayers: Address[],
     allL1Tokens: L1Token[],
-    l2OnlyTokens: L2OnlyToken[],
+    l2OnlyTokens: L2Token[],
     allChainNames: string[]
   ): RelayerBalanceReport {
     const reports: RelayerBalanceReport = {};

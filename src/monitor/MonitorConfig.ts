@@ -11,7 +11,8 @@ import {
 } from "../utils";
 
 // Interface for tokens that exist only on L2 (no L1 equivalent)
-export interface L2OnlyToken {
+// @TODO: Move this to SDK
+export interface L2Token {
   symbol: string;
   chainId: number;
   address: EvmAddress;
@@ -54,7 +55,7 @@ export class MonitorConfig extends CommonConfig {
     token: Address;
   }[] = [];
   readonly additionalL1NonLpTokens: string[] = [];
-  readonly l2OnlyTokens: L2OnlyToken[] = [];
+  readonly l2OnlyTokens: L2Token[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
   readonly hyperliquidOrderMaximumLifetime: number;
