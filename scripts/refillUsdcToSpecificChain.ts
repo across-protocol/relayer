@@ -8,7 +8,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   createFormatFunction,
-  formatUnits,
   toBNWei,
   ERC20,
   Contract,
@@ -198,7 +197,7 @@ async function run(): Promise<void> {
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
+          threshold: MIN_BALANCE_THRESHOLD_USDC_DECIMAL,
         });
 
         // Construct transaction to send entire balance to destination chain
@@ -239,7 +238,7 @@ async function run(): Promise<void> {
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
+          threshold: MIN_BALANCE_THRESHOLD_USDC_DECIMAL,
         });
       }
     } catch (error) {
