@@ -1,4 +1,5 @@
-import { config, disconnectRedisClients, Signer, startupLogLevel, toBNWei, winston } from "../utils";
+import { BigNumber, config, disconnectRedisClients, Signer, startupLogLevel, toBNWei, winston } from "../utils";
+import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerClient, RebalanceRoute } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
@@ -11,18 +12,28 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Construct adapters:
   const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, config, baseSigner);
-  const adapters = { hyperliquid: hyperliquidAdapter };
+  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, config, baseSigner);
+
+  const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
     {
-      sourceChain: 42161,
-      destinationChain: 8453,
+      sourceChain: 999,
+      destinationChain: 999,
       sourceToken: "USDT",
       destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("10.3", 6),
+      maxAmountToTransfer: toBNWei("10.22", 6),
       adapter: "hyperliquid",
     },
+    // {
+    //   sourceChain: 8453,
+    //   destinationChain: 42161,
+    //   sourceToken: "USDC",
+    //   destinationToken: "USDT",
+    //   maxAmountToTransfer: toBNWei("10.3", 6),
+    //   adapter: "binance",
+    // },
   ];
 
   const rebalancerClient = new RebalancerClient({}, adapters, rebalanceRoutes, baseSigner);
@@ -48,9 +59,13 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Follow that with CCTP routes as destination chain.
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
+  // await binanceAdapter.updateRebalanceStatuses();
+  // console.log("binanceAdapter updated order statuses");
   await hyperliquidAdapter.updateRebalanceStatuses();
   console.log("hyperliquidAdapter updated order statuses");
 
+  // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
+  // transactions to get mined.
   await hyperliquidAdapter.getPendingRebalances(rebalanceRoutes[0]);
   console.log("hyperliquidAdapter got pending rebalances");
 

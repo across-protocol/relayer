@@ -41,6 +41,7 @@ import {
   toBNWei,
   TOKEN_SYMBOLS_MAP,
   winston,
+  ZERO_ADDRESS,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -56,6 +57,7 @@ enum STATUS {
 
 interface SPOT_MARKET_META {
   index: number;
+  name: string;
   quoteAssetIndex: number;
   baseAssetIndex: number;
   baseAssetName: string;
@@ -109,6 +111,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
     "USDT-USDC": {
       index: 166,
+      name: "@166",
       quoteAssetIndex: 268,
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
@@ -120,6 +123,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     },
     "USDC-USDT": {
       index: 166,
+      name: "@166",
       quoteAssetIndex: 268,
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
@@ -154,6 +158,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private transactionClient: TransactionClient;
 
   private providers: { [chainId: number]: Provider };
+
+  private maxSlippageBps = 2; // @todo make this configurable
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     // TODO
@@ -314,19 +320,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     if (!tokenData) {
       throw new Error(`No token data found for spot market: ${spotMarketMeta.index}`);
     }
-    const latestPrice = await this._getLatestPrice(
-      rebalanceRoute.sourceToken,
-      rebalanceRoute.destinationToken,
-      spotMarketMeta.isBuy
-    );
-    console.log(`Latest price: ${latestPrice}`);
 
     // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
     // is sufficient, then place order.
 
     console.log(`Placing order with cloid: ${cloid}`);
-    await this._placeLimitOrder(cloid, rebalanceRoute, latestPrice);
-    await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
+    await this._placeMarketOrder(cloid, rebalanceRoute, this.maxSlippageBps);
   }
 
   private _getFromTimestamp(): number {
@@ -424,7 +423,9 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
       const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
       const matchingOpenOrder = openOrders.find((order) => order.cloid === cloid);
       if (matchingFill) {
-        console.log(`Open order for cloid ${cloid} filled! Proceeding to withdraw from Hypercore.`);
+        console.log(
+          `Open order for cloid ${cloid} filled with size ${matchingFill.amountToWithdraw.toString()}! Proceeding to withdraw from Hypercore.`
+        );
 
         // Issue a withdrawal from HL now:
         const existingOrder = await this._redisGetOrderDetails(cloid);
@@ -437,20 +438,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
       } else if (!matchingOpenOrder) {
         const existingOrder = await this._redisGetOrderDetails(cloid);
-        const spotMarketMeta = this._getSpotMarketMetaForRoute(
-          existingOrder.sourceToken,
-          existingOrder.destinationToken
-        );
-        const latestPrice = await this._getLatestPrice(
-          existingOrder.sourceToken,
-          existingOrder.destinationToken,
-          spotMarketMeta.isBuy
-        );
-        console.log(
-          `Missing order for cloid ${cloid}, replacing the order with new price ${latestPrice}`,
-          existingOrder
-        );
-        await this._placeLimitOrder(cloid, existingOrder, latestPrice);
+        await this._createHlOrder(existingOrder, cloid);
       } else {
         console.log("Order is still unfilled", matchingOpenOrder);
       }
@@ -464,6 +452,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     for (const cloid of pendingBridgeToHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       await this._createHlOrder(orderDetails, cloid);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
     }
 
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
@@ -539,6 +528,62 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
   }
 
+  async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute, maxSlippageBps: number): Promise<void> {
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const l2Book = await infoClient.l2Book({ coin: spotMarketMeta.name });
+    const bids = l2Book.levels[0];
+    const asks = l2Book.levels[1];
+
+    console.log(
+      `Placing a market order for the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}" to ${
+        spotMarketMeta.isBuy ? "buy" : "sell"
+      } ${rebalanceRoute.maxAmountToTransfer.toString()} of ${rebalanceRoute.destinationToken}`
+    );
+    const tokenMeta = this._getTokenMeta(rebalanceRoute.destinationToken);
+    const sideOfBookToTraverse = spotMarketMeta.isBuy ? asks : bids;
+    const bestPx = Number(sideOfBookToTraverse[0].px);
+    console.log(`Best px: ${bestPx}`);
+    console.log(`${spotMarketMeta.isBuy ? "Asks" : "Bids"} to traverse:`, sideOfBookToTraverse);
+    let szFilledSoFar = bnZero;
+    const maxPxReached = sideOfBookToTraverse.find((level, i) => {
+      console.log(
+        `szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      );
+      // Note: sz is always denominated in the base asset, so if we are buying, then the maxAmountToTransfer (i.e.
+      // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
+      // into the base asset.
+      const sz = spotMarketMeta.isBuy ? Number(level.sz) * Number(level.px) : Number(level.sz);
+      console.log(`Levl size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`);
+      const szWei = toBNWei(level.sz, tokenMeta.evmDecimals);
+      if (szWei.gte(rebalanceRoute.maxAmountToTransfer)) {
+        console.log(
+          `Level ${i} with px=${
+            level.px
+          } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        );
+        return true;
+      }
+      console.log(
+        `Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      );
+      szFilledSoFar = szFilledSoFar.add(szWei);
+    });
+    if (!maxPxReached) {
+      throw new Error(
+        `Cannot find price in order book that satisfies an order for size ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
+          rebalanceRoute.destinationToken
+        } on the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}"`
+      );
+    }
+    const slippageBps = Math.abs(((Number(maxPxReached.px) - bestPx) / bestPx) * 10000);
+    if (slippageBps > maxSlippageBps) {
+      throw new Error(`Slippage of ${slippageBps}bps is greater than the max slippage of ${maxSlippageBps}bps`);
+    }
+    console.log(`Slippage of ${slippageBps}bps is within the max slippage of ${maxSlippageBps}bps`);
+    await this._placeLimitOrder(cloid, rebalanceRoute, maxPxReached.px);
+  }
+
   private async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
     const provider = await getProvider(chainId);
     const connectedSigner = this.baseSigner.connect(provider);
@@ -585,6 +630,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         .div(10 ** spotMarketMeta.pxDecimals);
     }
 
+    // We need to make sure there are not more than evmDecimals decimals for the amount to withdraw or the HL
+    // spotSend/sendAsset transaction will fail "Invalid number of decimals".
+    amountToWithdraw = toBNWei(
+      Number(fromWei(amountToWithdraw, destinationTokenMeta.coreDecimals)).toFixed(destinationTokenMeta.evmDecimals),
+      destinationTokenMeta.coreDecimals
+    );
     return { details: matchingFill, amountToWithdraw };
   }
 
@@ -668,7 +719,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   private async _placeLimitOrder(cloid: string, rebalanceRoute: RebalanceRoute, px: string): Promise<void> {
     const { sourceToken, destinationToken } = rebalanceRoute;
-    console.log(`_placeLimitOrder: placing new order for cloid ${cloid}`);
+    console.log(`_placeLimitOrder: placing new order for cloid ${cloid} with px=${px}`);
     // rebalanceRoute represents an order that we need to make on HL.
     // - TODO: How to set size accurately using rebalanceRoute? Is it equal to expected price * inAmount? or outAmount / expected price?
 
@@ -730,36 +781,49 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const CORE_WRITER_EVM_ADDRESS = "0x3333333333333333333333333333333333333333";
     // CoreWriter exposes a single function that charges 20k gas to send an instruction on Hypercore.
     const CORE_WRITER_ABI = ["function sendRawAction(bytes)"];
-    // To transfer Core balance, a 'spotSend' action must be specified in the payload to sendRawAction:
-    const SPOT_SEND_PREFIX_BYTES = ethers.utils.hexlify([
+    // To transfer Core balance for any token besides USDC, a 'spotSend' action must be specified in the payload to sendRawAction:
+    // To transfer USDC from Core to EVM we need to use the 'sendAsset' action.
+    const PREFIX_BYTES = ethers.utils.hexlify([
       1, // byte 0: version, must be 1
       // bytes 1-3: unique action index as described here:
       // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/hyperevm/interacting-with-hypercore#corewriter-contract
       0,
       0,
-      6, // action index of spotSend is 6, so bytes 1-3 are 006
+      destinationToken === "USDC" ? 13 : 6, // action index of spotSend is 6 and sendAsset is 13
     ]);
     const tokenMeta = this._getTokenMeta(destinationToken);
     const provider = await getProvider(HYPEREVM);
     const connectedSigner = this.baseSigner.connect(provider);
 
     const coreWriterContract = new Contract(CORE_WRITER_EVM_ADDRESS, CORE_WRITER_ABI, connectedSigner);
-    const spotSendArgBytes_withdrawFromCore = ethers.utils.defaultAbiCoder.encode(
-      ["address", "uint64", "uint64"],
-      [tokenMeta.evmSystemAddress.toNative(), tokenMeta.tokenIndex, amountToWithdrawCorePrecision]
-    );
+    const argBytes =
+      destinationToken === "USDC"
+        ? ethers.utils.defaultAbiCoder.encode(
+            ["address", "address", "uint32", "uint32", "uint64", "uint64"],
+            [
+              // @dev to withdraw USDC, essentially transfer spot USDC to the USDC system account:
+              tokenMeta.evmSystemAddress.toNative(),
+              ZERO_ADDRESS, // subAccount
+              bnUint32Max, // type(uint32).max for spot
+              bnUint32Max, // type(uint32).max for spot
+              tokenMeta.tokenIndex,
+              amountToWithdrawCorePrecision,
+            ]
+          )
+        : ethers.utils.defaultAbiCoder.encode(
+            ["address", "uint64", "uint64"],
+            [tokenMeta.evmSystemAddress.toNative(), tokenMeta.tokenIndex, amountToWithdrawCorePrecision]
+          );
 
     // @dev costs 20k gas on HyperEVM
-    const spotSendBytes = ethers.utils.hexlify(
-      ethers.utils.concat([SPOT_SEND_PREFIX_BYTES, spotSendArgBytes_withdrawFromCore])
-    );
+    const bytes = ethers.utils.hexlify(ethers.utils.concat([PREFIX_BYTES, argBytes]));
 
     const amountToWithdraw = fromWei(amountToWithdrawCorePrecision, tokenMeta.coreDecimals);
-    console.log(`Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`, spotSendBytes);
+    console.log(`Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm`, bytes);
 
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
     // Note: If sending multicaller client txn, unpermissioned:false and nonMulticall:true must be set.
-    const txn = await coreWriterContract.sendRawAction(spotSendBytes);
+    const txn = await coreWriterContract.sendRawAction(bytes);
     console.log(
       `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       blockExplorerLink(txn.hash, HYPEREVM)
