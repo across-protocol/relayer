@@ -16,7 +16,7 @@ export class TokenTransferClient {
 
   constructor(
     readonly logger: winston.Logger,
-    // We can accept spokePoolClients here instead, but just accepting providers makes it very clear that we dont
+    // We can accept spokePoolClients here instead, but just accepting providers makes it very clear that we don't
     // rely on SpokePoolClient and its cached state.
     readonly providerByChainIds: { [chainId: number]: Provider },
     readonly monitoredAddresses: Address[]
