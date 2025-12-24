@@ -88,6 +88,7 @@ type BRIDGE_NAME = "OFT" | "CCTP";
 // We should continually re-evaluate whether hyperliquid stablecoin swaps are indeed the cheapest option.
 export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private redisCache: RedisCache;
+  private initialized = false;
 
   REDIS_PREFIX = "hyperliquid-stablecoin-swap:";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
@@ -170,7 +171,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
     const provider_999 = await getProvider(HYPEREVM);
     const connectedSigner_999 = this.baseSigner.connect(provider_999);
-    this.redisCache = (await getRedisCache()) as RedisCache;
+    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.availableRoutes = _availableRoutes;
     this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
     this.transactionClient = new TransactionClient(this.logger);
@@ -239,9 +240,24 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     }
 
     await this.multicallerClient.executeTxnQueues();
+    this.initialized = true;
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
+    this._assertInitialized();
+
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const latestPx = await this._getLatestPrice(
+      rebalanceRoute.sourceToken,
+      rebalanceRoute.destinationToken,
+      spotMarketMeta.isBuy
+    );
+    const { minimumOrderSize } = this._getSzForOrder(rebalanceRoute, latestPx);
+    assert(
+      rebalanceRoute.maxAmountToTransfer.gte(minimumOrderSize),
+      "Max amount to transfer is less than minimum order size"
+    );
+
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.
     // If source token is USDH then throw if source chain is not HyperEVM.
@@ -343,6 +359,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
 
   // TODO: Pass in from and to timestamps here to make sure updates across all chains are in sync.
   async updateRebalanceStatuses(): Promise<void> {
+    this._assertInitialized();
     // The most important thing we want this function to do so is to update state such that getPendingRebalances()
     // returns the correct virtual balances:
     // - Get all open orders and user fills from HL API.
@@ -1064,13 +1081,25 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         user: this.baseSignerAddress.toNative(),
         startTime: withdrawalInitiatedEarliestTimestamp,
       })
-    ).filter(
-      (update) =>
-        update.delta.type === "spotTransfer" &&
-        update.delta.token === this._remapTokenSymbolToHlSymbol(destinationToken) &&
-        update.delta.destination.toLowerCase() === tokenMeta.evmSystemAddress.toNative().toLowerCase() &&
-        update.delta.user.toLowerCase() === this.baseSignerAddress.toNative().toLowerCase()
-    );
+    ).filter((_update) => {
+      if ((_update.delta.type as any) === "send") {
+        const update = _update as { delta: { token: string; destination: string; user: string } };
+        return (
+          update.delta.token === this._remapTokenSymbolToHlSymbol(destinationToken) &&
+          update.delta.destination.toLowerCase() === tokenMeta.evmSystemAddress.toNative().toLowerCase() &&
+          update.delta.user.toLowerCase() === this.baseSignerAddress.toNative().toLowerCase()
+        );
+      } else {
+        const update = _update;
+        return (
+          update.delta.type === "spotTransfer" &&
+          update.delta.token === this._remapTokenSymbolToHlSymbol(destinationToken) &&
+          update.delta.destination.toLowerCase() === tokenMeta.evmSystemAddress.toNative().toLowerCase() &&
+          update.delta.user.toLowerCase() === this.baseSignerAddress.toNative().toLowerCase()
+        );
+      }
+      // @dev send type isn't correctly included in the SDK
+    });
     return initiatedWithdrawals;
   }
 
@@ -1106,8 +1135,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     let unfinalizedWithdrawalAmount = bnZero;
     const finalizedWithdrawalTxnHashes = new Set<string>();
     for (const initiated of initiatedWithdrawals) {
-      assert(initiated.delta.type === "spotTransfer", "Expected spotTransfer");
       const withdrawalAmount = toBNWei(initiated.delta.amount, tokenMeta.evmDecimals);
+      assert(
+        initiated.delta.type === "spotTransfer" || initiated.delta.type === "send",
+        "Expected spotTransfer or send"
+      );
       const matchingFinalizedAmount = finalizedWithdrawals.find(
         (finalized) =>
           !finalizedWithdrawalTxnHashes.has(finalized.transactionHash) &&
@@ -1237,7 +1269,12 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     return withdrawalAmount;
   }
 
+  private _assertInitialized(): void {
+    assert(this.initialized, "HyperliquidStablecoinSwapAdapter not initialized");
+  }
+
   async getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }> {
+    this._assertInitialized();
     const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
     const { HYPEREVM } = CHAIN_IDs;
     console.group(
@@ -1305,7 +1342,8 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         }
 
         // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
-        // its balance from HyperEVM.
+        // its balance from HyperEVM. We are assuming that the unfinalizedBridgeAmountToHyperevm is perfectly explained
+        // by orders with status PENDING_BRIDGE_TO_HYPEREVM.
         const convertedOrderAmount = amountConverter(orderDetails.maxAmountToTransfer);
         if (unfinalizedBridgeAmountToHyperevm.gte(convertedOrderAmount)) {
           console.log(
@@ -1320,6 +1358,10 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
         const existingPendingRebalanceAmountDestinationChain = pendingRebalances[HYPEREVM] ?? bnZero;
         pendingRebalances[HYPEREVM] = existingPendingRebalanceAmountDestinationChain.sub(convertedOrderAmount);
       }
+      assert(
+        unfinalizedBridgeAmountToHyperevm.eq(bnZero),
+        "Unfinalized bridge amount to HyperEVM should be 0 after evaluating all orders with status PENDING_BRIDGE_TO_HYPEREVM"
+      );
     }
 
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();

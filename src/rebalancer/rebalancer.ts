@@ -4,6 +4,9 @@ interface ChainConfig {
   // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
   // positive infinity (to indicate that a chain should be the universal sink for the given token).
   targetBalance: BigNumber;
+  // Set this lower to prioritize returning this balance (if below target) back to target or deprioritize
+  // sending this balance when above target.
+  priorityTier: number;
 }
 
 interface TokenConfig {
@@ -50,13 +53,14 @@ export class RebalancerClient {
 
   async initialize(): Promise<void> {
     for (const [name, adapter] of Object.entries(this.adapters)) {
-      await adapter.initialize(this.rebalanceRoutes);
-      console.log(`Initialized adapter: ${name}`);
+      const routesForAdapter = this.rebalanceRoutes.filter((route) => route.adapter === name);
+      await adapter.initialize(routesForAdapter);
+      console.log(`Initialized ${name} adapter with routes:`, routesForAdapter);
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async rebalanceInventory(): Promise<void> {
+  async rebalanceInventory(/* maxCostBps: number */): Promise<void> {
     const hyperliquidRoute = this.rebalanceRoutes.find((route) => route.adapter === "hyperliquid");
     if (hyperliquidRoute) {
       console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
@@ -65,6 +69,11 @@ export class RebalancerClient {
       // const costToRebalance = await this.getCostToRebalance(hyperliquidRoute);
       // const amountToRebalance = hyperliquidRoute.maxAmountToTransfer.mul(toBNWei("1")).div(toBNWei("1").sub(costToRebalance));
       await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
+    }
+    const binanceRoute = this.rebalanceRoutes.find((route) => route.adapter === "binance");
+    if (binanceRoute) {
+      console.log(`Initializing rebalance for route: ${JSON.stringify(binanceRoute)}`);
+      await this.adapters.binance.initializeRebalance(binanceRoute);
     }
     // Setup:
     // - We can only rebalance via rebalance routes from source chains + tokens to destination chains + tokens.
@@ -89,9 +98,16 @@ export class RebalancerClient {
     //    - Note: This should include both swap and bridge routes, so you could theoretically fill deficits in USDC using
     //      by drawing from excesses in USDT.
     // - If resultant route list is empty, log a warning.
-    // - Otherwise, call initializeRebalance() for that route.
+    // - Otherwise, call initializeRebalance() for that route using the "cheapest" route whose cost is under the
+    //   max allowable cost. We'll need to query route.adapter.getCostEstimate to figure out the cost of the route.
     // - To avoid duplicate rebalances, the adapters should correctly implement getPendingRebalances() so that this
     //   client computes current balances correctly.
+
+    // for (const deficit of  deficits) {
+    //   const routes = this.getRebalanceRoutesToChain(deficit.chain, deficit.token, deficit.amount);
+    //   const cheapestRoute = routes.filter((route) => route.adapter.getCostEstimate(route) < maxCost).sort((a, b) => a.cost - b.cost)[0];
+    //   await this.adapters.hyperliquid.initializeRebalance(cheapestRoute);
+    // }
   }
 
   async getCostToRebalance(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
