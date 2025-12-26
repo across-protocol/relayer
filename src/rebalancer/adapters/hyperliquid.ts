@@ -239,7 +239,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       rebalanceRoute.maxAmountToTransfer.gte(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.evmDecimals)),
       "Max amount to transfer is less than minimum order size"
     );
-    const amountToTransfer = rebalanceRoute.maxAmountToTransfer
+    const amountToTransfer = rebalanceRoute.maxAmountToTransfer;
 
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.

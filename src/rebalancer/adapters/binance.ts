@@ -109,9 +109,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     this._assertInitialized();
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
 
-   const accountInfo = await this.binanceApiClient.accountInfo();
-   console.log(accountInfo)
-   throw new Error("Stop here");
     const accountCoins = await getAccountCoins(this.binanceApiClient);
     const destinationCoin = accountCoins.find((coin) => coin.symbol === destinationToken);
     const destinationNetwork = destinationCoin.networkList.find(
@@ -127,13 +124,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     const amountToTransfer = rebalanceRoute.maxAmountToTransfer;
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
 
-    assert(amountToTransfer.gte(minimumOrderSize), `amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`);
     assert(
-        amountToTransfer.gte(minimumWithdrawalSize),
+      amountToTransfer.gte(minimumOrderSize),
+      `amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`
+    );
+    assert(
+      amountToTransfer.gte(minimumWithdrawalSize),
       `amount to transfer ${amountToTransfer.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on destination chain`
     );
     assert(
-        amountToTransfer.lte(maximumWithdrawalSize),
+      amountToTransfer.lte(maximumWithdrawalSize),
       `amount to transfer ${amountToTransfer.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on destination chain`
     );
 
@@ -183,7 +183,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
 
   async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<number> {
     const symbol = await this._getSymbol(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
-    console.log(`Full market details`, symbol)
+    console.log("Full market details", symbol);
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.destinationToken];
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
@@ -257,21 +257,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
-    const pendingDeposits = await this._redisGetPendingDeposits();
-    console.log("Pending deposits", pendingDeposits);
-    for (const cloid of pendingDeposits) {
-      const orderDetails = await this._redisGetOrderDetails(cloid);
-      const latestPx = await this._getLatestPrice(orderDetails);
-      const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
-      const balance = await this._getBalance(orderDetails.sourceToken);
-      console.log(`Current account balance of token ${orderDetails.sourceToken}: ${balance.toString()}`);
-      if (balance < szForOrder) {
-        console.log(`Not enough balance to place order for cloid ${cloid}, balance: ${balance}`);
-        continue;
-      }
-      await this._placeMarketOrder(cloid, orderDetails);
-      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
-    }
+    const accountInfo = await this.binanceApiClient["accountCoins"]({ omitZeroBalances: true });
+    console.log(
+      "USDT Account Info:",
+      accountInfo.find((coin) => coin.coin === "USDT")
+    );
+    console.log(
+      "USDC Account Info:",
+      accountInfo.find((coin) => coin.coin === "USDC")
+    );
 
     const pendingSwaps = await this._redisGetPendingSwaps();
     console.log("Pending swaps", pendingSwaps);
@@ -294,9 +288,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       }
     }
 
+    const pendingDeposits = await this._redisGetPendingDeposits();
+    console.log("Pending deposits", pendingDeposits);
+    for (const cloid of pendingDeposits) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      const latestPx = await this._getLatestPrice(orderDetails);
+      const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
+      const balance = await this._getBalance(orderDetails.sourceToken);
+      console.log(`Current account balance of token ${orderDetails.sourceToken}: ${balance.toString()}`);
+      if (balance < szForOrder) {
+        console.log(`Not enough balance to place order for cloid ${cloid}, balance: ${balance}`);
+        continue;
+      }
+      await this._placeMarketOrder(cloid, orderDetails);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
+    }
+
     const unfinalizedWithdrawalAmounts: { [destinationToken: string]: BigNumber } = {};
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    console.log(`Pending withdrawals`, pendingWithdrawals);
+    console.log("Pending withdrawals", pendingWithdrawals);
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const matchingFill = await this._getMatchingFillForCloid(cloid);
@@ -330,8 +340,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
           unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
         continue;
       }
-        // We no longer need this order information, so we can delete it:
-        await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL);
+      // We no longer need this order information, so we can delete it:
+      await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL);
     }
     // PENDING_DEPOSIT: place new orders if enough balance and update status to PENDING_SWAP
     // PENDING_SWAP: Load open orders and matching fills. If a matching fill is found, initiate a withdrawal from Binance
@@ -379,14 +389,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     // Subtract virtual balance for pending withdrawals that have already finalized:
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
     let unfinalizedWithdrawalAmount = await this._getUnfinalizedWithdrawalAmount(
-        rebalanceRoute.destinationToken,
-        rebalanceRoute.destinationChain,
-        this._getFromTimestamp() * 1000
-      );
+      rebalanceRoute.destinationToken,
+      rebalanceRoute.destinationChain,
+      this._getFromTimestamp() * 1000
+    );
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const matchingFill = await this._getMatchingFillForCloid(cloid);
-      const expectedAmountToReceive = toBNWei(matchingFill.executedQty, TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals);
+      const expectedAmountToReceive = toBNWei(
+        matchingFill.executedQty,
+        TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
+      );
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
         console.log(
           `- Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`
@@ -398,8 +411,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.maxAmountToTransfer.toString()} from HyperEVM`
       );
       const existingPendingRebalanceAmountDestinationChain = pendingRebalances[orderDetails.destinationChain] ?? bnZero;
-      pendingRebalances[orderDetails.destinationChain] =
-        existingPendingRebalanceAmountDestinationChain.sub(orderDetails.maxAmountToTransfer);
+      pendingRebalances[orderDetails.destinationChain] = existingPendingRebalanceAmountDestinationChain.sub(
+        orderDetails.maxAmountToTransfer
+      );
     }
     console.log(
       "- Total pending rebalance amounts",
