@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { AugmentedTransaction, MultiCallerClient, TransactionClient } from "../../clients";
+import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import {
   Address,
   assert,
@@ -33,7 +33,6 @@ import {
   MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
-  Provider,
   roundAmountToSend,
   SendParamStruct,
   Signer,
@@ -47,6 +46,7 @@ import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import { BaseAdapter } from "./baseAdapter";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
@@ -86,10 +86,7 @@ type BRIDGE_NAME = "OFT" | "CCTP";
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
 // into HyperEVM is free (or 0.01% for fast transfers) and then swapping on Hyperliquid is very cheap compared to DEX's.
 // We should continually re-evaluate whether hyperliquid stablecoin swaps are indeed the cheapest option.
-export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
-  private redisCache: RedisCache;
-  private initialized = false;
-
+export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements RebalancerAdapter {
   REDIS_PREFIX = "hyperliquid-stablecoin-swap:";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
@@ -104,8 +101,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
 
   private baseSignerAddress: EvmAddress;
-
-  private lookbackSeconds = 60 * 60 * 24 * 7; // 7 days ago
 
   // @dev Every market is saved in here twice, where the base and quote asset are reversed in the dictionary key
   // and the isBuy is flipped.
@@ -156,14 +151,11 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
   private availableRoutes: RebalanceRoute[];
 
   private multicallerClient: MultiCallerClient;
-  private transactionClient: TransactionClient;
-
-  private providers: { [chainId: number]: Provider };
 
   private maxSlippageBps = 2; // @todo make this configurable
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
-    // TODO
+    super(logger);
   }
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
@@ -174,7 +166,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.availableRoutes = _availableRoutes;
     this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
-    this.transactionClient = new TransactionClient(this.logger);
 
     for (const route of this.availableRoutes) {
       // Initialize a provider for the source chain and check if we have spot market data
@@ -896,26 +887,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     await this._submitTransaction(transaction);
   }
 
-  private async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
-    const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
-    const { contract: targetContract, method, ...txnRequestData } = txnRequest;
-    if (!succeed) {
-      const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
-        txnRequest.chainId
-      }`;
-      throw new Error(`${message} (${reason})`);
-    }
-
-    const response = await this.transactionClient.submit(transaction.chainId, [transaction]);
-    if (response.length === 0) {
-      throw new Error(
-        `Transaction succeeded simulation but failed to submit onchain to ${
-          targetContract.address
-        }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
-      );
-    }
-  }
-
   private async _bridgeToChain(
     token: string,
     originChain: number,
@@ -1472,7 +1443,7 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
    *
    ****************************************************/
 
-  _redisGetOrderStatusKey(status: STATUS): string {
+  protected _redisGetOrderStatusKey(status: STATUS): string {
     let orderStatusKey: string;
     switch (status) {
       case STATUS.PENDING_BRIDGE_TO_HYPEREVM:
@@ -1498,26 +1469,6 @@ export class HyperliquidStablecoinSwapAdapter implements RebalancerAdapter {
     const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
 
     return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
-  }
-
-  async _redisCreateOrder(cloid: string, status: STATUS, rebalanceRoute: RebalanceRoute): Promise<void> {
-    const orderStatusKey = this._redisGetOrderStatusKey(status);
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
-
-    console.log(`_redisCreateOrder: Saving order to status set: ${orderStatusKey}`);
-    console.log(`_redisCreateOrder: Saving new order details under key ${orderDetailsKey}`, rebalanceRoute);
-
-    // Create a new order in Redis. We use infinite expiry because we will delete this order after its no longer
-    // used.
-    const results = await Promise.all([
-      this.redisCache.sAdd(orderStatusKey, cloid.toString()),
-      this.redisCache.set(
-        orderDetailsKey,
-        JSON.stringify({ ...rebalanceRoute, maxAmountToTransfer: rebalanceRoute.maxAmountToTransfer.toString() }),
-        Number.POSITIVE_INFINITY
-      ),
-    ]);
-    console.log("_redisCreateOrder: results", results);
   }
 
   async _redisGetOrderDetails(cloid: string): Promise<RebalanceRoute> {

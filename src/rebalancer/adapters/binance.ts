@@ -3,16 +3,25 @@ import {
   assert,
   BigNumber,
   BINANCE_NETWORKS,
+  Contract,
+  ERC20,
+  fromWei,
   getAccountCoins,
   getBinanceApiClient,
+  getBinanceDeposits,
+  getBinanceWithdrawals,
   getNetworkName,
+  getProvider,
   getRedisCache,
   Signer,
+  TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { RedisCache } from "../../caching/RedisCache";
+import { BaseAdapter } from "./baseAdapter";
+import { AugmentedTransaction } from "../../clients";
 
 enum STATUS {
   PENDING_DEPOSIT,
@@ -20,17 +29,17 @@ enum STATUS {
   PENDING_WITHDRAWAL,
 }
 
-export class BinanceStablecoinSwapAdapter implements RebalancerAdapter {
+export class BinanceStablecoinSwapAdapter extends BaseAdapter implements RebalancerAdapter {
   private binanceApiClient: Binance;
-  private redisCache: RedisCache;
   private availableRoutes: RebalanceRoute[];
-  private initialized = false;
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
-  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {}
+  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
+    super(logger);
+  }
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
@@ -81,6 +90,25 @@ export class BinanceStablecoinSwapAdapter implements RebalancerAdapter {
       network: BINANCE_NETWORKS[sourceChain],
     });
     console.log(`deposit address on ${getNetworkName(sourceChain)} for ${sourceCoin.symbol}`, depositAddress);
+
+    const sourceProvider = await getProvider(sourceChain);
+    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
+    const sourceAddress = sourceTokenInfo.addresses[sourceChain];
+    const erc20 = new Contract(sourceAddress, ERC20.abi, this.baseSigner.connect(sourceProvider));
+    const amountReadable = fromWei(rebalanceRoute.maxAmountToTransfer, sourceTokenInfo.decimals);
+    const txn: AugmentedTransaction = {
+      contract: erc20,
+      method: "transfer",
+      args: [depositAddress.address, rebalanceRoute.maxAmountToTransfer],
+      chainId: sourceChain,
+      nonMulticall: true,
+      unpermissioned: false,
+      message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+      mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+    };
+    const simulationResult = await this.transactionClient.simulate([txn]);
+    console.log("simulation result", simulationResult);
+    // await this._submitTransaction(txn);
   }
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
@@ -98,6 +126,24 @@ export class BinanceStablecoinSwapAdapter implements RebalancerAdapter {
   // + token in question.
   async getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }> {
     this._assertInitialized();
+
+    const deposits = (await getBinanceDeposits(this.binanceApiClient, Date.now() - 1000 * 60 * 60 * 24)).filter(
+      (deposit) =>
+        deposit.coin === rebalanceRoute.sourceToken && deposit.network === BINANCE_NETWORKS[rebalanceRoute.sourceChain]
+    );
+    console.log("deposits", deposits);
+    const withdrawals = (
+      await getBinanceWithdrawals(
+        this.binanceApiClient,
+        rebalanceRoute.destinationToken,
+        Date.now() - 1000 * 60 * 60 * 24
+      )
+    ).filter(
+      (withdrawal) =>
+        withdrawal.coin === rebalanceRoute.destinationToken &&
+        withdrawal.network === BINANCE_NETWORKS[rebalanceRoute.destinationChain]
+    );
+    console.log("withdrawals", withdrawals);
     return {};
     // For any orders with pending status add virtual balance to destination chain.
     // We need to make sure not to count orders with pending withdrawal status that have already finalized otherwise
@@ -108,7 +154,7 @@ export class BinanceStablecoinSwapAdapter implements RebalancerAdapter {
     // then we can assume this order has finalized, so subtract a virtual balance credit for the order amount.
   }
 
-  _redisGetOrderStatusKey(status: STATUS): string {
+  protected _redisGetOrderStatusKey(status: STATUS): string {
     let orderStatusKey: string;
     switch (status) {
       case STATUS.PENDING_DEPOSIT:
