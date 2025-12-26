@@ -1,7 +1,6 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import {
-  Address,
   assert,
   BigNumber,
   blockExplorerLink,
@@ -26,7 +25,6 @@ import {
   getNetworkName,
   getProvider,
   getRedisCache,
-  getTokenInfo,
   getV2DepositForBurnMaxFee,
   isDefined,
   isStargateBridge,
@@ -99,8 +97,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
   // This table associates HL cloid's with rebalance route information, so we can correctly progress the pending order
   // through the EVM -> HL -> EVM lifecycle.
   REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
-
-  private baseSignerAddress: EvmAddress;
 
   // @dev Every market is saved in here twice, where the base and quote asset are reversed in the dictionary key
   // and the isBuy is flipped.
@@ -1450,16 +1446,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
         throw new Error(`Invalid status: ${status}`);
     }
     return orderStatusKey;
-  }
-
-  async _redisUpdateOrderStatus(cloid: string, oldStatus: STATUS, status: STATUS): Promise<void> {
-    const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus);
-    const newOrderStatusKey = this._redisGetOrderStatusKey(status);
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
-    console.log(`Updated order status from ${oldOrderStatusKey} to ${newOrderStatusKey}`, result);
   }
 
   async _redisGetPendingSwaps(): Promise<string[]> {

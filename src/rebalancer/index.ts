@@ -27,7 +27,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     //   adapter: "hyperliquid",
     // },
     {
-      sourceChain: 8453,
+      sourceChain: 10,
       destinationChain: 42161,
       sourceToken: "USDC",
       destinationToken: "USDT",

@@ -6,15 +6,18 @@ import {
   bnZero,
   Contract,
   ERC20,
+  EventSearchConfig,
   EvmAddress,
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
   getBinanceDeposits,
   getBinanceWithdrawals,
+  getBlockForTimestamp,
   getNetworkName,
   getProvider,
   getRedisCache,
+  paginatedEventQuery,
   Signer,
   toBNWei,
   TOKEN_SYMBOLS_MAP,
@@ -79,6 +82,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
+    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
     const coins = await getAccountCoins(this.binanceApiClient);
     this.availableRoutes = _availableRoutes;
@@ -173,9 +177,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     console.log(
-      `Placing a market order for the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}" to ${
-        spotMarketMeta.isBuy ? "buy" : "sell"
-      } ${rebalanceRoute.maxAmountToTransfer.toString()} of ${rebalanceRoute.destinationToken}`
+      `Fetching the price for a market order for the market "${rebalanceRoute.sourceToken}-${
+        rebalanceRoute.destinationToken
+      }" to ${spotMarketMeta.isBuy ? "buy" : "sell"} ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
+        rebalanceRoute.destinationToken
+      }`
     );
     const bestPx = Number(sideOfBookToTraverse[0].price);
     console.log(`Best px: ${bestPx}`);
@@ -239,6 +245,49 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
+
+    const pendingDeposits = await this._redisGetPendingDeposits();
+    for (const cloid of pendingDeposits) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      const latestPx = await this._getLatestPrice(orderDetails);
+      const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
+      // Initiate a withdrawal for now back to the deposit chain
+      await this._withdraw(szForOrder, orderDetails.sourceToken, orderDetails.sourceChain);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_WITHDRAWAL);
+    }
+
+    const unfinalizedWithdrawalAmounts: { [destinationToken: string]: BigNumber } = {};
+    const pendingWithdrawals = await this._redisGetPendingWithdrawals();
+    for (const cloid of pendingWithdrawals) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      // const matchingFill = await this._getMatchingFill(cloid);
+      const withdrawals = (
+        await getBinanceWithdrawals(
+          this.binanceApiClient,
+          orderDetails.sourceToken, // Should be destinationToken
+          Date.now() - 1000 * 60 * 60 * 24 // Should be matchingFill.time to only get withdrawals after fill
+        )
+      ).filter(
+        (withdrawal) =>
+          withdrawal.coin === orderDetails.sourceToken &&
+          withdrawal.network === BINANCE_NETWORKS[orderDetails.sourceChain]
+      );
+
+      // if (withdrawals.length === 0) {
+      //     console.log(
+      //       `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.details.time}, waiting`
+      //     );
+      //     continue;
+      //   }
+      console.log("potential matching withdrawals", withdrawals);
+      const unfinalizedWithdrawalAmount = await this._getUnfinalizedWithdrawalAmount(
+        orderDetails.sourceToken,
+        orderDetails.sourceChain,
+        Date.now() - 1000 * 60 * 60 * 24
+      );
+      console.log("unfinalized withdrawal amount", unfinalizedWithdrawalAmount.toString());
+      // TODO:
+    }
     // PENDING_DEPOSIT: place new orders if enough balance and update status to PENDING_SWAP
     // PENDING_SWAP: Load open orders and matching fills. If a matching fill is found, initiate a withdrawal from Binance
     // and update status to PENDING_WITHDRAWAL_FROM_BINANCE. If no matching fill is found and no open order, then
@@ -306,6 +355,98 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     // then we can assume this order has finalized, so subtract a virtual balance credit for the order amount.
   }
 
+  private _getFromTimestamp(): number {
+    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
+  }
+
+  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
+    const fromTimestamp = this._getFromTimestamp();
+    const provider = await getProvider(chainId);
+    const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
+    const toBlock = await provider.getBlock("latest");
+    const maxLookBack = this.config.maxBlockLookBack[chainId];
+    return { from: fromBlock, to: toBlock.number, maxLookBack };
+  }
+
+  protected async _getCompletedBinanceWithdrawals(token: string, chain: number, startTime: number) {
+    return (await getBinanceWithdrawals(this.binanceApiClient, token, startTime)).filter(
+      (withdrawal) =>
+        withdrawal.coin === token && withdrawal.network === BINANCE_NETWORKS[chain] && withdrawal.status === 6
+    );
+  }
+
+  protected async _getUnfinalizedWithdrawalAmount(
+    destinationToken: string,
+    destinationChain: number,
+    withdrawalInitiatedEarliestTimestamp: number
+  ): Promise<BigNumber> {
+    const provider = await getProvider(destinationChain);
+    const eventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    const destinationTokenContract = new Contract(
+      TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain],
+      ERC20.abi,
+      this.baseSigner.connect(provider)
+    );
+    const finalizedWithdrawals = await paginatedEventQuery(
+      destinationTokenContract,
+      destinationTokenContract.filters.Transfer(null, this.baseSignerAddress.toNative()),
+      eventSearchConfig
+    );
+    const initiatedWithdrawals = await this._getCompletedBinanceWithdrawals(
+      destinationToken,
+      destinationChain,
+      withdrawalInitiatedEarliestTimestamp
+    );
+
+    console.log(
+      `Found ${initiatedWithdrawals.length} initiated withdrawals of ${destinationToken} to chain ${getNetworkName(
+        destinationChain
+      )} from Binance`
+    );
+    console.log(
+      `Found ${finalizedWithdrawals.length} finalized withdrawals of ${destinationToken} to chain ${getNetworkName(
+        destinationChain
+      )} from Binance`
+    );
+
+    let unfinalizedWithdrawalAmount = bnZero;
+    const finalizedWithdrawalTxnHashes = new Set<string>();
+    for (const initiated of initiatedWithdrawals) {
+      const withdrawalAmount = toBNWei(initiated.amount, TOKEN_SYMBOLS_MAP[destinationToken].decimals);
+      const matchingFinalizedAmount = finalizedWithdrawals.find(
+        (finalized) =>
+          !finalizedWithdrawalTxnHashes.has(finalized.transactionHash) &&
+          finalized.args.value.toString() === withdrawalAmount.toString()
+      );
+      if (matchingFinalizedAmount) {
+        finalizedWithdrawalTxnHashes.add(matchingFinalizedAmount.transactionHash);
+      } else {
+        console.log("Unfinalized withdrawal from Binance", initiated);
+        unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmount.add(withdrawalAmount);
+      }
+    }
+    console.log(`Total unfinalized withdrawal amount from Binance: ${unfinalizedWithdrawalAmount.toString()}`);
+    return unfinalizedWithdrawalAmount;
+  }
+
+  protected async _withdraw(quantity: number, destinationToken: string, destinationChain: number): Promise<void> {
+    // We need to truncate the amount to withdraw to the destination chain's decimal places.
+    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const amountToWithdraw = Math.floor(quantity * destinationTokenInfo.decimals) / destinationTokenInfo.decimals;
+
+    console.log(
+      `Withdrawing ${amountToWithdraw} ${destinationToken} from Binance to chain ${BINANCE_NETWORKS[destinationChain]}`
+    );
+    const withdrawalId = await this.binanceApiClient.withdraw({
+      coin: destinationToken,
+      address: this.baseSignerAddress.toNative(),
+      amount: amountToWithdraw,
+      network: BINANCE_NETWORKS[destinationChain],
+      transactionFeeFlag: false,
+    });
+    console.log("Success: Withdrawal ID", withdrawalId);
+  }
+
   protected _redisGetOrderStatusKey(status: STATUS): string {
     let orderStatusKey: string;
     switch (status) {
@@ -322,6 +463,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         throw new Error(`Invalid status: ${status}`);
     }
     return orderStatusKey;
+  }
+
+  async _redisGetPendingDeposits(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT);
+    return sMembers;
+  }
+
+  async _redisGetPendingWithdrawals(): Promise<string[]> {
+    const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL);
+    return sMembers;
   }
 
   async _redisGetPendingOrders(): Promise<string[]> {

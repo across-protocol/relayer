@@ -1,11 +1,13 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, TransactionClient } from "../../clients";
-import { Address, BigNumber, ConvertDecimals, ethers, getTokenInfo, winston } from "../../utils";
+import { Address, BigNumber, ConvertDecimals, ethers, EvmAddress, getTokenInfo, winston } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
   protected transactionClient: TransactionClient;
   protected redisCache: RedisCache;
+  protected baseSignerAddress: EvmAddress;
+
   protected initialized = false;
 
   protected REDIS_PREFIX: string;
@@ -25,6 +27,16 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   abstract getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }>;
 
   protected abstract _redisGetOrderStatusKey(status: number): string;
+
+  protected async _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number): Promise<void> {
+    const oldOrderStatusKey = this._redisGetOrderStatusKey(oldStatus);
+    const newOrderStatusKey = this._redisGetOrderStatusKey(status);
+    const result = await Promise.all([
+      this.redisCache.sRem(oldOrderStatusKey, cloid),
+      this.redisCache.sAdd(newOrderStatusKey, cloid),
+    ]);
+    console.log(`Updated order status from ${oldOrderStatusKey} to ${newOrderStatusKey}`, result);
+  }
 
   protected async _redisCreateOrder(cloid: string, status: number, rebalanceRoute: RebalanceRoute): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(status);
