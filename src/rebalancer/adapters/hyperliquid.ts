@@ -234,14 +234,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     this._assertInitialized();
 
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
-    const latestPx = await this._getLatestPrice(
-      rebalanceRoute.sourceToken,
-      rebalanceRoute.destinationToken,
-      spotMarketMeta.isBuy
+    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.sourceToken];
+    assert(
+      rebalanceRoute.maxAmountToTransfer.gte(toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.evmDecimals)),
+      "Max amount to transfer is less than minimum order size"
     );
-    const sz = this._getSzForOrder(rebalanceRoute, latestPx);
-    const sourceTokenMeta = this._getTokenMeta(rebalanceRoute.sourceToken);
-    const amountToTransfer = toBNWei(sz, sourceTokenMeta.evmDecimals);
+    const amountToTransfer = rebalanceRoute.maxAmountToTransfer
 
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.
@@ -641,43 +639,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       destinationTokenMeta.coreDecimals
     );
     return { details: matchingFill, amountToWithdraw };
-  }
-
-  private async _getLatestPrice(sourceToken: string, destinationToken: string, isBuy: boolean): Promise<string> {
-    if (process.env.PX_OVERRIDE) {
-      return process.env.PX_OVERRIDE;
-    }
-    // TODO: Use L2 book endpoint to get the best price using orderbook liquidity that would cover our size:
-    // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint#l2-book-snapshot
-    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-    const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const tokenData = spotMarketData[1].find((market) => market.coin === `@${spotMarketMeta.index}`);
-    if (!tokenData) {
-      throw new Error(`No token data found for spot market: ${spotMarketMeta.index}`);
-    }
-
-    console.log("_getLatestPrice: latest price details from API:", tokenData);
-
-    // Add 2bps to the mid price to increase probability of execution.
-    // If direction is a Buy, we'll increase the price otherwise we'll decrease.
-    // @dev: We add one to the toWei/fromWei precision because the midPx can have 1 more decimal than we are allowed
-    // to use for pxDecimals, probably because midPx is the average of the best bid and ask px's.
-    const midPricePlus = isBuy
-      ? toBNWei(tokenData.midPx, spotMarketMeta.pxDecimals + 1)
-          .mul(10002)
-          .div(10000)
-      : toBNWei(tokenData.midPx, spotMarketMeta.pxDecimals + 1)
-          .mul(9998)
-          .div(10000); // @dev prices can have up to 5 sig figs but mid price can have 6.
-
-    // Price can have up to 5 significant figures so if the price is less than 1, then there can
-    // be 5 decimal places. If the price starts with a 1, which is realistically the highest it will be for a
-    // stablecoin swap, then there can be be 4 decimal places.
-    console.log(`_getLatestPrice: midPricePlus: ${midPricePlus.toString()}`);
-    const fullPrice = Number(fromWei(midPricePlus, spotMarketMeta.pxDecimals + 1));
-    console.log(`_getLatestPrice: fullPrice: ${fullPrice} given midPricePlus: ${midPricePlus.toString()}`);
-    return fullPrice.toFixed(fullPrice < 1 ? spotMarketMeta.pxDecimals : spotMarketMeta.pxDecimals - 1);
   }
 
   private _getTokenMeta(token: string): TOKEN_META {
@@ -1380,7 +1341,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
         `- Withdrawal for order ${cloid} has finalized, subtracting its virtual balance of ${expectedAmountToReceive.toString()} from HyperEVM`
       );
       const existingPendingRebalanceAmountDestinationChain = pendingRebalances[HYPEREVM] ?? bnZero;
-      pendingRebalances[HYPEREVM] = existingPendingRebalanceAmountDestinationChain.sub(expectedAmountToReceive);
+      pendingRebalances[HYPEREVM] = existingPendingRebalanceAmountDestinationChain.sub(matchingFill.amountToWithdraw);
     }
 
     // For any pending orders at all, we should add a virtual balance to the destination chain. This includes
@@ -1466,15 +1427,5 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
   async _redisGetPendingWithdrawals(): Promise<string[]> {
     const sMembers = await this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE);
     return sMembers;
-  }
-
-  async _redisDeleteOrder(cloid: string, currentStatus: STATUS): Promise<void> {
-    const orderStatusKey = this._redisGetOrderStatusKey(currentStatus);
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
-    const result = await Promise.all([
-      this.redisCache.sRem(orderStatusKey, cloid),
-      this.redisCache.del(orderDetailsKey),
-    ]);
-    console.log(`Deleted order details under key ${orderDetailsKey} and from status table ${orderStatusKey}`, result);
   }
 }

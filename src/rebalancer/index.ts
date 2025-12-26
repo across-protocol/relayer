@@ -29,8 +29,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     {
       sourceChain: 10,
       destinationChain: 42161,
-      sourceToken: "USDC",
-      destinationToken: "USDT",
+      sourceToken: "USDT",
+      destinationToken: "USDC",
       maxAmountToTransfer: toBNWei("10.3", 6),
       adapter: "binance",
     },
@@ -60,7 +60,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
   await binanceAdapter.updateRebalanceStatuses();
-  console.log("binanceAdapter updated order statuses");
+  // console.log("binanceAdapter updated order statuses");
   // await hyperliquidAdapter.updateRebalanceStatuses();
   // console.log("hyperliquidAdapter updated order statuses");
 
@@ -75,8 +75,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   try {
     // Resync balances
     // Execute rebalances
-    // await rebalancerClient.rebalanceInventory();
-    // console.log("rebalancer sent rebalances");
+    await rebalancerClient.rebalanceInventory();
+    console.log("rebalancer sent rebalances");
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.

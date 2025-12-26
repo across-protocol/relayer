@@ -89,6 +89,16 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     };
   }
 
+  protected async _redisDeleteOrder(cloid: string, currentStatus: number): Promise<void> {
+    const orderStatusKey = this._redisGetOrderStatusKey(currentStatus);
+    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
+    const result = await Promise.all([
+      this.redisCache.sRem(orderStatusKey, cloid),
+      this.redisCache.del(orderDetailsKey),
+    ]);
+    console.log(`Deleted order details under key ${orderDetailsKey} and from status table ${orderStatusKey}`, result);
+  }
+
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
     const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
     const { contract: targetContract, method, ...txnRequestData } = txnRequest;
