@@ -3,8 +3,10 @@ import {
   assert,
   BigNumber,
   BINANCE_NETWORKS,
+  bnZero,
   Contract,
   ERC20,
+  EvmAddress,
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
@@ -14,6 +16,7 @@ import {
   getProvider,
   getRedisCache,
   Signer,
+  toBNWei,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
@@ -29,14 +32,47 @@ enum STATUS {
   PENDING_WITHDRAWAL,
 }
 
+interface SPOT_MARKET_META {
+  symbol: string;
+  baseAssetName: string;
+  quoteAssetName: string;
+  pxDecimals: number;
+  szDecimals: number;
+  minimumOrderSize: number;
+  isBuy: boolean;
+}
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter implements RebalancerAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
+  // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
+  REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
+
+  private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
+    "USDT-USDC": {
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4, // PRICE_FILTER.tickSize: '0.00010000'
+      szDecimals: 0, // SIZE_FILTER.stepSize: '1.00000000'
+      isBuy: true,
+      minimumOrderSize: 1,
+    },
+    "USDC-USDT": {
+      symbol: "USDCUSDT",
+      baseAssetName: "USDC",
+      quoteAssetName: "USDT",
+      pxDecimals: 4, // PRICE_FILTER.tickSize: '0.00010000'
+      szDecimals: 0, // SIZE_FILTER.stepSize: '1.00000000'
+      isBuy: false,
+      minimumOrderSize: 1,
+    },
+  };
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     super(logger);
   }
@@ -68,52 +104,141 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
   async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
     this._assertInitialized();
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
-    // Transfer to Binance using depositAddress for coin.
+
+    // TODO: Can probably delete the following REST call by hardcoding the withdrawal minimums
     const accountCoins = await getAccountCoins(this.binanceApiClient);
-    const sourceCoin = accountCoins.find((coin) => coin.symbol === sourceToken);
-    console.log("source coin", sourceCoin);
     const destinationCoin = accountCoins.find((coin) => coin.symbol === destinationToken);
-    console.log("destination coin", destinationCoin);
     const destinationNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationChain]
     );
 
     // Convert input amount to destination amount and check its larger than minimum size
-    // const minimumWithdrawalSize = destinationChain.withdrawMin;
-    // const maximumWithdrawalSize = destinationChain.withdrawMax;
+    const minimumWithdrawalSize = Number(destinationNetwork.withdrawMin);
+    const maximumWithdrawalSize = Number(destinationNetwork.withdrawMax);
 
-    // const latestPx = await this._getLatestPrice(sourceToken, destinationToken, true);
-    // const amountToTransferConverted = rebalanceRoute.maxAmountToTransfer.mul(latestPx).div(toBNWei("1"));
+    const latestPx = await this._getLatestPrice(rebalanceRoute);
+    const szForOrder = this._getQuantityForOrder(rebalanceRoute, latestPx);
+    assert(
+      szForOrder >= minimumWithdrawalSize,
+      "amount to transfer is less than minimum withdrawal size on destination chain"
+    );
+    assert(
+      szForOrder <= maximumWithdrawalSize,
+      "amount to transfer is greater than maximum withdrawal size on destination chain"
+    );
+    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
+    const amountToTransfer = toBNWei(szForOrder, sourceTokenInfo.decimals);
 
+    // Deposit to Binance
     const depositAddress = await this.binanceApiClient.depositAddress({
-      coin: sourceCoin.symbol,
+      coin: sourceToken,
       network: BINANCE_NETWORKS[sourceChain],
     });
-    console.log(`deposit address on ${getNetworkName(sourceChain)} for ${sourceCoin.symbol}`, depositAddress);
+    const cloid = await this._redisGetNextCloid();
+    console.log(
+      `Creating new order ${cloid} by first transferring ${rebalanceRoute.sourceToken} into Binance from ${rebalanceRoute.sourceChain} to deposit address ${depositAddress.address}`
+    );
 
     const sourceProvider = await getProvider(sourceChain);
-    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
     const sourceAddress = sourceTokenInfo.addresses[sourceChain];
     const erc20 = new Contract(sourceAddress, ERC20.abi, this.baseSigner.connect(sourceProvider));
-    const amountReadable = fromWei(rebalanceRoute.maxAmountToTransfer, sourceTokenInfo.decimals);
     const txn: AugmentedTransaction = {
       contract: erc20,
       method: "transfer",
-      args: [depositAddress.address, rebalanceRoute.maxAmountToTransfer],
+      args: [depositAddress.address, amountToTransfer],
       chainId: sourceChain,
       nonMulticall: true,
       unpermissioned: false,
-      message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
-      mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+      message: `Deposited ${szForOrder} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
+      mrkdwn: `Deposited ${szForOrder} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };
-    const simulationResult = await this.transactionClient.simulate([txn]);
-    console.log("simulation result", simulationResult);
-    // await this._submitTransaction(txn);
+    await this._submitTransaction(txn);
+    await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute);
   }
+
+  async _getSymbol(sourceToken: string, destinationToken: string) {
+    const symbol = (await this.binanceApiClient.exchangeInfo()).symbols.find((symbols) => {
+      return (
+        symbols.symbol === `${sourceToken}${destinationToken}` || symbols.symbol === `${destinationToken}${sourceToken}`
+      );
+    });
+    assert(symbol, `No market found for ${sourceToken} and ${destinationToken}`);
+    return symbol;
+  }
+
+  async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<number> {
+    const symbol = await this._getSymbol(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.destinationToken];
+    const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
+    console.log(
+      `Placing a market order for the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}" to ${
+        spotMarketMeta.isBuy ? "buy" : "sell"
+      } ${rebalanceRoute.maxAmountToTransfer.toString()} of ${rebalanceRoute.destinationToken}`
+    );
+    const bestPx = Number(sideOfBookToTraverse[0].price);
+    console.log(`Best px: ${bestPx}`);
+    console.log(`${spotMarketMeta.isBuy ? "Asks" : "Bids"} to traverse:`, sideOfBookToTraverse);
+    let szFilledSoFar = bnZero;
+    const maxPxReached = sideOfBookToTraverse.find((level, i) => {
+      console.log(
+        `szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      );
+      // Note: sz is always denominated in the base asset, so if we are buying, then the maxAmountToTransfer (i.e.
+      // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
+      // into the base asset.
+      const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.price);
+      console.log(
+        `Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
+      );
+      const szWei = toBNWei(level.quantity, destinationTokenInfo.decimals);
+      if (szWei.gte(rebalanceRoute.maxAmountToTransfer)) {
+        console.log(
+          `Level ${i} with px=${
+            level.price
+          } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        );
+        return true;
+      }
+      console.log(
+        `Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      );
+      szFilledSoFar = szFilledSoFar.add(szWei);
+    });
+    if (!maxPxReached) {
+      throw new Error(
+        `Cannot find price in order book that satisfies an order for size ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
+          rebalanceRoute.destinationToken
+        } on the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}"`
+      );
+    }
+    return Number(maxPxReached.price);
+  }
+
+  _getQuantityForOrder(rebalanceRoute: RebalanceRoute, price: number) {
+    const { sourceToken, destinationToken } = rebalanceRoute;
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const sz = spotMarketMeta.isBuy
+      ? rebalanceRoute.maxAmountToTransfer
+          .mul(10 ** spotMarketMeta.pxDecimals)
+          .div(toBNWei(price, spotMarketMeta.pxDecimals))
+      : rebalanceRoute.maxAmountToTransfer;
+    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
+    const evmDecimals = spotMarketMeta.isBuy ? destinationTokenInfo.decimals : sourceTokenInfo.decimals;
+    const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
+    assert(szFormatted >= spotMarketMeta.minimumOrderSize, "Max amount to transfer is less than minimum order size");
+    return szFormatted;
+  }
+
+  _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
+    const name = `${sourceToken}-${destinationToken}`;
+    return this.spotMarketMeta[name];
+  }
+
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    const pendingOrders = await this._redisGetPendingOrders();
-    console.log("pending orders", pendingOrders);
     // PENDING_DEPOSIT: place new orders if enough balance and update status to PENDING_SWAP
     // PENDING_SWAP: Load open orders and matching fills. If a matching fill is found, initiate a withdrawal from Binance
     // and update status to PENDING_WITHDRAWAL_FROM_BINANCE. If no matching fill is found and no open order, then
@@ -144,7 +269,34 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         withdrawal.network === BINANCE_NETWORKS[rebalanceRoute.destinationChain]
     );
     console.log("withdrawals", withdrawals);
-    return {};
+
+    const pendingOrders = await this._redisGetPendingOrders();
+    console.log("pending orders", pendingOrders);
+
+    const pendingRebalances: { [chainId: number]: BigNumber } = {};
+    for (const cloid of pendingOrders) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      // Convert maxAmountToTransfer to destination chain precision:
+      const amountConverter = this._getAmountConverter(
+        orderDetails.sourceChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.sourceToken].addresses[orderDetails.sourceChain]),
+        orderDetails.destinationChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[orderDetails.destinationChain])
+      );
+      const convertedAmount = amountConverter(orderDetails.maxAmountToTransfer);
+      console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
+      const existingPendingRebalanceAmountDestinationChain = pendingRebalances[orderDetails.destinationChain] ?? bnZero;
+      pendingRebalances[orderDetails.destinationChain] =
+        existingPendingRebalanceAmountDestinationChain.add(convertedAmount);
+    }
+    console.log(
+      "- Total pending rebalance amounts",
+      Object.entries(pendingRebalances)
+        .map(([chainId, amount]) => `${getNetworkName(chainId)}: ${amount.toString()}`)
+        .join(", ")
+    );
+
+    return pendingRebalances;
     // For any orders with pending status add virtual balance to destination chain.
     // We need to make sure not to count orders with pending withdrawal status that have already finalized otherwise
     // we'll double count them. To do this, get the total unfinalized withdrawal amount from Binance and the

@@ -1,6 +1,6 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, TransactionClient } from "../../clients";
-import { BigNumber, winston } from "../../utils";
+import { Address, BigNumber, ConvertDecimals, ethers, getTokenInfo, winston } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 
 export abstract class BaseAdapter implements RebalancerAdapter {
@@ -10,6 +10,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected REDIS_PREFIX: string;
   protected REDIS_KEY_PENDING_ORDER: string;
+  // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
+  protected REDIS_KEY_LATEST_NONCE: string;
 
   // TODO: Add redis functions here:
 
@@ -42,6 +44,37 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       ),
     ]);
     console.log("_redisCreateOrder: results", results);
+  }
+
+  protected _getAmountConverter(
+    originChain: number,
+    originToken: Address,
+    destinationChain: number,
+    destinationToken: Address
+  ): ReturnType<typeof ConvertDecimals> {
+    const originTokenInfo = getTokenInfo(originToken, originChain);
+    const destinationTokenInfo = getTokenInfo(destinationToken, destinationChain);
+    return ConvertDecimals(originTokenInfo.decimals, destinationTokenInfo.decimals);
+  }
+
+  protected async _redisGetNextCloid(): Promise<string> {
+    // Increment and get the latest nonce from Redis:
+    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
+
+    return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
+  }
+
+  protected async _redisGetOrderDetails(cloid: string): Promise<RebalanceRoute> {
+    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
+    const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
+    if (!orderDetails) {
+      return undefined;
+    }
+    const rebalanceRoute = JSON.parse(orderDetails);
+    return {
+      ...rebalanceRoute,
+      maxAmountToTransfer: BigNumber.from(rebalanceRoute.maxAmountToTransfer),
+    };
   }
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {

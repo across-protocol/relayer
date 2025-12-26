@@ -243,11 +243,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       rebalanceRoute.destinationToken,
       spotMarketMeta.isBuy
     );
-    const { minimumOrderSize } = this._getSzForOrder(rebalanceRoute, latestPx);
-    assert(
-      rebalanceRoute.maxAmountToTransfer.gte(minimumOrderSize),
-      "Max amount to transfer is less than minimum order size"
-    );
+    const sz = this._getSzForOrder(rebalanceRoute, latestPx);
+    const sourceTokenMeta = this._getTokenMeta(rebalanceRoute.sourceToken);
+    const amountToTransfer = toBNWei(sz, sourceTokenMeta.evmDecimals);
 
     // If source token is not USDC, USDT, or USDH, throw.
     // If destination token is same as source token, throw.
@@ -271,13 +269,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
         rebalanceRoute.sourceToken,
         rebalanceRoute.sourceChain,
         CHAIN_IDs.HYPEREVM,
-        rebalanceRoute.maxAmountToTransfer
+        amountToTransfer
       );
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute);
     } else {
       console.log(`Creating new order ${cloid} by depositing ${rebalanceRoute.sourceToken} from HyperEVM to HyperCore`);
 
-      await this._depositToHypercore(rebalanceRoute.sourceToken, rebalanceRoute.maxAmountToTransfer);
+      await this._depositToHypercore(rebalanceRoute.sourceToken, amountToTransfer);
       await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, rebalanceRoute);
     }
   }
@@ -562,7 +560,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.sz) * Number(level.px) : Number(level.sz);
-      console.log(`Levl size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`);
+      console.log(
+        `Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
+      );
       const szWei = toBNWei(level.sz, tokenMeta.evmDecimals);
       if (szWei.gte(rebalanceRoute.maxAmountToTransfer)) {
         console.log(
@@ -701,7 +701,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     }
   }
 
-  private _getSzForOrder(rebalanceRoute: RebalanceRoute, px: string): { sz: number; minimumOrderSize: number } {
+  private _getSzForOrder(rebalanceRoute: RebalanceRoute, px: string): number {
     const { sourceToken, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
 
@@ -721,8 +721,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const sourceTokenMeta = this._getTokenMeta(sourceToken);
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals;
-    const szFormatted = Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals);
-    return { sz: Number(szFormatted), minimumOrderSize: spotMarketMeta.minimumOrderSize };
+    const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
+    assert(szFormatted >= spotMarketMeta.minimumOrderSize, "Max amount to transfer is less than minimum order size");
+    return szFormatted;
   }
 
   private async _placeLimitOrder(cloid: string, rebalanceRoute: RebalanceRoute, px: string): Promise<void> {
@@ -746,15 +747,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     // of the quote asset. We need to solve for "sz" and rebalance.amount = sz * px.
     // - If isBuy is "false" then we are selling "sz" amount of base asset to obtain the quote asset. The rebalanceRoute.amount
     // is denominated in the base asset, so rebalance.amount can be simply set to sz.
-    const { sz, minimumOrderSize } = this._getSzForOrder(rebalanceRoute, px);
+    const sz = this._getSzForOrder(rebalanceRoute, px);
     console.log(
       `_placeLimitOrder: sz: ${sz} given price ${px} and isBuy ${
         spotMarketMeta.isBuy
-      } and maxAmountToTransfer ${rebalanceRoute.maxAmountToTransfer.toString()}, minimumOrderSize ${minimumOrderSize}`
+      } and maxAmountToTransfer ${rebalanceRoute.maxAmountToTransfer.toString()}`
     );
-    if (sz < minimumOrderSize) {
-      throw new Error(`Order size ${sz.toString()} is less than minimum order size ${minimumOrderSize.toString()}`);
-    }
     // sz is always in base units, so if we're buying the base unit then
     try {
       const orderDetails = {
@@ -1402,6 +1400,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
         .concat(pendingBridgeToHyperevm)
     ).values();
     for (const cloid of pendingCloids) {
+      // Filter this to match pending rebalance routes:
       const orderDetails = await this._redisGetOrderDetails(cloid);
       // Convert maxAmountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
@@ -1424,17 +1423,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     );
     console.groupEnd();
     return pendingRebalances;
-  }
-
-  private _getAmountConverter(
-    originChain: number,
-    originToken: Address,
-    destinationChain: number,
-    destinationToken: Address
-  ): ReturnType<typeof ConvertDecimals> {
-    const originTokenInfo = getTokenInfo(originToken, originChain);
-    const destinationTokenInfo = getTokenInfo(destinationToken, destinationChain);
-    return ConvertDecimals(originTokenInfo.decimals, destinationTokenInfo.decimals);
   }
 
   /** ****************************************************
@@ -1462,26 +1450,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
         throw new Error(`Invalid status: ${status}`);
     }
     return orderStatusKey;
-  }
-
-  async _redisGetNextCloid(): Promise<string> {
-    // Increment and get the latest nonce from Redis:
-    const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
-
-    return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
-  }
-
-  async _redisGetOrderDetails(cloid: string): Promise<RebalanceRoute> {
-    const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
-    const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
-    if (!orderDetails) {
-      return undefined;
-    }
-    const rebalanceRoute = JSON.parse(orderDetails);
-    return {
-      ...rebalanceRoute,
-      maxAmountToTransfer: BigNumber.from(rebalanceRoute.maxAmountToTransfer),
-    };
   }
 
   async _redisUpdateOrderStatus(cloid: string, oldStatus: STATUS, status: STATUS): Promise<void> {

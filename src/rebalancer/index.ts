@@ -75,8 +75,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   try {
     // Resync balances
     // Execute rebalances
-    await rebalancerClient.rebalanceInventory();
-    console.log("rebalancer sent rebalances");
+    // await rebalancerClient.rebalanceInventory();
+    // console.log("rebalancer sent rebalances");
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
