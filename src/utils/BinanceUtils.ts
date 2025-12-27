@@ -204,7 +204,7 @@ export async function getBinanceWithdrawals(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
+  const coins = Object.values(await binanceApi["accountCoins"]({ omitZeroBalances: true }));
   return coins.map((coin) => {
     const networkList = coin["networkList"]?.map((network) => {
       return {
