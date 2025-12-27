@@ -11,7 +11,6 @@ import {
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
-  getBinanceDeposits,
   getBinanceWithdrawals,
   getBlockForTimestamp,
   getNetworkName,
@@ -50,6 +49,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
   private availableRoutes: RebalanceRoute[];
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
+
+  REDIS_KEY_PENDING_ORDER = this.REDIS_PREFIX + "pending-order";
+
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
@@ -120,6 +122,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     const minimumWithdrawalSize = toBNWei(destinationNetwork.withdrawMin, sourceTokenInfo.decimals);
     const maximumWithdrawalSize = toBNWei(destinationNetwork.withdrawMax, sourceTokenInfo.decimals);
 
+    // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
+    // tick size. We try not to precompute the size required to place an order here because the price might change
+    // and the amount transferred in might be insufficient to place the order later on, producing more dust or an
+    // error.
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const amountToTransfer = rebalanceRoute.maxAmountToTransfer;
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
@@ -230,12 +236,26 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         } on the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}"`
       );
     }
-    return Number(maxPxReached.price);
+    console.log(
+      `maxPxReached.price: ${maxPxReached.price}, spotMarketMeta.pxDecimals: ${
+        spotMarketMeta.pxDecimals
+      }, adjusted price: ${Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals)}`
+    );
+    return Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
   }
 
   protected _getQuantityForOrder(rebalanceRoute: RebalanceRoute, price: number) {
     const { sourceToken, destinationToken } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    if (spotMarketMeta.isBuy) {
+      console.log(
+        `Buying the base asset of ${destinationToken} with the quote asset of ${sourceToken}, setting sz equal to px=${price} * ${rebalanceRoute.maxAmountToTransfer.toString()}`
+      );
+    } else {
+      console.log(
+        `Selling the base asset of ${sourceToken} with the quote asset of ${destinationToken}, setting sz equal to ${rebalanceRoute.maxAmountToTransfer.toString()} of the quote asset`
+      );
+    }
     const sz = spotMarketMeta.isBuy
       ? rebalanceRoute.maxAmountToTransfer
           .mul(10 ** spotMarketMeta.pxDecimals)
@@ -245,6 +265,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenInfo.decimals : sourceTokenInfo.decimals;
     const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
+    console.log(
+      `sz: ${sz.toString()}, spotMarketMeta.szDecimals: ${spotMarketMeta.szDecimals}, szFormatted: ${szFormatted}`
+    );
     assert(szFormatted >= spotMarketMeta.minimumOrderSize, "Max amount to transfer is less than minimum order size");
     return szFormatted;
   }
@@ -257,30 +280,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
-    const accountInfo = await this.binanceApiClient["accountCoins"]({ omitZeroBalances: true });
-    console.log(
-      "USDT Account Info:",
-      accountInfo.find((coin) => coin.coin === "USDT")
-    );
-    console.log(
-      "USDC Account Info:",
-      accountInfo.find((coin) => coin.coin === "USDC")
-    );
+    // const marketInfo = await this._getSymbol("USDC", "USDT");
+    // console.log(`Market info:`, marketInfo);
+    console.log("USDC Account Balance:", await this._getBalance("USDC"));
+    console.log("USDT Account Balance:", await this._getBalance("USDT"));
 
     const pendingSwaps = await this._redisGetPendingSwaps();
     console.log("Pending swaps", pendingSwaps);
     for (const cloid of pendingSwaps) {
-      const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { destinationToken, destinationChain } = await this._redisGetOrderDetails(cloid);
       const matchingFill = await this._getMatchingFillForCloid(cloid);
       if (matchingFill) {
         console.log(
           `Open order for cloid ${cloid} filled with size ${matchingFill.executedQty}! Proceeding to withdraw from Binance.`
         );
-        await this._withdraw(
-          Number(matchingFill.executedQty),
-          orderDetails.destinationToken,
-          orderDetails.destinationChain
-        );
+        await this._withdraw(Number(matchingFill.executedQty), destinationToken, destinationChain);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
       } else {
         // We throw an error here because we shouldn't expect the market order to ever not be filled.
@@ -292,10 +306,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     console.log("Pending deposits", pendingDeposits);
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { sourceToken } = orderDetails;
+
       const latestPx = await this._getLatestPrice(orderDetails);
       const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
-      const balance = await this._getBalance(orderDetails.sourceToken);
-      console.log(`Current account balance of token ${orderDetails.sourceToken}: ${balance.toString()}`);
+      const balance = await this._getBalance(sourceToken);
+      console.log(`Current account balance of token ${sourceToken}: ${balance.toString()}`);
       if (balance < szForOrder) {
         console.log(`Not enough balance to place order for cloid ${cloid}, balance: ${balance}`);
         continue;
@@ -309,15 +325,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     console.log("Pending withdrawals", pendingWithdrawals);
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { destinationToken, destinationChain } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL`);
       }
-      const withdrawals = (
-        await getBinanceWithdrawals(this.binanceApiClient, orderDetails.destinationToken, matchingFill.time)
-      ).filter((withdrawal) => withdrawal.network === BINANCE_NETWORKS[orderDetails.destinationChain]);
+      const initiatedWithdrawals = await this._getCompletedBinanceWithdrawals(
+        destinationToken,
+        destinationChain,
+        matchingFill.time
+      );
 
-      if (withdrawals.length === 0) {
+      if (initiatedWithdrawals.length === 0) {
         console.log(
           `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`
         );
