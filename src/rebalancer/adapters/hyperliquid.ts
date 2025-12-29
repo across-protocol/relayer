@@ -84,7 +84,7 @@ type BRIDGE_NAME = "OFT" | "CCTP";
 // prior to bridging because most chains have high fees for stablecoin swaps on DEX's, whereas bridging from OFT/CCTP
 // into HyperEVM is free (or 0.01% for fast transfers) and then swapping on Hyperliquid is very cheap compared to DEX's.
 // We should continually re-evaluate whether hyperliquid stablecoin swaps are indeed the cheapest option.
-export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements RebalancerAdapter {
+export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   REDIS_PREFIX = "hyperliquid-stablecoin-swap:";
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
@@ -278,7 +278,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     }
   }
 
-  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+  async getEstimatedCost(): Promise<BigNumber> {
+    return bnZero;
     // Withdrawal fee +
     // + Trading fee
     // + Deposit fee
@@ -1227,13 +1228,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       if (destinationChain !== HYPEREVM) {
         const usdtPendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(HYPEREVM, destinationChain);
         console.log(
-          `- Adding ${pendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM to ${destinationChain}`
+          `- Adding ${usdtPendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM to ${destinationChain}`
         );
         pendingRebalances[destinationChain]["USDT"] ??= usdtPendingRebalanceAmount;
 
         const usdcPendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(HYPEREVM, destinationChain);
         console.log(
-          `- Adding ${pendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM to ${destinationChain}`
+          `- Adding ${usdcPendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM to ${destinationChain}`
         );
         pendingRebalances[destinationChain]["USDC"] ??= usdcPendingRebalanceAmount;
       }
@@ -1312,6 +1313,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
     }
 
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
+    pendingRebalances[HYPEREVM] ??= {};
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
     console.log(`- Pending withdrawal from Hypercore cloids: ${pendingWithdrawalsFromHypercore.join(", ")}`);
     let unfinalizedUsdtWithdrawalAmount = await this._getUnfinalizedWithdrawalAmountFromHypercore(
@@ -1395,6 +1397,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter implements Reb
       );
       const convertedAmount = amountConverter(maxAmountToTransfer);
       console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
+      pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
       ).add(convertedAmount);

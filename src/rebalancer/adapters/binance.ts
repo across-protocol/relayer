@@ -22,7 +22,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute } from "../rebalancer";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter } from "./baseAdapter";
@@ -44,7 +44,7 @@ interface SPOT_MARKET_META {
   isBuy: boolean;
 }
 
-export class BinanceStablecoinSwapAdapter extends BaseAdapter implements RebalancerAdapter {
+export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
 
@@ -98,11 +98,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       assert(destinationCoin, `Destination token ${destinationToken} not found in account coins`);
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceChain]),
-        `Source token ${sourceToken} not found in network ${BINANCE_NETWORKS[sourceChain]}`
+        `Source token ${sourceToken} not found in network ${
+          BINANCE_NETWORKS[sourceChain]
+        }, available networks: ${sourceCoin.networkList.map((network) => network.name).join(", ")}`
       );
       assert(
         destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationChain]),
-        `Destination token ${destinationToken} not found in network ${BINANCE_NETWORKS[destinationChain]}`
+        `Destination token ${destinationToken} not found in network ${
+          BINANCE_NETWORKS[destinationChain]
+        }, available networks: ${destinationCoin.networkList.map((network) => network.name).join(", ")}`
       );
     }
     this.initialized = true;
@@ -176,7 +180,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     // However, we should be careful since this account is also used by primary relayer
   }
 
-  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+  async getEstimatedCost(): Promise<BigNumber> {
+    return bnZero;
     // Withdrawal fee can be calculated using the coins info
     // + Trading fee
     // + Deposit fee
@@ -201,12 +206,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
 
   async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<number> {
     const symbol = await this._getSymbol(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
-    console.log("Full market details", symbol);
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.destinationToken];
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
-    console.log(
+    console.group(
       `Fetching the price for a market order for the market "${rebalanceRoute.sourceToken}-${
         rebalanceRoute.destinationToken
       }" to ${spotMarketMeta.isBuy ? "buy" : "sell"} ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
@@ -214,30 +218,30 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       }`
     );
     const bestPx = Number(sideOfBookToTraverse[0].price);
-    console.log(`Best ${spotMarketMeta.isBuy ? "ask" : "bid"} price: ${bestPx}`);
+    console.log(`- Best ${spotMarketMeta.isBuy ? "ask" : "bid"} price: ${bestPx}`);
     let szFilledSoFar = bnZero;
     const maxPxReached = sideOfBookToTraverse.find((level, i) => {
       console.log(
-        `szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        `- szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${rebalanceRoute.maxAmountToTransfer.toString()}`
       );
       // Note: sz is always denominated in the base asset, so if we are buying, then the maxAmountToTransfer (i.e.
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.price);
       console.log(
-        `Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
+        `- Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
       );
       const szWei = toBNWei(level.quantity, destinationTokenInfo.decimals);
       if (szWei.gte(rebalanceRoute.maxAmountToTransfer)) {
         console.log(
-          `Level ${i} with px=${
+          `- Level ${i} with px=${
             level.price
           } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
         );
         return true;
       }
       console.log(
-        `Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        `- Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
       );
       szFilledSoFar = szFilledSoFar.add(szWei);
     });
@@ -249,10 +253,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       );
     }
     console.log(
-      `maxPxReached.price: ${maxPxReached.price}, spotMarketMeta.pxDecimals: ${
+      `- maxPxReached.price: ${maxPxReached.price}, spotMarketMeta.pxDecimals: ${
         spotMarketMeta.pxDecimals
       }, adjusted price: ${Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals)}`
     );
+    console.groupEnd();
     return Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
   }
 
@@ -342,7 +347,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL`);
       }
-      const initiatedWithdrawals = await this._getCompletedBinanceWithdrawals(
+      const initiatedWithdrawals = await this._getInitiatedBinanceWithdrawals(
         destinationToken,
         destinationChain,
         matchingFill.time
@@ -361,7 +366,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         (await this._getUnfinalizedWithdrawalAmount(
           orderDetails.destinationToken,
           orderDetails.destinationChain,
-          matchingFill.time
+          Math.floor(matchingFill.time / 1000)
         ));
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
         console.log(
@@ -401,6 +406,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     console.log("All pending orders", pendingOrders);
 
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+
+    // Add virtual balances for all pending orders:
     for (const cloid of pendingOrders) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken, sourceChain, sourceToken, maxAmountToTransfer } = orderDetails;
@@ -413,6 +420,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       );
       const convertedAmount = amountConverter(maxAmountToTransfer);
       console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
+      pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
       ).add(convertedAmount);
@@ -429,7 +437,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
         unfinalizedWithdrawalAmounts[destinationChain][destinationToken] = await this._getUnfinalizedWithdrawalAmount(
           destinationToken,
           destinationChain,
-          this._getFromTimestamp() * 1000
+          // Look for unfinalized withdrawals from the last day
+          Math.floor(Date.now() / 1000) - 60 * 60 * 24
         );
       }
     }
@@ -438,6 +447,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(cloid);
+
+      const initiatedWithdrawals = await this._getInitiatedBinanceWithdrawals(
+        destinationToken,
+        destinationChain,
+        matchingFill.time
+      );
+
+      if (initiatedWithdrawals.length === 0) {
+        console.log(
+          `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`
+        );
+        continue;
+      } // Only proceed to modify virtual balances if there is an initiated withdrawal for this fill
+
       const expectedAmountToReceive = toBNWei(
         matchingFill.executedQty,
         TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
@@ -457,16 +480,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       console.log(
         `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.maxAmountToTransfer.toString()} from HyperEVM`
       );
+      pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
       ).sub(orderDetails.maxAmountToTransfer);
     }
-    console.log(
-      "- Total pending rebalance amounts",
-      Object.entries(pendingRebalances)
-        .map(([chainId, amount]) => `${getNetworkName(chainId)}: ${amount.toString()}`)
-        .join(", ")
-    );
+
+    for (const chainId of Object.keys(pendingRebalances)) {
+      console.group(`Pending rebalances to ${getNetworkName(chainId)}`);
+      for (const token of Object.keys(pendingRebalances[chainId])) {
+        const decimals = TOKEN_SYMBOLS_MAP[token].decimals;
+        console.log(`- ${token}: ${fromWei(pendingRebalances[chainId][token].toString(), decimals).toString()}`);
+      }
+      console.groupEnd();
+    }
 
     return pendingRebalances;
     // For any orders with pending status add virtual balance to destination chain.
@@ -499,12 +526,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     console.log("Market order response", response);
   }
 
-  private _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
-  }
-
-  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
-    const fromTimestamp = this._getFromTimestamp();
+  private async _getEventSearchConfig(fromTimestamp: number, chainId: number): Promise<EventSearchConfig> {
     const provider = await getProvider(chainId);
     const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
     const toBlock = await provider.getBlock("latest");
@@ -512,20 +534,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     return { from: fromBlock, to: toBlock.number, maxLookBack };
   }
 
-  protected async _getCompletedBinanceWithdrawals(token: string, chain: number, startTime: number) {
+  protected async _getInitiatedBinanceWithdrawals(token: string, chain: number, startTime: number) {
     return (await getBinanceWithdrawals(this.binanceApiClient, token, startTime)).filter(
       (withdrawal) =>
-        withdrawal.coin === token && withdrawal.network === BINANCE_NETWORKS[chain] && withdrawal.status === 6
+        withdrawal.coin === token && withdrawal.network === BINANCE_NETWORKS[chain] && withdrawal.status > 4
+      // @dev (0: Email Sent, 1: Cancelled 2: Awaiting Approval, 3: Rejected, 4: Processing, 5: Failure, 6: Completed)
     );
   }
 
   protected async _getUnfinalizedWithdrawalAmount(
     destinationToken: string,
     destinationChain: number,
-    withdrawalInitiatedEarliestTimestamp: number
+    startTimeSeconds: number
   ): Promise<BigNumber> {
     const provider = await getProvider(destinationChain);
-    const eventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    const eventSearchConfig = await this._getEventSearchConfig(startTimeSeconds, destinationChain);
     const destinationTokenContract = new Contract(
       TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain],
       ERC20.abi,
@@ -536,10 +559,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
       destinationTokenContract.filters.Transfer(null, this.baseSignerAddress.toNative()),
       eventSearchConfig
     );
-    const initiatedWithdrawals = await this._getCompletedBinanceWithdrawals(
+    const initiatedWithdrawals = await this._getInitiatedBinanceWithdrawals(
       destinationToken,
       destinationChain,
-      withdrawalInitiatedEarliestTimestamp
+      startTimeSeconds * 1000
     );
 
     console.log(

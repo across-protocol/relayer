@@ -19,11 +19,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
     // {
-    //   sourceChain: 999,
-    //   destinationChain: 999,
+    //   sourceChain: 10,
+    //   destinationChain: 42161,
     //   sourceToken: "USDT",
     //   destinationToken: "USDC",
-    //   maxAmountToTransfer: toBNWei("10.22", 6),
+    //   maxAmountToTransfer: toBNWei("10.3", 6),
     //   adapter: "hyperliquid",
     // },
     // {
@@ -34,11 +34,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     //   maxAmountToTransfer: toBNWei("10.3", 6),
     //   adapter: "binance",
     // },
+    // {
+    //   sourceChain: 42161,
+    //   destinationChain: 10,
+    //   sourceToken: "USDC",
+    //   destinationToken: "USDT",
+    //   maxAmountToTransfer: toBNWei("10.3", 6),
+    //   adapter: "binance",
+    // },
     {
-      sourceChain: 42161,
-      destinationChain: 10,
-      sourceToken: "USDC",
-      destinationToken: "USDT",
+      sourceChain: 10,
+      destinationChain: 42161,
+      sourceToken: "USDT",
+      destinationToken: "USDC",
       maxAmountToTransfer: toBNWei("10.3", 6),
       adapter: "binance",
     },
@@ -69,23 +77,24 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Update all adapter order statuses so we can get the most accurate latest balances:
   const adaptersToUpdate: Set<RebalancerAdapter> = new Set(rebalanceRoutes.map((x) => adapters[x.adapter]));
   for (const adapter of adaptersToUpdate) {
-    // console.log(`Updating rebalance statuses for adapter ${adapter.constructor.name}`);
-    // await adapter.updateRebalanceStatuses();
+    console.log(`Updating rebalance statuses for adapter ${adapter.constructor.name}`);
+    await adapter.updateRebalanceStatuses();
 
-    // // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
-    // // transactions to get mined.
-    // await delay(5);
+    // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
+    // transactions to get mined.
+    await delay(5);
 
-    const pendingRebalances = await adapter.getPendingRebalances();
-    console.log(`Pending rebalances for ${adapter.constructor.name}:`, pendingRebalances);
+    await adapter.getPendingRebalances();
   }
 
   // Finally, send out new rebalances:
   try {
     // Resync balances
     // Execute rebalances
-    // await rebalancerClient.rebalanceInventory();
-    // console.log("rebalancer sent rebalances");
+    if (process.env.SEND_REBALANCES === "true") {
+      await rebalancerClient.rebalanceInventory();
+      console.log("rebalancer sent rebalances");
+    }
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
