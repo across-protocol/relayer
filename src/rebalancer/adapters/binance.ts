@@ -171,6 +171,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
     await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute);
   }
 
+  async sweepDust(): Promise<void> {
+    // If there are no pending orders, then there might be dust to sweep.
+    // However, we should be careful since this account is also used by primary relayer
+  }
+
+  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+    // Withdrawal fee can be calculated using the coins info
+    // + Trading fee
+    // + Deposit fee
+    // + opportunity cost of capital
+  }
+
   async _getBalance(token: string): Promise<number> {
     const accountCoins = await getAccountCoins(this.binanceApiClient);
     const coin = accountCoins.find((coin) => coin.symbol === token);
@@ -382,57 +394,72 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter implements Rebalan
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
-  async getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }> {
+  async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
 
     const pendingOrders = await this._redisGetPendingOrders();
     console.log("All pending orders", pendingOrders);
 
-    const pendingRebalances: { [chainId: number]: BigNumber } = {};
+    const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     for (const cloid of pendingOrders) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { destinationChain, destinationToken, sourceChain, sourceToken, maxAmountToTransfer } = orderDetails;
       // Convert maxAmountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
-        orderDetails.sourceChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.sourceToken].addresses[orderDetails.sourceChain]),
-        orderDetails.destinationChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[orderDetails.destinationChain])
+        sourceChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+        destinationChain,
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain])
       );
-      const convertedAmount = amountConverter(orderDetails.maxAmountToTransfer);
+      const convertedAmount = amountConverter(maxAmountToTransfer);
       console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
-      const existingPendingRebalanceAmountDestinationChain = pendingRebalances[orderDetails.destinationChain] ?? bnZero;
-      pendingRebalances[orderDetails.destinationChain] =
-        existingPendingRebalanceAmountDestinationChain.add(convertedAmount);
+      pendingRebalances[destinationChain][destinationToken] = (
+        pendingRebalances[destinationChain][destinationToken] ?? bnZero
+      ).add(convertedAmount);
     }
 
     // Subtract virtual balance for pending withdrawals that have already finalized:
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    let unfinalizedWithdrawalAmount = await this._getUnfinalizedWithdrawalAmount(
-      rebalanceRoute.destinationToken,
-      rebalanceRoute.destinationChain,
-      this._getFromTimestamp() * 1000
-    );
+    const allDestinationChains = this.availableRoutes.map((x) => x.destinationChain);
+    const allDestinationTokens = this.availableRoutes.map((x) => x.destinationToken);
+    const unfinalizedWithdrawalAmounts: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    for (const destinationChain of allDestinationChains) {
+      unfinalizedWithdrawalAmounts[destinationChain] = {};
+      for (const destinationToken of allDestinationTokens) {
+        unfinalizedWithdrawalAmounts[destinationChain][destinationToken] = await this._getUnfinalizedWithdrawalAmount(
+          destinationToken,
+          destinationChain,
+          this._getFromTimestamp() * 1000
+        );
+      }
+    }
+
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
+      const { destinationChain, destinationToken } = orderDetails;
       const matchingFill = await this._getMatchingFillForCloid(cloid);
       const expectedAmountToReceive = toBNWei(
         matchingFill.executedQty,
         TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
       );
+      const unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmounts[destinationChain][destinationToken];
+      console.log(
+        `- Unfinalized withdrawal amount for ${destinationToken} on ${destinationChain}: ${unfinalizedWithdrawalAmount.toString()}`
+      );
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
         console.log(
           `- Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`
         );
-        unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
+        unfinalizedWithdrawalAmounts[destinationChain][destinationToken] =
+          unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
         continue;
       }
       console.log(
         `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.maxAmountToTransfer.toString()} from HyperEVM`
       );
-      const existingPendingRebalanceAmountDestinationChain = pendingRebalances[orderDetails.destinationChain] ?? bnZero;
-      pendingRebalances[orderDetails.destinationChain] = existingPendingRebalanceAmountDestinationChain.sub(
-        orderDetails.maxAmountToTransfer
-      );
+      pendingRebalances[destinationChain][destinationToken] = (
+        pendingRebalances[destinationChain][destinationToken] ?? bnZero
+      ).sub(orderDetails.maxAmountToTransfer);
     }
     console.log(
       "- Total pending rebalance amounts",

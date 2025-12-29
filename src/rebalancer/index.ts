@@ -1,7 +1,7 @@
-import { config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import { config, delay, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
-import { RebalancerClient, RebalanceRoute } from "./rebalancer";
+import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
 let logger: winston.Logger;
@@ -67,17 +67,18 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Follow that with CCTP routes as destination chain.
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
-  await binanceAdapter.updateRebalanceStatuses();
-  // console.log("binanceAdapter updated order statuses");
-  // await hyperliquidAdapter.updateRebalanceStatuses();
-  // console.log("hyperliquidAdapter updated order statuses");
+  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(rebalanceRoutes.map((x) => adapters[x.adapter]));
+  for (const adapter of adaptersToUpdate) {
+    // console.log(`Updating rebalance statuses for adapter ${adapter.constructor.name}`);
+    // await adapter.updateRebalanceStatuses();
 
-  // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
-  // transactions to get mined.
-  // await hyperliquidAdapter.getPendingRebalances(rebalanceRoutes[0]);
-  // console.log("hyperliquidAdapter got pending rebalances");
-  await binanceAdapter.getPendingRebalances(rebalanceRoutes[0]);
-  console.log("binanceAdapter got pending rebalances");
+    // // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
+    // // transactions to get mined.
+    // await delay(5);
+
+    const pendingRebalances = await adapter.getPendingRebalances();
+    console.log(`Pending rebalances for ${adapter.constructor.name}:`, pendingRebalances);
+  }
 
   // Finally, send out new rebalances:
   try {

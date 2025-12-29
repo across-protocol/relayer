@@ -149,5 +149,6 @@ export interface RebalancerAdapter {
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
-  getPendingRebalances(rebalanceRoute: RebalanceRoute): Promise<{ [chainId: number]: BigNumber }>;
+  getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber>;
 }
