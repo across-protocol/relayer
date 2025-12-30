@@ -47,6 +47,7 @@ type Network = {
   withdrawMin: string;
   withdrawMax: string;
   contractAddress: string;
+  withdrawFee: string;
 };
 
 // A BinanceDeposit is either a simplified element of the return type of the Binance API's `depositHistory`.
@@ -212,6 +213,7 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
         coin: network["coin"],
         withdrawMin: network["withdrawMin"],
         withdrawMax: network["withdrawMax"],
+        withdrawFee: network["withdrawFee"],
         contractAddress: network["contractAddress"],
       } as Network;
     });

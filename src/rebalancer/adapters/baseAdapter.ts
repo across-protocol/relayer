@@ -25,7 +25,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
   abstract updateRebalanceStatuses(): Promise<void>;
   abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
-  abstract getEstimatedCost(): Promise<BigNumber>;
+  abstract getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber>;
 
   protected abstract _redisGetOrderStatusKey(status: number): string;
 

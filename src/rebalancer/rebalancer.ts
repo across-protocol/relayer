@@ -1,4 +1,4 @@
-import { BigNumber, Signer, toBNWei } from "../utils";
+import { BigNumber, getNetworkName, Signer, toBNWei, winston } from "../utils";
 
 interface ChainConfig {
   // This should be possible to set to 0 (to indicate that a chain should hold zero funds) or
@@ -45,6 +45,7 @@ export interface RebalanceRoute {
  */
 export class RebalancerClient {
   constructor(
+    readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
     readonly adapters: { [name: string]: RebalancerAdapter },
     readonly rebalanceRoutes: RebalanceRoute[],
@@ -61,19 +62,28 @@ export class RebalancerClient {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async rebalanceInventory(/* maxCostBps: number */): Promise<void> {
-    const hyperliquidRoute = this.rebalanceRoutes.find((route) => route.adapter === "hyperliquid");
-    if (hyperliquidRoute) {
-      console.log(`Initializing rebalance for route: ${JSON.stringify(hyperliquidRoute)}`);
+    for (const rebalanceRoute of this.rebalanceRoutes) {
+      this.logger.debug({
+        at: "RebalanceClient.rebalanceInventory",
+        message: `Initializing new rebalance from ${rebalanceRoute.sourceToken} on ${getNetworkName(
+          rebalanceRoute.sourceChain
+        )} to ${rebalanceRoute.destinationToken} on ${getNetworkName(rebalanceRoute.destinationChain)}`,
+        amountToTransfer: rebalanceRoute.maxAmountToTransfer.toString(),
+      });
+      const expectedCostForRebalance = await this.adapters[rebalanceRoute.adapter].getEstimatedCost(rebalanceRoute);
+      console.log(`Expected cost denominated in source tokens is ${expectedCostForRebalance.toString()}`);
 
-      // Make sure we back into the amount to transfer by using expected cost.
-      // const costToRebalance = await this.getCostToRebalance(hyperliquidRoute);
-      // const amountToRebalance = hyperliquidRoute.maxAmountToTransfer.mul(toBNWei("1")).div(toBNWei("1").sub(costToRebalance));
-      await this.adapters.hyperliquid.initializeRebalance(hyperliquidRoute);
-    }
-    const binanceRoute = this.rebalanceRoutes.find((route) => route.adapter === "binance");
-    if (binanceRoute) {
-      console.log(`Initializing rebalance for route: ${JSON.stringify(binanceRoute)}`);
-      await this.adapters.binance.initializeRebalance(binanceRoute);
+      const amountToTransferWithFees = rebalanceRoute.maxAmountToTransfer.add(expectedCostForRebalance);
+      console.log(`Amount to transfer with fees: ${amountToTransferWithFees.toString()}`);
+
+      // const adjustedRebalanceRoute = { ...rebalanceRoute, maxAmountToTransfer: amountToTransferWithFees };
+      // if (rebalanceRoute.adapter === "hyperliquid") {
+      //   await this.adapters.hyperliquid.initializeRebalance(adjustedRebalanceRoute);
+      // } else if (rebalanceRoute.adapter === "binance") {
+      //   await this.adapters.binance.initializeRebalance(adjustedRebalanceRoute);
+      // } else {
+      //   throw new Error(`Adapter ${rebalanceRoute.adapter} not supported`);
+      // }
     }
     // Setup:
     // - We can only rebalance via rebalance routes from source chains + tokens to destination chains + tokens.
@@ -108,16 +118,6 @@ export class RebalancerClient {
     //   const cheapestRoute = routes.filter((route) => route.adapter.getCostEstimate(route) < maxCost).sort((a, b) => a.cost - b.cost)[0];
     //   await this.adapters.hyperliquid.initializeRebalance(cheapestRoute);
     // }
-  }
-
-  async getCostToRebalance(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
-    // TODO:
-
-    // Return sum of:
-    // - Fee + Opportunity cost of each leg of rebalance route ([bridge] + deposit + swap + withdrawal + [bridge])
-    // For example, the OFT bridges starting from HyperEVM take a long time (~11 hours) so should be priced more than
-    // other bridges
-    return Promise.resolve(BigNumber.from(0));
   }
 
   async getCurrentAllocations(): Promise<RebalancerAllocation> {

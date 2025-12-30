@@ -180,12 +180,58 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // However, we should be careful since this account is also used by primary relayer
   }
 
-  async getEstimatedCost(): Promise<BigNumber> {
-    return bnZero;
-    // Withdrawal fee can be calculated using the coins info
-    // + Trading fee
-    // + Deposit fee
-    // + opportunity cost of capital
+  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+    const { sourceToken, destinationToken, sourceChain, destinationChain, maxAmountToTransfer } = rebalanceRoute;
+    console.group(
+      `Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
+        sourceChain
+      )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
+    );
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    // Commission is denominated in percentage points.
+    const tradeFeePct = (await this.binanceApiClient.tradeFee()).find(
+      (fee) => fee.symbol === spotMarketMeta.symbol
+    ).takerCommission;
+    console.log(`- Taker fee %: ${tradeFeePct}`);
+    const tradeFee = toBNWei(tradeFeePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Taker fee (fixed amount): ${tradeFee}`);
+    const destinationCoin = (await getAccountCoins(this.binanceApiClient)).find(
+      (coin) => coin.symbol === destinationToken
+    );
+    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const withdrawFee = toBNWei(
+      destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationChain]).withdrawFee,
+      destinationTokenInfo.decimals
+    );
+    const amountConverter = this._getAmountConverter(
+      destinationChain,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain]),
+      sourceChain,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain])
+    );
+    const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
+    console.log(`- Withdraw fee (fixed amount): ${withdrawFeeConvertedToSourceToken.toString()}`);
+
+    const { slippagePct } = await this._getLatestPrice(rebalanceRoute);
+    console.log(`- Slippage %: ${slippagePct}`);
+    const slippage = toBNWei(slippagePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Slippage (fixed amount): ${slippage}`);
+    const opportunityCostOfCapitalPct = 0; // todo.
+    console.log(`- Opportunity cost of capital %: ${opportunityCostOfCapitalPct}`);
+    const opportunityCostOfCapital = toBNWei(opportunityCostOfCapitalPct, 18)
+      .mul(maxAmountToTransfer)
+      .div(toBNWei(100, 18));
+    console.log(`- Opportunity cost of capital (fixed amount): ${opportunityCostOfCapital}`);
+    console.groupEnd();
+    const totalFee = tradeFee.add(withdrawFeeConvertedToSourceToken).add(slippage).add(opportunityCostOfCapital);
+
+    // The fee should be rounded up to be at least one tick size for the relevant market, so that after rounding,
+    // the amount adjusted with fees can cover the original order size (e.g. maxAmountToTransfer) plus fees.
+    const sourceTokenDecimals = TOKEN_SYMBOLS_MAP[sourceToken].decimals;
+    const tickSize = 1 * 10 ** -spotMarketMeta.szDecimals; // e.g. szDecimals=0 means tickSize is 1 * 10^0 = 1, szDecimals = 2 means tickSize is 1 * 10^-2 = 0.01
+    const tickSizeWei = toBNWei(tickSize, sourceTokenDecimals);
+    console.log(`- Minimum tick size for market: ${fromWei(tickSizeWei, sourceTokenDecimals)}`);
+    return totalFee.gt(tickSizeWei) ? totalFee : tickSizeWei;
   }
 
   async _getBalance(token: string): Promise<number> {
@@ -204,7 +250,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return symbol;
   }
 
-  async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<number> {
+  async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<{ latestPrice: number; slippagePct: number }> {
     const symbol = await this._getSymbol(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.destinationToken];
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
@@ -258,7 +304,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }, adjusted price: ${Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals)}`
     );
     console.groupEnd();
-    return Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
+    const latestPrice = Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
+    const slippagePct = Math.abs((latestPrice - bestPx) / bestPx) * 100;
+    return { latestPrice, slippagePct };
   }
 
   protected _getQuantityForOrder(rebalanceRoute: RebalanceRoute, price: number) {
@@ -325,7 +373,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { sourceToken } = orderDetails;
 
-      const latestPx = await this._getLatestPrice(orderDetails);
+      const latestPx = (await this._getLatestPrice(orderDetails)).latestPrice;
       const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
       const balance = await this._getBalance(sourceToken);
       console.log(`Current account balance of token ${sourceToken}: ${balance.toString()}`);
@@ -506,7 +554,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute): Promise<void> {
-    const latestPx = await this._getLatestPrice(rebalanceRoute);
+    const latestPx = (await this._getLatestPrice(rebalanceRoute)).latestPrice;
     const szForOrder = this._getQuantityForOrder(rebalanceRoute, latestPx);
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     console.log(

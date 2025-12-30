@@ -52,7 +52,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
   ];
 
-  const rebalancerClient = new RebalancerClient({}, adapters, rebalanceRoutes, baseSigner);
+  const rebalancerClient = new RebalancerClient(logger, {}, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
   console.log("rebalancer initialized");
 
