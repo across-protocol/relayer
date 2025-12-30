@@ -21,6 +21,7 @@ import {
   EvmAddress,
   Address,
   Provider,
+  getNetworkName,
 } from "../../utils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
@@ -39,6 +40,9 @@ const IGNORED_WITHDRAWALS = [
   "0xe93642e22eec21ead2abb20f23a1dc3033b41274cdfe7439cf3ada3dfa1dff06", // Lens USDC 2025-06-13 @todo remove
 ];
 
+// This is the system address of the L2 Asset Router for all ZkStack chains.
+const L2ASSETROUTER_ADDRESS = "0x0000000000000000000000000000000000010003";
+
 /**
  * @returns Withdrawal finalization calldata and metadata.
  */
@@ -51,6 +55,7 @@ export async function zkSyncFinalizer(
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
   const { chainId: l2ChainId } = spokePoolClient;
+  const networkName = getNetworkName(l2ChainId);
 
   const l1Provider = hubPoolClient.hubPool.provider;
   const l2Provider = zkSyncUtils.convertEthersRPCToZKSyncRPC(spokePoolClient.spokePool.provider);
@@ -69,8 +74,8 @@ export async function zkSyncFinalizer(
   );
 
   logger.debug({
-    at: "Finalizer#ZkSyncFinalizer",
-    message: "ZkSync TokensBridged event filter",
+    at: `Finalizer#${networkName}Finalizer`,
+    message: `${networkName} TokensBridged event filter`,
     toBlock: latestBlockToFinalize,
   });
   const withdrawalsToQuery = spokePoolClient
@@ -102,8 +107,8 @@ export async function zkSyncFinalizer(
   // - processing/committed: Pending finalization
   // - finalized: ready to be withdrawn or already withdrawn
   logger.debug({
-    at: "ZkSyncFinalizer",
-    message: "ZkSync withdrawal status.",
+    at: `${networkName}Finalizer`,
+    message: `${networkName} withdrawal status.`,
     statusesGrouped: {
       withdrawalNotFound: statuses["not-found"]?.length,
       withdrawalProcessing: statuses["processing"]?.length,
@@ -167,7 +172,7 @@ async function filterMessageLogs(
         const l1UsdcBridge = getSharedBridge(l1ChainId, chainId, l2TokenAddress, wallet._providerL1());
         return !(await l1UsdcBridge.isWithdrawalFinalized(chainId, l1BatchNumber, id));
       }
-      return !(await wallet.isWithdrawalFinalized(txnRef, withdrawalIdx));
+      return !(await isWithdrawalFinalized(wallet, txnRef, withdrawalIdx));
     } catch (error: unknown) {
       if (error instanceof Error && error.message.includes("Log proof not found")) {
         return false;
@@ -177,6 +182,33 @@ async function filterMessageLogs(
   });
 
   return ready;
+}
+
+/**
+ * Returns whether the withdrawal transaction is finalized on the L1 network.
+ * @dev Copied from https://github.com/zksync-sdk/zksync-ethers/blob/v5.11.0/src/adapters.ts#L1504 and modified
+ * to work with new L2AssetRouter contract, which zksync-ethers >6.X handles but is only compatible with ethers >6.X
+ * @param withdrawalHash Hash of the L2 transaction where the withdrawal was initiated.
+ * @param [withdrawalIndex=0] In case there were multiple withdrawals in one transaction, you may pass an index of the
+ * withdrawal you want to finalize.
+ * @throws {Error} If log proof can not be found.
+ */
+async function isWithdrawalFinalized(wallet: zkWallet, withdrawalHash: string, withdrawalIndex = 0): Promise<boolean> {
+  const { log } = await wallet._getWithdrawalLog(withdrawalHash, withdrawalIndex);
+  const { l2ToL1LogIndex } = await wallet._getWithdrawalL2ToL1Log(withdrawalHash, withdrawalIndex);
+  // `getLogProof` is called not to get proof but
+  // to get the index of the corresponding L2->L1 log,
+  // which is returned as `proof.id`.
+  const proof = await wallet._providerL2().getLogProof(withdrawalHash, l2ToL1LogIndex);
+  if (!proof) {
+    throw new Error("Log proof not found!");
+  }
+
+  const chainId = (await wallet._providerL2().getNetwork()).chainId;
+
+  const l1Bridge = (await wallet.getL1BridgeContracts()).shared;
+
+  return await l1Bridge.isWithdrawalFinalized(chainId, log.l1BatchNumber!, proof.id);
 }
 
 function withdrawalRequiresCustomUsdcBridge(l1ChainId: number, l2ChainId: number, l2TokenAddress: Address): boolean {
@@ -200,34 +232,6 @@ async function getWithdrawalParams(
     async ({ txnRef, withdrawalIdx }) => await wallet.finalizeWithdrawalParams(txnRef, withdrawalIdx)
   );
 }
-
-/**
- * @param withdrawal Withdrawal proof data for a single withdrawal.
- * @param ethAddr Ethereum address on the L2.
- * @param l1Mailbox zkSync mailbox contract on the L1.
- * @param l1ERC20Bridge zkSync ERC20 bridge contract on the L1.
- * @returns Calldata for a withdrawal finalization.
- */
-async function prepareFinalization(
-  withdrawal: zkSyncWithdrawalData,
-  l2ChainId: number,
-  l1SharedBridge: Contract
-): Promise<Multicall2Call> {
-  const args = [
-    l2ChainId,
-    withdrawal.l1BatchNumber,
-    withdrawal.l2MessageIndex,
-    withdrawal.l2TxNumberInBlock,
-    withdrawal.message,
-    withdrawal.proof,
-  ];
-
-  // @todo Support withdrawing directly as WETH here.
-  const [target, txn] = [l1SharedBridge.address, await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args)];
-
-  return { target, callData: txn.data };
-}
-
 /**
  * @param l1ChainId Chain ID for the L1.
  * @param l2ChainId Chain ID for the L2.
@@ -246,8 +250,42 @@ async function prepareFinalizations(
   );
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal, idx) => {
-    const sharedBridge = getSharedBridge(l1ChainId, tokensBridged[idx].chainId, tokensBridged[idx].l2TokenAddress);
-    return prepareFinalization(withdrawal, l2ChainId, sharedBridge);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let args: any[], target: string, callData: string;
+    // If withdrawal originated from new L2AssetRouter contract, we need to call the new finalizeDeposit function
+    // on the L1Nullifier contract.
+    if (withdrawal.sender === L2ASSETROUTER_ADDRESS) {
+      args = [
+        l2ChainId,
+        withdrawal.l1BatchNumber,
+        withdrawal.l2MessageIndex,
+        withdrawal.sender,
+        withdrawal.l2TxNumberInBlock,
+        withdrawal.message,
+        withdrawal.proof,
+      ];
+      const l1Nullifier = getL1Nullifier(l1ChainId);
+      target = l1Nullifier.address;
+      const populatedTransaction = await l1Nullifier.populateTransaction.finalizeDeposit(args);
+      callData = populatedTransaction.data;
+    } else {
+      args = [
+        l2ChainId,
+        withdrawal.l1BatchNumber,
+        withdrawal.l2MessageIndex,
+        withdrawal.l2TxNumberInBlock,
+        withdrawal.message,
+        withdrawal.proof,
+      ];
+      const l1SharedBridge = getSharedBridge(l1ChainId, tokensBridged[idx].chainId, tokensBridged[idx].l2TokenAddress);
+      target = l1SharedBridge.address;
+      const populatedTransaction = await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args);
+      callData = populatedTransaction.data;
+    }
+    return {
+      target,
+      callData,
+    };
   });
 }
 
@@ -265,6 +303,14 @@ function getSharedBridge(
     ];
   if (!contract) {
     throw new Error(`zkStack shared bridge contract data not found for chain ${l1ChainId}`);
+  }
+  return new Contract(contract.address, contract.abi, l1Provider);
+}
+
+function getL1Nullifier(l1ChainId: number, l1Provider?: Provider): Contract {
+  const contract = CONTRACT_ADDRESSES[l1ChainId]?.zkStackL1Nullifier;
+  if (!contract) {
+    throw new Error(`zkStack L1 nullifier contract data not found for chain ${l1ChainId}`);
   }
   return new Contract(contract.address, contract.abi, l1Provider);
 }
