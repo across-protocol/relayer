@@ -22,11 +22,11 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
-import { RebalanceRoute } from "../rebalancer";
-import { RebalancerConfig } from "../RebalancerConfig";
+import { RebalanceRoute, TargetBalanceConfig } from "../rebalancer";
 import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
+import { RebalancerConfig } from "../RebalancerConfig";
 
 enum STATUS {
   PENDING_DEPOSIT,
@@ -212,18 +212,36 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
     console.log(`- Withdraw fee (fixed amount): ${withdrawFeeConvertedToSourceToken.toString()}`);
 
-    const { slippagePct } = await this._getLatestPrice(rebalanceRoute);
+    const { slippagePct, latestPrice } = await this._getLatestPrice(rebalanceRoute);
     console.log(`- Slippage %: ${slippagePct}`);
     const slippage = toBNWei(slippagePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
     console.log(`- Slippage (fixed amount): ${slippage}`);
+
+    const isBuy = spotMarketMeta.isBuy;
+    let spreadPct = 0;
+    if (isBuy) {
+      // if is buy, the fee is positive if the price is over 1
+      spreadPct = latestPrice - 1;
+      console.log(`- Buy spread %: ${spreadPct}`);
+    } else {
+      spreadPct = 1 - latestPrice;
+      console.log(`- Sell spread %: ${spreadPct}`);
+    }
+    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Spread fee (fixed amount): ${spreadFee}`);
     const opportunityCostOfCapitalPct = 0; // todo.
     console.log(`- Opportunity cost of capital %: ${opportunityCostOfCapitalPct}`);
     const opportunityCostOfCapital = toBNWei(opportunityCostOfCapitalPct, 18)
       .mul(maxAmountToTransfer)
       .div(toBNWei(100, 18));
     console.log(`- Opportunity cost of capital (fixed amount): ${opportunityCostOfCapital}`);
+    const totalFee = tradeFee
+      .add(withdrawFeeConvertedToSourceToken)
+      .add(slippage)
+      .add(spreadFee)
+      .add(opportunityCostOfCapital);
+    console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
     console.groupEnd();
-    const totalFee = tradeFee.add(withdrawFeeConvertedToSourceToken).add(slippage).add(opportunityCostOfCapital);
 
     // The fee should be rounded up to be at least one tick size for the relevant market, so that after rounding,
     // the amount adjusted with fees can cover the original order size (e.g. maxAmountToTransfer) plus fees.
@@ -585,7 +603,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   protected async _getInitiatedBinanceWithdrawals(token: string, chain: number, startTime: number) {
     return (await getBinanceWithdrawals(this.binanceApiClient, token, startTime)).filter(
       (withdrawal) =>
-        withdrawal.coin === token && withdrawal.network === BINANCE_NETWORKS[chain] && withdrawal.status > 4
+        withdrawal.coin === token &&
+        withdrawal.network === BINANCE_NETWORKS[chain] &&
+        withdrawal.recipient === this.baseSignerAddress.toNative() &&
+        withdrawal.status > 4
       // @dev (0: Email Sent, 1: Cancelled 2: Awaiting Approval, 3: Rejected, 4: Processing, 5: Failure, 6: Completed)
     );
   }

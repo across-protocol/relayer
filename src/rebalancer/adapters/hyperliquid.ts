@@ -40,11 +40,11 @@ import {
   winston,
   ZERO_ADDRESS,
 } from "../../utils";
-import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import { RebalanceRoute, TargetBalanceConfig } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
-import { RebalancerConfig } from "../RebalancerConfig";
 import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { BaseAdapter } from "./baseAdapter";
+import { RebalancerConfig } from "../RebalancerConfig";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,

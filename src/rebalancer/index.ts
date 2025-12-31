@@ -1,23 +1,64 @@
-import { config, delay, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import {
+  BigNumber,
+  bnUint256Max,
+  bnUint32Max,
+  config,
+  delay,
+  disconnectRedisClients,
+  Signer,
+  toBNWei,
+  winston,
+} from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
-import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "./rebalancer";
+import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
 let logger: winston.Logger;
 
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
-  const config = new RebalancerConfig(process.env);
+  const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
+    1: {
+      USDT: toBNWei("20", 6),
+      USDC: toBNWei("20", 6),
+    },
+    10: {
+      USDT: toBNWei("0", 6),
+    },
+    42161: {
+      USDC: toBNWei("20", 6),
+    },
+  };
+
+  const targetBalances: TargetBalanceConfig = {
+    USDT: {
+      "1": { targetBalance: bnUint256Max, priorityTier: 0 },
+      "10": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+    },
+    USDC: {
+      "1": { targetBalance: bnUint32Max, priorityTier: 0 },
+      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+    },
+  };
+  const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
 
   // Construct adapters:
-  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, config, baseSigner);
-  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, config, baseSigner);
+  const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
+  const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
 
   const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
+    {
+      sourceChain: 42161,
+      destinationChain: 1,
+      sourceToken: "USDC",
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("5.5", 6),
+      adapter: "binance",
+    },
     // {
     //   sourceChain: 10,
     //   destinationChain: 42161,
@@ -43,16 +84,15 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     //   adapter: "binance",
     // },
     {
-      sourceChain: 10,
-      destinationChain: 42161,
-      sourceToken: "USDT",
-      destinationToken: "USDC",
+      sourceChain: 42161,
+      sourceToken: "USDC",
+      destinationChain: 10,
+      destinationToken: "USDT",
       maxAmountToTransfer: toBNWei("10.3", 6),
       adapter: "binance",
     },
   ];
-
-  const rebalancerClient = new RebalancerClient(logger, {}, adapters, rebalanceRoutes, baseSigner);
+  const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
   console.log("rebalancer initialized");
 
@@ -80,11 +120,23 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     console.log(`Updating rebalance statuses for adapter ${adapter.constructor.name}`);
     await adapter.updateRebalanceStatuses();
 
-    // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
-    // transactions to get mined.
-    await delay(5);
+    // // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
+    // // transactions to get mined.
+    // await delay(5);
 
-    await adapter.getPendingRebalances();
+    // Modify all current balances with the pending rebalances:
+    const pendingRebalances = await adapter.getPendingRebalances();
+    for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
+      for (const [token, amount] of Object.entries(tokens)) {
+        currentBalances[chainId][token] = currentBalances[chainId][token].add(amount);
+        logger.debug({
+          message: `Updated current balance for ${token} on ${chainId}`,
+          existingCurrentBalance: currentBalances[chainId][token].sub(amount).toString(),
+          virtualBalanceCreditOrDeficit: amount.toString(),
+          newCurrentBalance: currentBalances[chainId][token].toString(),
+        });
+      }
+    }
   }
 
   // Finally, send out new rebalances:
@@ -92,7 +144,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Resync balances
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
-      await rebalancerClient.rebalanceInventory();
+      await rebalancerClient.rebalanceInventory(currentBalances);
       console.log("rebalancer sent rebalances");
     }
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
