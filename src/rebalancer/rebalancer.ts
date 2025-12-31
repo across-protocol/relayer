@@ -1,5 +1,15 @@
 import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts";
-import { assert, BigNumber, bnUint256Max, ConvertDecimals, forEachAsync, getNetworkName, isDefined, Signer, winston } from "../utils";
+import {
+  assert,
+  BigNumber,
+  bnUint256Max,
+  ConvertDecimals,
+  forEachAsync,
+  getNetworkName,
+  isDefined,
+  Signer,
+  winston,
+} from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 
 interface ChainConfig {
@@ -244,13 +254,21 @@ export class RebalancerClient {
               ...r,
               maxAmountToTransfer: deficitAmountCapped,
             });
-            console.log(`Expected cost to use rebalance route ${r.adapter} denominated in source tokens is ${expectedCostForRebalance.toString()}`);
+            console.log(
+              `Expected cost to use rebalance route ${
+                r.adapter
+              } denominated in source tokens is ${expectedCostForRebalance.toString()}`
+            );
             if (expectedCostForRebalance.lt(cheapestExpectedCost)) {
               cheapestExpectedCost = expectedCostForRebalance;
-              console.log(`${r.adapter} rebalance route is now the cheapest!`)
+              console.log(`${r.adapter} rebalance route is now the cheapest!`);
               rebalanceRouteToUse = r;
             } else {
-              console.log(`${r.adapter} rebalance route is not the cheapest, lowest fee so far is ${cheapestExpectedCost.toString()} and this adapter fee is ${expectedCostForRebalance.toString()}`)
+              console.log(
+                `${
+                  r.adapter
+                } rebalance route is not the cheapest, lowest fee so far is ${cheapestExpectedCost.toString()} and this adapter fee is ${expectedCostForRebalance.toString()}`
+              );
             }
           }
         });
@@ -295,14 +313,15 @@ export class RebalancerClient {
       // Initiate a new rebalance
       this.logger.debug({
         at: "RebalanceClient.rebalanceInventory",
-        message: `Initializing new ${rebalanceRoute.adapter} rebalance from ${rebalanceRoute.sourceToken} on ${getNetworkName(
-          rebalanceRoute.sourceChain
-        )} to ${rebalanceRoute.destinationToken} on ${getNetworkName(rebalanceRoute.destinationChain)}`,
+        message: `Initializing new ${rebalanceRoute.adapter} rebalance from ${
+          rebalanceRoute.sourceToken
+        } on ${getNetworkName(rebalanceRoute.sourceChain)} to ${rebalanceRoute.destinationToken} on ${getNetworkName(
+          rebalanceRoute.destinationChain
+        )}`,
         adapter: rebalanceRoute.adapter,
         amountToTransfer: rebalanceRoute.maxAmountToTransfer.toString(),
         expectedFees: cheapestExpectedCost.toString(),
       });
-
 
       // if (rebalanceRoute.adapter === "hyperliquid") {
       //   await this.adapters.hyperliquid.initializeRebalance(adjustedRebalanceRoute);

@@ -281,7 +281,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain, maxAmountToTransfer } = rebalanceRoute;
     console.group(
-      `[${rebalanceRoute.adapter}] Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
+      `[${
+        rebalanceRoute.adapter
+      }] Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
         sourceChain
       )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
     );
@@ -622,8 +624,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return {
       px: maxPxReached.px,
       slippagePct,
-    }
-
+    };
   }
 
   async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute, maxSlippagePct: number): Promise<void> {
