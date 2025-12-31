@@ -2,6 +2,7 @@ import {
   BigNumber,
   bnUint256Max,
   bnUint32Max,
+  bnZero,
   config,
   delay,
   disconnectRedisClients,
@@ -91,6 +92,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       maxAmountToTransfer: toBNWei("10.3", 6),
       adapter: "binance",
     },
+    {
+      sourceChain: 42161,
+      sourceToken: "USDC",
+      destinationChain: 10,
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("10.3", 6),
+      adapter: "hyperliquid",
+    },
   ];
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   await rebalancerClient.initialize();
@@ -126,13 +135,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
     // Modify all current balances with the pending rebalances:
     const pendingRebalances = await adapter.getPendingRebalances();
-    for (const [chainId, tokens] of Object.entries(pendingRebalances)) {
-      for (const [token, amount] of Object.entries(tokens)) {
-        currentBalances[chainId][token] = currentBalances[chainId][token].add(amount);
+    for (const [chainId, tokens] of Object.entries(currentBalances)) {
+      for (const token of Object.keys(tokens)) {
+        const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
+        currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
         logger.debug({
-          message: `Updated current balance for ${token} on ${chainId}`,
-          existingCurrentBalance: currentBalances[chainId][token].sub(amount).toString(),
-          virtualBalanceCreditOrDeficit: amount.toString(),
+          message: `Updated current balance for ${token} on ${chainId} using pending rebalances on ${adapter.constructor.name}`,
+          existingCurrentBalance: currentBalances[chainId][token].sub(pendingRebalanceAmount).toString(),
+          virtualBalanceCreditOrDeficit: pendingRebalanceAmount.toString(),
           newCurrentBalance: currentBalances[chainId][token].toString(),
         });
       }

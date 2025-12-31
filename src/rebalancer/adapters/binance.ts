@@ -183,7 +183,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain, maxAmountToTransfer } = rebalanceRoute;
     console.group(
-      `Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
+      `[${rebalanceRoute.adapter}] Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
         sourceChain
       )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
     );
@@ -243,13 +243,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
     console.groupEnd();
 
-    // The fee should be rounded up to be at least one tick size for the relevant market, so that after rounding,
-    // the amount adjusted with fees can cover the original order size (e.g. maxAmountToTransfer) plus fees.
-    const sourceTokenDecimals = TOKEN_SYMBOLS_MAP[sourceToken].decimals;
-    const tickSize = 1 * 10 ** -spotMarketMeta.szDecimals; // e.g. szDecimals=0 means tickSize is 1 * 10^0 = 1, szDecimals = 2 means tickSize is 1 * 10^-2 = 0.01
-    const tickSizeWei = toBNWei(tickSize, sourceTokenDecimals);
-    console.log(`- Minimum tick size for market: ${fromWei(tickSizeWei, sourceTokenDecimals)}`);
-    return totalFee.gt(tickSizeWei) ? totalFee : tickSizeWei;
+    return totalFee;
   }
 
   async _getBalance(token: string): Promise<number> {

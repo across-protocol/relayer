@@ -148,7 +148,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private multicallerClient: MultiCallerClient;
 
-  private maxSlippageBps = 2; // @todo make this configurable
+  private maxSlippagePct = 0.02; // @todo make this configurable
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     super(logger);
@@ -278,8 +278,36 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
-  async getEstimatedCost(): Promise<BigNumber> {
-    return bnZero;
+  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
+    const { sourceToken, destinationToken, sourceChain, destinationChain, maxAmountToTransfer } = rebalanceRoute;
+    console.group(
+      `[${rebalanceRoute.adapter}] Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
+        sourceChain
+      )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
+    );
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const { slippagePct, px } = await this._getLatestPrice(rebalanceRoute);
+    const latestPrice = Number(px);
+    console.log(`- Slippage %: ${slippagePct}`);
+    const slippage = toBNWei(slippagePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Slippage (fixed amount): ${slippage}`);
+
+    const isBuy = spotMarketMeta.isBuy;
+    let spreadPct = 0;
+    if (isBuy) {
+      // if is buy, the fee is positive if the price is over 1
+      spreadPct = latestPrice - 1;
+      console.log(`- Buy spread %: ${spreadPct}`);
+    } else {
+      spreadPct = 1 - latestPrice;
+      console.log(`- Sell spread %: ${spreadPct}`);
+    }
+    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Spread fee (fixed amount): ${spreadFee}`);
+    const totalFee = spreadFee;
+    console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
+    console.groupEnd();
+    return totalFee;
     // Withdrawal fee +
     // + Trading fee
     // + Deposit fee
@@ -336,7 +364,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // is sufficient, then place order.
 
     console.log(`Placing order with cloid: ${cloid}`);
-    await this._placeMarketOrder(cloid, rebalanceRoute, this.maxSlippageBps);
+    await this._placeMarketOrder(cloid, rebalanceRoute, this.maxSlippagePct);
   }
 
   private _getFromTimestamp(): number {
@@ -540,7 +568,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
-  async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute, maxSlippageBps: number): Promise<void> {
+  async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<{ px: string; slippagePct: number }> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
     const l2Book = await infoClient.l2Book({ coin: spotMarketMeta.name });
@@ -590,12 +618,21 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         } on the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}"`
       );
     }
-    const slippageBps = Math.abs(((Number(maxPxReached.px) - bestPx) / bestPx) * 10000);
-    if (slippageBps > maxSlippageBps) {
-      throw new Error(`Slippage of ${slippageBps}bps is greater than the max slippage of ${maxSlippageBps}bps`);
+    const slippagePct = Math.abs(((Number(maxPxReached.px) - bestPx) / bestPx) * 100);
+    return {
+      px: maxPxReached.px,
+      slippagePct,
     }
-    console.log(`Slippage of ${slippageBps}bps is within the max slippage of ${maxSlippageBps}bps`);
-    await this._placeLimitOrder(cloid, rebalanceRoute, maxPxReached.px);
+
+  }
+
+  async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute, maxSlippagePct: number): Promise<void> {
+    const { px, slippagePct } = await this._getLatestPrice(rebalanceRoute);
+    if (slippagePct > maxSlippagePct) {
+      throw new Error(`Slippage of ${slippagePct}% is greater than the max slippage of ${maxSlippagePct}%`);
+    }
+    console.log(`Slippage of ${slippagePct}% is within the max slippage of ${maxSlippagePct}%`);
+    await this._placeLimitOrder(cloid, rebalanceRoute, px);
   }
 
   private async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
@@ -1402,12 +1439,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
       ).add(convertedAmount);
     }
-    console.log(
-      "- Total pending rebalance amounts",
-      Object.entries(pendingRebalances)
-        .map(([chainId, amount]) => `${getNetworkName(chainId)}: ${amount.toString()}`)
-        .join(", ")
-    );
     console.groupEnd();
     return pendingRebalances;
   }
