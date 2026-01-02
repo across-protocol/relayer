@@ -397,10 +397,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // bps for this. TODO is to figure this out.
     const opportunityCostOfCapitalBps = destinationChain !== CHAIN_IDs.HYPEREVM ? 10 : 0;
     console.log(`- Opportunity cost of capital (bps): ${opportunityCostOfCapitalBps}`);
-    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18).mul(maxAmountToTransfer).div(toBNWei(10000, 18));
+    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
+      .mul(maxAmountToTransfer)
+      .div(toBNWei(10000, 18));
     console.log(`- Opportunity cost of capital (fixed amount): ${opportunityCostOfCapitalFixed.toString()}`);
 
-    const totalFee = spreadFee.add(takerFeeFixed).add(bridgeToHyperEvmFee).add(bridgeFromHyperEvmFee).add(opportunityCostOfCapitalFixed);
+    const totalFee = spreadFee
+      .add(takerFeeFixed)
+      .add(bridgeToHyperEvmFee)
+      .add(bridgeFromHyperEvmFee)
+      .add(opportunityCostOfCapitalFixed);
     console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
     console.groupEnd();
     return totalFee;
@@ -1085,7 +1091,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
   }
 
-  private async _getOftQuoteSend(originChain: number, destinationChain: number, amountToBridge: BigNumber): Promise<{
+  private async _getOftQuoteSend(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<{
     feeStruct: MessagingFeeStruct;
     sendParamStruct: SendParamStruct;
     oftMessenger: Contract;
@@ -1112,7 +1122,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     };
     // Get the messaging fee for this transfer
     return {
-      feeStruct: await oftMessenger.quoteSend(sendParamStruct, false) as MessagingFeeStruct,
+      feeStruct: (await oftMessenger.quoteSend(sendParamStruct, false)) as MessagingFeeStruct,
       sendParamStruct: sendParamStruct,
       oftMessenger: oftMessenger,
     };
