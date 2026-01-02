@@ -22,7 +22,7 @@ import {
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
-import { RebalanceRoute, TargetBalanceConfig } from "../rebalancer";
+import { RebalanceRoute } from "../rebalancer";
 import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
@@ -224,12 +224,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (isBuy) {
       // if is buy, the fee is positive if the price is over 1
       spreadPct = latestPrice - 1;
-      console.log(`- Buy spread %: ${spreadPct}`);
+      console.log(`- Buy spread %: ${spreadPct * 100}`);
     } else {
       spreadPct = 1 - latestPrice;
-      console.log(`- Sell spread %: ${spreadPct}`);
+      console.log(`- Sell spread %: ${spreadPct * 100}`);
     }
-    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(1, 18));
     console.log(`- Spread fee (fixed amount): ${spreadFee}`);
     const opportunityCostOfCapitalPct = 0; // todo.
     console.log(`- Opportunity cost of capital %: ${opportunityCostOfCapitalPct}`);
@@ -274,7 +274,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       `Fetching the price for a market order for the market "${rebalanceRoute.sourceToken}-${
         rebalanceRoute.destinationToken
       }" to ${spotMarketMeta.isBuy ? "buy" : "sell"} ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
-        rebalanceRoute.destinationToken
+        symbol.symbol
       }`
     );
     const bestPx = Number(sideOfBookToTraverse[0].price);

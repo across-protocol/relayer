@@ -31,6 +31,7 @@ import {
   MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
+  PriceClient,
   roundAmountToSend,
   SendParamStruct,
   Signer,
@@ -45,6 +46,7 @@ import * as hl from "@nktkas/hyperliquid";
 import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { BaseAdapter } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
@@ -56,6 +58,7 @@ enum STATUS {
 interface SPOT_MARKET_META {
   index: number;
   name: string;
+  symbol: string;
   quoteAssetIndex: number;
   baseAssetIndex: number;
   baseAssetName: string;
@@ -104,6 +107,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     "USDT-USDC": {
       index: 166,
       name: "@166",
+      symbol: "USDT/USDC",
       quoteAssetIndex: 268,
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
@@ -116,6 +120,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     "USDC-USDT": {
       index: 166,
       name: "@166",
+      symbol: "USDT/USDC",
       quoteAssetIndex: 268,
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
@@ -288,6 +293,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
     );
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+    const sourceTokenMeta = this._getTokenMeta(sourceToken);
     const { slippagePct, px } = await this._getLatestPrice(rebalanceRoute);
     const latestPrice = Number(px);
     console.log(`- Slippage %: ${slippagePct}`);
@@ -299,21 +305,107 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (isBuy) {
       // if is buy, the fee is positive if the price is over 1
       spreadPct = latestPrice - 1;
-      console.log(`- Buy spread %: ${spreadPct}`);
+      console.log(`- Buy spread %: ${spreadPct * 100}`);
     } else {
       spreadPct = 1 - latestPrice;
       console.log(`- Sell spread %: ${spreadPct}`);
     }
-    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(1, 18));
     console.log(`- Spread fee (fixed amount): ${spreadFee}`);
-    const totalFee = spreadFee;
+
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const userFees = await infoClient.userFees({ user: this.baseSignerAddress.toNative() });
+    const takerBaseFee = Number(userFees.userSpotCrossRate);
+    const takerFee = takerBaseFee * 0.2; // for stable pairs, fee is 20% of the taker base fee
+    const takerFeePct = toBNWei(takerFee.toFixed(18), 18).mul(100);
+    console.log(`- Taker fee %: ${fromWei(takerFeePct, 18)}`);
+    const takerFeeFixed = takerFeePct.mul(maxAmountToTransfer).div(toBNWei(100, 18));
+    console.log(`- Taker fee (fixed amount): ${takerFeeFixed.toString()}`);
+
+    // Bridge to HyperEVM Fee:
+    let bridgeToHyperEvmFee = bnZero;
+    if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
+      if (rebalanceRoute.sourceToken === "USDC") {
+        // CCTP Fee:
+        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(sourceChain, CHAIN_IDs.HYPEREVM)).fast;
+        console.log(
+          `- CCTP fast transfer fee % to HyperEVM: ${fromWei(
+            cctpV2FastTransferFeeBps.mul(toBNWei(1, 18)).div(100),
+            18
+          )}%`
+        );
+        bridgeToHyperEvmFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(maxAmountToTransfer).div(toBNWei(10000, 18));
+        console.log(`- CCTP fast transfer fee to HyperEVM (fixed amount): ${bridgeToHyperEvmFee.toString()}`);
+      } else if (rebalanceRoute.sourceToken === "USDT") {
+        // OFT Fee:
+        const { feeStruct } = await this._getOftQuoteSend(sourceChain, CHAIN_IDs.HYPEREVM, maxAmountToTransfer);
+        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
+        // This logic would need to change to support non stablecoin swaps.
+        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(sourceChain);
+        const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
+        console.log(
+          `- OFT native fee (fixed): ${fromWei(feeStruct.nativeFee, nativeTokenDecimals)} ${nativeTokenSymbol}`
+        );
+        const allMids = await infoClient.allMids();
+        const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
+        console.log(`- Mid price for native token: ${mid} USD`);
+        const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+        console.log(`- OFT native fee (USD): $${fromWei(nativeFeeUsd, nativeTokenDecimals)} USD`);
+        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenMeta.evmDecimals)(nativeFeeUsd);
+        console.log(`- OFT native fee in source token precision(fixed): ${nativeFeeSourceDecimals} ${sourceToken}`);
+        bridgeToHyperEvmFee = nativeFeeSourceDecimals;
+      }
+    }
+
+    // Bridge from HyperEVMFee:
+    let bridgeFromHyperEvmFee = bnZero;
+    if (rebalanceRoute.destinationChain !== CHAIN_IDs.HYPEREVM) {
+      if (rebalanceRoute.destinationToken === "USDC") {
+        // CCTP Fee:
+        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(CHAIN_IDs.HYPEREVM, destinationChain))
+          .fast;
+        console.log(
+          `- CCTP fast transfer fee % from HyperEVM: ${fromWei(
+            cctpV2FastTransferFeeBps.mul(toBNWei(1, 18)).div(toBNWei(100, 18)),
+            18
+          )}%`
+        );
+        bridgeFromHyperEvmFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(maxAmountToTransfer).div(toBNWei(10000, 18));
+        console.log(`- CCTP fast transfer fee from HyperEVM (fixed amount): ${bridgeFromHyperEvmFee.toString()}`);
+      } else if (rebalanceRoute.destinationToken === "USDT") {
+        // OFT Fee:
+        const { feeStruct } = await this._getOftQuoteSend(CHAIN_IDs.HYPEREVM, destinationChain, maxAmountToTransfer);
+        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
+        // This logic would need to change to support non stablecoin swaps.
+        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(CHAIN_IDs.HYPEREVM);
+        const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
+        console.log(
+          `- OFT native fee (fixed): ${fromWei(feeStruct.nativeFee, nativeTokenDecimals)} ${nativeTokenSymbol}`
+        );
+        const allMids = await infoClient.allMids();
+        const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
+        console.log(`- Mid price for native token: ${mid} USD`);
+        const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+        console.log(`- OFT native fee (USD): $${fromWei(nativeFeeUsd, nativeTokenDecimals)} USD`);
+        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenMeta.evmDecimals)(nativeFeeUsd);
+        console.log(`- OFT native fee in source token precision(fixed): ${nativeFeeSourceDecimals} ${sourceToken}`);
+        bridgeFromHyperEvmFee = nativeFeeSourceDecimals;
+      }
+    }
+
+    // - Opportunity cost of capital when withdrawing from 999. This takes 11 hours, i think we should add at least 10
+    // bps for this. TODO is to figure this out.
+    const opportunityCostOfCapitalBps = destinationChain !== CHAIN_IDs.HYPEREVM ? 10 : 0;
+    console.log(`- Opportunity cost of capital (bps): ${opportunityCostOfCapitalBps}`);
+    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18).mul(maxAmountToTransfer).div(toBNWei(10000, 18));
+    console.log(`- Opportunity cost of capital (fixed amount): ${opportunityCostOfCapitalFixed.toString()}`);
+
+    const totalFee = spreadFee.add(takerFeeFixed).add(bridgeToHyperEvmFee).add(bridgeFromHyperEvmFee).add(opportunityCostOfCapitalFixed);
     console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
     console.groupEnd();
     return totalFee;
-    // Withdrawal fee +
-    // + Trading fee
-    // + Deposit fee
-    // + opportunity cost of capital (very high when withdrawing from 999)
+
+    // TOOD: Add the following fees:
   }
 
   private async _createHlOrder(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {
@@ -580,7 +672,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     console.log(
       `Placing a market order for the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}" to ${
         spotMarketMeta.isBuy ? "buy" : "sell"
-      } ${rebalanceRoute.maxAmountToTransfer.toString()} of ${rebalanceRoute.destinationToken}`
+      } ${rebalanceRoute.maxAmountToTransfer.toString()} of ${spotMarketMeta.symbol}`
     );
     const tokenMeta = this._getTokenMeta(rebalanceRoute.destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? asks : bids;
@@ -993,12 +1085,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
   }
 
-  private async _sendOftBridge(
-    originChain: number,
-    destinationChain: number,
-    amountToBridge: BigNumber
-  ): Promise<void> {
-    // TODO: In the future, this could re-use a OFTAdapter function.
+  private async _getOftQuoteSend(originChain: number, destinationChain: number, amountToBridge: BigNumber): Promise<{
+    feeStruct: MessagingFeeStruct;
+    sendParamStruct: SendParamStruct;
+    oftMessenger: Contract;
+  }> {
     const oftMessenger = await this._getOftMessenger(originChain);
     const sharedDecimals = await oftMessenger.sharedDecimals();
 
@@ -1020,7 +1111,23 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       oftCmd: "0x",
     };
     // Get the messaging fee for this transfer
-    const feeStruct: MessagingFeeStruct = await oftMessenger.quoteSend(sendParamStruct, false);
+    return {
+      feeStruct: await oftMessenger.quoteSend(sendParamStruct, false) as MessagingFeeStruct,
+      sendParamStruct: sendParamStruct,
+      oftMessenger: oftMessenger,
+    };
+  }
+
+  private async _sendOftBridge(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<void> {
+    const { feeStruct, sendParamStruct, oftMessenger } = await this._getOftQuoteSend(
+      originChain,
+      destinationChain,
+      amountToBridge
+    );
     const nativeFeeCap = OFT_FEE_CAP_OVERRIDES[originChain] ?? OFT_DEFAULT_FEE_CAP;
     if (BigNumber.from(feeStruct.nativeFee).gt(nativeFeeCap)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${nativeFeeCap})`);

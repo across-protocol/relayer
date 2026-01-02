@@ -70,6 +70,27 @@ export class RebalancerClient {
       await adapter.initialize(routesForAdapter);
       console.log(`Initialized ${name} adapter with routes:`, routesForAdapter);
     }
+
+    // Assert that the source token and destination token for each rebalance route have target balances defined.
+    for (const rebalanceRoute of this.rebalanceRoutes) {
+      const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
+      assert(
+        isDefined(this.config.targetBalances[sourceToken]?.[sourceChain]),
+        `RebalanceClient#initialize: Target balance for ${sourceToken} on ${getNetworkName(
+          sourceChain
+        )} is not found, required for source chain ${getNetworkName(
+          sourceChain
+        )} and source token ${sourceToken} from rebalance route ${rebalanceRoute.adapter}`
+      );
+      assert(
+        isDefined(this.config.targetBalances[destinationToken]?.[destinationChain]),
+        `RebalanceClient#initialize: Target balance for ${destinationToken} on ${getNetworkName(
+          destinationChain
+        )} is not found, required for destination chain ${getNetworkName(
+          destinationChain
+        )} and destination token ${destinationToken} from rebalance route ${rebalanceRoute.adapter}`
+      );
+    }
   }
 
   /**
@@ -77,18 +98,30 @@ export class RebalancerClient {
    * @param currentBalances Allow caller to pass in current allocation of balances. This is designed so that this
    * rebalancer can be seamessly used by the existing inventory manager client which has its own way of determining
    * allocations.
+   * @dev A current balance entry must be set for each source chain + source token and destination chain + destination token
+   * combination that has a rebalance route. A current balance entry must also be set for each target balance in the
+   * client configuration.
    */
   async rebalanceInventory(currentBalances: { [chainId: number]: { [token: string]: BigNumber } }): Promise<void> {
-    // Assert that current balances has an entry for each rebalance route:
+    // Assert that each current balance maps to a target balance. We've already asserted that each rebalance
+    // route is represented by target balances.
     for (const rebalanceRoute of this.rebalanceRoutes) {
       const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
       assert(
         isDefined(currentBalances[sourceChain]?.[sourceToken]),
-        `Current balance for ${sourceToken} on ${getNetworkName(sourceChain)} is not found`
+        `RebalanceClient#rebalanceInventory: Current balance for ${sourceToken} on ${getNetworkName(
+          sourceChain
+        )} is not found, required for source chain ${getNetworkName(
+          sourceChain
+        )} and source token ${sourceToken} from rebalance route ${rebalanceRoute.adapter}`
       );
       assert(
         isDefined(currentBalances[destinationChain]?.[destinationToken]),
-        `Current balance for ${destinationToken} on ${getNetworkName(destinationChain)} is not found`
+        `RebalanceClient#rebalanceInventory: Current balance for ${destinationToken} on ${getNetworkName(
+          destinationChain
+        )} is not found, required for destination chain ${getNetworkName(
+          destinationChain
+        )} and destination token ${destinationToken} from rebalance route ${rebalanceRoute.adapter}`
       );
     }
 

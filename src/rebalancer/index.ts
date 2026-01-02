@@ -20,10 +20,10 @@ let logger: winston.Logger;
 export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   logger = _logger;
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
-    1: {
-      USDT: toBNWei("20", 6),
-      USDC: toBNWei("20", 6),
-    },
+    // 1: {
+    //   USDT: toBNWei("20", 6),
+    //   USDC: toBNWei("20", 6),
+    // },
     10: {
       USDT: toBNWei("0", 6),
     },
@@ -34,11 +34,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
-      "1": { targetBalance: bnUint256Max, priorityTier: 0 },
+      // "1": { targetBalance: bnUint256Max, priorityTier: 0 },
       "10": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
     },
     USDC: {
-      "1": { targetBalance: bnUint32Max, priorityTier: 0 },
+      // "1": { targetBalance: bnUint32Max, priorityTier: 0 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
   };
@@ -52,14 +52,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [
-    {
-      sourceChain: 42161,
-      destinationChain: 1,
-      sourceToken: "USDC",
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("5.5", 6),
-      adapter: "binance",
-    },
+    // {
+    //   sourceChain: 42161,
+    //   destinationChain: 1,
+    //   sourceToken: "USDC",
+    //   destinationToken: "USDT",
+    //   maxAmountToTransfer: toBNWei("5.5", 6),
+    //   adapter: "binance",
+    // },
     // {
     //   sourceChain: 10,
     //   destinationChain: 42161,
@@ -84,14 +84,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     //   maxAmountToTransfer: toBNWei("10.3", 6),
     //   adapter: "binance",
     // },
-    {
-      sourceChain: 42161,
-      sourceToken: "USDC",
-      destinationChain: 10,
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10.3", 6),
-      adapter: "binance",
-    },
+    // {
+    //   sourceChain: 42161,
+    //   sourceToken: "USDC",
+    //   destinationChain: 10,
+    //   destinationToken: "USDT",
+    //   maxAmountToTransfer: toBNWei("10.3", 6),
+    //   adapter: "binance",
+    // },
     {
       sourceChain: 42161,
       sourceToken: "USDC",
