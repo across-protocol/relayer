@@ -889,7 +889,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
         message: `Order result for order ${cloid}`,
-        result: JSON.stringify(result, null, 2),
+        result,
       });
     } catch (error: unknown) {
       if (error instanceof hl.ApiRequestError) {

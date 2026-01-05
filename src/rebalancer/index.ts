@@ -14,24 +14,24 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
+      USDC: toBNWei("20", 6),
+      USDT: toBNWei("20", 6),
     },
     42161: {
-      USDT: toBNWei("20", 6),
-      USDC: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
+      USDC: toBNWei("0", 6),
     },
   };
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("20", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("9", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
   };
@@ -50,6 +50,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       destinationChain: 1,
       sourceToken: "USDT",
       destinationToken: "USDC",
+      maxAmountToTransfer: toBNWei("5.5", 6),
+      adapter: "binance",
+    },
+    {
+      sourceChain: 10,
+      destinationChain: 1,
+      sourceToken: "USDC",
+      destinationToken: "USDT",
       maxAmountToTransfer: toBNWei("5.5", 6),
       adapter: "binance",
     },
@@ -129,6 +137,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
         if (pendingRebalanceAmount.gt(bnZero)) {
           logger.debug({
+            at: "index.ts:runRebalancer",
             message: `Added pending rebalance amount from ${
               adapter.constructor.name
             } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
