@@ -29,18 +29,6 @@ export interface TargetBalanceConfig {
   [token: string]: TokenConfig;
 }
 
-interface ChainAllocation {
-  currentBalance: BigNumber;
-}
-
-interface TokenAllocation {
-  [token: string]: ChainAllocation;
-}
-
-interface RebalancerAllocation {
-  [token: string]: TokenAllocation;
-}
-
 export interface RebalanceRoute {
   sourceChain: number;
   destinationChain: number;
@@ -345,23 +333,14 @@ export class RebalancerClient {
         sortedExcesses[excessIndex].excessAmount = excessAmount.sub(deficitAmountCapped);
       });
       if (!isDefined(matchingExcess)) {
-        this.logger.debug({
-          message: `No matching excess found to fill deficit on ${getNetworkName(
-            destinationChainId
-          )} for token ${destinationToken}`,
-          remainingExcesses: sortedExcesses.map(
-            (e) => `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()}`
-          ),
-        });
+        // @todo: This log could be clarified better. We get here if there are no rebalance routes that would fulfill
+        // this deficit that also happen to have an excess on the rebalance route's source chain.
         continue;
       }
       const amountToTransfer = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
         ? deficitAmount
         : rebalanceRouteToUse.maxAmountToTransfer;
-      const amountToTransferWithFees = amountToTransfer.add(cheapestExpectedCost);
 
-      // @todo Change the interface to `getEstimatedCost` and `initializeRebalance` to accept an amountToTransfer parameter
-      // because otherwise we're conflating the maxAmountToTransfer with the amountToTransfer.
       // Initiate a new rebalance
       this.logger.debug({
         at: "RebalanceClient.rebalanceInventory",
@@ -371,14 +350,11 @@ export class RebalancerClient {
           rebalanceRouteToUse.destinationToken
         } on ${getNetworkName(rebalanceRouteToUse.destinationChain)}`,
         adapter: rebalanceRouteToUse.adapter,
-        amountToTransfer: amountToTransferWithFees.toString(),
+        amountToTransfer: amountToTransfer.toString(),
         expectedFees: cheapestExpectedCost.toString(),
       });
 
-      await this.adapters[rebalanceRouteToUse.adapter].initializeRebalance(
-        rebalanceRouteToUse,
-        amountToTransferWithFees
-      );
+      await this.adapters[rebalanceRouteToUse.adapter].initializeRebalance(rebalanceRouteToUse, amountToTransfer);
     }
 
     // Setup:
@@ -414,27 +390,6 @@ export class RebalancerClient {
     //   const cheapestRoute = routes.filter((route) => route.adapter.getCostEstimate(route) < maxCost).sort((a, b) => a.cost - b.cost)[0];
     //   await this.adapters.hyperliquid.initializeRebalance(cheapestRoute);
     // }
-  }
-
-  async getCurrentAllocations(): Promise<RebalancerAllocation> {
-    // TODO
-    return Promise.resolve({});
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  getRebalanceRoutesToChain(chain: number, token: string, amountToTransfer: BigNumber): RebalanceRoute[] {
-    // TODO:
-    return [];
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async executeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
-    // TODO:
-    // - Call adapter for specific rebalacne route.
-  }
-
-  async getPendingRebalances(): Promise<RebalanceRoute[]> {
-    return Promise.resolve([]);
   }
 }
 

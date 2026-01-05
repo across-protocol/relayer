@@ -14,8 +14,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("20", 6),
-      USDT: toBNWei("20", 6),
+      USDC: toBNWei("11", 6),
+      USDT: toBNWei("0", 6),
     },
     42161: {
       USDT: toBNWei("0", 6),
@@ -27,7 +27,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
       "10": { targetBalance: toBNWei("20", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("9", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("11", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
@@ -131,14 +131,21 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
     // Modify all current balances with the pending rebalances:
     const pendingRebalances = await adapter.getPendingRebalances();
+    logger.debug({
+      at: "index.ts:runRebalancer",
+      message: "Pending rebalances",
+      pendingRebalances: Object.entries(pendingRebalances).map(([chainId, tokens]) => ({
+        [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
+      })),
+    });
     for (const [chainId, tokens] of Object.entries(currentBalances)) {
       for (const token of Object.keys(tokens)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;
         currentBalances[chainId][token] = currentBalances[chainId][token].add(pendingRebalanceAmount);
-        if (pendingRebalanceAmount.gt(bnZero)) {
+        if (!pendingRebalanceAmount.eq(bnZero)) {
           logger.debug({
             at: "index.ts:runRebalancer",
-            message: `Added pending rebalance amount from ${
+            message: `${pendingRebalanceAmount.gt(bnZero) ? "Added" : "Subtracted"} pending rebalance amount from ${
               adapter.constructor.name
             } of ${pendingRebalanceAmount.toString()} to current balance for ${token} on ${chainId}`,
             pendingRebalanceAmount: pendingRebalanceAmount.toString(),
@@ -172,6 +179,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error("Error running rebalancer", error);
     throw error;
   } finally {

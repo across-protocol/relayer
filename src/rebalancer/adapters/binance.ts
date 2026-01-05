@@ -1,4 +1,4 @@
-import { Binance, OrderType } from "binance-api-node";
+import { Binance, NewOrderSpot, OrderType } from "binance-api-node";
 import {
   assert,
   BigNumber,
@@ -152,9 +152,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       network: BINANCE_NETWORKS[sourceChain],
     });
     const cloid = await this._redisGetNextCloid();
-    console.log(
-      `Creating new order ${cloid} by first transferring ${rebalanceRoute.sourceToken} into Binance from ${rebalanceRoute.sourceChain} to deposit address ${depositAddress.address}`
-    );
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+      message: `Creating new order ${cloid} by first transferring ${amountToTransfer.toString()} ${sourceToken} into Binance from ${getNetworkName(
+        sourceChain
+      )} to deposit address ${depositAddress.address}`,
+      destinationToken,
+      destinationChain: getNetworkName(destinationChain),
+    });
 
     const sourceProvider = await getProvider(sourceChain);
     const sourceAddress = sourceTokenInfo.addresses[sourceChain];
@@ -273,37 +278,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
-    console.group(
-      `Fetching the price for a market order for the market "${sourceToken}-${destinationToken}" to ${
-        spotMarketMeta.isBuy ? "buy" : "sell"
-      } ${amountToTransfer.toString()} of ${symbol.symbol}`
-    );
     const bestPx = Number(sideOfBookToTraverse[0].price);
-    console.log(`- Best ${spotMarketMeta.isBuy ? "ask" : "bid"} price: ${bestPx}`);
     let szFilledSoFar = bnZero;
-    const maxPxReached = sideOfBookToTraverse.find((level, i) => {
-      console.log(
-        `- szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${amountToTransfer.toString()}`
-      );
+    const maxPxReached = sideOfBookToTraverse.find((level) => {
       // Note: sz is always denominated in the base asset, so if we are buying, then the amountToTransfer (i.e.
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
-      const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.price);
-      console.log(
-        `- Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
-      );
-      const szWei = toBNWei(level.quantity, destinationTokenInfo.decimals);
+      const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.quantity);
+      const szWei = toBNWei(sz.toFixed(destinationTokenInfo.decimals), destinationTokenInfo.decimals);
       if (szWei.gte(amountToTransfer)) {
-        console.log(
-          `- Level ${i} with px=${
-            level.price
-          } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${amountToTransfer.toString()}`
-        );
         return true;
       }
-      console.log(
-        `- Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${amountToTransfer.toString()}`
-      );
       szFilledSoFar = szFilledSoFar.add(szWei);
     });
     if (!maxPxReached) {
@@ -311,12 +296,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
       );
     }
-    console.log(
-      `- maxPxReached.price: ${maxPxReached.price}, spotMarketMeta.pxDecimals: ${
-        spotMarketMeta.pxDecimals
-      }, adjusted price: ${Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals)}`
-    );
-    console.groupEnd();
     const latestPrice = Number(Number(maxPxReached.price).toFixed(spotMarketMeta.pxDecimals));
     const slippagePct = Math.abs((latestPrice - bestPx) / bestPx) * 100;
     return { latestPrice, slippagePct };
@@ -327,17 +306,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     destinationToken: string,
     amountToTransfer: BigNumber,
     price: number
-  ) {
+  ): number {
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    if (spotMarketMeta.isBuy) {
-      console.log(
-        `Buying the base asset of ${destinationToken} with the quote asset of ${sourceToken}, setting sz equal to px=${price} * ${amountToTransfer.toString()}`
-      );
-    } else {
-      console.log(
-        `Selling the base asset of ${sourceToken} with the quote asset of ${destinationToken}, setting sz equal to ${amountToTransfer.toString()} of the quote asset`
-      );
-    }
     const sz = spotMarketMeta.isBuy
       ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
       : amountToTransfer;
@@ -345,9 +315,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenInfo.decimals : sourceTokenInfo.decimals;
     const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
-    console.log(
-      `sz: ${sz.toString()}, spotMarketMeta.szDecimals: ${spotMarketMeta.szDecimals}, szFormatted: ${szFormatted}`
-    );
     assert(szFormatted >= spotMarketMeta.minimumOrderSize, "amount to transfer is less than minimum order size");
     return szFormatted;
   }
@@ -362,18 +329,33 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     // const marketInfo = await this._getSymbol("USDC", "USDT");
     // console.log(`Market info:`, marketInfo);
-    console.log("USDC Account Balance:", await this._getBalance("USDC"));
-    console.log("USDT Account Balance:", await this._getBalance("USDT"));
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+      message: `USDC Account Balance: ${await this._getBalance("USDC")}`,
+    });
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+      message: `USDT Account Balance: ${await this._getBalance("USDT")}`,
+    });
 
     const pendingSwaps = await this._redisGetPendingSwaps();
-    console.log("Pending swaps", pendingSwaps);
+    if (pendingSwaps.length > 0) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingSwaps.length} pending swaps`,
+        pendingSwaps: pendingSwaps,
+      });
+    }
     for (const cloid of pendingSwaps) {
       const { destinationToken, destinationChain } = await this._redisGetOrderDetails(cloid);
       const matchingFill = await this._getMatchingFillForCloid(cloid);
       if (matchingFill) {
-        console.log(
-          `Open order for cloid ${cloid} filled with size ${matchingFill.executedQty}! Proceeding to withdraw from Binance.`
-        );
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Open order for cloid ${cloid} filled with size ${matchingFill.executedQty}! Proceeding to withdraw from Binance.`,
+          cloid: cloid,
+          matchingFill: matchingFill,
+        });
         await this._withdraw(Number(matchingFill.executedQty), destinationToken, destinationChain);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
       } else {
@@ -383,7 +365,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
 
     const pendingDeposits = await this._redisGetPendingDeposits();
-    console.log("Pending deposits", pendingDeposits);
+    if (pendingDeposits.length > 0) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingDeposits.length} pending deposits`,
+        pendingDeposits: pendingDeposits,
+      });
+    }
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { sourceToken, amountToTransfer, destinationToken } = orderDetails;
@@ -391,9 +379,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
       const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
       const balance = await this._getBalance(sourceToken);
-      console.log(`Current account balance of token ${sourceToken}: ${balance.toString()}`);
       if (balance < szForOrder) {
-        console.log(`Not enough balance to place order for cloid ${cloid}, balance: ${balance}`);
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Not enough balance to place order for cloid ${cloid}, balance: ${balance}`,
+          cloid: cloid,
+          balance: balance,
+          szForOrder: szForOrder,
+        });
         continue;
       }
       await this._placeMarketOrder(cloid, orderDetails);
@@ -402,7 +395,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const unfinalizedWithdrawalAmounts: { [destinationToken: string]: BigNumber } = {};
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    console.log("Pending withdrawals", pendingWithdrawals);
+    if (pendingWithdrawals.length > 0) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingWithdrawals.length} pending withdrawals`,
+        pendingWithdrawals: pendingWithdrawals,
+      });
+    }
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken, destinationChain } = orderDetails;
@@ -417,9 +416,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
 
       if (initiatedWithdrawals.length === 0) {
-        console.log(
-          `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`
-        );
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`,
+          cloid: cloid,
+          matchingFill: matchingFill,
+        });
         continue;
       } // Only proceed to update the order status if it has finalized:
       const destinationTokenInfo = TOKEN_SYMBOLS_MAP[orderDetails.destinationToken];
@@ -432,14 +434,23 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           Math.floor(matchingFill.time / 1000)
         ));
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
-        console.log(
-          `- Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`
-        );
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`,
+          cloid: cloid,
+          unfinalizedWithdrawalAmount: unfinalizedWithdrawalAmount.toString(),
+          expectedAmountToReceive: expectedAmountToReceive.toString(),
+        });
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] =
           unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
         continue;
       }
       // We no longer need this order information, so we can delete it:
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Order ${cloid} has finalized, deleting order`,
+        cloid: cloid,
+      });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL);
     }
     // PENDING_DEPOSIT: place new orders if enough balance and update status to PENDING_SWAP
@@ -466,7 +477,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
 
     const pendingOrders = await this._redisGetPendingOrders();
-    console.log("All pending orders", pendingOrders);
+    if (pendingOrders.length > 0) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+        message: `Found ${pendingOrders.length} pending orders`,
+        pendingOrders: pendingOrders,
+      });
+    }
 
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
@@ -482,7 +499,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain])
       );
       const convertedAmount = amountConverter(amountToTransfer);
-      console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+        message: `Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`,
+        cloid: cloid,
+        convertedAmount: convertedAmount.toString(),
+      });
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
@@ -518,9 +540,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
 
       if (initiatedWithdrawals.length === 0) {
-        console.log(
-          `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`
-        );
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+          message: `Cannot find any initiated withdrawals that could correspond to cloid ${cloid} which filled at ${matchingFill.time}, waiting`,
+          cloid: cloid,
+          matchingFill: matchingFill,
+        });
         continue;
       } // Only proceed to modify virtual balances if there is an initiated withdrawal for this fill
 
@@ -529,33 +554,28 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
       );
       const unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmounts[destinationChain][destinationToken];
-      console.log(
-        `- Unfinalized withdrawal amount for ${destinationToken} on ${destinationChain}: ${unfinalizedWithdrawalAmount.toString()}`
-      );
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
-        console.log(
-          `- Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`
-        );
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+          message: `Guessing order ${cloid} has not finalized yet because the unfinalized amount ${unfinalizedWithdrawalAmount.toString()} is >= than the expected withdrawal amount ${expectedAmountToReceive.toString()}`,
+          cloid: cloid,
+          unfinalizedWithdrawalAmount: unfinalizedWithdrawalAmount.toString(),
+          expectedAmountToReceive: expectedAmountToReceive.toString(),
+        });
         unfinalizedWithdrawalAmounts[destinationChain][destinationToken] =
           unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
         continue;
       }
-      console.log(
-        `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.amountToTransfer.toString()} from HyperEVM`
-      );
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+        message: `Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.amountToTransfer.toString()} from Binance`,
+        cloid: cloid,
+        orderDetails: orderDetails,
+      });
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
       ).sub(orderDetails.amountToTransfer);
-    }
-
-    for (const chainId of Object.keys(pendingRebalances)) {
-      console.group(`Pending rebalances to ${getNetworkName(chainId)}`);
-      for (const token of Object.keys(pendingRebalances[chainId])) {
-        const decimals = TOKEN_SYMBOLS_MAP[token].decimals;
-        console.log(`- ${token}: ${fromWei(pendingRebalances[chainId][token].toString(), decimals).toString()}`);
-      }
-      console.groupEnd();
     }
 
     return pendingRebalances;
@@ -573,21 +593,28 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
     const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    console.log(
-      `Placing market order for ${spotMarketMeta.symbol} with size ${szForOrder} and side ${
-        spotMarketMeta.isBuy ? "BUY" : "SELL"
-      }`
-    );
-    const response = await this.binanceApiClient.order({
+    const orderStruct = {
       symbol: spotMarketMeta.symbol,
       newClientOrderId: cloid,
       side: spotMarketMeta.isBuy ? "BUY" : "SELL",
       type: OrderType.MARKET,
       quantity: szForOrder.toString(),
       recvWindow: 60000,
+    };
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
+      message: `Placing ${spotMarketMeta.isBuy ? "BUY" : "SELL"} market order for ${
+        spotMarketMeta.symbol
+      } with size ${szForOrder}}`,
+      orderStruct,
     });
+    const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
-    console.log("Market order response", response);
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
+      message: "Market order response",
+      response,
+    });
   }
 
   private async _getEventSearchConfig(fromTimestamp: number, chainId: number): Promise<EventSearchConfig> {
@@ -632,17 +659,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       startTimeSeconds * 1000
     );
 
-    console.log(
-      `Found ${initiatedWithdrawals.length} initiated withdrawals of ${destinationToken} to chain ${getNetworkName(
-        destinationChain
-      )} from Binance`
-    );
-    console.log(
-      `Found ${finalizedWithdrawals.length} finalized withdrawals of ${destinationToken} to chain ${getNetworkName(
-        destinationChain
-      )} from Binance`
-    );
-
     let unfinalizedWithdrawalAmount = bnZero;
     const finalizedWithdrawalTxnHashes = new Set<string>();
     for (const initiated of initiatedWithdrawals) {
@@ -655,11 +671,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (matchingFinalizedAmount) {
         finalizedWithdrawalTxnHashes.add(matchingFinalizedAmount.transactionHash);
       } else {
-        console.log("Unfinalized withdrawal from Binance", initiated);
         unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmount.add(withdrawalAmount);
       }
     }
-    console.log(`Total unfinalized withdrawal amount from Binance: ${unfinalizedWithdrawalAmount.toString()}`);
     return unfinalizedWithdrawalAmount;
   }
 
@@ -668,9 +682,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
     const amountToWithdraw = Math.floor(quantity * destinationTokenInfo.decimals) / destinationTokenInfo.decimals;
 
-    console.log(
-      `Withdrawing ${amountToWithdraw} ${destinationToken} from Binance to chain ${BINANCE_NETWORKS[destinationChain]}`
-    );
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._withdraw",
+      message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Binance to chain ${BINANCE_NETWORKS[destinationChain]}`,
+    });
     const withdrawalId = await this.binanceApiClient.withdraw({
       coin: destinationToken,
       address: this.baseSignerAddress.toNative(),
@@ -678,7 +693,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       network: BINANCE_NETWORKS[destinationChain],
       transactionFeeFlag: false,
     });
-    console.log("Success: Withdrawal ID", withdrawalId);
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._withdraw",
+      message: "Success: Withdrawal ID",
+      withdrawalId,
+    });
   }
 
   protected _redisGetOrderStatusKey(status: STATUS): string {

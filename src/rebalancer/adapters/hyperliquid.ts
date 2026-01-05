@@ -91,7 +91,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
   // The following keys map to Sets of order nonces where the order has the relevant status.
-  REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "pending-bridge-to-hyperliquid";
+  REDIS_KEY_PENDING_BRIDGE_TO_HYPEREVM = this.REDIS_PREFIX + "pending-bridge-to-hyperevm";
   REDIS_KEY_PENDING_DEPOSIT_TO_HYPERCORE = this.REDIS_PREFIX + "pending-deposit-to-hypercore";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL_FROM_HYPERCORE = this.REDIS_PREFIX + "pending-withdrawal-from-hypercore";
@@ -521,30 +521,34 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingBridgeToHyperevm) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken, destinationToken, amountToTransfer, sourceChain } = orderDetails;
+      const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       // Check if we have enough balance on HyperEVM to progress the order status:
       const hyperevmBalance = await this._getBalance(
         CHAIN_IDs.HYPEREVM,
-        TOKEN_SYMBOLS_MAP[destinationToken].addresses[CHAIN_IDs.HYPEREVM]
+        TOKEN_SYMBOLS_MAP[sourceToken].addresses[CHAIN_IDs.HYPEREVM]
       );
       const amountConverter = this._getAmountConverter(
         orderDetails.sourceChain,
         EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
         CHAIN_IDs.HYPEREVM,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[CHAIN_IDs.HYPEREVM])
+        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[CHAIN_IDs.HYPEREVM])
       );
-      const expectedAmountOnHyperevm = amountConverter(amountToTransfer);
-      if (hyperevmBalance.lt(expectedAmountOnHyperevm)) {
+      const requiredAmountOnHyperevm = amountConverter(amountToTransfer);
+      if (hyperevmBalance.lt(requiredAmountOnHyperevm)) {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Not enough balance on HyperEVM to progress the order ${cloid} with status PENDING_BRIDGE_TO_HYPEREVM: ${expectedAmountOnHyperevm.toString()}`,
+          message: `Not enough ${sourceToken} balance on HyperEVM to progress the order ${cloid} with status PENDING_BRIDGE_TO_HYPEREVM`,
+          hyperevmBalance: hyperevmBalance.toString(),
+          requiredAmountOnHyperevm: requiredAmountOnHyperevm.toString(),
         });
       } else {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `We have balance on HyperEVM to bridge into Hypercore, initiating a deposit now for ${expectedAmountOnHyperevm.toString()} of ${sourceToken}`,
+          message: `We have enough ${sourceToken} balance on HyperEVM to bridge into Hypercore, initiating a deposit now for ${requiredAmountOnHyperevm.toString()} for order ${cloid}`,
+          hyperevmBalance: hyperevmBalance.toString(),
+          requiredAmountOnHyperevm: requiredAmountOnHyperevm.toString(),
         });
-        await this._depositToHypercore(sourceToken, expectedAmountOnHyperevm);
+        await this._depositToHypercore(sourceToken, requiredAmountOnHyperevm);
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_BRIDGE_TO_HYPEREVM,
@@ -714,7 +718,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.sz) * Number(level.px) : Number(level.sz);
-      const szWei = toBNWei(sz, tokenMeta.evmDecimals);
+      const szWei = toBNWei(sz.toFixed(tokenMeta.evmDecimals), tokenMeta.evmDecimals);
       if (szWei.gte(amountToTransfer)) {
         return true;
       }
@@ -1069,11 +1073,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       destinationChain,
       amountToBridge
     );
-    const amountToSend = amountToBridge.sub(maxFee);
-    if (amountToSend.gt(CCTP_MAX_SEND_AMOUNT)) {
+    // CCTP Fees are taken out of the source chain deposit so add them here so we end up with the desired input
+    // amount on HyperEVM before depositing into Hypercore.
+    const amountToTransfer = amountToBridge.add(maxFee);
+    if (amountToTransfer.gt(CCTP_MAX_SEND_AMOUNT)) {
       // TODO: Handle this case by sending multiple transactions.
       throw new Error(
-        `Amount to send ${amountToSend.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
+        `Amount to send ${amountToTransfer.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
       );
     }
     const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDC.decimals);
@@ -1084,7 +1090,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       unpermissioned: false,
       nonMulticall: true,
       args: [
-        amountToSend,
+        amountToTransfer,
         getCctpDomainForChainId(destinationChain),
         this.baseSignerAddress.toBytes32(),
         originUsdcToken.toNative(),
@@ -1402,6 +1408,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
+    pendingRebalances[HYPEREVM] ??= {};
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
@@ -1464,9 +1471,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           // Order has finalized, subtract virtual balance from HyperEVM:
           this.logger.debug({
             at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-            message: `Subtracting ${convertedOrderAmount.toString()} for order cloid ${cloid} that has finalized`,
+            message: `Subtracting ${convertedOrderAmount.toString()} ${sourceToken} for order cloid ${cloid} that has finalized bridging to HyperEVM`,
           });
-          pendingRebalances[HYPEREVM][destinationToken] = (pendingRebalances[HYPEREVM][destinationToken] ?? bnZero).sub(
+          pendingRebalances[HYPEREVM][sourceToken] = (pendingRebalances[HYPEREVM][sourceToken] ?? bnZero).sub(
             convertedOrderAmount
           );
         }
@@ -1478,7 +1485,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
 
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
-    pendingRebalances[HYPEREVM] ??= {};
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
     if (pendingWithdrawalsFromHypercore.length > 0) {
       this.logger.debug({
