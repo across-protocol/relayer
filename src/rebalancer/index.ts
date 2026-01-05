@@ -14,24 +14,24 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("10", 6),
       USDT: toBNWei("0", 6),
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("11", 6),
+      USDC: toBNWei("0", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
-    }
+    },
   };
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("11", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
@@ -54,7 +54,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       destinationChain: 1,
       sourceToken: "USDT",
       destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("5.5", 6),
+      maxAmountToTransfer: toBNWei("10", 6),
       adapter: "binance",
     },
     {
@@ -62,7 +62,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       destinationChain: 1,
       sourceToken: "USDC",
       destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("5.5", 6),
+      maxAmountToTransfer: toBNWei("10", 6),
       adapter: "binance",
     },
     // {
@@ -143,7 +143,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
           [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
         })),
       });
-    }  
+    }
     for (const [chainId, tokens] of Object.entries(currentBalances)) {
       for (const token of Object.keys(tokens)) {
         const pendingRebalanceAmount = pendingRebalances[chainId]?.[token] ?? bnZero;

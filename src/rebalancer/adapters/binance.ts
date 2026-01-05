@@ -1,4 +1,4 @@
-import { Binance, NewOrderSpot, OrderType } from "binance-api-node";
+import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
   assert,
   BigNumber,
@@ -44,6 +44,11 @@ interface SPOT_MARKET_META {
   isBuy: boolean;
 }
 
+// @dev We can withdraw USDC to the following chains: Solana, Optimism, Matic, ZkSync, Base, Arbitrum, BSC, Ethereum
+// @dev We can withdraw USDT to the following chains: Solana, Optimism, Matic, Arbitrum, BSC, Ethereum
+// @dev We can withdraw DAI to the following chains: Matic, BSC, Ethereum
+
+// @todo We could plug in the CCTP/OFT adapters in to here the same way we do in the HL adapter.
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
@@ -352,11 +357,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (matchingFill) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Open order for cloid ${cloid} filled with size ${matchingFill.executedQty}! Proceeding to withdraw from Binance.`,
+          message: `Open order for cloid ${cloid} filled with size ${matchingFill.expectedAmountToReceive}! Proceeding to withdraw from Binance.`,
           cloid: cloid,
           matchingFill: matchingFill,
         });
-        await this._withdraw(Number(matchingFill.executedQty), destinationToken, destinationChain);
+        await this._withdraw(Number(matchingFill.expectedAmountToReceive), destinationToken, destinationChain);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
       } else {
         // We throw an error here because we shouldn't expect the market order to ever not be filled.
@@ -405,7 +410,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken, destinationChain } = orderDetails;
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      const { matchingFill, expectedAmountToReceive: expectedAmountToReceiveString } =
+        await this._getMatchingFillForCloid(cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL`);
       }
@@ -425,7 +431,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         continue;
       } // Only proceed to update the order status if it has finalized:
       const destinationTokenInfo = TOKEN_SYMBOLS_MAP[orderDetails.destinationToken];
-      const expectedAmountToReceive = toBNWei(matchingFill.executedQty, destinationTokenInfo.decimals);
+      const expectedAmountToReceive = toBNWei(expectedAmountToReceiveString, destinationTokenInfo.decimals);
       const unfinalizedWithdrawalAmount =
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] ??
         (await this._getUnfinalizedWithdrawalAmount(
@@ -461,14 +467,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // with timestamp greater than matched fills for orders.
   }
 
-  async _getMatchingFillForCloid(cloid: string) {
+  async _getMatchingFillForCloid(
+    cloid: string
+  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
     const orderDetails = await this._redisGetOrderDetails(cloid);
     const spotMarketMeta = this._getSpotMarketMetaForRoute(orderDetails.sourceToken, orderDetails.destinationToken);
     const allOrders = await this.binanceApiClient.allOrders({
       symbol: spotMarketMeta.symbol,
     });
     const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
-    return matchingFill;
+    const expectedAmountToReceive = spotMarketMeta.isBuy ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
+    return { matchingFill, expectedAmountToReceive };
   }
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
@@ -531,7 +540,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken } = orderDetails;
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      const { matchingFill, expectedAmountToReceive: expectedAmountToReceiveString } =
+        await this._getMatchingFillForCloid(cloid);
 
       const initiatedWithdrawals = await this._getInitiatedBinanceWithdrawals(
         destinationToken,
@@ -550,7 +560,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } // Only proceed to modify virtual balances if there is an initiated withdrawal for this fill
 
       const expectedAmountToReceive = toBNWei(
-        matchingFill.executedQty,
+        expectedAmountToReceiveString,
         TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
       );
       const unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmounts[destinationChain][destinationToken];
@@ -680,7 +690,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   protected async _withdraw(quantity: number, destinationToken: string, destinationChain: number): Promise<void> {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
-    const amountToWithdraw = Math.floor(quantity * destinationTokenInfo.decimals) / destinationTokenInfo.decimals;
+    const amountToWithdraw = quantity.toFixed(destinationTokenInfo.decimals);
 
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._withdraw",
@@ -689,7 +699,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const withdrawalId = await this.binanceApiClient.withdraw({
       coin: destinationToken,
       address: this.baseSignerAddress.toNative(),
-      amount: amountToWithdraw,
+      amount: Number(amountToWithdraw),
       network: BINANCE_NETWORKS[destinationChain],
       transactionFeeFlag: false,
     });

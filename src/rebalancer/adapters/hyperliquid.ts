@@ -28,6 +28,7 @@ import {
   getV2DepositForBurnMaxFee,
   isDefined,
   isStargateBridge,
+  isWeekday,
   MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
@@ -368,10 +369,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    // - Opportunity cost of capital when withdrawing from 999. This takes 11 hours, i think we should add at least 10
-    // bps for this. @todo a better way to do this might be to use historical fills to calculate the relayer's
+    // - Opportunity cost of capital when withdrawing from 999. The rudimentary logic here is to assume 4bps when the
+    // OFT rebalance would end on a weekday.
+    //  @todo a better way to do this might be to use historical fills to calculate the relayer's
     // latest profitability % to forecast the opportunity cost of capital.
-    const opportunityCostOfCapitalBps = destinationChain !== CHAIN_IDs.HYPEREVM ? 10 : 0;
+    const oftRebalanceEndTime =
+      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() + 11 * 60 * 60 * 1000;
+    const opportunityCostOfCapitalBps =
+      destinationToken === "USDT" &&
+      destinationChain !== CHAIN_IDs.HYPEREVM &&
+      (isWeekday() || isWeekday(new Date(oftRebalanceEndTime)))
+        ? 4
+        : 0;
     const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
       .mul(amountToTransfer)
       .div(toBNWei(10000, 18));
@@ -625,7 +634,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     const unfinalizedWithdrawalAmounts: { [destinationToken: string]: BigNumber } = {};
     for (const cloid of pendingWithdrawals) {
-      // Either delete the order ecause it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
+      // Either delete the order because it has completed or update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN and initiate
       // a bridge to destination chain.
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const matchingFill = await this._getMatchingFillForCloid(cloid, this._getFromTimestamp() * 1000);

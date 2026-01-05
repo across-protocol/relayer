@@ -337,9 +337,10 @@ export class RebalancerClient {
         // this deficit that also happen to have an excess on the rebalance route's source chain.
         continue;
       }
-      const amountToTransfer = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
+      const deficitAmountCapped = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
         ? deficitAmount
         : rebalanceRouteToUse.maxAmountToTransfer;
+      const amountToTransfer = deficitAmountCapped.add(cheapestExpectedCost);
 
       // Initiate a new rebalance
       this.logger.debug({
