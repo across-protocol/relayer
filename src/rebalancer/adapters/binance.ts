@@ -24,7 +24,7 @@ import {
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import { RedisCache } from "../../caching/RedisCache";
-import { BaseAdapter } from "./baseAdapter";
+import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 
@@ -111,7 +111,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     this.initialized = true;
   }
-  async initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void> {
+  async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
     this._assertInitialized();
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
 
@@ -131,7 +131,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // and the amount transferred in might be insufficient to place the order later on, producing more dust or an
     // error.
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const amountToTransfer = rebalanceRoute.maxAmountToTransfer;
     const minimumOrderSize = toBNWei(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals);
 
     assert(
@@ -172,7 +171,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };
     await this._submitTransaction(txn);
-    await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute);
+    await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
   }
 
   async sweepDust(): Promise<void> {
@@ -180,23 +179,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // However, we should be careful since this account is also used by primary relayer
   }
 
-  async getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber> {
-    const { sourceToken, destinationToken, sourceChain, destinationChain, maxAmountToTransfer } = rebalanceRoute;
-    console.group(
-      `[${
-        rebalanceRoute.adapter
-      }] Calculating estimated cost to transfer ${maxAmountToTransfer.toString()} ${sourceToken} from source chain ${getNetworkName(
-        sourceChain
-      )} to ${destinationToken} on destination chain ${getNetworkName(destinationChain)}`
-    );
+  async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+    const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
     const tradeFeePct = (await this.binanceApiClient.tradeFee()).find(
       (fee) => fee.symbol === spotMarketMeta.symbol
     ).takerCommission;
-    console.log(`- Taker fee %: ${tradeFeePct}`);
-    const tradeFee = toBNWei(tradeFeePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
-    console.log(`- Taker fee (fixed amount): ${tradeFee}`);
+    const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
     const destinationCoin = (await getAccountCoins(this.binanceApiClient)).find(
       (coin) => coin.symbol === destinationToken
     );
@@ -212,38 +202,47 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain])
     );
     const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
-    console.log(`- Withdraw fee (fixed amount): ${withdrawFeeConvertedToSourceToken.toString()}`);
 
-    const { slippagePct, latestPrice } = await this._getLatestPrice(rebalanceRoute);
-    console.log(`- Slippage %: ${slippagePct}`);
-    const slippage = toBNWei(slippagePct, 18).mul(maxAmountToTransfer).div(toBNWei(100, 18));
-    console.log(`- Slippage (fixed amount): ${slippage}`);
+    const { slippagePct, latestPrice } = await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer);
+    const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
 
     const isBuy = spotMarketMeta.isBuy;
     let spreadPct = 0;
     if (isBuy) {
       // if is buy, the fee is positive if the price is over 1
       spreadPct = latestPrice - 1;
-      console.log(`- Buy spread %: ${spreadPct * 100}`);
     } else {
       spreadPct = 1 - latestPrice;
-      console.log(`- Sell spread %: ${spreadPct * 100}`);
     }
-    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(maxAmountToTransfer).div(toBNWei(1, 18));
-    console.log(`- Spread fee (fixed amount): ${spreadFee}`);
+    const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
     const opportunityCostOfCapitalPct = 0; // todo.
-    console.log(`- Opportunity cost of capital %: ${opportunityCostOfCapitalPct}`);
     const opportunityCostOfCapital = toBNWei(opportunityCostOfCapitalPct, 18)
-      .mul(maxAmountToTransfer)
+      .mul(amountToTransfer)
       .div(toBNWei(100, 18));
-    console.log(`- Opportunity cost of capital (fixed amount): ${opportunityCostOfCapital}`);
     const totalFee = tradeFee
       .add(withdrawFeeConvertedToSourceToken)
       .add(slippage)
       .add(spreadFee)
       .add(opportunityCostOfCapital);
-    console.log(`- Total fee (fixed amount): ${totalFee.toString()}`);
-    console.groupEnd();
+
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
+      message: `Calculating total fees for rebalance route ${sourceToken} on ${getNetworkName(
+        sourceChain
+      )} to ${destinationToken} on ${getNetworkName(
+        destinationChain
+      )} with amount to transfer ${amountToTransfer.toString()}`,
+      tradeFeePct,
+      tradeFee: tradeFee.toString(),
+      withdrawFeeConvertedToSourceToken: withdrawFeeConvertedToSourceToken.toString(),
+      slippagePct,
+      slippage: slippage.toString(),
+      estimatedTakerPrice: latestPrice,
+      spreadPct: spreadPct * 100,
+      spreadFee: spreadFee.toString(),
+      opportunityCostOfCapitalFixed: opportunityCostOfCapital.toString(),
+      totalFee: totalFee.toString(),
+    });
 
     return totalFee;
   }
@@ -264,27 +263,29 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return symbol;
   }
 
-  async _getLatestPrice(rebalanceRoute: RebalanceRoute): Promise<{ latestPrice: number; slippagePct: number }> {
-    const symbol = await this._getSymbol(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
-    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[rebalanceRoute.destinationToken];
+  async _getLatestPrice(
+    sourceToken: string,
+    destinationToken: string,
+    amountToTransfer: BigNumber
+  ): Promise<{ latestPrice: number; slippagePct: number }> {
+    const symbol = await this._getSymbol(sourceToken, destinationToken);
+    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
     console.group(
-      `Fetching the price for a market order for the market "${rebalanceRoute.sourceToken}-${
-        rebalanceRoute.destinationToken
-      }" to ${spotMarketMeta.isBuy ? "buy" : "sell"} ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
-        symbol.symbol
-      }`
+      `Fetching the price for a market order for the market "${sourceToken}-${destinationToken}" to ${
+        spotMarketMeta.isBuy ? "buy" : "sell"
+      } ${amountToTransfer.toString()} of ${symbol.symbol}`
     );
     const bestPx = Number(sideOfBookToTraverse[0].price);
     console.log(`- Best ${spotMarketMeta.isBuy ? "ask" : "bid"} price: ${bestPx}`);
     let szFilledSoFar = bnZero;
     const maxPxReached = sideOfBookToTraverse.find((level, i) => {
       console.log(
-        `- szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        `- szFilledSoFar: ${szFilledSoFar.toString()}, total size required to fill: ${amountToTransfer.toString()}`
       );
-      // Note: sz is always denominated in the base asset, so if we are buying, then the maxAmountToTransfer (i.e.
+      // Note: sz is always denominated in the base asset, so if we are buying, then the amountToTransfer (i.e.
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.price);
@@ -292,24 +293,22 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         `- Level size converted to source token (e.g. ${spotMarketMeta.isBuy ? "quote" : "base"} asset): ${sz}`
       );
       const szWei = toBNWei(level.quantity, destinationTokenInfo.decimals);
-      if (szWei.gte(rebalanceRoute.maxAmountToTransfer)) {
+      if (szWei.gte(amountToTransfer)) {
         console.log(
           `- Level ${i} with px=${
             level.price
-          } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+          } is the max level to traverse because it has a size of ${szWei.toString()} which is >= than the max amount to transfer of ${amountToTransfer.toString()}`
         );
         return true;
       }
       console.log(
-        `- Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        `- Checking the next level because the current level has a size of ${szWei.toString()} which is < than the max amount to transfer of ${amountToTransfer.toString()}`
       );
       szFilledSoFar = szFilledSoFar.add(szWei);
     });
     if (!maxPxReached) {
       throw new Error(
-        `Cannot find price in order book that satisfies an order for size ${rebalanceRoute.maxAmountToTransfer.toString()} of ${
-          rebalanceRoute.destinationToken
-        } on the market "${rebalanceRoute.sourceToken}-${rebalanceRoute.destinationToken}"`
+        `Cannot find price in order book that satisfies an order for size ${amountToTransfer.toString()} of ${destinationToken} on the market "${sourceToken}-${destinationToken}"`
       );
     }
     console.log(
@@ -323,23 +322,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return { latestPrice, slippagePct };
   }
 
-  protected _getQuantityForOrder(rebalanceRoute: RebalanceRoute, price: number) {
-    const { sourceToken, destinationToken } = rebalanceRoute;
+  protected _getQuantityForOrder(
+    sourceToken: string,
+    destinationToken: string,
+    amountToTransfer: BigNumber,
+    price: number
+  ) {
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     if (spotMarketMeta.isBuy) {
       console.log(
-        `Buying the base asset of ${destinationToken} with the quote asset of ${sourceToken}, setting sz equal to px=${price} * ${rebalanceRoute.maxAmountToTransfer.toString()}`
+        `Buying the base asset of ${destinationToken} with the quote asset of ${sourceToken}, setting sz equal to px=${price} * ${amountToTransfer.toString()}`
       );
     } else {
       console.log(
-        `Selling the base asset of ${sourceToken} with the quote asset of ${destinationToken}, setting sz equal to ${rebalanceRoute.maxAmountToTransfer.toString()} of the quote asset`
+        `Selling the base asset of ${sourceToken} with the quote asset of ${destinationToken}, setting sz equal to ${amountToTransfer.toString()} of the quote asset`
       );
     }
     const sz = spotMarketMeta.isBuy
-      ? rebalanceRoute.maxAmountToTransfer
-          .mul(10 ** spotMarketMeta.pxDecimals)
-          .div(toBNWei(price, spotMarketMeta.pxDecimals))
-      : rebalanceRoute.maxAmountToTransfer;
+      ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
+      : amountToTransfer;
     const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
     const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenInfo.decimals : sourceTokenInfo.decimals;
@@ -347,7 +348,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     console.log(
       `sz: ${sz.toString()}, spotMarketMeta.szDecimals: ${spotMarketMeta.szDecimals}, szFormatted: ${szFormatted}`
     );
-    assert(szFormatted >= spotMarketMeta.minimumOrderSize, "Max amount to transfer is less than minimum order size");
+    assert(szFormatted >= spotMarketMeta.minimumOrderSize, "amount to transfer is less than minimum order size");
     return szFormatted;
   }
 
@@ -385,10 +386,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     console.log("Pending deposits", pendingDeposits);
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken } = orderDetails;
+      const { sourceToken, amountToTransfer, destinationToken } = orderDetails;
 
-      const latestPx = (await this._getLatestPrice(orderDetails)).latestPrice;
-      const szForOrder = this._getQuantityForOrder(orderDetails, latestPx);
+      const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
+      const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
       const balance = await this._getBalance(sourceToken);
       console.log(`Current account balance of token ${sourceToken}: ${balance.toString()}`);
       if (balance < szForOrder) {
@@ -472,15 +473,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Add virtual balances for all pending orders:
     for (const cloid of pendingOrders) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { destinationChain, destinationToken, sourceChain, sourceToken, maxAmountToTransfer } = orderDetails;
-      // Convert maxAmountToTransfer to destination chain precision:
+      const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
+      // Convert amountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
         sourceChain,
         EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
         destinationChain,
         EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain])
       );
-      const convertedAmount = amountConverter(maxAmountToTransfer);
+      const convertedAmount = amountConverter(amountToTransfer);
       console.log(`- Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`);
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
@@ -540,12 +541,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
       console.log(
-        `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.maxAmountToTransfer.toString()} from HyperEVM`
+        `- Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.amountToTransfer.toString()} from HyperEVM`
       );
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
         pendingRebalances[destinationChain][destinationToken] ?? bnZero
-      ).sub(orderDetails.maxAmountToTransfer);
+      ).sub(orderDetails.amountToTransfer);
     }
 
     for (const chainId of Object.keys(pendingRebalances)) {
@@ -567,10 +568,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // then we can assume this order has finalized, so subtract a virtual balance credit for the order amount.
   }
 
-  async _placeMarketOrder(cloid: string, rebalanceRoute: RebalanceRoute): Promise<void> {
-    const latestPx = (await this._getLatestPrice(rebalanceRoute)).latestPrice;
-    const szForOrder = this._getQuantityForOrder(rebalanceRoute, latestPx);
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(rebalanceRoute.sourceToken, rebalanceRoute.destinationToken);
+  async _placeMarketOrder(cloid: string, orderDetails: OrderDetails): Promise<void> {
+    const { sourceToken, destinationToken, amountToTransfer } = orderDetails;
+    const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
+    const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
+    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     console.log(
       `Placing market order for ${spotMarketMeta.symbol} with size ${szForOrder} and side ${
         spotMarketMeta.isBuy ? "BUY" : "SELL"

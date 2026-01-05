@@ -46,8 +46,7 @@ export interface RebalanceRoute {
   destinationChain: number;
   sourceToken: string;
   destinationToken: string;
-  maxAmountToTransfer: BigNumber; // Should this be a nornmalized value or in the units of the destination token on the
-  // destination chain?
+  maxAmountToTransfer: BigNumber; // Assumed to be a source chain amount.
   adapter: string; // Name of adapter to use for this rebalance.
 }
 
@@ -68,7 +67,16 @@ export class RebalancerClient {
     for (const [name, adapter] of Object.entries(this.adapters)) {
       const routesForAdapter = this.rebalanceRoutes.filter((route) => route.adapter === name);
       await adapter.initialize(routesForAdapter);
-      console.log(`Initialized ${name} adapter with routes:`, routesForAdapter);
+      this.logger.debug({
+        at: "RebalancerClient.initialize",
+        message: `Initialized ${name} adapter with ${routesForAdapter.length} routes`,
+        routes: routesForAdapter.map(
+          (route) =>
+            `[${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(
+              route.destinationChain
+            )}] ${route.destinationToken}`
+        ),
+      });
     }
 
     // Assert that the source token and destination token for each rebalance route have target balances defined.
@@ -211,10 +219,18 @@ export class RebalancerClient {
         sortedDeficits.splice(index, 0, { chainId: Number(chainId), token, deficitAmount });
       });
     });
-    console.log(
-      "Sorted deficits:",
-      sortedDeficits.map((d) => `${getNetworkName(d.chainId)}: ${d.token} - ${d.deficitAmount.toString()}`)
-    );
+    if (sortedDeficits.length > 0) {
+      this.logger.debug({
+        at: "RebalancerClient.rebalanceInventory",
+        message: "Sorted deficits",
+        deficits: sortedDeficits.map(
+          (d) =>
+            `${getNetworkName(d.chainId)}: ${d.token} - ${d.deficitAmount.toString()} (priority tier: ${
+              targetBalances[d.token][d.chainId].priorityTier
+            })`
+        ),
+      });
+    }
 
     // Sort excesses using opposite logic as deficits, where the resultant list is in ascending order of priority tier and then amount.
     const sortedExcesses: { chainId: number; token: string; excessAmount: BigNumber }[] = [];
@@ -248,10 +264,18 @@ export class RebalancerClient {
         sortedExcesses.splice(index, 0, { chainId: Number(chainId), token, excessAmount });
       });
     });
-    console.log(
-      "Sorted excesses:",
-      sortedExcesses.map((e) => `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()}`)
-    );
+    if (sortedExcesses.length > 0) {
+      this.logger.debug({
+        at: "RebalancerClient.rebalanceInventory",
+        message: "Sorted excesses",
+        excesses: sortedExcesses.map(
+          (e) =>
+            `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()} (priority tier: ${
+              targetBalances[e.token][e.chainId].priorityTier
+            })`
+        ),
+      });
+    }
 
     // Now, go through each deficit and attempt to fill it with an excess balance, using the lowest priority excesses first.
     for (const deficit of sortedDeficits) {
@@ -283,25 +307,17 @@ export class RebalancerClient {
             amountConverter(excessAmount).gte(deficitAmountCapped)
           ) {
             // Check the estimated cost for this route and replace the best route if this one is cheaper.
-            const expectedCostForRebalance = await this.adapters[r.adapter].getEstimatedCost({
-              ...r,
-              maxAmountToTransfer: deficitAmountCapped,
-            });
-            console.log(
-              `Expected cost to use rebalance route ${
+            const expectedCostForRebalance = await this.adapters[r.adapter].getEstimatedCost(r, deficitAmountCapped);
+            this.logger.debug({
+              at: "RebalancerClient.rebalanceInventory",
+              message: `Expected cost to use rebalance route ${
                 r.adapter
-              } denominated in source tokens is ${expectedCostForRebalance.toString()}`
-            );
+              } denominated in source tokens is ${expectedCostForRebalance.toString()}`,
+              expectedCostForRebalance: expectedCostForRebalance.toString(),
+            });
             if (expectedCostForRebalance.lt(cheapestExpectedCost)) {
               cheapestExpectedCost = expectedCostForRebalance;
-              console.log(`${r.adapter} rebalance route is now the cheapest!`);
               rebalanceRouteToUse = r;
-            } else {
-              console.log(
-                `${
-                  r.adapter
-                } rebalance route is not the cheapest, lowest fee so far is ${cheapestExpectedCost.toString()} and this adapter fee is ${expectedCostForRebalance.toString()}`
-              );
             }
           }
         });
@@ -313,16 +329,20 @@ export class RebalancerClient {
         const deficitAmountCapped = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
           ? deficitAmount
           : rebalanceRouteToUse.maxAmountToTransfer;
-        console.log(
-          `Found a matching excess for ${sourceToken} on ${getNetworkName(
+        this.logger.debug({
+          at: "RebalancerClient.rebalanceInventory",
+          message: `Using cheapest rebalance route for ${sourceToken} on ${getNetworkName(
             sourceChainId
-          )} to fill the deficit of ${deficitAmountCapped.toString()} of ${destinationToken} on ${getNetworkName(
+          )} to fill the deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
             destinationChainId
-          )} (maxAmountToTransfer: ${rebalanceRouteToUse.maxAmountToTransfer.toString()}, original deficit amount: ${deficitAmount.toString()})`
-        );
-        console.log(`New excess amount: ${excessAmount.sub(deficitAmountCapped).toString()}`);
+          )}: ${rebalanceRouteToUse.adapter}`,
+          cheapestExpectedCost: cheapestExpectedCost.toString(),
+          deficitAmountCapped: deficitAmountCapped.toString(),
+          newExcessAmount: excessAmount.sub(deficitAmountCapped).toString(),
+        });
+
         // We found a matching excess, let's now modify the existing excess amount list so we don't overdraw this excess.
-        sortedExcesses[excessIndex].excessAmount = excessAmount.sub(deficitAmount);
+        sortedExcesses[excessIndex].excessAmount = excessAmount.sub(deficitAmountCapped);
       });
       if (!isDefined(matchingExcess)) {
         this.logger.debug({
@@ -339,30 +359,26 @@ export class RebalancerClient {
         ? deficitAmount
         : rebalanceRouteToUse.maxAmountToTransfer;
       const amountToTransferWithFees = amountToTransfer.add(cheapestExpectedCost);
-      const rebalanceRoute = { ...rebalanceRouteToUse, maxAmountToTransfer: amountToTransferWithFees };
 
       // @todo Change the interface to `getEstimatedCost` and `initializeRebalance` to accept an amountToTransfer parameter
       // because otherwise we're conflating the maxAmountToTransfer with the amountToTransfer.
       // Initiate a new rebalance
       this.logger.debug({
         at: "RebalanceClient.rebalanceInventory",
-        message: `Initializing new ${rebalanceRoute.adapter} rebalance from ${
-          rebalanceRoute.sourceToken
-        } on ${getNetworkName(rebalanceRoute.sourceChain)} to ${rebalanceRoute.destinationToken} on ${getNetworkName(
-          rebalanceRoute.destinationChain
-        )}`,
-        adapter: rebalanceRoute.adapter,
-        amountToTransfer: rebalanceRoute.maxAmountToTransfer.toString(),
+        message: `Initializing new ${rebalanceRouteToUse.adapter} rebalance from ${
+          rebalanceRouteToUse.sourceToken
+        } on ${getNetworkName(rebalanceRouteToUse.sourceChain)} to ${
+          rebalanceRouteToUse.destinationToken
+        } on ${getNetworkName(rebalanceRouteToUse.destinationChain)}`,
+        adapter: rebalanceRouteToUse.adapter,
+        amountToTransfer: amountToTransferWithFees.toString(),
         expectedFees: cheapestExpectedCost.toString(),
       });
 
-      // if (rebalanceRoute.adapter === "hyperliquid") {
-      //   await this.adapters.hyperliquid.initializeRebalance(adjustedRebalanceRoute);
-      // } else if (rebalanceRoute.adapter === "binance") {
-      //   await this.adapters.binance.initializeRebalance(adjustedRebalanceRoute);
-      // } else {
-      //   throw new Error(`Adapter ${rebalanceRoute.adapter} not supported`);
-      // }
+      await this.adapters[rebalanceRouteToUse.adapter].initializeRebalance(
+        rebalanceRouteToUse,
+        amountToTransferWithFees
+      );
     }
 
     // Setup:
@@ -424,11 +440,11 @@ export class RebalancerClient {
 
 export interface RebalancerAdapter {
   initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
-  initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
+  initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   updateRebalanceStatuses(): Promise<void>;
 
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
-  getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber>;
+  getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber>;
 }

@@ -3,6 +3,14 @@ import { AugmentedTransaction, TransactionClient } from "../../clients";
 import { Address, BigNumber, ConvertDecimals, ethers, EvmAddress, getTokenInfo, winston } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 
+export interface OrderDetails {
+  sourceToken: string;
+  destinationToken: string;
+  sourceChain: number;
+  destinationChain: number;
+  amountToTransfer: BigNumber;
+}
+
 export abstract class BaseAdapter implements RebalancerAdapter {
   protected transactionClient: TransactionClient;
   protected redisCache: RedisCache;
@@ -22,10 +30,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   abstract initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
-  abstract initializeRebalance(rebalanceRoute: RebalanceRoute): Promise<void>;
+  abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   abstract updateRebalanceStatuses(): Promise<void>;
   abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
-  abstract getEstimatedCost(rebalanceRoute: RebalanceRoute): Promise<BigNumber>;
+  abstract getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber>;
 
   protected abstract _redisGetOrderStatusKey(status: number): string;
 
@@ -36,27 +44,56 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       this.redisCache.sRem(oldOrderStatusKey, cloid),
       this.redisCache.sAdd(newOrderStatusKey, cloid),
     ]);
-    console.log(`Updated order status from ${oldOrderStatusKey} to ${newOrderStatusKey}`, result);
+    this.logger.debug({
+      at: "BaseAdapter._redisUpdateOrderStatus",
+      message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,
+      result,
+    });
   }
 
-  protected async _redisCreateOrder(cloid: string, status: number, rebalanceRoute: RebalanceRoute): Promise<void> {
+  protected async _redisCreateOrder(
+    cloid: string,
+    status: number,
+    rebalanceRoute: RebalanceRoute,
+    amountToTransfer: BigNumber
+  ): Promise<void> {
     const orderStatusKey = this._redisGetOrderStatusKey(status);
     const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
 
-    console.log(`_redisCreateOrder: Saving order to status set: ${orderStatusKey}`);
-    console.log(`_redisCreateOrder: Saving new order details under key ${orderDetailsKey}`, rebalanceRoute);
-
     // Create a new order in Redis. We use infinite expiry because we will delete this order after its no longer
     // used.
+    const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
+    this.logger.debug({
+      at: "BaseAdapter._redisCreateOrder",
+      message: `Saving new order details for cloid ${cloid}`,
+      orderStatusKey,
+      orderDetailsKey,
+      sourceToken,
+      destinationToken,
+      sourceChain,
+      destinationChain,
+      amountToTransfer: amountToTransfer.toString(),
+    });
+
     const results = await Promise.all([
       this.redisCache.sAdd(orderStatusKey, cloid.toString()),
       this.redisCache.set(
         orderDetailsKey,
-        JSON.stringify({ ...rebalanceRoute, maxAmountToTransfer: rebalanceRoute.maxAmountToTransfer.toString() }),
+        JSON.stringify({
+          sourceToken,
+          destinationToken,
+          sourceChain,
+          destinationChain,
+          amountToTransfer: amountToTransfer.toString(),
+        }),
         Number.POSITIVE_INFINITY
       ),
     ]);
-    console.log("_redisCreateOrder: results", results);
+    this.logger.debug({
+      at: "BaseAdapter._redisCreateOrder",
+      message: `Completed saving new order details for cloid ${cloid}`,
+      results,
+    });
   }
 
   protected _getAmountConverter(
@@ -77,7 +114,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return ethers.utils.hexZeroPad(ethers.utils.hexValue(nonce), 16);
   }
 
-  protected async _redisGetOrderDetails(cloid: string): Promise<RebalanceRoute> {
+  protected async _redisGetOrderDetails(cloid: string): Promise<OrderDetails> {
     const orderDetailsKey = `${this.REDIS_KEY_PENDING_ORDER}:${cloid}`;
     const orderDetails = await this.redisCache.get<string>(orderDetailsKey);
     if (!orderDetails) {
@@ -86,7 +123,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const rebalanceRoute = JSON.parse(orderDetails);
     return {
       ...rebalanceRoute,
-      maxAmountToTransfer: BigNumber.from(rebalanceRoute.maxAmountToTransfer),
+      amountToTransfer: BigNumber.from(rebalanceRoute.amountToTransfer),
     };
   }
 
@@ -97,7 +134,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       this.redisCache.sRem(orderStatusKey, cloid),
       this.redisCache.del(orderDetailsKey),
     ]);
-    console.log(`Deleted order details under key ${orderDetailsKey} and from status table ${orderStatusKey}`, result);
+    this.logger.debug({
+      at: "BaseAdapter._redisDeleteOrder",
+      message: `Deleted order details for cloid ${cloid} under key ${orderDetailsKey} and from status set ${orderStatusKey}`,
+      result,
+    });
   }
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
