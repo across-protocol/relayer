@@ -1586,7 +1586,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-        message: `Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`,
+        message: `Adding ${convertedAmount.toString()} ${destinationToken} for pending order cloid ${cloid} to destination chain ${destinationChain}`,
       });
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
