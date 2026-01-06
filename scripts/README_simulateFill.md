@@ -32,12 +32,6 @@ TENDERLY_ACCESS_KEY=your_tenderly_access_key
 TENDERLY_USER=your_tenderly_username
 TENDERLY_PROJECT=your_tenderly_project_name
 
-# Wallet configuration (required to construct fill transaction)
-SECRET="./secret"
-# OR
-MNEMONIC="your mnemonic..."
-# OR
-PRIVATE_KEY=0x...
 
 # RPC providers (same as main relayer configuration)
 RPC_PROVIDER_INFURA_1=https://mainnet.infura.io/v3/...
