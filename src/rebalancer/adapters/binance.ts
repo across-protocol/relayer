@@ -332,17 +332,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
-    // const marketInfo = await this._getSymbol("USDC", "USDT");
-    // console.log(`Market info:`, marketInfo);
-    this.logger.debug({
-      at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-      message: `USDC Account Balance: ${await this._getBalance("USDC")}`,
-    });
-    this.logger.debug({
-      at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-      message: `USDT Account Balance: ${await this._getBalance("USDT")}`,
-    });
-
     const pendingSwaps = await this._redisGetPendingSwaps();
     if (pendingSwaps.length > 0) {
       this.logger.debug({

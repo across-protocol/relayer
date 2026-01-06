@@ -14,11 +14,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("10", 6),
+      USDC: toBNWei("0", 6),
       USDT: toBNWei("0", 6),
     },
     42161: {
-      USDT: toBNWei("0", 6),
+      USDT: toBNWei("20", 6),
       USDC: toBNWei("0", 6),
     },
     999: {
@@ -65,6 +65,22 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       maxAmountToTransfer: toBNWei("10", 6),
       adapter: "binance",
     },
+    {
+      sourceChain: 1,
+      destinationChain: 42161,
+      sourceToken: "USDT",
+      destinationToken: "USDC",
+      maxAmountToTransfer: toBNWei("10", 6),
+      adapter: "binance",
+    },
+    {
+      sourceChain: 42161,
+      destinationChain: 1,
+      sourceToken: "USDC",
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("10", 6),
+      adapter: "binance",
+    },
     // {
     //   sourceChain: 10,
     //   destinationChain: 42161,
@@ -89,6 +105,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     //   maxAmountToTransfer: toBNWei("10.3", 6),
     //   adapter: "binance",
     // },
+    {
+      sourceChain: 1,
+      sourceToken: "USDC",
+      destinationChain: 10,
+      destinationToken: "USDT",
+      maxAmountToTransfer: toBNWei("10.3", 6),
+      adapter: "hyperliquid",
+    },
     {
       sourceChain: 42161,
       sourceToken: "USDC",

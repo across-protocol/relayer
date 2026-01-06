@@ -266,6 +266,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // depending on the source chain.
     if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
       // Bridge this token into HyperEVM first
+
+      const amountReceivedFromBridge = await this._bridgeToChain(
+        rebalanceRoute.sourceToken,
+        rebalanceRoute.sourceChain,
+        CHAIN_IDs.HYPEREVM,
+        amountToTransfer
+      );
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
@@ -274,17 +281,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
+        amountReceivedFromBridge: amountReceivedFromBridge.toString(),
       });
 
-      // TODO: If depositing via CCTP, we can actually deposit directly into Hypercore and if so then we should progress
-      // the status to PENDING_SWAP: https://developers.circle.com/cctp/transfer-usdc-from-ethereum-to-hypercore
-      await this._bridgeToChain(
-        rebalanceRoute.sourceToken,
-        rebalanceRoute.sourceChain,
-        CHAIN_IDs.HYPEREVM,
-        amountToTransfer
-      );
-      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountToTransfer);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
     } else {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
@@ -441,9 +441,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       tokenMeta.evmDecimals
     )(availableBalance);
     if (availableBalanceEvmDecimals.lt(amountToTransfer)) {
-      throw new Error(
-        `Available balance for input token: ${sourceToken} (${availableBalanceEvmDecimals.toString()}) is less than amount to transfer: ${amountToTransfer.toString()}`
-      );
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter._createHlOrder",
+        message: `Available balance for input token: ${sourceToken} (${availableBalanceEvmDecimals.toString()}) is less than amount to transfer: ${amountToTransfer.toString()}`,
+        availableBalanceEvmDecimals: availableBalanceEvmDecimals.toString(),
+        amountToTransfer: amountToTransfer.toString(),
+      });
     }
 
     // Fetch latest price for the market we're going to place an order for:
@@ -1040,7 +1043,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     originChain: number,
     destinationChain: number,
     expectedAmountToTransfer: BigNumber
-  ): Promise<void> {
+  ): Promise<BigNumber> {
     if (destinationChain === originChain) {
       throw new Error("origin and destination chain are the same");
     }
@@ -1055,11 +1058,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const tokenMeta = this._getTokenMeta(token);
     switch (tokenMeta.bridgeName) {
       case "OFT":
-        await this._sendOftBridge(originChain, destinationChain, expectedAmountToTransfer);
-        break;
+        return await this._sendOftBridge(originChain, destinationChain, expectedAmountToTransfer);
       case "CCTP":
-        await this._sendCctpBridge(originChain, destinationChain, expectedAmountToTransfer);
-        break;
+        return await this._sendCctpBridge(originChain, destinationChain, expectedAmountToTransfer);
       default:
         // This should be impossible because `bridgeName` is type BRIDGE_NAME.
         throw new Error(`Should never happen: Unsupported bridge name: ${tokenMeta.bridgeName}`);
@@ -1070,7 +1071,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     originChain: number,
     destinationChain: number,
     amountToBridge: BigNumber
-  ): Promise<void> {
+  ): Promise<BigNumber> {
     // TODO: In the future, this could re-use a CCTPAdapter function.
     const cctpMessenger = await this._getCctpMessenger(originChain);
     const originUsdcToken = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[originChain]);
@@ -1082,13 +1083,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       destinationChain,
       amountToBridge
     );
-    // CCTP Fees are taken out of the source chain deposit so add them here so we end up with the desired input
-    // amount on HyperEVM before depositing into Hypercore.
-    const amountToTransfer = amountToBridge.add(maxFee);
-    if (amountToTransfer.gt(CCTP_MAX_SEND_AMOUNT)) {
+    if (amountToBridge.gt(CCTP_MAX_SEND_AMOUNT)) {
       // TODO: Handle this case by sending multiple transactions.
       throw new Error(
-        `Amount to send ${amountToTransfer.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
+        `Amount to send ${amountToBridge.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
       );
     }
     const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDC.decimals);
@@ -1099,7 +1097,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       unpermissioned: false,
       nonMulticall: true,
       args: [
-        amountToTransfer,
+        amountToBridge,
         getCctpDomainForChainId(destinationChain),
         this.baseSignerAddress.toBytes32(),
         originUsdcToken.toNative(),
@@ -1113,6 +1111,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       )} to ${getNetworkName(destinationChain)} via CCTP`,
     };
     await this._submitTransaction(transaction);
+    // CCTP Fees are taken out of the source chain deposit so add them here so we end up with the desired input
+    // amount on HyperEVM before depositing into Hypercore.
+    return amountToBridge.sub(maxFee);
   }
 
   private async _getCctpMessenger(chainId: number): Promise<Contract> {
@@ -1175,7 +1176,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     originChain: number,
     destinationChain: number,
     amountToBridge: BigNumber
-  ): Promise<void> {
+  ): Promise<BigNumber> {
     const { feeStruct, sendParamStruct, oftMessenger } = await this._getOftQuoteSend(
       originChain,
       destinationChain,
@@ -1204,6 +1205,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     };
 
     await this._submitTransaction(withdrawTxn);
+    return amountToBridge;
   }
 
   private async _getInitiatedWithdrawalsFromHypercore(
@@ -1390,7 +1392,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     // This function returns the total virtual balance of token that is in flight to chain.
 
-    const allDestinationChains = this.availableRoutes.map((x) => x.destinationChain);
+    const allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
 
     // If there are any unfinalized bridges on the way to the destination chain, add virtual balances for them.
     for (const destinationChain of allDestinationChains) {
@@ -1425,7 +1427,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
       });
     }
-    const allSourceChains = this.availableRoutes.map((x) => x.sourceChain);
+    const allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
 
     // If there are any finalized bridges to HyperEVM that correspond to orders that should subsequently be deposited
     // into Hypercore, we should subtract their virtual balance from HyperEVM.

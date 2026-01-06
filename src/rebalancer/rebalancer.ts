@@ -340,6 +340,9 @@ export class RebalancerClient {
       const deficitAmountCapped = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
         ? deficitAmount
         : rebalanceRouteToUse.maxAmountToTransfer;
+
+      // Add the expected cost to the deficit amount to get the total amount to transfer. This way we end up with
+      // the expected amount to receive after fees.
       const amountToTransfer = deficitAmountCapped.add(cheapestExpectedCost);
 
       // Initiate a new rebalance
