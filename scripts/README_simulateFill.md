@@ -32,7 +32,6 @@ TENDERLY_ACCESS_KEY=your_tenderly_access_key
 TENDERLY_USER=your_tenderly_username
 TENDERLY_PROJECT=your_tenderly_project_name
 
-
 # RPC providers (same as main relayer configuration)
 RPC_PROVIDER_INFURA_1=https://mainnet.infura.io/v3/...
 RPC_PROVIDER_INFURA_10=https://optimism-mainnet.infura.io/v3/...
