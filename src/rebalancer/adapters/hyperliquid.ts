@@ -532,7 +532,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       // Check if we have enough balance on HyperEVM to progress the order status:
-      const hyperevmBalance = await this._getBalance(
+      const hyperevmBalance = await this._getERC20Balance(
         CHAIN_IDs.HYPEREVM,
         this._getTokenInfo(sourceToken, sourceChain).address.toNative()
       );
@@ -676,7 +676,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
 
       // At this point, we know the withdrawal has finalized.
-      const hyperevmBalance = await this._getBalance(
+      const hyperevmBalance = await this._getERC20Balance(
         CHAIN_IDs.HYPEREVM,
         this._getTokenInfo(orderDetails.destinationToken, CHAIN_IDs.HYPEREVM).address.toNative()
       );
@@ -752,14 +752,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       throw new Error(`Slippage of ${slippagePct}% is greater than the max slippage of ${maxSlippagePct}%`);
     }
     await this._placeLimitOrder(orderDetails, cloid, px);
-  }
-
-  private async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
-    const provider = await getProvider(chainId);
-    const connectedSigner = this.baseSigner.connect(provider);
-    const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
-    const balance = await erc20.balanceOf(this.baseSignerAddress.toNative());
-    return BigNumber.from(balance.toString());
   }
 
   private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {

@@ -270,7 +270,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return totalFee;
   }
 
-  async _getBalance(token: string): Promise<number> {
+  async _getBinanceBalance(token: string): Promise<number> {
     const accountCoins = await getAccountCoins(this.binanceApiClient);
     const coin = accountCoins.find((coin) => coin.symbol === token);
     return Number(coin.balance);
@@ -411,7 +411,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer,
         latestPx
       );
-      const balance = await this._getBalance(sourceToken);
+      const balance = await this._getBinanceBalance(sourceToken);
       if (balance < szForOrder) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",

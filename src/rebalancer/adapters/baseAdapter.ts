@@ -206,7 +206,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
   }
 
-  protected async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
+  protected async _getERC20Balance(chainId: number, tokenAddress: string): Promise<BigNumber> {
     const provider = await getProvider(chainId);
     const connectedSigner = this.baseSigner.connect(provider);
     const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
@@ -224,7 +224,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       throw new Error("origin and destination chain are the same");
     }
 
-    const balance = await this._getBalance(originChain, this._getTokenInfo(token, originChain).address.toNative());
+    const balance = await this._getERC20Balance(originChain, this._getTokenInfo(token, originChain).address.toNative());
     if (balance.lt(expectedAmountToTransfer)) {
       throw new Error(
         `Not enough balance on ${originChain} to bridge ${token} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
