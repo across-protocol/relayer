@@ -78,6 +78,18 @@ type CommonMessageEvent = CommonMessageData & { log: Log };
 type DepositForBurnMessageEvent = DepositForBurnMessageData & { log: Log };
 type CCTPMessageEvent = CommonMessageEvent | DepositForBurnMessageEvent;
 
+// CCTP V2 hookData structure for sponsored deposits
+export type CCTPHookData = {
+  nonce: string; // bytes32
+  deadline: string; // uint256 as string
+  maxBpsToSponsor: number;
+  maxUserSlippageBps: number;
+  finalRecipient: string; // address (extracted from bytes32)
+  finalToken: string; // address (extracted from bytes32)
+  executionMode: number; // uint8
+  actionData: string; // bytes
+};
+
 const CCTP_MESSAGE_SENT_TOPIC_HASH = ethers.utils.id("MessageSent(bytes)");
 
 /** ********************************************************************************************************************
@@ -834,6 +846,48 @@ function _decodeDepositForBurnMessageDataV1(message: { data: string }, isSvm = f
     recipient: mintRecipient,
     mintRecipient,
   };
+}
+
+/**
+ * Decodes hookData from a CCTP V2 message if present.
+ * hookData starts at byte 376 (148 header + 228 body offset) in CCTP V2 messages.
+ * @param messageBytes The raw message bytes (hex string with 0x prefix)
+ * @returns Decoded hookData or undefined if not present
+ */
+export function decodeCctpV2HookData(messageBytes: string): CCTPHookData | undefined {
+  const messageBytesArray = ethers.utils.arrayify(messageBytes);
+
+  // hookData starts at byte 376 (148 header + 228 body offset)
+  const HOOK_DATA_START = 376;
+
+  // Check if hookData exists (message is longer than 376 bytes)
+  if (messageBytesArray.length <= HOOK_DATA_START) {
+    return undefined;
+  }
+
+  const hookDataBytes = messageBytesArray.slice(HOOK_DATA_START);
+
+  try {
+    // Decode hookData: abi.encode(nonce, deadline, maxBpsToSponsor, maxUserSlippageBps, finalRecipient, finalToken, executionMode, actionData)
+    const decoded = ethers.utils.defaultAbiCoder.decode(
+      ["bytes32", "uint256", "uint256", "uint256", "bytes32", "bytes32", "uint8", "bytes"],
+      hookDataBytes
+    );
+
+    return {
+      nonce: decoded[0],
+      deadline: decoded[1].toString(),
+      maxBpsToSponsor: decoded[2].toNumber(),
+      maxUserSlippageBps: decoded[3].toNumber(),
+      finalRecipient: EvmAddress.from(decoded[4]).toNative(),
+      finalToken: EvmAddress.from(decoded[5]).toNative(),
+      executionMode: decoded[6],
+      actionData: decoded[7],
+    };
+  } catch {
+    // If decoding fails, hookData is malformed or not present
+    return undefined;
+  }
 }
 
 /**

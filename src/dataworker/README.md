@@ -2,7 +2,7 @@
 
 This document explains how the Dataworker constructs "root bundles", which instruct the Across system on how to reallocate LP capital to keep the system functioning and providing an effective bridging service.
 
-The following README is a simplified summary of the exact protocol rules described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/2046d3cc228cacfb27688fc02e9674aef13445c9/UMIPs/umip-179.md) and its predecessor [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/92abcfcb676b0c24690811751521cd0782af5372/UMIPs/umip-157.md). These UMIP's describe the explicit rules that the Dataworker implements. In other words, the "Dataworker" code is an implementation of the UMIP-179 "interface".
+The following README is a simplified summary of the exact protocol rules described in [UMIP-179](https://github.com/UMAprotocol/UMIPs/blob/2046d3cc228cacfb27688fc02e9674aef13445c9/UMIPs/umip-179.md) and its predecessor [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/92abcfcb676b0c24690811751521cd0782af5372/UMIPs/umip-157.md). These UMIPs describe the explicit rules that the Dataworker implements. In other words, the "Dataworker" code is an implementation of the UMIP-179 "interface".
 
 ## Why does Across need to move capital around?
 

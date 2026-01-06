@@ -104,6 +104,8 @@ export const {
   convertFillParamsToNative,
   chunk,
   chainIsL1,
+  unpackDepositEvent,
+  unpackFillEvent,
 } = sdk.utils;
 
 export const {
