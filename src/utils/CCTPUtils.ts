@@ -365,19 +365,19 @@ export function getV2MaxExpectedTransferFee(sourceChainId: number): BigNumber {
 }
 
 export function getCctpV1TokenMessenger(tokenMessengerChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[tokenMessengerChainId]["cctpTokenMessenger"];
+  return CONTRACT_ADDRESSES[tokenMessengerChainId]?.["cctpTokenMessenger"];
 }
 
 export function getCctpV2TokenMessenger(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2TokenMessenger"];
+  return CONTRACT_ADDRESSES[chainId]?.["cctpV2TokenMessenger"];
 }
 
 export function getCctpV1MessageTransmitter(messageTransmitterChainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[messageTransmitterChainId]["cctpMessageTransmitter"];
+  return CONTRACT_ADDRESSES[messageTransmitterChainId]?.["cctpMessageTransmitter"];
 }
 
 export function getCctpV2MessageTransmitter(chainId: number): { address?: string; abi?: unknown[] } {
-  return CONTRACT_ADDRESSES[chainId]["cctpV2MessageTransmitter"];
+  return CONTRACT_ADDRESSES[chainId]?.["cctpV2MessageTransmitter"];
 }
 
 /** ********************************************************************************************************************

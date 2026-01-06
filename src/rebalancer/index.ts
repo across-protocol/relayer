@@ -1,8 +1,23 @@
-import { BigNumber, bnUint256Max, bnZero, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import { CCTP_NO_DOMAIN, OFT_NO_EID, PRODUCTION_OFT_EIDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import {
+  BigNumber,
+  bnUint256Max,
+  bnZero,
+  CHAIN_IDs,
+  config,
+  disconnectRedisClients,
+  Signer,
+  toBNWei,
+  winston,
+  isDefined,
+  BINANCE_NETWORKS,
+} from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
+import { PRODUCTION_NETWORKS } from "@across-protocol/contracts";
+import { EVM_OFT_MESSENGERS } from "../common/Constants";
 config();
 let logger: winston.Logger;
 
@@ -18,18 +33,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDT: toBNWei("0", 6),
     },
     42161: {
-      USDT: toBNWei("20", 6),
-      USDC: toBNWei("0", 6),
+      USDT: toBNWei("0", 6),
+      USDC: toBNWei("11", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
+      USDC: toBNWei("0", 6),
     },
   };
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
@@ -48,96 +64,103 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Initialize list of rebalance routes:
-  const rebalanceRoutes: RebalanceRoute[] = [
-    {
-      sourceChain: 42161,
-      destinationChain: 1,
-      sourceToken: "USDT",
-      destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("10", 6),
-      adapter: "binance",
-    },
-    {
-      sourceChain: 10,
-      destinationChain: 1,
-      sourceToken: "USDC",
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10", 6),
-      adapter: "binance",
-    },
-    {
-      sourceChain: 1,
-      destinationChain: 42161,
-      sourceToken: "USDT",
-      destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("10", 6),
-      adapter: "binance",
-    },
-    {
-      sourceChain: 42161,
-      destinationChain: 1,
-      sourceToken: "USDC",
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10", 6),
-      adapter: "binance",
-    },
-    // {
-    //   sourceChain: 10,
-    //   destinationChain: 42161,
-    //   sourceToken: "USDT",
-    //   destinationToken: "USDC",
-    //   maxAmountToTransfer: toBNWei("10.3", 6),
-    //   adapter: "hyperliquid",
-    // },
-    // {
-    //   sourceChain: 10,
-    //   destinationChain: 42161,
-    //   sourceToken: "USDT",
-    //   destinationToken: "USDC",
-    //   maxAmountToTransfer: toBNWei("10.3", 6),
-    //   adapter: "binance",
-    // },
-    // {
-    //   sourceChain: 42161,
-    //   destinationChain: 10,
-    //   sourceToken: "USDC",
-    //   destinationToken: "USDT",
-    //   maxAmountToTransfer: toBNWei("10.3", 6),
-    //   adapter: "binance",
-    // },
-    {
-      sourceChain: 1,
-      sourceToken: "USDC",
-      destinationChain: 10,
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10.3", 6),
-      adapter: "hyperliquid",
-    },
-    {
-      sourceChain: 42161,
-      sourceToken: "USDC",
-      destinationChain: 999,
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10.3", 6),
-      adapter: "hyperliquid",
-    },
-    {
-      sourceChain: 42161,
-      sourceToken: "USDT",
-      destinationChain: 10,
-      destinationToken: "USDC",
-      maxAmountToTransfer: toBNWei("10.3", 6),
-      adapter: "hyperliquid",
-    },
-    {
-      sourceChain: 10,
-      sourceToken: "USDC",
-      destinationChain: 42161,
-      destinationToken: "USDT",
-      maxAmountToTransfer: toBNWei("10.3", 6),
-      adapter: "hyperliquid",
-    },
-  ];
+  const rebalanceRoutes: RebalanceRoute[] = [];
+  const maxAmountToTransfer = toBNWei("10", 6);
+  const usdtBinanceChains = [
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.MAINNET,
+    // Chains not listed here are not supported by Binance for USDT, like Base
+  ].filter((chainId) => BINANCE_NETWORKS[chainId]);
+  const usdcBinanceChains = [
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.BASE,
+  ].filter((chainId) => BINANCE_NETWORKS[chainId]);
+  const usdtHyperliquidChains = [
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.OPTIMISM,
+  ].filter(
+    (chainId) =>
+      EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId) &&
+      PRODUCTION_NETWORKS[chainId].oftEid !== OFT_NO_EID
+  );
+  const usdcHyperliquidChains = [
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.OPTIMISM,
+  ]
+    .map((chainId) => {
+      if (PRODUCTION_NETWORKS[chainId].cctpDomain !== CCTP_NO_DOMAIN) {
+        return Number(chainId);
+      }
+    })
+    .filter(isDefined);
+  usdtBinanceChains.forEach((usdtChain) => {
+    usdcBinanceChains.forEach((usdcChain) => {
+      if (usdtChain === usdcChain) {
+        return;
+      }
+      // SVM logic currently unsupported
+      if (usdcChain === CHAIN_IDs.SOLANA || usdtChain === CHAIN_IDs.SOLANA) {
+        return;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: usdcChain,
+        destinationToken: "USDC",
+        maxAmountToTransfer,
+        adapter: "binance",
+      });
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: usdtChain,
+        destinationToken: "USDT",
+        maxAmountToTransfer,
+        adapter: "binance",
+      });
+    });
+  });
+  usdtHyperliquidChains.forEach((usdtChain) => {
+    usdcHyperliquidChains.forEach((usdcChain) => {
+      if (usdtChain === usdcChain) {
+        return;
+      }
+      // SVM logic currently unsupported
+      if (usdcChain === CHAIN_IDs.SOLANA || usdtChain === CHAIN_IDs.SOLANA) {
+        return;
+      }
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: usdtChain,
+        destinationToken: "USDT",
+        maxAmountToTransfer,
+        adapter: "hyperliquid",
+      });
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: usdcChain,
+        destinationToken: "USDC",
+        maxAmountToTransfer,
+        adapter: "hyperliquid",
+      });
+    });
+  });
+
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();
   await rebalancerClient.initialize();
@@ -146,23 +169,34 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     message: "Completed RebalancerClient initialization",
     duration: performance.now() - timerStart,
   });
-  timerStart = performance.now();
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
   const adaptersToUpdate: Set<RebalancerAdapter> = new Set(rebalanceRoutes.map((x) => adapters[x.adapter]));
   for (const adapter of adaptersToUpdate) {
+    timerStart = performance.now();
     await adapter.updateRebalanceStatuses();
+    logger.debug({
+      at: "index.ts:runRebalancer",
+      message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
+      duration: performance.now() - timerStart,
+    });
 
     // // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
     // // transactions to get mined.
     // await delay(5);
 
     // Modify all current balances with the pending rebalances:
+    timerStart = performance.now();
     const pendingRebalances = await adapter.getPendingRebalances();
+    logger.debug({
+      at: "index.ts:runRebalancer",
+      message: `Completed getting pending rebalances for adapter ${adapter.constructor.name}`,
+      duration: performance.now() - timerStart,
+    });
     if (Object.keys(pendingRebalances).length > 0) {
       logger.debug({
         at: "index.ts:runRebalancer",
-        message: "Pending rebalances",
+        message: `Pending rebalances for adapter ${adapter.constructor.name}`,
         pendingRebalances: Object.entries(pendingRebalances).map(([chainId, tokens]) => ({
           [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
         })),
@@ -185,18 +219,13 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       }
     }
   }
-  logger.debug({
-    at: "index.ts:runRebalancer",
-    message: "Completed updating rebalance statuses and loading pending rebalances",
-    duration: performance.now() - timerStart,
-  });
-  timerStart = performance.now();
 
   // Finally, send out new rebalances:
   try {
     // Resync balances
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
+      timerStart = performance.now();
       await rebalancerClient.rebalanceInventory(currentBalances);
       logger.debug({
         at: "index.ts:runRebalancer",

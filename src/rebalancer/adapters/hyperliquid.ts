@@ -37,13 +37,20 @@ import {
   Signer,
   toBN,
   toBNWei,
-  TOKEN_SYMBOLS_MAP,
   winston,
+  forEachAsync,
   ZERO_ADDRESS,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
-import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import {
+  CCTP_MAX_SEND_AMOUNT,
+  EVM_OFT_MESSENGERS,
+  IOFT_ABI_FULL,
+  OFT_DEFAULT_FEE_CAP,
+  OFT_FEE_CAP_OVERRIDES,
+} from "../../common";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -150,6 +157,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   };
 
   private availableRoutes: RebalanceRoute[];
+  private allSourceChains: Set<number>;
+  private allDestinationChains: Set<number>;
 
   private multicallerClient: MultiCallerClient;
 
@@ -177,6 +186,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
+    this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
+    this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
+    this.logger.debug({
+      at: "HyperliquidStablecoinSwapAdapter.initialize",
+      allDestinationChains: Array.from(this.allDestinationChains),
+      allSourceChains: Array.from(this.allSourceChains),
+    });
+
     // Tasks:
     // - Check allowances and set them as needed.
     // this.hyperliquidHelper = new Contract(
@@ -186,7 +203,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // );
 
     // CoreDepositWallet required to deposit USDC to Hypercore.
-    const usdc = new Contract(TOKEN_SYMBOLS_MAP.USDC.addresses[HYPEREVM], ERC20.abi, connectedSigner_999);
+    const usdc = new Contract(this._getTokenInfo("USDC", HYPEREVM).address.toNative(), ERC20.abi, connectedSigner_999);
     const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
     if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
       this.multicallerClient.enqueueTransaction({
@@ -215,7 +232,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
 
-    const usdt = new Contract(TOKEN_SYMBOLS_MAP.USDT.addresses[HYPEREVM], ERC20.abi, connectedSigner_999);
+    const usdt = new Contract(this._getTokenInfo("USDT", HYPEREVM).address.toNative(), ERC20.abi, connectedSigner_999);
     const oftMessenger = await this._getOftMessenger(HYPEREVM);
     const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
     if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
@@ -232,7 +249,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
 
     await this.multicallerClient.executeTxnQueues();
-    this.initialized = true;
+    return super.initialize(_availableRoutes);
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
@@ -337,7 +354,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
         // This logic would need to change to support non stablecoin swaps.
         const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(sourceChain);
-        const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
+        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, sourceChain).decimals;
         const allMids = await infoClient.allMids();
         const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
         const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
@@ -360,7 +377,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
         // This logic would need to change to support non stablecoin swaps.
         const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(CHAIN_IDs.HYPEREVM);
-        const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
+        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, CHAIN_IDs.HYPEREVM).decimals;
         const allMids = await infoClient.allMids();
         const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
         const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
@@ -464,7 +481,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
+    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
   }
 
   private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
@@ -511,7 +528,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     // Figure out what time we last received an update so we can get all updates since then:
     // @todo Replace this hard code lookback
-    const lastPollEnd = Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 7; // 7 days ago
+    const lastPollEnd = this._getFromTimestamp();
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
@@ -537,13 +554,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Check if we have enough balance on HyperEVM to progress the order status:
       const hyperevmBalance = await this._getBalance(
         CHAIN_IDs.HYPEREVM,
-        TOKEN_SYMBOLS_MAP[sourceToken].addresses[CHAIN_IDs.HYPEREVM]
+        this._getTokenInfo(sourceToken, sourceChain).address.toNative()
       );
       const amountConverter = this._getAmountConverter(
         orderDetails.sourceChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+        this._getTokenInfo(sourceToken, sourceChain).address,
         CHAIN_IDs.HYPEREVM,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[CHAIN_IDs.HYPEREVM])
+        this._getTokenInfo(sourceToken, CHAIN_IDs.HYPEREVM).address
       );
       const requiredAmountOnHyperevm = amountConverter(amountToTransfer);
       if (hyperevmBalance.lt(requiredAmountOnHyperevm)) {
@@ -681,7 +698,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // At this point, we know the withdrawal has finalized.
       const hyperevmBalance = await this._getBalance(
         CHAIN_IDs.HYPEREVM,
-        TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].addresses[CHAIN_IDs.HYPEREVM]
+        this._getTokenInfo(orderDetails.destinationToken, CHAIN_IDs.HYPEREVM).address.toNative()
       );
       if (hyperevmBalance.lt(expectedAmountToReceive)) {
         throw new Error(
@@ -991,11 +1008,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _depositToHypercore(sourceToken: string, amountToDepositEvmPrecision: BigNumber): Promise<void> {
     const { HYPEREVM } = CHAIN_IDs;
-    const hyperevmToken = TOKEN_SYMBOLS_MAP[sourceToken].addresses[HYPEREVM];
+    const hyperevmToken = this._getTokenInfo(sourceToken, HYPEREVM).address.toNative();
     const provider = await getProvider(HYPEREVM);
     const connectedSigner = this.baseSigner.connect(provider);
     const erc20 = new Contract(hyperevmToken, ERC20.abi, connectedSigner);
-    const amountReadable = fromWei(amountToDepositEvmPrecision, TOKEN_SYMBOLS_MAP[sourceToken]?.decimals);
+    const amountReadable = fromWei(amountToDepositEvmPrecision, this._getTokenInfo(sourceToken, HYPEREVM).decimals);
     let transaction: AugmentedTransaction;
     if (sourceToken === "USDC") {
       const allowance = await erc20.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
@@ -1048,7 +1065,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       throw new Error("origin and destination chain are the same");
     }
 
-    const balance = await this._getBalance(originChain, TOKEN_SYMBOLS_MAP[token].addresses[originChain]);
+    const balance = await this._getBalance(originChain, this._getTokenInfo(token, originChain).address.toNative());
     if (balance.lt(expectedAmountToTransfer)) {
       throw new Error(
         `Not enough balance on ${originChain} to bridge ${token} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
@@ -1074,7 +1091,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     // TODO: In the future, this could re-use a CCTPAdapter function.
     const cctpMessenger = await this._getCctpMessenger(originChain);
-    const originUsdcToken = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[originChain]);
+    const originUsdcToken = this._getTokenInfo("USDC", originChain).address;
     // TODO: Don't always use fast mode, we should switch based on the expected fee and transfer size
     // incase a portion of the fee is fixed. The expected fee should be 1bp.
     const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
@@ -1089,7 +1106,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         `Amount to send ${amountToBridge.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
       );
     }
-    const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDC.decimals);
+    const formatter = createFormatFunction(2, 4, false, this._getTokenInfo("USDC", originChain).decimals);
     const transaction = {
       contract: cctpMessenger,
       chainId: originChain,
@@ -1128,7 +1145,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getOftMessenger(chainId: number): Promise<Contract> {
     const oftMessengerAddress = getMessengerEvm(
-      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+      EvmAddress.from(this._getTokenInfo("USDT", CHAIN_IDs.MAINNET).address.toNative()),
       chainId
     );
     const originProvider = await getProvider(chainId);
@@ -1147,7 +1164,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const oftMessenger = await this._getOftMessenger(originChain);
     const sharedDecimals = await oftMessenger.sharedDecimals();
 
-    const roundedAmount = roundAmountToSend(amountToBridge, TOKEN_SYMBOLS_MAP.USDT.decimals, sharedDecimals);
+    const roundedAmount = roundAmountToSend(
+      amountToBridge,
+      this._getTokenInfo("USDT", originChain).decimals,
+      sharedDecimals
+    );
     const defaultFeePct = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
     const appliedFee = isStargateBridge(destinationChain)
       ? roundedAmount.mul(defaultFeePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
@@ -1186,7 +1207,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     if (BigNumber.from(feeStruct.nativeFee).gt(nativeFeeCap)) {
       throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${nativeFeeCap})`);
     }
-    const formatter = createFormatFunction(2, 4, false, TOKEN_SYMBOLS_MAP.USDT.decimals);
+    const formatter = createFormatFunction(2, 4, false, this._getTokenInfo("USDT", originChain).decimals);
     // Set refund address to signer's address. This should technically never be required as all of our calcs
     // are precise, set it just in case
     const refundAddress = this.baseSignerAddress.toNative();
@@ -1249,7 +1270,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const provider = await getProvider(HYPEREVM);
     const eventSearchConfig = await this._getEventSearchConfig(HYPEREVM);
     const hyperevmToken = new Contract(
-      TOKEN_SYMBOLS_MAP[destinationToken].addresses[HYPEREVM],
+      this._getTokenInfo(destinationToken, HYPEREVM).address.toNative(),
       ERC20.abi,
       this.baseSigner.connect(provider)
     );
@@ -1290,6 +1311,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
+    if (
+      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(originChain) ||
+      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(destinationChain)
+    ) {
+      return bnZero;
+    }
     const originMessenger = await this._getOftMessenger(originChain);
     const destinationMessenger = await this._getOftMessenger(destinationChain);
     const originEventSearchConfig = await this._getEventSearchConfig(originChain);
@@ -1321,9 +1348,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // tokens have different decimal precision:
     const amountConverter = this._getAmountConverter(
       originChain,
-      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[originChain]),
+      this._getTokenInfo("USDT", originChain).address,
       destinationChain,
-      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[destinationChain])
+      this._getTokenInfo("USDT", destinationChain).address
     );
     let outstandingWithdrawalAmount = bnZero;
     for (const event of bridgeInitiationEvents) {
@@ -1335,6 +1362,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getUnfinalizedCctpBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
+    if (!getCctpV2TokenMessenger(originChain)?.address || !getCctpV2TokenMessenger(destinationChain)?.address) {
+      return bnZero;
+    }
     const originMessenger = await this._getCctpMessenger(originChain);
     const destinationMessenger = await this._getCctpMessenger(destinationChain);
     const originEventSearchConfig = await this._getEventSearchConfig(originChain);
@@ -1344,7 +1374,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       paginatedEventQuery(
         originMessenger,
         originMessenger.filters.DepositForBurn(
-          TOKEN_SYMBOLS_MAP.USDC.addresses[originChain],
+          this._getTokenInfo("USDC", originChain).address.toNative(),
           undefined,
           this.baseSignerAddress.toNative()
         ),
@@ -1357,7 +1387,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         destinationMessenger.filters.MintAndWithdraw(
           this.baseSignerAddress.toNative(),
           undefined,
-          TOKEN_SYMBOLS_MAP.USDC.addresses[destinationChain]
+          this._getTokenInfo("USDC", destinationChain).address.toNative()
         ),
         destinationEventSearchConfig
       ),
@@ -1392,14 +1422,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
     // This function returns the total virtual balance of token that is in flight to chain.
 
-    const allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
-
     // If there are any unfinalized bridges on the way to the destination chain, add virtual balances for them.
-    for (const destinationChain of allDestinationChains) {
+    await forEachAsync(Array.from(this.allDestinationChains), async (destinationChain) => {
       pendingRebalances[destinationChain] ??= {};
-
       if (destinationChain !== HYPEREVM) {
-        const usdtPendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(HYPEREVM, destinationChain);
+        const [usdtPendingRebalanceAmount, usdcPendingRebalanceAmount] = await Promise.all([
+          this._getUnfinalizedOftBridgeAmount(HYPEREVM, destinationChain),
+          this._getUnfinalizedCctpBridgeAmount(HYPEREVM, destinationChain),
+        ]);
         if (usdtPendingRebalanceAmount.gt(bnZero)) {
           this.logger.debug({
             at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -1407,8 +1437,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           });
           pendingRebalances[destinationChain]["USDT"] ??= usdtPendingRebalanceAmount;
         }
-
-        const usdcPendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(HYPEREVM, destinationChain);
         if (usdcPendingRebalanceAmount.gt(bnZero)) {
           this.logger.debug({
             at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
@@ -1417,7 +1445,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           pendingRebalances[destinationChain]["USDC"] ??= usdcPendingRebalanceAmount;
         }
       }
-    }
+    });
 
     pendingRebalances[HYPEREVM] ??= {};
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
@@ -1427,17 +1455,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
       });
     }
-    const allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
 
     // If there are any finalized bridges to HyperEVM that correspond to orders that should subsequently be deposited
     // into Hypercore, we should subtract their virtual balance from HyperEVM.
-    for (const sourceChain of allSourceChains) {
+    await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
       pendingRebalances[sourceChain] ??= {};
-
       if (sourceChain !== HYPEREVM) {
-        let usdtPendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(sourceChain, HYPEREVM);
-        let usdcPendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, HYPEREVM);
-
+        let [usdtPendingRebalanceAmount, usdcPendingRebalanceAmount] = await Promise.all([
+          this._getUnfinalizedOftBridgeAmount(sourceChain, HYPEREVM),
+          this._getUnfinalizedCctpBridgeAmount(sourceChain, HYPEREVM),
+        ]);
         for (const cloid of pendingBridgeToHyperevm) {
           const orderDetails = await this._redisGetOrderDetails(cloid);
           const { sourceToken, destinationToken, amountToTransfer } = orderDetails;
@@ -1447,9 +1474,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
           const amountConverter = this._getAmountConverter(
             sourceChain,
-            EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+            this._getTokenInfo(sourceToken, sourceChain).address,
             HYPEREVM,
-            EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[HYPEREVM])
+            this._getTokenInfo(destinationToken, HYPEREVM).address
           );
 
           // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
@@ -1493,7 +1520,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           "Unfinalized bridge amount to HyperEVM should be 0 after evaluating all orders with status PENDING_BRIDGE_TO_HYPEREVM"
         );
       }
-    }
+    });
 
     // For each pending withdrawal from Hypercore, check if it has finalized, and if it has, subtract its virtual balance from HyperEVM.
     const pendingWithdrawalsFromHypercore = await this._redisGetPendingWithdrawals();
@@ -1590,9 +1617,9 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Convert amountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
         sourceChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+        this._getTokenInfo(sourceToken, sourceChain).address,
         destinationChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain])
+        this._getTokenInfo(destinationToken, destinationChain).address
       );
       const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({

@@ -8,6 +8,7 @@ import {
   ERC20,
   EventSearchConfig,
   EvmAddress,
+  forEachAsync,
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
@@ -19,7 +20,6 @@ import {
   paginatedEventQuery,
   Signer,
   toBNWei,
-  TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
@@ -62,6 +62,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
+
+  private allDestinationChains: Set<number>;
+  private allDestinationTokens: Set<string>;
 
   private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
     "USDT-USDC": {
@@ -114,7 +117,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }, available networks: ${destinationCoin.networkList.map((network) => network.name).join(", ")}`
       );
     }
-    this.initialized = true;
+
+    this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
+    this.allDestinationTokens = new Set<string>(this.availableRoutes.map((x) => x.destinationToken));
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.initialize",
+      allDestinationChains: Array.from(this.allDestinationChains),
+      allDestinationTokens: Array.from(this.allDestinationTokens),
+    });
+    return super.initialize(_availableRoutes);
   }
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
     this._assertInitialized();
@@ -127,7 +138,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     );
 
     // Convert input amount to destination amount and check its larger than minimum size
-    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const minimumWithdrawalSize = toBNWei(destinationNetwork.withdrawMin, sourceTokenInfo.decimals);
     const maximumWithdrawalSize = toBNWei(destinationNetwork.withdrawMax, sourceTokenInfo.decimals);
 
@@ -167,8 +178,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
 
     const sourceProvider = await getProvider(sourceChain);
-    const sourceAddress = sourceTokenInfo.addresses[sourceChain];
-    const erc20 = new Contract(sourceAddress, ERC20.abi, this.baseSigner.connect(sourceProvider));
+    const erc20 = new Contract(sourceTokenInfo.address.toNative(), ERC20.abi, this.baseSigner.connect(sourceProvider));
     const amountReadable = fromWei(amountToTransfer, sourceTokenInfo.decimals);
     const txn: AugmentedTransaction = {
       contract: erc20,
@@ -200,20 +210,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const destinationCoin = (await getAccountCoins(this.binanceApiClient)).find(
       (coin) => coin.symbol === destinationToken
     );
-    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
     const withdrawFee = toBNWei(
       destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationChain]).withdrawFee,
       destinationTokenInfo.decimals
     );
     const amountConverter = this._getAmountConverter(
       destinationChain,
-      EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain]),
+      this._getTokenInfo(destinationToken, destinationChain).address,
       sourceChain,
-      EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain])
+      this._getTokenInfo(sourceToken, sourceChain).address
     );
     const withdrawFeeConvertedToSourceToken = amountConverter(withdrawFee);
 
-    const { slippagePct, latestPrice } = await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer);
+    const { slippagePct, latestPrice } = await this._getLatestPrice(
+      sourceToken,
+      destinationToken,
+      destinationChain,
+      amountToTransfer
+    );
     const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
 
     const isBuy = spotMarketMeta.isBuy;
@@ -276,10 +291,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async _getLatestPrice(
     sourceToken: string,
     destinationToken: string,
+    destinationChain: number,
     amountToTransfer: BigNumber
   ): Promise<{ latestPrice: number; slippagePct: number }> {
     const symbol = await this._getSymbol(sourceToken, destinationToken);
-    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
     const book = await this.binanceApiClient.book({ symbol: symbol.symbol });
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
@@ -308,7 +324,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   protected _getQuantityForOrder(
     sourceToken: string,
+    sourceChain: number,
     destinationToken: string,
+    destinationChain: number,
     amountToTransfer: BigNumber,
     price: number
   ): number {
@@ -316,8 +334,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const sz = spotMarketMeta.isBuy
       ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
       : amountToTransfer;
-    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
-    const sourceTokenInfo = TOKEN_SYMBOLS_MAP[sourceToken];
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenInfo.decimals : sourceTokenInfo.decimals;
     const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
     assert(szFormatted >= spotMarketMeta.minimumOrderSize, "amount to transfer is less than minimum order size");
@@ -368,10 +386,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken, amountToTransfer, destinationToken } = orderDetails;
+      const { sourceToken, sourceChain, amountToTransfer, destinationToken, destinationChain } = orderDetails;
 
-      const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
-      const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
+      const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, destinationChain, amountToTransfer))
+        .latestPrice;
+      const szForOrder = this._getQuantityForOrder(
+        sourceToken,
+        sourceChain,
+        destinationToken,
+        destinationChain,
+        amountToTransfer,
+        latestPx
+      );
       const balance = await this._getBalance(sourceToken);
       if (balance < szForOrder) {
         this.logger.debug({
@@ -419,7 +445,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         continue;
       } // Only proceed to update the order status if it has finalized:
-      const destinationTokenInfo = TOKEN_SYMBOLS_MAP[orderDetails.destinationToken];
+      const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
       const expectedAmountToReceive = toBNWei(expectedAmountToReceiveString, destinationTokenInfo.decimals);
       const unfinalizedWithdrawalAmount =
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] ??
@@ -492,9 +518,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // Convert amountToTransfer to destination chain precision:
       const amountConverter = this._getAmountConverter(
         sourceChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[sourceToken].addresses[sourceChain]),
+        this._getTokenInfo(sourceToken, sourceChain).address,
         destinationChain,
-        EvmAddress.from(TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain])
+        this._getTokenInfo(destinationToken, destinationChain).address
       );
       const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
@@ -511,20 +537,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     // Subtract virtual balance for pending withdrawals that have already finalized:
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
-    const allDestinationChains = this.availableRoutes.map((x) => x.destinationChain);
-    const allDestinationTokens = this.availableRoutes.map((x) => x.destinationToken);
     const unfinalizedWithdrawalAmounts: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    for (const destinationChain of allDestinationChains) {
+    await forEachAsync(Array.from(this.allDestinationChains), async (destinationChain) => {
       unfinalizedWithdrawalAmounts[destinationChain] = {};
-      for (const destinationToken of allDestinationTokens) {
+      await forEachAsync(Array.from(this.allDestinationTokens), async (destinationToken) => {
         unfinalizedWithdrawalAmounts[destinationChain][destinationToken] = await this._getUnfinalizedWithdrawalAmount(
           destinationToken,
           destinationChain,
           // Look for unfinalized withdrawals from the last day
           Math.floor(Date.now() / 1000) - 60 * 60 * 24
         );
-      }
-    }
+      });
+    });
 
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
@@ -550,7 +574,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
       const expectedAmountToReceive = toBNWei(
         expectedAmountToReceiveString,
-        TOKEN_SYMBOLS_MAP[orderDetails.destinationToken].decimals
+        this._getTokenInfo(orderDetails.destinationToken, destinationChain).decimals
       );
       const unfinalizedWithdrawalAmount = unfinalizedWithdrawalAmounts[destinationChain][destinationToken];
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
@@ -588,9 +612,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async _placeMarketOrder(cloid: string, orderDetails: OrderDetails): Promise<void> {
-    const { sourceToken, destinationToken, amountToTransfer } = orderDetails;
-    const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer)).latestPrice;
-    const szForOrder = this._getQuantityForOrder(sourceToken, destinationToken, amountToTransfer, latestPx);
+    const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
+    const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, destinationChain, amountToTransfer))
+      .latestPrice;
+    const szForOrder = this._getQuantityForOrder(
+      sourceToken,
+      sourceChain,
+      destinationToken,
+      destinationChain,
+      amountToTransfer,
+      latestPx
+    );
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const orderStruct = {
       symbol: spotMarketMeta.symbol,
@@ -604,7 +636,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
       message: `Placing ${spotMarketMeta.isBuy ? "BUY" : "SELL"} market order for ${
         spotMarketMeta.symbol
-      } with size ${szForOrder}}`,
+      } with size ${szForOrder}`,
       orderStruct,
     });
     const response = await this.binanceApiClient.order(orderStruct as NewOrderSpot);
@@ -643,7 +675,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const provider = await getProvider(destinationChain);
     const eventSearchConfig = await this._getEventSearchConfig(startTimeSeconds, destinationChain);
     const destinationTokenContract = new Contract(
-      TOKEN_SYMBOLS_MAP[destinationToken].addresses[destinationChain],
+      this._getTokenInfo(destinationToken, destinationChain).address.toNative(),
       ERC20.abi,
       this.baseSigner.connect(provider)
     );
@@ -661,7 +693,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     let unfinalizedWithdrawalAmount = bnZero;
     const finalizedWithdrawalTxnHashes = new Set<string>();
     for (const initiated of initiatedWithdrawals) {
-      const withdrawalAmount = toBNWei(initiated.amount, TOKEN_SYMBOLS_MAP[destinationToken].decimals);
+      const withdrawalAmount = toBNWei(
+        initiated.amount,
+        this._getTokenInfo(destinationToken, destinationChain).decimals
+      );
       const matchingFinalizedAmount = finalizedWithdrawals.find(
         (finalized) =>
           !finalizedWithdrawalTxnHashes.has(finalized.transactionHash) &&
@@ -678,7 +713,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   protected async _withdraw(quantity: number, destinationToken: string, destinationChain: number): Promise<void> {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
-    const destinationTokenInfo = TOKEN_SYMBOLS_MAP[destinationToken];
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
     const amountToWithdraw = quantity.toFixed(destinationTokenInfo.decimals);
 
     this.logger.debug({

@@ -55,37 +55,6 @@ export class RebalancerClient {
     for (const [name, adapter] of Object.entries(this.adapters)) {
       const routesForAdapter = this.rebalanceRoutes.filter((route) => route.adapter === name);
       await adapter.initialize(routesForAdapter);
-      this.logger.debug({
-        at: "RebalancerClient.initialize",
-        message: `Initialized ${name} adapter with ${routesForAdapter.length} routes`,
-        routes: routesForAdapter.map(
-          (route) =>
-            `[${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(
-              route.destinationChain
-            )}] ${route.destinationToken}`
-        ),
-      });
-    }
-
-    // Assert that the source token and destination token for each rebalance route have target balances defined.
-    for (const rebalanceRoute of this.rebalanceRoutes) {
-      const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
-      assert(
-        isDefined(this.config.targetBalances[sourceToken]?.[sourceChain]),
-        `RebalanceClient#initialize: Target balance for ${sourceToken} on ${getNetworkName(
-          sourceChain
-        )} is not found, required for source chain ${getNetworkName(
-          sourceChain
-        )} and source token ${sourceToken} from rebalance route ${rebalanceRoute.adapter}`
-      );
-      assert(
-        isDefined(this.config.targetBalances[destinationToken]?.[destinationChain]),
-        `RebalanceClient#initialize: Target balance for ${destinationToken} on ${getNetworkName(
-          destinationChain
-        )} is not found, required for destination chain ${getNetworkName(
-          destinationChain
-        )} and destination token ${destinationToken} from rebalance route ${rebalanceRoute.adapter}`
-      );
     }
   }
 
@@ -99,35 +68,61 @@ export class RebalancerClient {
    * client configuration.
    */
   async rebalanceInventory(currentBalances: { [chainId: number]: { [token: string]: BigNumber } }): Promise<void> {
-    // Assert that each current balance maps to a target balance. We've already asserted that each rebalance
-    // route is represented by target balances.
-    for (const rebalanceRoute of this.rebalanceRoutes) {
-      const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
-      assert(
-        isDefined(currentBalances[sourceChain]?.[sourceToken]),
-        `RebalanceClient#rebalanceInventory: Current balance for ${sourceToken} on ${getNetworkName(
-          sourceChain
-        )} is not found, required for source chain ${getNetworkName(
-          sourceChain
-        )} and source token ${sourceToken} from rebalance route ${rebalanceRoute.adapter}`
-      );
-      assert(
-        isDefined(currentBalances[destinationChain]?.[destinationToken]),
-        `RebalanceClient#rebalanceInventory: Current balance for ${destinationToken} on ${getNetworkName(
-          destinationChain
-        )} is not found, required for destination chain ${getNetworkName(
-          destinationChain
-        )} and destination token ${destinationToken} from rebalance route ${rebalanceRoute.adapter}`
-      );
+    // Assert that each current balance maps to a target balance.
+    for (const [sourceToken, tokenConfig] of Object.entries(this.config.targetBalances)) {
+      for (const [sourceChain] of Object.entries(tokenConfig)) {
+        assert(
+          isDefined(currentBalances[Number(sourceChain)]?.[sourceToken]),
+          `RebalanceClient#rebalanceInventory: Undefined current balance for ${sourceToken} on ${getNetworkName(
+            Number(sourceChain)
+          )} which has a target balance`
+        );
+      }
     }
-
     const targetBalances = this.config.targetBalances;
+    const availableRebalanceRoutes = this.rebalanceRoutes.filter((route) => {
+      return (
+        isDefined(currentBalances[route.sourceChain]?.[route.sourceToken]) &&
+        isDefined(currentBalances[route.destinationChain]?.[route.destinationToken]) &&
+        isDefined(targetBalances[route.sourceToken]?.[route.sourceChain]) &&
+        isDefined(targetBalances[route.destinationToken]?.[route.destinationChain])
+      );
+    });
+
+    this.logger.debug({
+      at: "RebalancerClient.rebalanceInventory",
+      message: "Available rebalance routes",
+      currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => {
+        return {
+          [chainId]: Object.fromEntries(
+            Object.entries(tokens).map(([token, balance]) => {
+              return [token, balance.toString()];
+            })
+          ),
+        };
+      }),
+      targetBalances: Object.entries(targetBalances).map(([token, chains]) => {
+        return {
+          [token]: Object.fromEntries(
+            Object.entries(chains).map(([chainId, balance]) => {
+              return [chainId, balance.targetBalance.toString()];
+            })
+          ),
+        };
+      }),
+      availableRebalanceRoutes: availableRebalanceRoutes.map(
+        (route) =>
+          `(${route.adapter}) [${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(route.destinationChain)}] ${
+            route.destinationToken
+          }`
+      ),
+    });
 
     // Identify list of source chains that have excess balances and track the excess amounts for each token.
     const sourceChainsWithExcessBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    this.rebalanceRoutes.forEach((rebalanceRoute) => {
+    availableRebalanceRoutes.forEach((rebalanceRoute) => {
       const { sourceChain, sourceToken } = rebalanceRoute;
-      const currentBalance = currentBalances[sourceChain]?.[sourceToken];
+      const currentBalance = currentBalances[sourceChain][sourceToken];
       const targetBalance = targetBalances[sourceToken][sourceChain].targetBalance;
       const hasExcess = currentBalance.gt(targetBalance);
       if (!hasExcess) {
@@ -150,9 +145,9 @@ export class RebalancerClient {
 
     // Identify list of destination chains that have deficit balances and track the deficit amounts for each token.
     const destinationChainsWithDeficitBalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    this.rebalanceRoutes.forEach((rebalanceRoute) => {
+    availableRebalanceRoutes.forEach((rebalanceRoute) => {
       const { destinationChain, destinationToken } = rebalanceRoute;
-      const currentBalance = currentBalances[destinationChain]?.[destinationToken];
+      const currentBalance = currentBalances[destinationChain][destinationToken];
 
       // If target is greater than the maxAmountToTransfer for this route, set target to maxAmountToTransfer.
       const targetBalance = targetBalances[destinationToken][destinationChain].targetBalance;

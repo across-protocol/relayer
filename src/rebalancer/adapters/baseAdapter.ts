@@ -1,6 +1,17 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, TransactionClient } from "../../clients";
-import { Address, BigNumber, ConvertDecimals, ethers, EvmAddress, getTokenInfo, winston } from "../../utils";
+import { TokenInfo } from "../../interfaces";
+import {
+  Address,
+  BigNumber,
+  ConvertDecimals,
+  ethers,
+  EvmAddress,
+  getTokenInfo,
+  TOKEN_EQUIVALENCE_REMAPPING,
+  TOKEN_SYMBOLS_MAP,
+  winston,
+} from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 
 export interface OrderDetails {
@@ -29,7 +40,17 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     this.transactionClient = new TransactionClient(logger);
   }
 
-  abstract initialize(availableRoutes: RebalanceRoute[]): Promise<void>;
+  initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    // Make sure each source token and destination token has an entryin token symbols map:
+    for (const route of availableRoutes) {
+      const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
+      this._getTokenInfo(sourceToken, sourceChain);
+      this._getTokenInfo(destinationToken, destinationChain);
+    }
+    this.initialized = true;
+    return;
+  }
+
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   abstract updateRebalanceStatuses(): Promise<void>;
   abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
@@ -139,6 +160,29 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Deleted order details for cloid ${cloid} under key ${orderDetailsKey} and from status set ${orderStatusKey}`,
       result,
     });
+  }
+
+  // SVM addresses currently unsupported
+  protected _getTokenInfo(symbol: string, chainId: number): TokenInfo {
+    const remappedTokenSymbols = Object.entries(TOKEN_EQUIVALENCE_REMAPPING)
+      .filter(([, value]) => value === symbol)
+      .map(([key]) => key);
+    const allPossibleSymbols = [...remappedTokenSymbols, symbol];
+    const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).find((details) => {
+      const symbolMatches = allPossibleSymbols.some(
+        (_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase()
+      );
+      if (!symbolMatches) {
+        return false;
+      }
+      return details.addresses[chainId];
+    });
+    if (!tokenDetails) {
+      throw new Error(
+        `Token ${symbol} not found on chain ${chainId}, (remapped token symbols: ${remappedTokenSymbols.join(", ")})`
+      );
+    }
+    return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
   }
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
