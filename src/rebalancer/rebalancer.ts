@@ -112,9 +112,9 @@ export class RebalancerClient {
       }),
       availableRebalanceRoutes: availableRebalanceRoutes.map(
         (route) =>
-          `(${route.adapter}) [${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(route.destinationChain)}] ${
-            route.destinationToken
-          }`
+          `(${route.adapter}) [${getNetworkName(route.sourceChain)}] ${route.sourceToken} -> [${getNetworkName(
+            route.destinationChain
+          )}] ${route.destinationToken}`
       ),
     });
 

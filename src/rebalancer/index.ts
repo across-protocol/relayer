@@ -1,4 +1,4 @@
-import { CCTP_NO_DOMAIN, OFT_NO_EID, PRODUCTION_OFT_EIDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CCTP_NO_DOMAIN, OFT_NO_EID, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import {
   BigNumber,
   bnUint256Max,
