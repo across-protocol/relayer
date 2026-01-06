@@ -1,19 +1,14 @@
-import assert from "assert";
 import axios from "axios";
 import minimist from "minimist";
 import { config } from "dotenv";
-import { Contract, ethers } from "ethers";
 import { LogDescription } from "@ethersproject/abi";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { RelayData } from "../src/interfaces";
 import {
-  BigNumber,
-  Address,
   disconnectRedisClients,
   EvmAddress,
   getNetworkName,
   getProvider,
-  getSigner,
   isDefined,
   populateV3Relay,
   toAddressType,
@@ -22,8 +17,6 @@ import {
   winston,
 } from "../src/utils";
 import * as utils from "./utils";
-
-type Log = ethers.providers.Log;
 
 const { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } = utils;
 const DEPOSIT_EVENT = "FundsDeposited";
@@ -99,6 +92,7 @@ function decodeRelayData(originChainId: number, destinationChainId: number, log:
 async function fetchDepositFromTxn(
   originChainId: number,
   txnHash: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ deposit: any; destinationChainId: number; depositBlockNumber: number; depositTimestamp: number }> {
   if (!utils.validateChainIds([originChainId])) {
     throw new Error(`Invalid origin chain ID (${originChainId}).`);
@@ -203,7 +197,7 @@ async function createTenderlySimulation(
         }
       );
 
-      console.log(`Debug: Share enabled for simulation`);
+      console.log("Debug: Share enabled for simulation");
 
       // Once sharing is enabled, construct the public share URL
       const publicShareUrl = `https://www.tdly.co/shared/simulation/${simulationId}`;
@@ -230,10 +224,7 @@ async function createTenderlySimulation(
   }
 }
 
-async function getBlockNumberForTimestamp(
-  destinationChainId: number,
-  targetTimestamp: number
-): Promise<number> {
+async function getBlockNumberForTimestamp(destinationChainId: number, targetTimestamp: number): Promise<number> {
   const logger = winston.createLogger({
     level: "error", // Only show errors to keep output clean
     transports: [new winston.transports.Console()],
@@ -297,7 +288,6 @@ async function simulateFill(args: Record<string, number | string>): Promise<bool
   const simulationRelayerAddress = (args.relayer as string) || DEFAULT_RELAYER_ADDRESS;
 
   // We still need a signer to construct the fill transaction, but we'll use a different address for simulation
-  const signer = await getSigner({ keyType: "secret", cleanEnv: true });
   const relayer = EvmAddress.from(simulationRelayerAddress);
 
   console.log(`\nConstructing fill transaction for relayer ${simulationRelayerAddress}...`);
@@ -308,7 +298,7 @@ async function simulateFill(args: Record<string, number | string>): Promise<bool
   // Construct fill transaction
   const fillTx = await populateV3Relay(destSpokePool, deposit, relayer);
 
-  console.log(`Fill transaction constructed:`);
+  console.log("Fill transaction constructed:");
   console.log(`  To: ${fillTx.to}`);
   console.log(`  Data: ${fillTx.data?.substring(0, 66)}...`);
 
@@ -322,7 +312,9 @@ async function simulateFill(args: Record<string, number | string>): Promise<bool
 
   const targetTimestamp = depositTimestamp + targetSecondsAfterDeposit;
 
-  console.log(`\nFinding destination chain block for timestamp ${targetTimestamp} (${targetSecondsAfterDeposit}s after deposit)...`);
+  console.log(
+    `\nFinding destination chain block for timestamp ${targetTimestamp} (${targetSecondsAfterDeposit}s after deposit)...`
+  );
 
   // Find the block on destination chain that corresponds to target timestamp
   const simulationBlock = await getBlockNumberForTimestamp(destinationChainId, targetTimestamp);
@@ -335,7 +327,7 @@ async function simulateFill(args: Record<string, number | string>): Promise<bool
   const timeDiff = simBlock.timestamp - depositTimestamp;
   console.log(`Simulation block timestamp: ${simBlock.timestamp} (${timeDiff}s after deposit)`);
 
-  console.log(`\nCreating Tenderly simulation...`);
+  console.log("\nCreating Tenderly simulation...");
 
   const simulationUrl = await createTenderlySimulation(
     destinationChainId,
@@ -345,8 +337,8 @@ async function simulateFill(args: Record<string, number | string>): Promise<bool
     simulationBlock
   );
 
-  console.log(`\n✓ Simulation created successfully!`);
-  console.log(`\nTenderly Simulation URL:`);
+  console.log("\n✓ Simulation created successfully!");
+  console.log("\nTenderly Simulation URL:");
   console.log(simulationUrl);
 
   return true;
