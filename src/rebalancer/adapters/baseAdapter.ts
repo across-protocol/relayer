@@ -1,13 +1,33 @@
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, TransactionClient } from "../../clients";
+import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
 import { TokenInfo } from "../../interfaces";
 import {
   Address,
   BigNumber,
+  bnZero,
+  CHAIN_IDs,
+  Contract,
   ConvertDecimals,
+  createFormatFunction,
+  ERC20,
   ethers,
   EvmAddress,
+  fixedPointAdjustment,
+  formatToAddress,
+  getCctpDomainForChainId,
+  getCctpV2TokenMessenger,
+  getEndpointId,
+  getMessengerEvm,
+  getNetworkName,
+  getProvider,
   getTokenInfo,
+  getV2DepositForBurnMaxFee,
+  isStargateBridge,
+  MessagingFeeStruct,
+  roundAmountToSend,
+  SendParamStruct,
+  Signer,
   TOKEN_EQUIVALENCE_REMAPPING,
   TOKEN_SYMBOLS_MAP,
   winston,
@@ -26,7 +46,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected transactionClient: TransactionClient;
   protected redisCache: RedisCache;
   protected baseSignerAddress: EvmAddress;
-
   protected initialized = false;
 
   protected REDIS_PREFIX: string;
@@ -36,11 +55,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // TODO: Add redis functions here:
 
-  constructor(readonly logger: winston.Logger) {
+  constructor(readonly logger: winston.Logger, readonly baseSigner: Signer) {
     this.transactionClient = new TransactionClient(logger);
   }
 
-  initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+  async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+
     // Make sure each source token and destination token has an entryin token symbols map:
     for (const route of availableRoutes) {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
@@ -183,6 +204,186 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       );
     }
     return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
+  }
+
+  protected async _getBalance(chainId: number, tokenAddress: string): Promise<BigNumber> {
+    const provider = await getProvider(chainId);
+    const connectedSigner = this.baseSigner.connect(provider);
+    const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
+    const balance = await erc20.balanceOf(this.baseSignerAddress.toNative());
+    return BigNumber.from(balance.toString());
+  }
+
+  protected async _bridgeToChain(
+    token: string,
+    originChain: number,
+    destinationChain: number,
+    expectedAmountToTransfer: BigNumber
+  ): Promise<BigNumber> {
+    if (destinationChain === originChain) {
+      throw new Error("origin and destination chain are the same");
+    }
+
+    const balance = await this._getBalance(originChain, this._getTokenInfo(token, originChain).address.toNative());
+    if (balance.lt(expectedAmountToTransfer)) {
+      throw new Error(
+        `Not enough balance on ${originChain} to bridge ${token} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
+      );
+    }
+
+    switch (token) {
+      case "USDT":
+        return await this._sendOftBridge(originChain, destinationChain, expectedAmountToTransfer);
+      case "USDC":
+        return await this._sendCctpBridge(originChain, destinationChain, expectedAmountToTransfer);
+      default:
+        throw new Error(`Should never happen: Unsupported bridge for token: ${token}`);
+    }
+  }
+
+  private async _sendCctpBridge(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<BigNumber> {
+    // TODO: In the future, this could re-use a CCTPAdapter function.
+    const cctpMessenger = await this._getCctpMessenger(originChain);
+    const originUsdcToken = this._getTokenInfo("USDC", originChain).address;
+    // TODO: Don't always use fast mode, we should switch based on the expected fee and transfer size
+    // incase a portion of the fee is fixed. The expected fee should be 1bp.
+    const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
+      originUsdcToken,
+      originChain,
+      destinationChain,
+      amountToBridge
+    );
+    if (amountToBridge.gt(CCTP_MAX_SEND_AMOUNT)) {
+      // TODO: Handle this case by sending multiple transactions.
+      throw new Error(
+        `Amount to send ${amountToBridge.toString()} is greater than CCTP_MAX_SEND_AMOUNT ${CCTP_MAX_SEND_AMOUNT.toString()}`
+      );
+    }
+    const formatter = createFormatFunction(2, 4, false, this._getTokenInfo("USDC", originChain).decimals);
+    const transaction = {
+      contract: cctpMessenger,
+      chainId: originChain,
+      method: "depositForBurn",
+      unpermissioned: false,
+      nonMulticall: true,
+      args: [
+        amountToBridge,
+        getCctpDomainForChainId(destinationChain),
+        this.baseSignerAddress.toBytes32(),
+        originUsdcToken.toNative(),
+        ethers.constants.HashZero, // Anyone can finalize the message on domain when this is set to bytes32(0)
+        maxFee,
+        finalityThreshold,
+      ],
+      message: `🎰 Bridged USDC via CCTP from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)}`,
+      mrkdwn: `Bridged ${formatter(amountToBridge.toString())} USDC from ${getNetworkName(
+        originChain
+      )} to ${getNetworkName(destinationChain)} via CCTP`,
+    };
+    await this._submitTransaction(transaction);
+    // CCTP Fees are taken out of the source chain deposit so add them here so we end up with the desired input
+    // amount on HyperEVM before depositing into Hypercore.
+    return amountToBridge.sub(maxFee);
+  }
+
+  protected async _getCctpMessenger(chainId: number): Promise<Contract> {
+    const cctpMessengerAddress = getCctpV2TokenMessenger(chainId);
+    const originProvider = await getProvider(chainId);
+    return new Contract(
+      cctpMessengerAddress.address,
+      cctpMessengerAddress.abi,
+      this.baseSigner.connect(originProvider)
+    );
+  }
+
+  protected async _getOftMessenger(chainId: number): Promise<Contract> {
+    const oftMessengerAddress = getMessengerEvm(
+      EvmAddress.from(this._getTokenInfo("USDT", CHAIN_IDs.MAINNET).address.toNative()),
+      chainId
+    );
+    const originProvider = await getProvider(chainId);
+    return new Contract(oftMessengerAddress.toNative(), IOFT_ABI_FULL, this.baseSigner.connect(originProvider));
+  }
+
+  protected async _getOftQuoteSend(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<{
+    feeStruct: MessagingFeeStruct;
+    sendParamStruct: SendParamStruct;
+    oftMessenger: Contract;
+  }> {
+    const oftMessenger = await this._getOftMessenger(originChain);
+    const sharedDecimals = await oftMessenger.sharedDecimals();
+
+    const roundedAmount = roundAmountToSend(
+      amountToBridge,
+      this._getTokenInfo("USDT", originChain).decimals,
+      sharedDecimals
+    );
+    const defaultFeePct = BigNumber.from(5 * 10 ** 15); // Default fee percent of 0.5%
+    const appliedFee = isStargateBridge(destinationChain)
+      ? roundedAmount.mul(defaultFeePct).div(fixedPointAdjustment) // Set a max slippage of 0.5%.
+      : bnZero;
+    const expectedOutputAmount = roundedAmount.sub(appliedFee);
+    const destinationEid = getEndpointId(destinationChain);
+    const sendParamStruct: SendParamStruct = {
+      dstEid: destinationEid,
+      to: formatToAddress(this.baseSignerAddress),
+      amountLD: roundedAmount,
+      // @dev Setting `minAmountLD` equal to `amountLD` ensures we won't hit contract-side rounding
+      minAmountLD: expectedOutputAmount,
+      extraOptions: "0x",
+      composeMsg: "0x",
+      oftCmd: "0x",
+    };
+    // Get the messaging fee for this transfer
+    return {
+      feeStruct: (await oftMessenger.quoteSend(sendParamStruct, false)) as MessagingFeeStruct,
+      sendParamStruct: sendParamStruct,
+      oftMessenger: oftMessenger,
+    };
+  }
+
+  private async _sendOftBridge(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<BigNumber> {
+    const { feeStruct, sendParamStruct, oftMessenger } = await this._getOftQuoteSend(
+      originChain,
+      destinationChain,
+      amountToBridge
+    );
+    const nativeFeeCap = OFT_FEE_CAP_OVERRIDES[originChain] ?? OFT_DEFAULT_FEE_CAP;
+    if (BigNumber.from(feeStruct.nativeFee).gt(nativeFeeCap)) {
+      throw new Error(`Fee exceeds maximum allowed (${feeStruct.nativeFee} > ${nativeFeeCap})`);
+    }
+    const formatter = createFormatFunction(2, 4, false, this._getTokenInfo("USDT", originChain).decimals);
+    // Set refund address to signer's address. This should technically never be required as all of our calcs
+    // are precise, set it just in case
+    const refundAddress = this.baseSignerAddress.toNative();
+    const withdrawTxn = {
+      contract: oftMessenger,
+      chainId: originChain,
+      method: "send",
+      unpermissioned: false,
+      nonMulticall: true,
+      args: [sendParamStruct, feeStruct, refundAddress],
+      value: BigNumber.from(feeStruct.nativeFee),
+      message: `🎰 Withdrew USDT0 from ${getNetworkName(originChain)} to ${getNetworkName(destinationChain)} via OFT`,
+      mrkdwn: `Withdrew ${formatter(amountToBridge.toString())} USDT0 from ${getNetworkName(
+        originChain
+      )} to ${getNetworkName(destinationChain)} via OFT`,
+    };
+
+    await this._submitTransaction(withdrawTxn);
+    return amountToBridge;
   }
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {

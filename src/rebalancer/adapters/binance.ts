@@ -7,7 +7,6 @@ import {
   Contract,
   ERC20,
   EventSearchConfig,
-  EvmAddress,
   forEachAsync,
   fromWei,
   getAccountCoins,
@@ -29,6 +28,7 @@ import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 
 enum STATUS {
+  PENDING_BRIDGE_TO_BINANCE_NETWORK,
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
@@ -44,11 +44,6 @@ interface SPOT_MARKET_META {
   isBuy: boolean;
 }
 
-// @dev We can withdraw USDC to the following chains: Solana, Optimism, Matic, ZkSync, Base, Arbitrum, BSC, Ethereum
-// @dev We can withdraw USDT to the following chains: Solana, Optimism, Matic, Arbitrum, BSC, Ethereum
-// @dev We can withdraw DAI to the following chains: Matic, BSC, Ethereum
-
-// @todo We could plug in the CCTP/OFT adapters in to here the same way we do in the HL adapter.
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
@@ -59,6 +54,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   REDIS_KEY_LATEST_NONCE = this.REDIS_PREFIX + "latest-nonce";
+
+  REDIS_KEY_PENDING_BRIDGE_TO = this.REDIS_PREFIX + "pending-bridge-to";
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
@@ -87,17 +84,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     },
   };
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
-    super(logger);
+    super(logger, baseSigner);
   }
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
+    await super.initialize(_availableRoutes);
+
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
-    this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
     const coins = await getAccountCoins(this.binanceApiClient);
     this.availableRoutes = _availableRoutes;
     for (const route of this.availableRoutes) {
       const { sourceChain, destinationChain, sourceToken, destinationToken } = route;
+      // Check if source and destination chain are both either a binance network or a bridge network we support (
+      // e.g. CCTP or OFT).
       assert(BINANCE_NETWORKS[sourceChain], `Source chain ${sourceChain} not supported by Binance`);
       assert(BINANCE_NETWORKS[destinationChain], `Destination chain ${destinationChain} not supported by Binance`);
       const sourceCoin = coins.find((coin) => coin.symbol === sourceToken);
@@ -120,12 +120,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
     this.allDestinationTokens = new Set<string>(this.availableRoutes.map((x) => x.destinationToken));
-    this.logger.debug({
-      at: "BinanceStablecoinSwapAdapter.initialize",
-      allDestinationChains: Array.from(this.allDestinationChains),
-      allDestinationTokens: Array.from(this.allDestinationTokens),
-    });
-    return super.initialize(_availableRoutes);
   }
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
     this._assertInitialized();
@@ -161,6 +155,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       amountToTransfer.lte(maximumWithdrawalSize),
       `amount to transfer ${amountToTransfer.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on destination chain`
     );
+
+    // If source is not a binance network, then bridge it to a binance network first.
 
     // Deposit to Binance
     const depositAddress = await this.binanceApiClient.depositAddress({
@@ -230,6 +226,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       amountToTransfer
     );
     const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
+
+    // Bridge fee
 
     const isBuy = spotMarketMeta.isBuy;
     let spreadPct = 0;
@@ -350,6 +348,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
+    // Pending bridge to Binance network
+    // const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
+    // if (pendingBridgeToHyperevm.length > 0) {
+    //   this.logger.debug({
+    //     at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+    //     message: "Orders pending bridge to HyperEVM",
+    //     pendingBridgeToHyperevm,
+    //   });
+    // }
+    // for (const cloid of pendingBridgeToHyperevm) {
+    //    Initiate a deposit and set status to PENDING_DEPOSIT
+    // }
+
+    // Pending deposits to Binance network:
+
     const pendingSwaps = await this._redisGetPendingSwaps();
     if (pendingSwaps.length > 0) {
       this.logger.debug({
@@ -423,6 +436,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     for (const cloid of pendingWithdrawals) {
+      // For each finalized withdrawal from Binance, delete its status from Redis and optionally initiate
+      // a bridge to the final non-Binance network destination chain if necessary.
+
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken, destinationChain } = orderDetails;
       const { matchingFill, expectedAmountToReceive: expectedAmountToReceiveString } =
@@ -466,7 +482,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           unfinalizedWithdrawalAmount.sub(expectedAmountToReceive);
         continue;
       }
-      // We no longer need this order information, so we can delete it:
+      // We no longer need this order information, so we can delete it.
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
         message: `Order ${cloid} has finalized, deleting order`,
@@ -474,12 +490,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
       await this._redisDeleteOrder(cloid, STATUS.PENDING_WITHDRAWAL);
     }
-    // PENDING_DEPOSIT: place new orders if enough balance and update status to PENDING_SWAP
-    // PENDING_SWAP: Load open orders and matching fills. If a matching fill is found, initiate a withdrawal from Binance
-    // and update status to PENDING_WITHDRAWAL_FROM_BINANCE. If no matching fill is found and no open order, then
-    // replace the order. Otherwise do nothing.
-    // PENDING_WITHDRAWAL: Check if withdrawal has been finalized, if it has then delete the order. Only look at withdrawals
-    // with timestamp greater than matched fills for orders.
   }
 
   async _getMatchingFillForCloid(
@@ -499,6 +509,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   // + token in question.
   async getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     this._assertInitialized();
+
+    // If there are any pending bridges to final non-Binance destination network, add virtual balances for them.
+
+    // If there are any finalized bridges to non-Binance networks that need to be subsequently deposited
+    // into Binance, subtract their virtual balances from the non-Binance networks.
+    // 1. Load all pending finalized bridges to non-Binance networks
+    // 2. For each order with status PENDING_BRIDGE_TO_BINANCE_NETWORK, subtract its virtual balance from unfinalized
+    //    bridge amount. If there is no more unfinalized bridge amount, then the order can be considered to be finalized
+    //    and we can subtract its virtual balance.
 
     const pendingOrders = await this._redisGetPendingOrders();
     if (pendingOrders.length > 0) {
