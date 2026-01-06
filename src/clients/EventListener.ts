@@ -98,9 +98,10 @@ export class EventListener extends EventEmitter {
             if (log.removed) {
               eventMgr.remove(event, provider.name);
               this.emit(event.event, event);
-            } else {
-              // @todo: eventMgr.add should determine whether to emit the event.
-              eventMgr.add(event, provider.name);
+              return;
+            }
+
+            if (eventMgr.add(event, provider.name)) {
               this.emit(event.event, event);
             }
           });

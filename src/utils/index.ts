@@ -58,6 +58,7 @@ export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
+export * from "./InstanceCoordinator";
 export * from "./ObjectUtils";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";

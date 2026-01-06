@@ -16,15 +16,15 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.88.tgz#1ba756921a06bd5bd2d3750a934b1ceb624a6b66"
   integrity sha512-pwvbDpaMm25VCsjc9G3gsIyWxY/mak+AGg0NHQszhS1nbKFFZxgJe6Qs5v9IIND7mlxTAXFmXNLOsjwC9U5Kkg==
 
-"@across-protocol/constants@^3.1.89":
-  version "3.1.89"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.89.tgz#c35b9052cc456474e13a8c39ff071d85177596eb"
-  integrity sha512-KNVEnvX9Ygs9G5GSZB9NvN/HGquHfHJipmKS7kOY35UqA2yrZlzgKFKnL6//BdXlukE+eru6t+v/7lhPtYUi0A==
+"@across-protocol/constants@^3.1.94":
+  version "3.1.94"
+  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.94.tgz#17c52c7234133df63411c6ea77133ed25c88c710"
+  integrity sha512-wZWgzELYjsaMqbtRqIgXz9u2nuJUEv+ivWoidreEsNbGL1TPorPtnC3nIobFKXB+hnbembxYWsj5Py2pGPZwQw==
 
-"@across-protocol/contracts-beta@npm:@across-protocol/contracts@4.1.17-beta.2":
-  version "4.1.17-beta.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.17-beta.2.tgz#e5db7d70e0c9ea41f3b64197596cbb0fdbd33316"
-  integrity sha512-0bSLafbop4EUaYcY7HsxX3Y4i9ztjJq4YcY54NHsBYxKNPQzF9d0NQ81hrrRmy6omUAhfZjBKTaTYRXA6wsQ7w==
+"@across-protocol/contracts-beta@npm:@across-protocol/contracts@4.1.17-beta.3":
+  version "4.1.17-beta.3"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.17-beta.3.tgz#ab242f75b611d1d5ee96f96b69005876906f46f9"
+  integrity sha512-KQpxYw4HiJMuVhKx54Wk8Nkj3J/mTGHvq58EBWHQQmSIhh+AkcMj9K6RBKfhnUTw5gSpkb5u4FpXt40HeDvfug==
   dependencies:
     "@across-protocol/constants" "^3.1.88"
     "@coral-xyz/anchor" "^0.31.1"
@@ -98,17 +98,18 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/sdk@4.3.98":
-  version "4.3.98"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.98.tgz#667d20ce04d4aae94a48f1d1a2f33b9da0032d5d"
-  integrity sha512-Dso1qoik0iBowdvoTY5TPwmscBO42t1fcU1OcrARTZyjPKGaZGkIaEfloQ8y0AKXsX5YsE62NLpO+vExErchgg==
+"@across-protocol/sdk@4.3.105":
+  version "4.3.105"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.105.tgz#646aaa56806562e14f4d2263d61c1677249a5db0"
+  integrity sha512-Ea90yNBooCZ7xqn3Jh8AARHwZAIWuSpvZknWjiUGNQTaqzub5KT6OqAg/jfAhRdDzNfceITPW9k2pkEIqtheHQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.89"
+    "@across-protocol/constants" "^3.1.94"
     "@across-protocol/contracts" "^4.1.14"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
+    "@nktkas/hyperliquid" "^0.25.9"
     "@pinata/sdk" "^2.1.0"
     "@solana-program/system" "^0.7.0"
     "@solana-program/token-2022" "^0.4.0"

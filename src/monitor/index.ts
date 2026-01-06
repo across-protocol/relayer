@@ -40,7 +40,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
         await acrossMonitor.reportInvalidFills();
-        await acrossMonitor.reportInvalidFillsRelatedToSvm();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
@@ -67,6 +66,12 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.closePDAs();
       } else {
         logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
+      }
+
+      if (config.botModes.reportOpenHyperliquidOrders) {
+        await acrossMonitor.reportOpenHyperliquidOrders();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Hyperliquid order monitoring disabled" });
       }
 
       await clients.multiCallerClient.executeTxnQueues();

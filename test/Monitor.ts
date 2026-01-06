@@ -256,6 +256,7 @@ describe("Monitor", async function () {
     const reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      [], // No L2-only tokens in test
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateCurrentRelayerBalances(reports);
@@ -284,6 +285,7 @@ describe("Monitor", async function () {
     const reports = monitorInstance.initializeBalanceReports(
       monitorInstance.monitorConfig.monitoredRelayers,
       monitorInstance.clients.hubPoolClient.getL1Tokens(),
+      [], // No L2-only tokens in test
       TEST_NETWORK_NAMES
     );
     await monitorInstance.updateLatestAndFutureRelayerRefunds(reports);
