@@ -1,7 +1,6 @@
 import { CCTP_NO_DOMAIN, OFT_NO_EID, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import {
   BigNumber,
-  bnUint256Max,
   bnZero,
   CHAIN_IDs,
   config,
@@ -38,11 +37,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     999: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("20", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
     },
   };
 
@@ -52,11 +51,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "8453": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -72,11 +71,21 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [];
+
+  // Following two variables are hardcoded to aid testing:
   const maxAmountToTransfer = toBNWei("10", 6);
-  const usdcChains = [CHAIN_IDs.OPTIMISM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE];
-  const usdtChains = [CHAIN_IDs.OPTIMISM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE];
-  usdtChains.forEach((usdtChain) => {
-    usdcChains.forEach((usdcChain) => {
+  const chains = [
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.HYPEREVM,
+  ];
+
+  // Construct rebalance routes for all pairs of chains:
+  chains.forEach((usdtChain) => {
+    chains.forEach((usdcChain) => {
       if (usdtChain === usdcChain) {
         return;
       }

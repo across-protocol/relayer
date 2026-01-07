@@ -287,7 +287,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
-  async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+  async getEstimatedCost(
+    rebalanceRoute: RebalanceRoute,
+    amountToTransfer: BigNumber,
+    debugLog: boolean
+  ): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sourceTokenMeta = this._getTokenMeta(sourceToken);
@@ -380,26 +384,28 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       .add(bridgeFromHyperEvmFee)
       .add(opportunityCostOfCapitalFixed);
 
-    this.logger.debug({
-      at: "HyperliquidStablecoinSwapAdapter.getEstimatedCost",
-      message: `Calculating total fees for rebalance route ${sourceToken} on ${getNetworkName(
-        sourceChain
-      )} to ${destinationToken} on ${getNetworkName(
-        destinationChain
-      )} with amount to transfer ${amountToTransfer.toString()}`,
-      slippagePct,
-      slippage: slippage.toString(),
-      estimatedTakerPrice: latestPrice,
-      spreadPct: spreadPct * 100,
-      spreadFee: spreadFee.toString(),
-      takerFeePct: fromWei(takerFeePct, 18),
-      takerFee: takerFeeFixed.toString(),
-      takerFeeFixed: takerFeeFixed.toString(),
-      bridgeToHyperEvmFee: bridgeToHyperEvmFee.toString(),
-      bridgeFromHyperEvmFee: bridgeFromHyperEvmFee.toString(),
-      opportunityCostOfCapitalFixed: opportunityCostOfCapitalFixed.toString(),
-      totalFee: totalFee.toString(),
-    });
+    if (debugLog) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.getEstimatedCost",
+        message: `Calculating total fees for rebalance route ${sourceToken} on ${getNetworkName(
+          sourceChain
+        )} to ${destinationToken} on ${getNetworkName(
+          destinationChain
+        )} with amount to transfer ${amountToTransfer.toString()}`,
+        slippagePct,
+        slippage: slippage.toString(),
+        estimatedTakerPrice: latestPrice,
+        spreadPct: spreadPct * 100,
+        spreadFee: spreadFee.toString(),
+        takerFeePct: fromWei(takerFeePct, 18),
+        takerFee: takerFeeFixed.toString(),
+        takerFeeFixed: takerFeeFixed.toString(),
+        bridgeToHyperEvmFee: bridgeToHyperEvmFee.toString(),
+        bridgeFromHyperEvmFee: bridgeFromHyperEvmFee.toString(),
+        opportunityCostOfCapitalFixed: opportunityCostOfCapitalFixed.toString(),
+        totalFee: totalFee.toString(),
+      });
+    }
 
     return totalFee;
 

@@ -186,7 +186,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
-    const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer);
+    const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer, false);
     const expectedAmountToWithdraw = amountToTransfer.sub(expectedCost);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const minimumWithdrawalSize = toBNWei(withdrawMin, sourceTokenInfo.decimals);
@@ -229,18 +229,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
       });
-      //   const amountReceivedFromBridge = await this._bridgeToChain(
-      //     rebalanceRoute.sourceToken,
-      //     rebalanceRoute.sourceChain,
-      //     binanceDepositNetwork,
-      //     amountToTransfer
-      //   );
-      //   await this._redisCreateOrder(
-      //     cloid,
-      //     STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK,
-      //     rebalanceRoute,
-      //     amountReceivedFromBridge
-      //   );
+      const amountReceivedFromBridge = await this._bridgeToChain(
+        rebalanceRoute.sourceToken,
+        rebalanceRoute.sourceChain,
+        binanceDepositNetwork,
+        amountToTransfer
+      );
+      await this._redisCreateOrder(
+        cloid,
+        STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK,
+        rebalanceRoute,
+        amountReceivedFromBridge
+      );
     } else {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -250,8 +250,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
       });
-      //   await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
-      //   await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
+      await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
+      await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
     }
   }
 
@@ -282,7 +282,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     await this._submitTransaction(txn);
   }
 
-  async getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+  async getEstimatedCost(
+    rebalanceRoute: RebalanceRoute,
+    amountToTransfer: BigNumber,
+    debugLog: boolean
+  ): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     // Commission is denominated in percentage points.
@@ -335,24 +339,26 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       .add(spreadFee)
       .add(opportunityCostOfCapital);
 
-    this.logger.debug({
-      at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
-      message: `Calculating total fees for rebalance route ${sourceToken} on ${getNetworkName(
-        sourceChain
-      )} to ${destinationToken} on ${getNetworkName(
-        destinationChain
-      )} with amount to transfer ${amountToTransfer.toString()}`,
-      tradeFeePct,
-      tradeFee: tradeFee.toString(),
-      withdrawFeeConvertedToSourceToken: withdrawFeeConvertedToSourceToken.toString(),
-      slippagePct,
-      slippage: slippage.toString(),
-      estimatedTakerPrice: latestPrice,
-      spreadPct: spreadPct * 100,
-      spreadFee: spreadFee.toString(),
-      opportunityCostOfCapitalFixed: opportunityCostOfCapital.toString(),
-      totalFee: totalFee.toString(),
-    });
+    if (debugLog) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.getEstimatedCost",
+        message: `Calculating total fees for rebalance route ${sourceToken} on ${getNetworkName(
+          sourceChain
+        )} to ${destinationToken} on ${getNetworkName(
+          destinationChain
+        )} with amount to transfer ${amountToTransfer.toString()}`,
+        tradeFeePct,
+        tradeFee: tradeFee.toString(),
+        withdrawFeeConvertedToSourceToken: withdrawFeeConvertedToSourceToken.toString(),
+        slippagePct,
+        slippage: slippage.toString(),
+        estimatedTakerPrice: latestPrice,
+        spreadPct: spreadPct * 100,
+        spreadFee: spreadFee.toString(),
+        opportunityCostOfCapitalFixed: opportunityCostOfCapital.toString(),
+        totalFee: totalFee.toString(),
+      });
+    }
 
     return totalFee;
   }

@@ -290,7 +290,11 @@ export class RebalancerClient {
             amountConverter(excessAmount).gte(deficitAmountCapped)
           ) {
             // Check the estimated cost for this route and replace the best route if this one is cheaper.
-            const expectedCostForRebalance = await this.adapters[r.adapter].getEstimatedCost(r, deficitAmountCapped);
+            const expectedCostForRebalance = await this.adapters[r.adapter].getEstimatedCost(
+              r,
+              deficitAmountCapped,
+              true
+            );
             this.logger.debug({
               at: "RebalancerClient.rebalanceInventory",
               message: `Expected cost to use rebalance route ${
@@ -400,5 +404,5 @@ export interface RebalancerAdapter {
   // Get all currently unfinalized rebalance amounts. Should be used to add a virtual balance credit for the chain
   // + token in question.
   getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
-  getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber>;
+  getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber>;
 }
