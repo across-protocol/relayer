@@ -1,6 +1,5 @@
 import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
-  acrossApi,
   assert,
   BigNumber,
   BINANCE_NETWORKS,
@@ -8,7 +7,6 @@ import {
   CHAIN_IDs,
   Coin,
   Contract,
-  defiLlama,
   ERC20,
   forEachAsync,
   fromWei,
@@ -19,22 +17,16 @@ import {
   getProvider,
   getRedisCache,
   isDefined,
-  isWeekday,
-  coingecko,
   paginatedEventQuery,
-  PriceClient,
   Signer,
   toBNWei,
   winston,
-  ConvertDecimals,
-  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
-import { AugmentedTransaction, getAcrossHost } from "../../clients";
+import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { utils as sdkUtils } from "@across-protocol/sdk";
 
 enum STATUS {
   PENDING_BRIDGE_TO_BINANCE_NETWORK,
@@ -56,7 +48,6 @@ interface SPOT_MARKET_META {
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
-  private priceClient: PriceClient;
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
@@ -97,11 +88,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   };
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     super(logger, config, baseSigner);
-    this.priceClient = new PriceClient(logger, [
-      new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
-      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-      new defiLlama.PriceFeed(),
-    ]);
   }
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     await super.initialize(_availableRoutes);
@@ -329,7 +315,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
-    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const withdrawFee = toBNWei(
       destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork])
         .withdrawFee,
@@ -369,65 +354,29 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     let bridgeToBinanceFee = bnZero;
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     if (binanceDepositNetwork !== sourceChain) {
-      if (sourceToken === "USDC") {
-        // CCTP Fee:
-        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(sourceChain, binanceDepositNetwork)).fast;
-        bridgeToBinanceFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
-      } else if (sourceToken === "USDT") {
-        // OFT Fee:
-        const { feeStruct } = await this._getOftQuoteSend(sourceChain, binanceDepositNetwork, amountToTransfer);
-        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
-        // This logic would need to change to support non stablecoin swaps.
-        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(sourceChain);
-        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, sourceChain).decimals;
-        const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
-        const price = await this.priceClient.getPriceByAddress(
-          nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[sourceChain]
-        );
-        const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
-        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
-        bridgeToBinanceFee = nativeFeeSourceDecimals;
-      }
+      bridgeToBinanceFee = await this._getBridgeFeePct(
+        sourceChain,
+        binanceDepositNetwork,
+        sourceToken,
+        amountToTransfer
+      );
     }
 
     // Bridge from Binance withdrawal network fee:
     let bridgeFromBinanceFee = bnZero;
     const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     if (binanceWithdrawNetwork !== destinationChain) {
-      if (destinationToken === "USDC") {
-        // CCTP Fee:
-        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(binanceDepositNetwork, destinationChain))
-          .fast;
-        bridgeFromBinanceFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
-      } else if (destinationToken === "USDT") {
-        // OFT Fee:
-        const { feeStruct } = await this._getOftQuoteSend(binanceWithdrawNetwork, destinationChain, amountToTransfer);
-        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
-        // This logic would need to change to support non stablecoin swaps.
-        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(binanceWithdrawNetwork);
-        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, binanceWithdrawNetwork).decimals;
-        const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
-        const price = await this.priceClient.getPriceByAddress(
-          nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[sourceChain]
-        );
-        const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
-        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
-        bridgeFromBinanceFee = nativeFeeSourceDecimals;
-      }
+      bridgeFromBinanceFee = await this._getBridgeFeePct(
+        destinationChain,
+        binanceWithdrawNetwork,
+        destinationToken,
+        amountToTransfer
+      );
     }
 
-    // - Opportunity cost of capital when withdrawing from 999. The rudimentary logic here is to assume 4bps when the
-    // OFT rebalance would end on a weekday.
-    //  @todo a better way to do this might be to use historical fills to calculate the relayer's
-    // latest profitability % to forecast the opportunity cost of capital.
-    const oftRebalanceEndTime =
-      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() + 11 * 60 * 60 * 1000;
-    const opportunityCostOfCapitalBps =
-      destinationToken === "USDT" &&
-      destinationChain !== binanceWithdrawNetwork &&
-      (isWeekday() || isWeekday(new Date(oftRebalanceEndTime)))
-        ? 4
-        : 0;
+    // - Opportunity cost of capital should be 0 since all withdrawals are very fast, even if going over the CCTP/OFT
+    // bridges.
+    const opportunityCostOfCapitalBps = 0;
     const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
       .mul(amountToTransfer)
       .div(toBNWei(10000, 18));
@@ -711,8 +660,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         expectedAmountToReceivePreFees,
         false
       );
-      const expectedAmountToReceive = expectedAmountToReceivePreFees.sub(expectedCost);
 
+      // Make sure to subtract expected cost to account for receiving the expected amount less a withdrawal fee.
+      const expectedAmountToReceive = expectedAmountToReceivePreFees.sub(expectedCost);
       const unfinalizedWithdrawalAmount =
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] ??
         (await this._getUnfinalizedWithdrawalAmount(
@@ -1104,7 +1054,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const finalizedWithdrawalTxnHashes = new Set<string>();
     for (const initiated of initiatedWithdrawals) {
       const withdrawalAmount = toBNWei(
-        initiated.amount,
+        initiated.amount, // @dev This should be the post-withdrawal fee amount so it should match perfectly
+        // with the finalized amount.
         this._getTokenInfo(destinationToken, destinationChain).decimals
       );
       const matchingFinalizedAmount = finalizedWithdrawals.find(

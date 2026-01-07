@@ -30,7 +30,6 @@ import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { utils as sdkUtils } from "@across-protocol/sdk";
 
 enum STATUS {
   PENDING_BRIDGE_TO_HYPEREVM,
@@ -294,7 +293,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const sourceTokenMeta = this._getTokenMeta(sourceToken);
     const { slippagePct, px } = await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer);
     const latestPrice = Number(px);
     const slippage = toBNWei(slippagePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
@@ -319,46 +317,18 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Bridge to HyperEVM Fee:
     let bridgeToHyperEvmFee = bnZero;
     if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
-      if (rebalanceRoute.sourceToken === "USDC") {
-        // CCTP Fee:
-        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(sourceChain, CHAIN_IDs.HYPEREVM)).fast;
-        bridgeToHyperEvmFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
-      } else if (rebalanceRoute.sourceToken === "USDT") {
-        // OFT Fee:
-        const { feeStruct } = await this._getOftQuoteSend(sourceChain, CHAIN_IDs.HYPEREVM, amountToTransfer);
-        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
-        // This logic would need to change to support non stablecoin swaps.
-        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(sourceChain);
-        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, sourceChain).decimals;
-        const allMids = await infoClient.allMids();
-        const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
-        const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
-        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenMeta.evmDecimals)(nativeFeeUsd);
-        bridgeToHyperEvmFee = nativeFeeSourceDecimals;
-      }
+      bridgeToHyperEvmFee = await this._getBridgeFeePct(sourceChain, CHAIN_IDs.HYPEREVM, sourceToken, amountToTransfer);
     }
 
     // Bridge from HyperEVMFee:
     let bridgeFromHyperEvmFee = bnZero;
     if (rebalanceRoute.destinationChain !== CHAIN_IDs.HYPEREVM) {
-      if (rebalanceRoute.destinationToken === "USDC") {
-        // CCTP Fee:
-        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(CHAIN_IDs.HYPEREVM, destinationChain))
-          .fast;
-        bridgeFromHyperEvmFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
-      } else if (rebalanceRoute.destinationToken === "USDT") {
-        // OFT Fee:
-        const { feeStruct } = await this._getOftQuoteSend(CHAIN_IDs.HYPEREVM, destinationChain, amountToTransfer);
-        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
-        // This logic would need to change to support non stablecoin swaps.
-        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(CHAIN_IDs.HYPEREVM);
-        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, CHAIN_IDs.HYPEREVM).decimals;
-        const allMids = await infoClient.allMids();
-        const mid = allMids[this._remapTokenSymbolToHlSymbol(nativeTokenSymbol)];
-        const nativeFeeUsd = toBNWei(mid).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
-        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenMeta.evmDecimals)(nativeFeeUsd);
-        bridgeFromHyperEvmFee = nativeFeeSourceDecimals;
-      }
+      bridgeFromHyperEvmFee = await this._getBridgeFeePct(
+        CHAIN_IDs.HYPEREVM,
+        destinationChain,
+        destinationToken,
+        amountToTransfer
+      );
     }
 
     // - Opportunity cost of capital when withdrawing from 999. The rudimentary logic here is to assume 4bps when the
@@ -408,8 +378,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
 
     return totalFee;
-
-    // TOOD: Add the following fees:
   }
 
   private async _createHlOrder(orderDetails: OrderDetails, cloid: string): Promise<void> {

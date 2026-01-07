@@ -1,6 +1,6 @@
 import { CCTP_NO_DOMAIN, OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { RedisCache } from "../../caching/RedisCache";
-import { AugmentedTransaction, TransactionClient } from "../../clients";
+import { AugmentedTransaction, getAcrossHost, TransactionClient } from "../../clients";
 import {
   CCTP_MAX_SEND_AMOUNT,
   EVM_OFT_MESSENGERS,
@@ -10,13 +10,16 @@ import {
 } from "../../common";
 import { TokenInfo } from "../../interfaces";
 import {
+  acrossApi,
   Address,
   BigNumber,
   bnZero,
   CHAIN_IDs,
+  coingecko,
   Contract,
   ConvertDecimals,
   createFormatFunction,
+  defiLlama,
   ERC20,
   ethers,
   EventSearchConfig,
@@ -36,16 +39,19 @@ import {
   isStargateBridge,
   MessagingFeeStruct,
   paginatedEventQuery,
+  PriceClient,
   roundAmountToSend,
   SendParamStruct,
   Signer,
   toBN,
+  toBNWei,
   TOKEN_EQUIVALENCE_REMAPPING,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface OrderDetails {
   sourceToken: string;
@@ -60,6 +66,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected redisCache: RedisCache;
   protected baseSignerAddress: EvmAddress;
   protected initialized = false;
+  protected priceClient: PriceClient;
 
   protected REDIS_PREFIX: string;
   protected REDIS_KEY_PENDING_ORDER: string;
@@ -70,6 +77,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     this.transactionClient = new TransactionClient(logger);
+    this.priceClient = new PriceClient(logger, [
+      new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
+    ]);
   }
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
@@ -430,6 +442,36 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const toBlock = await provider.getBlock("latest");
     const maxLookBack = this.config.maxBlockLookBack[chainId];
     return { from: fromBlock, to: toBlock.number, maxLookBack };
+  }
+
+  protected async _getBridgeFeePct(
+    originChain: number,
+    destinationChain: number,
+    token: string,
+    amountToTransfer
+  ): Promise<BigNumber> {
+    let bridgeFee = bnZero;
+    if (token === "USDC") {
+      // CCTP Fee:
+      const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(originChain, destinationChain)).fast;
+      bridgeFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
+    } else if (token === "USDT") {
+      // OFT Fee:
+      const { feeStruct } = await this._getOftQuoteSend(originChain, destinationChain, amountToTransfer);
+      // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
+      // This logic would need to change to support non stablecoin swaps.
+      const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(originChain);
+      const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, originChain).decimals;
+      const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
+      const price = await this.priceClient.getPriceByAddress(
+        nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[originChain]
+      );
+      const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+      const sourceTokenInfo = this._getTokenInfo(token, originChain);
+      const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
+      bridgeFee = nativeFeeSourceDecimals;
+    }
+    return bridgeFee;
   }
 
   protected async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {

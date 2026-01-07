@@ -1,4 +1,17 @@
-import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import { CCTP_NO_DOMAIN, PRODUCTION_NETWORKS } from "@across-protocol/constants";
+import { EVM_OFT_MESSENGERS } from "../common";
+import {
+  BigNumber,
+  bnZero,
+  CHAIN_IDs,
+  config,
+  disconnectRedisClients,
+  getCctpV2TokenMessenger,
+  Signer,
+  toBNWei,
+  TOKEN_SYMBOLS_MAP,
+  winston,
+} from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
@@ -62,17 +75,39 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Following two variables are hardcoded to aid testing:
-  const maxAmountToTransfer = toBNWei("10.2", 6);
-  const rebalanceRoutes: RebalanceRoute[] = [
-    {
-      sourceChain: CHAIN_IDs.HYPEREVM,
-      sourceToken: "USDT",
-      destinationChain: CHAIN_IDs.UNICHAIN,
-      destinationToken: "USDC",
-      maxAmountToTransfer,
-      adapter: "binance",
-    },
-  ];
+  const oftChains = new Set<number>(
+    EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.keys()
+  ).add(CHAIN_IDs.BSC);
+  const cctpChains = new Set<number>(
+    Object.entries(PRODUCTION_NETWORKS)
+      .filter(
+        ([chain, network]) =>
+          network.cctpDomain !== CCTP_NO_DOMAIN && getCctpV2TokenMessenger(Number(chain)).address !== undefined
+      )
+      .map(([chain]) => Number(chain))
+  ).add(CHAIN_IDs.BSC);
+  const maxAmountToTransfer = toBNWei("10.5", 6);
+  const rebalanceRoutes: RebalanceRoute[] = [];
+  for (const usdtChain of oftChains) {
+    for (const usdcChain of cctpChains) {
+      rebalanceRoutes.push({
+        sourceChain: usdtChain,
+        sourceToken: "USDT",
+        destinationChain: usdcChain,
+        destinationToken: "USDC",
+        maxAmountToTransfer,
+        adapter: "binance",
+      });
+      rebalanceRoutes.push({
+        sourceChain: usdcChain,
+        sourceToken: "USDC",
+        destinationChain: usdtChain,
+        destinationToken: "USDT",
+        maxAmountToTransfer,
+        adapter: "binance",
+      });
+    }
+  }
 
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();
