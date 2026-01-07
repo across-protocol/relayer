@@ -255,13 +255,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // depending on the source chain.
     if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
       // Bridge this token into HyperEVM first
-
-      const amountReceivedFromBridge = await this._bridgeToChain(
-        rebalanceRoute.sourceToken,
-        rebalanceRoute.sourceChain,
-        CHAIN_IDs.HYPEREVM,
-        amountToTransfer
-      );
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first bridging ${sourceToken} into HyperEVM from ${getNetworkName(
@@ -270,8 +263,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
-        amountReceivedFromBridge: amountReceivedFromBridge.toString(),
       });
+
+      const amountReceivedFromBridge = await this._bridgeToChain(
+        rebalanceRoute.sourceToken,
+        rebalanceRoute.sourceChain,
+        CHAIN_IDs.HYPEREVM,
+        amountToTransfer
+      );
 
       await this._redisCreateOrder(cloid, STATUS.PENDING_BRIDGE_TO_HYPEREVM, rebalanceRoute, amountReceivedFromBridge);
     } else {

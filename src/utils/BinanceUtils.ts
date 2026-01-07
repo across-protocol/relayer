@@ -34,7 +34,7 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
 
 // A Coin contains balance data and network information (such as withdrawal limits, extra information about the network, etc.) for a specific
 // token.
-type Coin = {
+export type Coin = {
   symbol: string;
   balance: string;
   networkList: Network[];

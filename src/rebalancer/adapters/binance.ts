@@ -5,6 +5,7 @@ import {
   BINANCE_NETWORKS,
   bnZero,
   CHAIN_IDs,
+  Coin,
   Contract,
   ERC20,
   forEachAsync,
@@ -94,9 +95,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
-    const coins = await getAccountCoins(this.binanceApiClient);
     this.availableRoutes = _availableRoutes;
-    for (const route of this.availableRoutes) {
+    await forEachAsync(this.availableRoutes, async (route) => {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
       assert(
         BINANCE_NETWORKS[sourceChain] || this._chainIsBridgeable(sourceChain, sourceToken),
@@ -110,12 +110,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           destinationChain
         )} is not a binance network or supported by bridges for token ${destinationToken}`
       );
-      const sourceCoin = coins.find((coin) => coin.symbol === sourceToken);
+      const [sourceCoin, destinationCoin] = await Promise.all([
+        this._getAccountCoins(sourceToken),
+        this._getAccountCoins(destinationToken),
+      ]);
       assert(sourceCoin, `Source token ${sourceToken} not found in account coins`);
-      const destinationCoin = coins.find((coin) => coin.symbol === destinationToken);
       assert(destinationCoin, `Destination token ${destinationToken} not found in account coins`);
-      const sourceEntrypointNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-      const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
+      const [sourceEntrypointNetwork, destinationEntrypointNetwork] = await Promise.all([
+        this._getEntrypointNetwork(sourceChain, sourceToken),
+        this._getEntrypointNetwork(destinationChain, destinationToken),
+      ]);
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceEntrypointNetwork]),
         `Source token ${sourceToken} network list does not contain Binance source entrypoint network "${
@@ -128,26 +132,45 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           BINANCE_NETWORKS[destinationEntrypointNetwork]
         }", available networks: ${destinationCoin.networkList.map((network) => network.name).join(", ")}`
       );
-    }
+    });
 
     this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
     this.allDestinationTokens = new Set<string>(this.availableRoutes.map((x) => x.destinationToken));
     this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
     this.allSourceTokens = new Set<string>(this.availableRoutes.map((x) => x.sourceToken));
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter.initialize",
+      message: "Initialized BinanceStablecoinSwapAdapter",
+      allDestinationChains: Array.from(this.allDestinationChains),
+      allDestinationTokens: Array.from(this.allDestinationTokens),
+      allSourceChains: Array.from(this.allSourceChains),
+      allSourceTokens: Array.from(this.allSourceTokens),
+    });
+  }
+
+  private async _getAccountCoins(symbol: string): Promise<Coin> {
+    const cacheKey = `binance-account-coins:${symbol}`;
+    const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
+    if (cachedAccountCoins) {
+      return JSON.parse(cachedAccountCoins) as Coin;
+    }
+    const apiResponse = await getAccountCoins(this.binanceApiClient);
+    const coin = apiResponse.find((coin) => coin.symbol === symbol);
+    assert(coin, `Coin ${symbol} not found in account coins`);
+    await this.redisCache.set(cacheKey, JSON.stringify(coin)); // Use default TTL which is a long time as
+    // the entry for this coin is not expected to change frequently.
+    return coin;
   }
 
   protected async _getEntrypointNetwork(chainId: number, token: string): Promise<number> {
     // We like to use Arbitrum as a default Binance network because it is both a CCTP and OFT network as well and
     // has good stability and liquidity.
     const defaultBinanceNetwork = CHAIN_IDs.ARBITRUM;
-    // @todo: Cache this result:
-    const coins = await getAccountCoins(this.binanceApiClient);
     if (!BINANCE_NETWORKS[chainId]) {
       return defaultBinanceNetwork;
     }
-    const coinHasNetwork = coins
-      .find((coin) => coin.symbol === token)
-      ?.networkList.find((network) => network.name === BINANCE_NETWORKS[chainId]);
+    const coin = await this._getAccountCoins(token);
+    const coinHasNetwork = coin.networkList.find((network) => network.name === BINANCE_NETWORKS[chainId]);
     return coinHasNetwork ? chainId : defaultBinanceNetwork;
   }
 
@@ -155,8 +178,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
 
-    const accountCoins = await getAccountCoins(this.binanceApiClient);
-    const destinationCoin = accountCoins.find((coin) => coin.symbol === destinationToken);
+    const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationBinanceNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
@@ -198,12 +220,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
     if (requiresBridgeBeforeDeposit) {
-      const amountReceivedFromBridge = await this._bridgeToChain(
-        rebalanceRoute.sourceToken,
-        rebalanceRoute.sourceChain,
-        binanceDepositNetwork,
-        amountToTransfer
-      );
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Creating new order ${cloid} by first bridging ${sourceToken} into ${getNetworkName(
@@ -212,14 +228,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
-        amountReceivedFromBridge: amountReceivedFromBridge.toString(),
       });
-      await this._redisCreateOrder(
-        cloid,
-        STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK,
-        rebalanceRoute,
-        amountReceivedFromBridge
-      );
+      //   const amountReceivedFromBridge = await this._bridgeToChain(
+      //     rebalanceRoute.sourceToken,
+      //     rebalanceRoute.sourceChain,
+      //     binanceDepositNetwork,
+      //     amountToTransfer
+      //   );
+      //   await this._redisCreateOrder(
+      //     cloid,
+      //     STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK,
+      //     rebalanceRoute,
+      //     amountReceivedFromBridge
+      //   );
     } else {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -229,8 +250,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationToken,
         destinationChain: getNetworkName(destinationChain),
       });
-      await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
-      await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
+      //   await this._depositToBinance(sourceToken, sourceChain, amountToTransfer);
+      //   await this._redisCreateOrder(cloid, STATUS.PENDING_DEPOSIT, rebalanceRoute, amountToTransfer);
     }
   }
 
@@ -269,9 +290,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       (fee) => fee.symbol === spotMarketMeta.symbol
     ).takerCommission;
     const tradeFee = toBNWei(tradeFeePct, 18).mul(amountToTransfer).div(toBNWei(100, 18));
-    const destinationCoin = (await getAccountCoins(this.binanceApiClient)).find(
-      (coin) => coin.symbol === destinationToken
-    );
+    const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const withdrawFee = toBNWei(
@@ -339,8 +358,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async _getBinanceBalance(token: string): Promise<number> {
-    const accountCoins = await getAccountCoins(this.binanceApiClient);
-    const coin = accountCoins.find((coin) => coin.symbol === token);
+    const coin = await this._getAccountCoins(token);
     return Number(coin.balance);
   }
 

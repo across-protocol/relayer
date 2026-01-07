@@ -48,15 +48,18 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
-      "1": { targetBalance: bnUint256Max, priorityTier: 0 },
+      "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
-      "1": { targetBalance: bnUint256Max, priorityTier: 0 },
+      "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
   };
   const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
