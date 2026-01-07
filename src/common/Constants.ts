@@ -4,6 +4,7 @@ import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
   chainIsOrbit,
+  chainIsProd,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
@@ -166,49 +167,38 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 // also give enough buffer time so that any reasonable fill on the chain
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
-export const BUNDLE_END_BLOCK_BUFFERS = {
-  [CHAIN_IDs.ALEPH_ZERO]: 0, // Chain is disabled.
-  [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
-  [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.BLAST]: 60,
-  [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
-  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
-  [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
-  [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
-  [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
-  [CHAIN_IDs.INK]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.MAINNET]: 5, // 12s/block
-  [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.MONAD]: 150, // ~400ms/block. 0.8s finality
-  [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
-  [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
-  [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
-  [CHAIN_IDs.REDSTONE]: 60, // 2s/block
-  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
-  [CHAIN_IDs.SOLANA]: 150, // ~400ms/block
-  [CHAIN_IDs.SONEIUM]: 60, // 2s/block
-  [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
-  [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
-  [CHAIN_IDs.ZORA]: 60, // 2s/block
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.INK_SEPOLIA]: 0,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
-  [CHAIN_IDs.LENS_SEPOLIA]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.MONAD_TESTNET]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.PLASMA_TESTNET]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.BOB_SEPOLIA]: 0,
+const resolveChainBundleBuffers = () => {
+  const DEFAULT_CHAIN_BUFFER = 1024;
+
+  const defaultBuffers = {
+    [ChainFamily.OP_STACK]: 60, // 2s/block
+    [ChainFamily.ORBIT]: 240, // ~250ms/block
+    [ChainFamily.SVM]: 150, // ~400ms/slot
+    [ChainFamily.ZK_STACK]: 120, // ~1s/block
+  };
+
+  const buffers = {
+    [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
+    [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
+    [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
+    [CHAIN_IDs.LINEA]: 40, // ~3s/block
+    [CHAIN_IDs.MAINNET]: 5, // ~12s/block
+    [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
+    [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
+    [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
+    [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
+    [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+      return [chainId, buffer];
+    })
+  );
 };
+export const BUNDLE_END_BLOCK_BUFFERS = resolveChainBundleBuffers();
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
@@ -245,7 +235,6 @@ export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 120,
   [CHAIN_IDs.PLASMA]: 300,
   [CHAIN_IDs.POLYGON]: 256,
-  [CHAIN_IDs.REDSTONE]: 120,
   [CHAIN_IDs.SCROLL]: 100,
   [CHAIN_IDs.SOLANA]: 512,
   [CHAIN_IDs.SONEIUM]: 120,
@@ -289,7 +278,6 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.OPTIMISM]: 86400,
   [CHAIN_IDs.PLASMA]: 172800,
   [CHAIN_IDs.POLYGON]: 86400,
-  [CHAIN_IDs.REDSTONE]: 86400,
   [CHAIN_IDs.SCROLL]: 57600,
   [CHAIN_IDs.SOLANA]: 432000,
   [CHAIN_IDs.SONEIUM]: 86400,
@@ -365,7 +353,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   ],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC", "UMA", "BAL", "ACX", "POOL"],
-  [CHAIN_IDs.REDSTONE]: ["WETH"],
   [CHAIN_IDs.SCROLL]: ["WETH", "USDC", "USDT", "WBTC", "POOL"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
@@ -460,7 +447,6 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
-  [CHAIN_IDs.REDSTONE]: L2OpStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -533,9 +519,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
-  },
-  [CHAIN_IDs.REDSTONE]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.SONEIUM]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
@@ -610,9 +593,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
 export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor<BaseL2BridgeAdapter>>> = {
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
-  },
-  [CHAIN_IDs.REDSTONE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
   },
   [CHAIN_IDs.ZORA]: {
@@ -821,21 +801,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
     },
   },
-  [CHAIN_IDs.REDSTONE]: {
-    l1: {
-      AddressManager: "0xFe27f187A9E46104a932189dDF229871E06B22F8",
-      L1CrossDomainMessenger: "0x592C1299e0F8331D81A28C0FC7352Da24eDB444a",
-      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_690.address,
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0xC7bCb0e8839a28A1cFadd1CF716de9016CdA51ae",
-      L2OutputOracle: "0xa426A052f657AEEefc298b3B5c35a470e4739d69",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
   [CHAIN_IDs.SONEIUM]: {
     l1: {
       DisputeGameFactory: "0x512a3d2c7a43bd9261d2b8e8c9c70d4bd4d503c0",
@@ -940,7 +905,6 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.MONAD]: 1.1,
   [CHAIN_IDs.PLASMA]: 1.5,
-  [CHAIN_IDs.REDSTONE]: 1.5,
   [CHAIN_IDs.SONEIUM]: 1.5,
   [CHAIN_IDs.UNICHAIN]: 1.5,
   [CHAIN_IDs.WORLD_CHAIN]: 1.5,
