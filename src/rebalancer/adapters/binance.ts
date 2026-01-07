@@ -1013,6 +1013,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       case STATUS.PENDING_WITHDRAWAL:
         orderStatusKey = this.REDIS_KEY_PENDING_WITHDRAWAL;
         break;
+      case STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK:
+        orderStatusKey = this.REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK;
+        break;
       default:
         throw new Error(`Invalid status: ${status}`);
     }
