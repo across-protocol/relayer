@@ -633,7 +633,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Open order for cloid ${cloid} filled with size ${matchingFill.expectedAmountToReceive}! Proceeding to withdraw from Binance.`,
+          message: `Open order for cloid ${cloid} filled with size ${matchingFill.expectedAmountToReceive}! Proceeding to withdraw from Binance`,
           cloid: cloid,
           matchingFill: matchingFill,
           balanceBeforeWithdraw: balance,
@@ -1094,7 +1094,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._withdraw",
-      message: "Success: Withdrawal ID",
+      message: `Successfully withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${destinationEntrypointNetwork}`,
       withdrawalId,
     });
   }

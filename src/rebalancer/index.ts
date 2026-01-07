@@ -22,13 +22,17 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("0", 6),
+      USDT: toBNWei("20", 6),
       USDC: toBNWei("0", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
       USDT: toBNWei("0", 6),
     },
+    130: {
+      USDC: toBNWei("0", 6),
+      USDT: toBNWei("0", 6),
+    }
   };
 
   const targetBalances: TargetBalanceConfig = {
@@ -36,12 +40,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("8", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("10.2", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -56,13 +62,13 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Following two variables are hardcoded to aid testing:
-  const maxAmountToTransfer = toBNWei("10", 6);
+  const maxAmountToTransfer = toBNWei("10.2", 6);
   const rebalanceRoutes: RebalanceRoute[] = [
     {
-      sourceChain: CHAIN_IDs.OPTIMISM,
-      sourceToken: "USDC",
-      destinationChain: CHAIN_IDs.HYPEREVM,
-      destinationToken: "USDT",
+      sourceChain: CHAIN_IDs.HYPEREVM,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.UNICHAIN,
+      destinationToken: "USDC",
       maxAmountToTransfer,
       adapter: "binance",
     },
