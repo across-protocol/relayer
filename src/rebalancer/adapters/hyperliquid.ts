@@ -617,6 +617,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           orderDetails.destinationToken,
           matchingFill.details.time
         ));
+      // If HL were to impose a withdraw fee then we'd need to subtract the estimated fee from the expectedAmountToReceive
+      // here otherwise we might have received less than the expected amount on HyperEVM.
       if (unfinalizedWithdrawalAmount.gte(expectedAmountToReceive)) {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",

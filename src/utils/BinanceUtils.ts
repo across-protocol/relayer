@@ -65,9 +65,15 @@ type BinanceDeposit = {
 };
 
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-type BinanceWithdrawal = BinanceDeposit & {
+export type BinanceWithdrawal = BinanceDeposit & {
   // The recipient of `coin` on the destination network.
   recipient: string;
+  // The unique withdrawal ID.
+  id: string;
+  // The transaction fee for the withdrawal.
+  transactionFee: number;
+  // The timestamp of the withdrawal.
+  applyTime: string;
 };
 
 // ParsedAccountCoins represents a simplified return type of the Binance `accountCoins` endpoint.
@@ -190,11 +196,14 @@ export async function getBinanceWithdrawals(
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
+      transactionFee: Number(withdrawal.transactionFee),
       recipient: withdrawal.address,
       coin,
+      id: withdrawal.id,
       txId: withdrawal.txId,
       network: withdrawal.network,
       status: withdrawal.status,
+      applyTime: withdrawal.applyTime,
     } satisfies BinanceWithdrawal;
   });
 }

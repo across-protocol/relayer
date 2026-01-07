@@ -1,17 +1,4 @@
-import { CCTP_NO_DOMAIN, PRODUCTION_NETWORKS } from "@across-protocol/constants";
-import { EVM_OFT_MESSENGERS } from "../common";
-import {
-  BigNumber,
-  bnZero,
-  CHAIN_IDs,
-  config,
-  disconnectRedisClients,
-  getCctpV2TokenMessenger,
-  Signer,
-  toBNWei,
-  TOKEN_SYMBOLS_MAP,
-  winston,
-} from "../utils";
+import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
@@ -43,7 +30,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDT: toBNWei("0", 6),
     },
     130: {
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("20", 6),
       USDT: toBNWei("0", 6),
     },
   };
@@ -56,11 +43,12 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("10.1", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("10.2", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -75,21 +63,27 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Following two variables are hardcoded to aid testing:
-  const oftChains = new Set<number>(
-    EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.keys()
-  ).add(CHAIN_IDs.BSC);
-  const cctpChains = new Set<number>(
-    Object.entries(PRODUCTION_NETWORKS)
-      .filter(
-        ([chain, network]) =>
-          network.cctpDomain !== CCTP_NO_DOMAIN && getCctpV2TokenMessenger(Number(chain)).address !== undefined
-      )
-      .map(([chain]) => Number(chain))
-  ).add(CHAIN_IDs.BSC);
+  const usdtChains = [
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.UNICHAIN,
+  ];
+  const usdcChains = [
+    CHAIN_IDs.HYPEREVM,
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BSC,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.UNICHAIN,
+  ];
   const maxAmountToTransfer = toBNWei("10.5", 6);
   const rebalanceRoutes: RebalanceRoute[] = [];
-  for (const usdtChain of oftChains) {
-    for (const usdcChain of cctpChains) {
+  for (const usdtChain of usdtChains) {
+    for (const usdcChain of usdcChains) {
       rebalanceRoutes.push({
         sourceChain: usdtChain,
         sourceToken: "USDT",
