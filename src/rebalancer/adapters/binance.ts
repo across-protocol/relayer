@@ -148,15 +148,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getAccountCoins(symbol: string): Promise<Coin> {
+  private async _getAccountCoins(symbol: string, skipCache = false): Promise<Coin> {
     const cacheKey = `binance-account-coins:${symbol}`;
-    const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
-    if (cachedAccountCoins) {
-      return JSON.parse(cachedAccountCoins) as Coin;
+
+    if (!skipCache) {
+      const cachedAccountCoins = await this.redisCache.get<string>(cacheKey);
+      if (cachedAccountCoins) {
+        return JSON.parse(cachedAccountCoins) as Coin;
+      }
     }
     const apiResponse = await getAccountCoins(this.binanceApiClient);
     const coin = apiResponse.find((coin) => coin.symbol === symbol);
     assert(coin, `Coin ${symbol} not found in account coins`);
+
+    // Reset cache if we've fetched a new API response.
     await this.redisCache.set(cacheKey, JSON.stringify(coin)); // Use default TTL which is a long time as
     // the entry for this coin is not expected to change frequently.
     return coin;
@@ -364,7 +369,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async _getBinanceBalance(token: string): Promise<number> {
-    const coin = await this._getAccountCoins(token);
+    const coin = await this._getAccountCoins(token, true); // Skip cache so we load the balance fresh each time.
     return Number(coin.balance);
   }
 
@@ -480,33 +485,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
-    // Pending deposits to Binance network:
-    const pendingSwaps = await this._redisGetPendingSwaps();
-    if (pendingSwaps.length > 0) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `Found ${pendingSwaps.length} pending swaps`,
-        pendingSwaps: pendingSwaps,
-      });
-    }
-    for (const cloid of pendingSwaps) {
-      const { destinationToken, destinationChain } = await this._redisGetOrderDetails(cloid);
-      const matchingFill = await this._getMatchingFillForCloid(cloid);
-      if (matchingFill) {
-        this.logger.debug({
-          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Open order for cloid ${cloid} filled with size ${matchingFill.expectedAmountToReceive}! Proceeding to withdraw from Binance.`,
-          cloid: cloid,
-          matchingFill: matchingFill,
-        });
-        await this._withdraw(Number(matchingFill.expectedAmountToReceive), destinationToken, destinationChain);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
-      } else {
-        // We throw an error here because we shouldn't expect the market order to ever not be filled.
-        throw new Error(`No matching fill found for cloid ${cloid}`);
-      }
-    }
-
+    // Place order if we have sufficient balance on Binance to do so.
     const pendingDeposits = await this._redisGetPendingDeposits();
     if (pendingDeposits.length > 0) {
       this.logger.debug({
@@ -533,14 +512,55 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Not enough balance to place order for cloid ${cloid}, balance: ${balance}`,
-          cloid: cloid,
-          balance: balance,
           szForOrder: szForOrder,
         });
         continue;
       }
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Sufficient balance to place market order for cloid ${cloid} with size ${szForOrder}`,
+        binanceBalance: balance,
+      });
       await this._placeMarketOrder(cloid, orderDetails);
       await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
+    }
+
+    // Withdraw pending swaps if they have filled.
+    const pendingSwaps = await this._redisGetPendingSwaps();
+    if (pendingSwaps.length > 0) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: `Found ${pendingSwaps.length} pending swaps`,
+        pendingSwaps: pendingSwaps,
+      });
+    }
+    for (const cloid of pendingSwaps) {
+      const { destinationToken, destinationChain } = await this._redisGetOrderDetails(cloid);
+      const matchingFill = await this._getMatchingFillForCloid(cloid);
+      if (matchingFill) {
+        const balance = await this._getBinanceBalance(destinationToken);
+        const withdrawAmount = Number(matchingFill.expectedAmountToReceive);
+        if (balance < withdrawAmount) {
+          this.logger.debug({
+            at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+            message: `Not enough balance to withdraw ${withdrawAmount} ${destinationToken} for order ${cloid}, waiting...`,
+            balance: balance,
+          });
+          continue;
+        }
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Open order for cloid ${cloid} filled with size ${matchingFill.expectedAmountToReceive}! Proceeding to withdraw from Binance.`,
+          cloid: cloid,
+          matchingFill: matchingFill,
+          balanceBeforeWithdraw: balance,
+        });
+        await this._withdraw(withdrawAmount, destinationToken, destinationChain);
+        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
+      } else {
+        // We throw an error here because we shouldn't expect the market order to ever not be filled.
+        throw new Error(`No matching fill found for cloid ${cloid}`);
+      }
     }
 
     const unfinalizedWithdrawalAmounts: { [destinationToken: string]: BigNumber } = {};
@@ -610,6 +630,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Sending order with cloid ${cloid} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain}, and deleting order details from Redis!`,
           expectedAmountToReceive: expectedAmountToReceive.toString(),
+          destinationToken,
         });
         await this._bridgeToChain(
           destinationToken,
@@ -714,7 +735,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           }
           for (const cloid of pendingBridgeToBinanceNetwork) {
             const orderDetails = await this._redisGetOrderDetails(cloid);
-            const { sourceToken, amountToTransfer } = orderDetails;
+            const { amountToTransfer } = orderDetails;
             if (orderDetails.sourceChain !== sourceChain || orderDetails.sourceToken !== sourceToken) {
               continue;
             }
@@ -740,7 +761,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             if (pendingRebalanceAmount.gte(convertedOrderAmount)) {
               this.logger.debug({
                 at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-                message: `Order cloid ${cloid} is possibly pending finalization to binance deposit network ${binanceDepositNetwork} still (remaining pending amount: ${pendingRebalanceAmount.toString()}, order expected amount: ${convertedOrderAmount.toString()})`,
+                message: `Order cloid ${cloid} is possibly pending finalization to binance deposit network ${binanceDepositNetwork} still (remaining pending amount: ${pendingRebalanceAmount.toString()} ${sourceToken}, order expected amount: ${convertedOrderAmount.toString()})`,
               });
 
               pendingRebalanceAmount = pendingRebalanceAmount.sub(convertedOrderAmount);
@@ -784,9 +805,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-        message: `Adding ${convertedAmount.toString()} for pending order cloid ${cloid}`,
+        message: `Adding ${convertedAmount.toString()} for pending order cloid ${cloid} to destination chain ${destinationChain}`,
         cloid: cloid,
-        convertedAmount: convertedAmount.toString(),
       });
       pendingRebalances[destinationChain] ??= {};
       pendingRebalances[destinationChain][destinationToken] = (
@@ -982,11 +1002,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const amountToWithdraw = quantity.toFixed(destinationTokenInfo.decimals);
-
-    this.logger.debug({
-      at: "BinanceStablecoinSwapAdapter._withdraw",
-      message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Binance to chain ${BINANCE_NETWORKS[destinationEntrypointNetwork]}`,
-    });
     const withdrawalId = await this.binanceApiClient.withdraw({
       coin: destinationToken,
       address: this.baseSignerAddress.toNative(),
@@ -1043,12 +1058,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async _redisGetPendingOrders(): Promise<string[]> {
-    const [pendingDeposits, pendingSwaps, pendingWithdrawals] = await Promise.all([
+    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgeToBinanceNetwork] = await Promise.all([
       this.redisCache.sMembers(this.REDIS_KEY_PENDING_DEPOSIT),
       this.redisCache.sMembers(this.REDIS_KEY_PENDING_SWAP),
       this.redisCache.sMembers(this.REDIS_KEY_PENDING_WITHDRAWAL),
+      this.redisCache.sMembers(this.REDIS_KEY_PENDING_BRIDGE_TO_BINANCE_NETWORK),
     ]);
-    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals];
+    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgeToBinanceNetwork];
   }
 
   private _assertInitialized(): void {
