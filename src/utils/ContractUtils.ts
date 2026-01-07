@@ -2,7 +2,6 @@ import * as typechain from "@across-protocol/contracts"; // TODO: refactor once 
 import * as beta from "@across-protocol/contracts-beta";
 import {
   CHAIN_IDs,
-  getNetworkName,
   Contract,
   Signer,
   getDeployedAddress,
@@ -19,53 +18,17 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   try {
     const address = getDeployedAddress(contractName, networkId);
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
-    const factoryName = `${contractName === "SpokePool" ? castSpokePoolName(networkId) : contractName}__factory`;
-    const artifact = typechain[factoryName];
+    const artifact = typechain[`${contractName}__factory`];
     return new Contract(address, artifact.abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
 }
 
-// If the name of the contract is SpokePool then we need to apply a transformation on the name to get the correct
-// contract factory name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
-export function castSpokePoolName(networkId: number): string {
-  let networkName: string;
-  switch (networkId) {
-    case CHAIN_IDs.MAINNET:
-    case CHAIN_IDs.SEPOLIA:
-      return "Ethereum_SpokePool";
-    case CHAIN_IDs.ARBITRUM:
-      return "Arbitrum_SpokePool";
-    case CHAIN_IDs.BSC:
-    case CHAIN_IDs.HYPEREVM:
-    case CHAIN_IDs.PLASMA:
-    case CHAIN_IDs.MONAD:
-      return "Universal_SpokePool";
-    case CHAIN_IDs.ZK_SYNC:
-      return "ZkSync_SpokePool";
-    case CHAIN_IDs.SOLANA:
-    case CHAIN_IDs.SOLANA_DEVNET:
-      return "SvmSpoke";
-    case CHAIN_IDs.SONEIUM:
-      return "Cher_SpokePool";
-    case CHAIN_IDs.UNICHAIN:
-    case CHAIN_IDs.ZORA:
-    case CHAIN_IDs.BASE:
-    case CHAIN_IDs.MODE:
-      return "OP_SpokePool";
-    default:
-      networkName = getNetworkName(networkId);
-  }
-
-  return `${networkName.replace(" ", "")}_SpokePool`;
-}
-
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
-  const factoryName = castSpokePoolName(chainId);
-  const artifact = typechain[`${factoryName}__factory`];
-  return new Contract(address ?? getDeployedAddress("SpokePool", chainId), artifact.abi);
+  const spokePool = getDeployedContract("SpokePool", chainId);
+  return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
