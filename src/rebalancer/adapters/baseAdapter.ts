@@ -448,7 +448,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     originChain: number,
     destinationChain: number,
     token: string,
-    amountToTransfer
+    amountToTransfer: BigNumber
   ): Promise<BigNumber> {
     let bridgeFee = bnZero;
     if (token === "USDC") {

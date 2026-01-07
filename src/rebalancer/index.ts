@@ -14,7 +14,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("20", 6),
+      USDC: toBNWei("0", 6),
       USDT: toBNWei("0", 6),
     },
     42161: {
@@ -22,16 +22,15 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
       USDC: toBNWei("0", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
     },
     130: {
-      USDC: toBNWei("20", 6),
-      USDT: toBNWei("0", 6),
+      USDC: toBNWei("0", 6),
+      USDT: toBNWei("20", 6),
     },
   };
 
@@ -41,14 +40,12 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("10.1", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("10.1", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },

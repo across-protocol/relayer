@@ -451,6 +451,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract
             // its balance from the binance deposit network. We are assuming that the unfinalizedBridgeAmountToBinanceDepositNetwork is perfectly explained
             // by orders with status PENDING_BRIDGE_TO_BINANCE_NETWORK.
+            // @dev amountToTransfer should be exactly equal to the amount bridged, because of the way that we save
+            // the amountToTransfer in _bridgeToChain and the subsequent call _redisCreateOrder.
             const convertedOrderAmount = amountConverter(amountToTransfer);
 
             // The algorithm here is a bit subtle. We can't easily associate pending OFT/CCTP rebalances with order cloids,
@@ -1041,9 +1043,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _redisGetInitiatedWithdrawalId(cloid: string): Promise<string> {
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     const initiatedWithdrawal = await this.redisCache.get<string>(initiatedWithdrawalKey);
-    if (!initiatedWithdrawal) {
-      throw new Error(`Cannot find initiated withdrawal for cloid ${cloid}`);
-    }
     return initiatedWithdrawal;
   }
 
@@ -1071,6 +1070,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `Successfully withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${destinationEntrypointNetwork} for order cloid ${cloid}`,
       withdrawalId,
+      redisWithdrawalIdKey: initiatedWithdrawalKey,
     });
   }
 
