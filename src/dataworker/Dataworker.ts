@@ -380,7 +380,7 @@ export class Dataworker {
       spokePoolClients,
       nextBundleMainnetStartBlock,
       undefined,
-      true
+      true // optimistic!
     );
 
     // Exit early if spoke pool clients don't have early enough event data to satisfy block ranges for the
@@ -639,7 +639,7 @@ export class Dataworker {
       spokePoolClients,
       // Mainnet bundle start block for pending bundle is the first entry in the first entry.
       nextBundleMainnetStartBlock,
-      chainIds.map(() => 1), // Require at least 1 block confirmation on top of the proposal.
+      chainIds.map(() => 1) // Require at least 1 block confirmation on top of the proposal.
     );
     const { valid, reason, bundleData, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -1569,7 +1569,7 @@ export class Dataworker {
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock,
-      chainIds.map(() => 1), // Require at least 1 block confirmation on top of the proposal.
+      chainIds.map(() => 1) // Require at least 1 block confirmation on top of the proposal.
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
