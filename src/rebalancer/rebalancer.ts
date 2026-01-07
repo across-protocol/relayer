@@ -353,7 +353,7 @@ export class RebalancerClient {
         expectedFees: cheapestExpectedCost.toString(),
       });
 
-      await this.adapters[rebalanceRouteToUse.adapter].initializeRebalance(rebalanceRouteToUse, amountToTransfer);
+      // await this.adapters[rebalanceRouteToUse.adapter].initializeRebalance(rebalanceRouteToUse, amountToTransfer);
     }
 
     // Setup:

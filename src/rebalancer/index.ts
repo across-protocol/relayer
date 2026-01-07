@@ -9,8 +9,8 @@ import {
   Signer,
   toBNWei,
   winston,
-  isDefined,
   BINANCE_NETWORKS,
+  getCctpV2TokenMessenger,
 } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -34,24 +34,28 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("11", 6),
+      USDC: toBNWei("0", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
       USDC: toBNWei("0", 6),
+    },
+    8453: {
+      USDC: toBNWei("0", 6),
+      USDT: toBNWei("20", 6),
     },
   };
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnUint256Max, priorityTier: 0 },
-      "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "10": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
   };
@@ -66,48 +70,10 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Initialize list of rebalance routes:
   const rebalanceRoutes: RebalanceRoute[] = [];
   const maxAmountToTransfer = toBNWei("10", 6);
-  const usdtBinanceChains = [
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BSC,
-    CHAIN_IDs.MAINNET,
-    // Chains not listed here are not supported by Binance for USDT, like Base
-  ].filter((chainId) => BINANCE_NETWORKS[chainId]);
-  const usdcBinanceChains = [
-    CHAIN_IDs.OPTIMISM,
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BSC,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.BASE,
-  ].filter((chainId) => BINANCE_NETWORKS[chainId]);
-  const usdtHyperliquidChains = [
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BASE,
-    CHAIN_IDs.BSC,
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.OPTIMISM,
-  ].filter(
-    (chainId) =>
-      EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId) &&
-      PRODUCTION_NETWORKS[chainId].oftEid !== OFT_NO_EID
-  );
-  const usdcHyperliquidChains = [
-    CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BASE,
-    CHAIN_IDs.BSC,
-    CHAIN_IDs.HYPEREVM,
-    CHAIN_IDs.MAINNET,
-    CHAIN_IDs.OPTIMISM,
-  ]
-    .map((chainId) => {
-      if (PRODUCTION_NETWORKS[chainId].cctpDomain !== CCTP_NO_DOMAIN) {
-        return Number(chainId);
-      }
-    })
-    .filter(isDefined);
-  usdtBinanceChains.forEach((usdtChain) => {
-    usdcBinanceChains.forEach((usdcChain) => {
+  const usdcChains = [CHAIN_IDs.OPTIMISM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE];
+  const usdtChains = [CHAIN_IDs.OPTIMISM, CHAIN_IDs.ARBITRUM, CHAIN_IDs.BSC, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE];
+  usdtChains.forEach((usdtChain) => {
+    usdcChains.forEach((usdcChain) => {
       if (usdtChain === usdcChain) {
         return;
       }
@@ -115,6 +81,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       if (usdcChain === CHAIN_IDs.SOLANA || usdtChain === CHAIN_IDs.SOLANA) {
         return;
       }
+      // Chain must either have an OFT, CCTP, or Binance entrypoint
+      for (const chainId of [usdtChain, usdcChain]) {
+        if (
+          !BINANCE_NETWORKS[chainId] &&
+          (PRODUCTION_NETWORKS[chainId].oftEid === OFT_NO_EID ||
+            !EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId)) &&
+          (PRODUCTION_NETWORKS[chainId].cctpDomain === CCTP_NO_DOMAIN ||
+            !getCctpV2TokenMessenger(chainId)?.address !== undefined)
+        ) {
+          return;
+        }
+      }
+      // Both source and destination chains have an OFT, CCTP, or Binance entrypoint, so we can rebalance between them
       rebalanceRoutes.push({
         sourceChain: usdtChain,
         sourceToken: "USDT",
@@ -130,33 +109,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         destinationToken: "USDT",
         maxAmountToTransfer,
         adapter: "binance",
-      });
-    });
-  });
-  usdtHyperliquidChains.forEach((usdtChain) => {
-    usdcHyperliquidChains.forEach((usdcChain) => {
-      if (usdtChain === usdcChain) {
-        return;
-      }
-      // SVM logic currently unsupported
-      if (usdcChain === CHAIN_IDs.SOLANA || usdtChain === CHAIN_IDs.SOLANA) {
-        return;
-      }
-      rebalanceRoutes.push({
-        sourceChain: usdcChain,
-        sourceToken: "USDC",
-        destinationChain: usdtChain,
-        destinationToken: "USDT",
-        maxAmountToTransfer,
-        adapter: "hyperliquid",
-      });
-      rebalanceRoutes.push({
-        sourceChain: usdtChain,
-        sourceToken: "USDT",
-        destinationChain: usdcChain,
-        destinationToken: "USDC",
-        maxAmountToTransfer,
-        adapter: "hyperliquid",
       });
     });
   });

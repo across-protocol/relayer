@@ -11,17 +11,11 @@ import {
   ConvertDecimals,
   ERC20,
   ethers,
-  EventSearchConfig,
   EvmAddress,
   fromWei,
-  getBlockForTimestamp,
-  getCctpDomainForChainId,
-  getCctpV2TokenMessenger,
-  getEndpointId,
   getNetworkName,
   getProvider,
   getRedisCache,
-  isDefined,
   isWeekday,
   MAX_SAFE_ALLOWANCE,
   paginatedEventQuery,
@@ -31,11 +25,9 @@ import {
   winston,
   forEachAsync,
   ZERO_ADDRESS,
-  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
-import { EVM_OFT_MESSENGERS } from "../../common";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { utils as sdkUtils } from "@across-protocol/sdk";
@@ -150,7 +142,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   private maxSlippagePct = 0.02; // @todo make this configurable
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
-    super(logger, baseSigner);
+    super(logger, config, baseSigner);
   }
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
@@ -460,19 +452,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     await this._placeMarketOrder(orderDetails, cloid, this.maxSlippagePct);
   }
 
-  private _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
-  }
-
-  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
-    const fromTimestamp = this._getFromTimestamp();
-    const provider = await getProvider(chainId);
-    const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
-    const toBlock = await provider.getBlock("latest");
-    const maxLookBack = this.config.maxBlockLookBack[chainId];
-    return { from: fromBlock, to: toBlock.number, maxLookBack };
-  }
-
   // TODO: Pass in from and to timestamps here to make sure updates across all chains are in sync.
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
@@ -675,16 +654,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
 
-      // At this point, we know the withdrawal has finalized.
-      const hyperevmBalance = await this._getERC20Balance(
-        CHAIN_IDs.HYPEREVM,
-        this._getTokenInfo(orderDetails.destinationToken, CHAIN_IDs.HYPEREVM).address.toNative()
-      );
-      if (hyperevmBalance.lt(expectedAmountToReceive)) {
-        throw new Error(
-          `Not enough balance on HyperEVM to cover the expected withdrawal amount: ${expectedAmountToReceive.toString()}`
-        );
-      }
       if (orderDetails.destinationChain === CHAIN_IDs.HYPEREVM) {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -693,7 +662,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       } else {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Sending order with cloid ${cloid} to final destination chain ${orderDetails.destinationChain}, and deleting order details from Redis!`,
+          message: `Sending order with cloid ${cloid} from HyperEVM to final destination chain ${orderDetails.destinationChain}, and deleting order details from Redis!`,
+          expectedAmountToReceive: expectedAmountToReceive.toString(),
         });
         await this._bridgeToChain(
           orderDetails.destinationToken,
@@ -1108,108 +1078,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return unfinalizedWithdrawalAmount;
   }
 
-  private async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
-    if (
-      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(originChain) ||
-      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(destinationChain)
-    ) {
-      return bnZero;
-    }
-    const originMessenger = await this._getOftMessenger(originChain);
-    const destinationMessenger = await this._getOftMessenger(destinationChain);
-    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
-    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
-    // Fetch OFT events to determine OFT send statuses.
-    const [sent, received] = await Promise.all([
-      paginatedEventQuery(
-        originMessenger,
-        // guid (Topic[1]) not filtered -> null, dstEid (non-indexed) -> undefined, fromAddress (Topic[3]) filtered
-        originMessenger.filters.OFTSent(null, undefined, this.baseSignerAddress.toNative()),
-        originEventSearchConfig
-      ),
-      paginatedEventQuery(
-        destinationMessenger,
-        // guid (Topic[1]) not filtered -> null, srcEid (non-indexed) -> undefined, toAddress (Topic[3]) filtered
-        destinationMessenger.filters.OFTReceived(null, undefined, this.baseSignerAddress.toNative()),
-        destinationEventSearchConfig
-      ),
-    ]);
-
-    const dstEid = getEndpointId(destinationChain);
-    const srcEid = getEndpointId(originChain);
-
-    const bridgeInitiationEvents = sent.filter((event) => event.args.dstEid === dstEid);
-    const bridgeFinalizationEvents = received.filter((event) => event.args.srcEid === srcEid);
-    const finalizedGuids = new Set<string>(bridgeFinalizationEvents.map((event) => event.args.guid));
-
-    // We want to make sure that amounts are denominated in destination chain decimals, in case origin and destination
-    // tokens have different decimal precision:
-    const amountConverter = this._getAmountConverter(
-      originChain,
-      this._getTokenInfo("USDT", originChain).address,
-      destinationChain,
-      this._getTokenInfo("USDT", destinationChain).address
-    );
-    let outstandingWithdrawalAmount = bnZero;
-    for (const event of bridgeInitiationEvents) {
-      if (!finalizedGuids.has(event.args.guid)) {
-        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(amountConverter(event.args.amountReceivedLD));
-      }
-    }
-    return outstandingWithdrawalAmount;
-  }
-
-  private async _getUnfinalizedCctpBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
-    if (!getCctpV2TokenMessenger(originChain)?.address || !getCctpV2TokenMessenger(destinationChain)?.address) {
-      return bnZero;
-    }
-    const originMessenger = await this._getCctpMessenger(originChain);
-    const destinationMessenger = await this._getCctpMessenger(destinationChain);
-    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
-    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
-    // Fetch CCTP events to determine CCTP send statuses.
-    const [sent, received] = await Promise.all([
-      paginatedEventQuery(
-        originMessenger,
-        originMessenger.filters.DepositForBurn(
-          this._getTokenInfo("USDC", originChain).address.toNative(),
-          undefined,
-          this.baseSignerAddress.toNative()
-        ),
-        originEventSearchConfig
-      ),
-      // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
-      // for all use cases of this adapter.
-      paginatedEventQuery(
-        destinationMessenger,
-        destinationMessenger.filters.MintAndWithdraw(
-          this.baseSignerAddress.toNative(),
-          undefined,
-          this._getTokenInfo("USDC", destinationChain).address.toNative()
-        ),
-        destinationEventSearchConfig
-      ),
-    ]);
-    const dstDomain = getCctpDomainForChainId(destinationChain);
-    const bridgeInitiationEvents = sent.filter((event) => event.args.destinationDomain === dstDomain);
-
-    const counted = new Set<number>();
-    const withdrawalAmount = bridgeInitiationEvents.reduce((totalAmount, { args: sendArgs }) => {
-      const matchingFinalizedEvent = received.find(({ args: receiveArgs }, idx) => {
-        // Protect against double-counting the same l1 withdrawal events.
-        const receivedAmount = toBN(receiveArgs.amount.toString()).add(toBN(receiveArgs.feeCollected.toString()));
-        if (counted.has(idx) || !receivedAmount.eq(toBN(sendArgs.amount.toString()))) {
-          return false;
-        }
-
-        counted.add(idx);
-        return true;
-      });
-      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(sendArgs.amount);
-    }, bnZero);
-    return withdrawalAmount;
-  }
-
   private _assertInitialized(): void {
     assert(this.initialized, "HyperliquidStablecoinSwapAdapter not initialized");
   }
@@ -1274,7 +1142,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             sourceChain,
             this._getTokenInfo(sourceToken, sourceChain).address,
             HYPEREVM,
-            this._getTokenInfo(destinationToken, HYPEREVM).address
+            this._getTokenInfo(sourceToken, HYPEREVM).address
           );
 
           // Check if this order is pending, if it is, then do nothing, but if it has finalized, then we need to subtract

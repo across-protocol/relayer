@@ -1,6 +1,13 @@
+import { CCTP_NO_DOMAIN, OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction, TransactionClient } from "../../clients";
-import { CCTP_MAX_SEND_AMOUNT, IOFT_ABI_FULL, OFT_DEFAULT_FEE_CAP, OFT_FEE_CAP_OVERRIDES } from "../../common";
+import {
+  CCTP_MAX_SEND_AMOUNT,
+  EVM_OFT_MESSENGERS,
+  IOFT_ABI_FULL,
+  OFT_DEFAULT_FEE_CAP,
+  OFT_FEE_CAP_OVERRIDES,
+} from "../../common";
 import { TokenInfo } from "../../interfaces";
 import {
   Address,
@@ -12,9 +19,11 @@ import {
   createFormatFunction,
   ERC20,
   ethers,
+  EventSearchConfig,
   EvmAddress,
   fixedPointAdjustment,
   formatToAddress,
+  getBlockForTimestamp,
   getCctpDomainForChainId,
   getCctpV2TokenMessenger,
   getEndpointId,
@@ -23,16 +32,20 @@ import {
   getProvider,
   getTokenInfo,
   getV2DepositForBurnMaxFee,
+  isDefined,
   isStargateBridge,
   MessagingFeeStruct,
+  paginatedEventQuery,
   roundAmountToSend,
   SendParamStruct,
   Signer,
+  toBN,
   TOKEN_EQUIVALENCE_REMAPPING,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
+import { RebalancerConfig } from "../RebalancerConfig";
 
 export interface OrderDetails {
   sourceToken: string;
@@ -55,7 +68,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // TODO: Add redis functions here:
 
-  constructor(readonly logger: winston.Logger, readonly baseSigner: Signer) {
+  constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     this.transactionClient = new TransactionClient(logger);
   }
 
@@ -212,6 +225,29 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const erc20 = new Contract(tokenAddress, ERC20.abi, connectedSigner);
     const balance = await erc20.balanceOf(this.baseSignerAddress.toNative());
     return BigNumber.from(balance.toString());
+  }
+
+  /**
+   * @notice Returns true if the the token on the chain can be bridged to another chain that can be used
+   * for the adapter.
+   * @param chainId
+   * @param token
+   * @returns Boolean indicating if the token can be bridged to another chain to be subsequently used by the adapter.
+   */
+  protected _chainIsBridgeable(chainId: number, token: string): boolean {
+    if (token === "USDT") {
+      return (
+        PRODUCTION_NETWORKS[chainId].oftEid !== OFT_NO_EID &&
+        EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId)
+      );
+    } else if (token === "USDC") {
+      return (
+        PRODUCTION_NETWORKS[chainId].cctpDomain === CCTP_NO_DOMAIN ||
+        !getCctpV2TokenMessenger(chainId)?.address !== undefined
+      );
+    } else {
+      return false;
+    }
   }
 
   protected async _bridgeToChain(
@@ -384,6 +420,121 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
     await this._submitTransaction(withdrawTxn);
     return amountToBridge;
+  }
+
+  protected _getFromTimestamp(): number {
+    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
+  }
+
+  protected async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
+    const fromTimestamp = this._getFromTimestamp();
+    const provider = await getProvider(chainId);
+    const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
+    const toBlock = await provider.getBlock("latest");
+    const maxLookBack = this.config.maxBlockLookBack[chainId];
+    return { from: fromBlock, to: toBlock.number, maxLookBack };
+  }
+
+  protected async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
+    if (
+      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(originChain) ||
+      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(destinationChain)
+    ) {
+      return bnZero;
+    }
+    const originMessenger = await this._getOftMessenger(originChain);
+    const destinationMessenger = await this._getOftMessenger(destinationChain);
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    // Fetch OFT events to determine OFT send statuses.
+    const [sent, received] = await Promise.all([
+      paginatedEventQuery(
+        originMessenger,
+        // guid (Topic[1]) not filtered -> null, dstEid (non-indexed) -> undefined, fromAddress (Topic[3]) filtered
+        originMessenger.filters.OFTSent(null, undefined, this.baseSignerAddress.toNative()),
+        originEventSearchConfig
+      ),
+      paginatedEventQuery(
+        destinationMessenger,
+        // guid (Topic[1]) not filtered -> null, srcEid (non-indexed) -> undefined, toAddress (Topic[3]) filtered
+        destinationMessenger.filters.OFTReceived(null, undefined, this.baseSignerAddress.toNative()),
+        destinationEventSearchConfig
+      ),
+    ]);
+
+    const dstEid = getEndpointId(destinationChain);
+    const srcEid = getEndpointId(originChain);
+
+    const bridgeInitiationEvents = sent.filter((event) => event.args.dstEid === dstEid);
+    const bridgeFinalizationEvents = received.filter((event) => event.args.srcEid === srcEid);
+    const finalizedGuids = new Set<string>(bridgeFinalizationEvents.map((event) => event.args.guid));
+
+    // We want to make sure that amounts are denominated in destination chain decimals, in case origin and destination
+    // tokens have different decimal precision:
+    const amountConverter = this._getAmountConverter(
+      originChain,
+      this._getTokenInfo("USDT", originChain).address,
+      destinationChain,
+      this._getTokenInfo("USDT", destinationChain).address
+    );
+    let outstandingWithdrawalAmount = bnZero;
+    for (const event of bridgeInitiationEvents) {
+      if (!finalizedGuids.has(event.args.guid)) {
+        outstandingWithdrawalAmount = outstandingWithdrawalAmount.add(amountConverter(event.args.amountReceivedLD));
+      }
+    }
+    return outstandingWithdrawalAmount;
+  }
+
+  protected async _getUnfinalizedCctpBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
+    if (!getCctpV2TokenMessenger(originChain)?.address || !getCctpV2TokenMessenger(destinationChain)?.address) {
+      return bnZero;
+    }
+    const originMessenger = await this._getCctpMessenger(originChain);
+    const destinationMessenger = await this._getCctpMessenger(destinationChain);
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    // Fetch CCTP events to determine CCTP send statuses.
+    const [sent, received] = await Promise.all([
+      paginatedEventQuery(
+        originMessenger,
+        originMessenger.filters.DepositForBurn(
+          this._getTokenInfo("USDC", originChain).address.toNative(),
+          undefined,
+          this.baseSignerAddress.toNative()
+        ),
+        originEventSearchConfig
+      ),
+      // @dev: First parameter in MintAndWithdraw is mintRecipient, this should be the same as the fromAddress
+      // for all use cases of this adapter.
+      paginatedEventQuery(
+        destinationMessenger,
+        destinationMessenger.filters.MintAndWithdraw(
+          this.baseSignerAddress.toNative(),
+          undefined,
+          this._getTokenInfo("USDC", destinationChain).address.toNative()
+        ),
+        destinationEventSearchConfig
+      ),
+    ]);
+    const dstDomain = getCctpDomainForChainId(destinationChain);
+    const bridgeInitiationEvents = sent.filter((event) => event.args.destinationDomain === dstDomain);
+
+    const counted = new Set<number>();
+    const withdrawalAmount = bridgeInitiationEvents.reduce((totalAmount, { args: sendArgs }) => {
+      const matchingFinalizedEvent = received.find(({ args: receiveArgs }, idx) => {
+        // Protect against double-counting the same l1 withdrawal events.
+        const receivedAmount = toBN(receiveArgs.amount.toString()).add(toBN(receiveArgs.feeCollected.toString()));
+        if (counted.has(idx) || !receivedAmount.eq(toBN(sendArgs.amount.toString()))) {
+          return false;
+        }
+
+        counted.add(idx);
+        return true;
+      });
+      return isDefined(matchingFinalizedEvent) ? totalAmount : totalAmount.add(sendArgs.amount);
+    }, bnZero);
+    return withdrawalAmount;
   }
 
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
