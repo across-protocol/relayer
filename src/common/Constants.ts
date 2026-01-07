@@ -191,12 +191,11 @@ const resolveChainBundleBuffers = () => {
   };
 
   return Object.fromEntries(
-    Object.entries(PUBLIC_NETWORKS)
-      .map(([_chainId, { family }]) => {
-        const chainId = Number(_chainId);
-        const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
-        return [chainId, buffer];
-      })
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+      return [chainId, buffer];
+    })
   );
 };
 export const BUNDLE_END_BLOCK_BUFFERS = resolveChainBundleBuffers();
