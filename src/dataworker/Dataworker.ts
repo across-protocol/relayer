@@ -379,7 +379,7 @@ export class Dataworker {
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock,
-      undefined,
+      undefined, // inherit env-defined proposal end block buffers.
       true // optimistic!
     );
 
