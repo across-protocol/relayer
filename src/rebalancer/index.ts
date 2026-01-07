@@ -14,8 +14,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("0", 6),
-      USDT: toBNWei("20", 6),
+      USDC: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
     },
     42161: {
       USDT: toBNWei("0", 6),
@@ -36,14 +36,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("8", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
   };
@@ -59,9 +59,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const maxAmountToTransfer = toBNWei("10", 6);
   const rebalanceRoutes: RebalanceRoute[] = [
     {
-      sourceChain: CHAIN_IDs.HYPEREVM,
+      sourceChain: CHAIN_IDs.OPTIMISM,
       sourceToken: "USDC",
-      destinationChain: CHAIN_IDs.OPTIMISM,
+      destinationChain: CHAIN_IDs.HYPEREVM,
       destinationToken: "USDT",
       maxAmountToTransfer,
       adapter: "binance",

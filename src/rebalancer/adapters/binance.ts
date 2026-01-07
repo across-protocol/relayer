@@ -1,5 +1,6 @@
 import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
+  acrossApi,
   assert,
   BigNumber,
   BINANCE_NETWORKS,
@@ -7,6 +8,7 @@ import {
   CHAIN_IDs,
   Coin,
   Contract,
+  defiLlama,
   ERC20,
   forEachAsync,
   fromWei,
@@ -17,16 +19,22 @@ import {
   getProvider,
   getRedisCache,
   isDefined,
+  isWeekday,
+  coingecko,
   paginatedEventQuery,
+  PriceClient,
   Signer,
   toBNWei,
   winston,
+  ConvertDecimals,
+  TOKEN_SYMBOLS_MAP,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
-import { AugmentedTransaction } from "../../clients";
+import { AugmentedTransaction, getAcrossHost } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
+import { utils as sdkUtils } from "@across-protocol/sdk";
 
 enum STATUS {
   PENDING_BRIDGE_TO_BINANCE_NETWORK,
@@ -48,6 +56,7 @@ interface SPOT_MARKET_META {
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
   private availableRoutes: RebalanceRoute[];
+  private priceClient: PriceClient;
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
@@ -88,6 +97,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   };
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     super(logger, config, baseSigner);
+    this.priceClient = new PriceClient(logger, [
+      new acrossApi.PriceFeed({ host: getAcrossHost(CHAIN_IDs.MAINNET) }),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
+    ]);
   }
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     await super.initialize(_availableRoutes);
@@ -198,11 +212,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const maximumWithdrawalSize = toBNWei(withdrawMax, sourceTokenInfo.decimals);
     assert(
       expectedAmountToWithdraw.gte(minimumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on destination chain`
+      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is less than minimum withdrawal size ${minimumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
     );
     assert(
       expectedAmountToWithdraw.lte(maximumWithdrawalSize),
-      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on destination chain`
+      `Expected amount to withdraw ${expectedAmountToWithdraw.toString()} is greater than maximum withdrawal size ${maximumWithdrawalSize.toString()} on Binance destination chain ${destinationEntrypointNetwork}`
     );
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
@@ -302,6 +316,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const destinationCoin = await this._getAccountCoins(destinationToken);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const withdrawFee = toBNWei(
       destinationCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork])
         .withdrawFee,
@@ -334,15 +349,81 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       spreadPct = 1 - latestPrice;
     }
     const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
-    const opportunityCostOfCapitalPct = 0; // todo.
-    const opportunityCostOfCapital = toBNWei(opportunityCostOfCapitalPct, 18)
+
+    // Bridge to Binance deposit network Fee:
+    let bridgeToBinanceFee = bnZero;
+    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
+    if (binanceDepositNetwork !== sourceChain) {
+      if (sourceToken === "USDC") {
+        // CCTP Fee:
+        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(sourceChain, binanceDepositNetwork)).fast;
+        bridgeToBinanceFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
+      } else if (sourceToken === "USDT") {
+        // OFT Fee:
+        const { feeStruct } = await this._getOftQuoteSend(sourceChain, binanceDepositNetwork, amountToTransfer);
+        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
+        // This logic would need to change to support non stablecoin swaps.
+        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(sourceChain);
+        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, sourceChain).decimals;
+        const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
+        const price = await this.priceClient.getPriceByAddress(
+          nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[sourceChain]
+        );
+        const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
+        bridgeToBinanceFee = nativeFeeSourceDecimals;
+      }
+    }
+
+    // Bridge from Binance withdrawal network fee:
+    let bridgeFromBinanceFee = bnZero;
+    const binanceWithdrawNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
+    if (binanceWithdrawNetwork !== destinationChain) {
+      if (destinationToken === "USDC") {
+        // CCTP Fee:
+        const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(binanceDepositNetwork, destinationChain))
+          .fast;
+        bridgeFromBinanceFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
+      } else if (destinationToken === "USDT") {
+        // OFT Fee:
+        const { feeStruct } = await this._getOftQuoteSend(binanceWithdrawNetwork, destinationChain, amountToTransfer);
+        // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
+        // This logic would need to change to support non stablecoin swaps.
+        const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(binanceWithdrawNetwork);
+        const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, binanceWithdrawNetwork).decimals;
+        const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
+        const price = await this.priceClient.getPriceByAddress(
+          nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[sourceChain]
+        );
+        const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+        const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
+        bridgeFromBinanceFee = nativeFeeSourceDecimals;
+      }
+    }
+
+    // - Opportunity cost of capital when withdrawing from 999. The rudimentary logic here is to assume 4bps when the
+    // OFT rebalance would end on a weekday.
+    //  @todo a better way to do this might be to use historical fills to calculate the relayer's
+    // latest profitability % to forecast the opportunity cost of capital.
+    const oftRebalanceEndTime =
+      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() + 11 * 60 * 60 * 1000;
+    const opportunityCostOfCapitalBps =
+      destinationToken === "USDT" &&
+      destinationChain !== binanceWithdrawNetwork &&
+      (isWeekday() || isWeekday(new Date(oftRebalanceEndTime)))
+        ? 4
+        : 0;
+    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
       .mul(amountToTransfer)
-      .div(toBNWei(100, 18));
+      .div(toBNWei(10000, 18));
+
     const totalFee = tradeFee
       .add(withdrawFeeConvertedToSourceToken)
       .add(slippage)
       .add(spreadFee)
-      .add(opportunityCostOfCapital);
+      .add(bridgeToBinanceFee)
+      .add(bridgeFromBinanceFee)
+      .add(opportunityCostOfCapitalFixed);
 
     if (debugLog) {
       this.logger.debug({
@@ -360,7 +441,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         estimatedTakerPrice: latestPrice,
         spreadPct: spreadPct * 100,
         spreadFee: spreadFee.toString(),
-        opportunityCostOfCapitalFixed: opportunityCostOfCapital.toString(),
+        opportunityCostOfCapitalFixed: opportunityCostOfCapitalFixed.toString(),
+        bridgeToBinanceFee: bridgeToBinanceFee.toString(),
+        bridgeFromBinanceFee: bridgeFromBinanceFee.toString(),
         totalFee: totalFee.toString(),
       });
     }
