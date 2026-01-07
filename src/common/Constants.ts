@@ -4,6 +4,7 @@ import { isDefined } from "../utils/TypeGuards";
 import {
   chainIsOPStack,
   chainIsOrbit,
+  chainIsProd,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   Signer,
@@ -166,50 +167,40 @@ export const CHAIN_MAX_BLOCK_LOOKBACK = resolveRpcConfig();
 // also give enough buffer time so that any reasonable fill on the chain
 // can be matched with a deposit on the origin chain, so something like
 // ~1-2 mins per chain.
-export const BUNDLE_END_BLOCK_BUFFERS = {
-  [CHAIN_IDs.ALEPH_ZERO]: 0, // Chain is disabled.
-  [CHAIN_IDs.ARBITRUM]: 240, // ~0.25s/block. Arbitrum is a centralized sequencer
-  [CHAIN_IDs.BASE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.BLAST]: 60,
-  [CHAIN_IDs.BOBA]: 0, // **UPDATE** 288 is disabled so there should be no buffer.
-  [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 finality block time https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc
-  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
-  [CHAIN_IDs.LENS]: 120, // ~1s/block. Uses same sequencing logic as ZkSync.
-  [CHAIN_IDs.LINEA]: 40, // At 3s/block, 2 mins = 40 blocks.
-  [CHAIN_IDs.LISK]: 60, // 2s/block gives 2 mins buffer time.
-  [CHAIN_IDs.INK]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.MAINNET]: 5, // 12s/block
-  [CHAIN_IDs.MODE]: 60, // 2s/block. Same finality profile as Optimism
-  [CHAIN_IDs.MONAD]: 150, // ~400ms/block. 0.8s finality
-  [CHAIN_IDs.OPTIMISM]: 60, // 2s/block
-  [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
-  [CHAIN_IDs.POLYGON]: 128, // 2s/block. Polygon reorgs often so this number is set larger than the largest observed reorg.
-  [CHAIN_IDs.REDSTONE]: 0, // Disabled
-  [CHAIN_IDs.SCROLL]: 40, // ~3s/block
-  [CHAIN_IDs.SOLANA]: 150, // ~400ms/block
-  [CHAIN_IDs.SONEIUM]: 60, // 2s/block
-  [CHAIN_IDs.UNICHAIN]: 120, // 1s/block gives 2 mins buffer time
-  [CHAIN_IDs.WORLD_CHAIN]: 60, // 2s/block
-  [CHAIN_IDs.ZK_SYNC]: 120, // ~1s/block. ZkSync is a centralized sequencer but is relatively unstable so this is kept higher than 0
-  [CHAIN_IDs.ZORA]: 60, // 2s/block
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.INK_SEPOLIA]: 0,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
-  [CHAIN_IDs.LENS_SEPOLIA]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.MONAD_TESTNET]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.PLASMA_TESTNET]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.TATARA]: 0,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.BOB_SEPOLIA]: 0,
+const resolveChainBundleBuffers = () => {
+  const DEFAULT_CHAIN_BUFFER = 1024;
+
+  const defaultBuffers = {
+    [ChainFamily.OP_STACK]: 60, // 2s/block
+    [ChainFamily.ORBIT]: 240, // ~250ms/block
+    [ChainFamily.SVM]: 150, // ~400ms/slot
+    [ChainFamily.ZK_STACK]: 120, // ~1s/block
+  };
+
+  const buffers = {
+    [CHAIN_IDs.ARBITRUM]: defaultBuffers[ChainFamily.ORBIT], // Inherit Orbit default.
+    [CHAIN_IDs.BSC]: 5, // 2x the average 2.5 block finality (https://www.bnbchain.org/en/blog/the-coming-fastfinality-on-bsc)
+    [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
+    [CHAIN_IDs.LINEA]: 40, // ~3s/block
+    [CHAIN_IDs.MAINNET]: 5, // ~12s/block
+    [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
+    [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
+    [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
+    [CHAIN_IDs.SCROLL]: 40, // ~3s/block.
+    [CHAIN_IDs.ZK_SYNC]: defaultBuffers[ChainFamily.ZK_STACK], // Inherit ZK_STACK default.
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS)
+      .map(([_chainId, { family }]) => {
+        const chainId = Number(_chainId);
+        const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
+        return [chainId, buffer];
+      })
+      .filter(([, buffer]) => isDefined(buffer))
+  );
 };
+export const BUNDLE_END_BLOCK_BUFFERS = resolveChainBundleBuffers();
 
 export const DEFAULT_RELAYER_GAS_PADDING = ".15"; // Padding on token- and message-based relayer fill gas estimates.
 export const DEFAULT_RELAYER_GAS_MULTIPLIER = "1.0"; // Multiplier on pre-profitability token-only gas estimates.
