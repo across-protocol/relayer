@@ -432,7 +432,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 1 day ago
+    return Math.floor(Date.now() / 1000) - 60 * 60 * 12; // 12 hours ago
   }
 
   protected async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {

@@ -70,6 +70,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     CHAIN_IDs.OPTIMISM,
     CHAIN_IDs.MAINNET,
     CHAIN_IDs.UNICHAIN,
+    // CHAIN_IDs.BASE, // This shouldn't work and should fail on initialization
   ];
   const usdcChains = [
     CHAIN_IDs.HYPEREVM,
