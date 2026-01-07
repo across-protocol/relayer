@@ -197,7 +197,6 @@ const resolveChainBundleBuffers = () => {
         const buffer = chainIsProd(chainId) ? buffers[chainId] ?? defaultBuffers[family] ?? DEFAULT_CHAIN_BUFFER : 0;
         return [chainId, buffer];
       })
-      .filter(([, buffer]) => isDefined(buffer))
   );
 };
 export const BUNDLE_END_BLOCK_BUFFERS = resolveChainBundleBuffers();
