@@ -635,17 +635,12 @@ export class Dataworker {
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
-    const widestPossibleExpectedBlockRange = await getWidestPossibleExpectedBlockRange(
-      chainIds,
+    const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
+      // Mainnet bundle start block for pending bundle is the first entry in the first entry.
+      nextBundleMainnetStartBlock,
       chainIds.map(() => 1), // Require at least 1 block confirmation on top of the proposal.
-      this.clients,
-      this.clients.hubPoolClient.latestHeightSearched,
-      // We only want to count enabled chains at the same time that we are loading chain ID indices.
-      this.clients.configStoreClient.getEnabledChains(nextBundleMainnetStartBlock),
-      false // Not optimistic
     );
-
     const { valid, reason, bundleData, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
       widestPossibleExpectedBlockRange,
