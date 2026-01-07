@@ -248,9 +248,22 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         destinationChain: getNetworkName(destinationChain),
         amountToTransfer: amountToTransfer.toString(),
       });
+      const balance = await this._getERC20Balance(
+        sourceChain,
+        this._getTokenInfo(sourceToken, sourceChain).address.toNative()
+      );
+      if (balance.lt(amountToTransfer)) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `Not enough balance on ${sourceChain} to bridge ${sourceToken} to ${binanceDepositNetwork} for ${amountToTransfer.toString()}, waiting...`,
+          balance: balance.toString(),
+          amountToTransfer: amountToTransfer.toString(),
+        });
+        return;
+      }
       const amountReceivedFromBridge = await this._bridgeToChain(
-        rebalanceRoute.sourceToken,
-        rebalanceRoute.sourceChain,
+        sourceToken,
+        sourceChain,
         binanceDepositNetwork,
         amountToTransfer
       );
@@ -349,6 +362,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       spreadPct = 1 - latestPrice;
     }
     const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
+
+    // @todo: Move the following two components to the base adapter:
 
     // Bridge to Binance deposit network Fee:
     let bridgeToBinanceFee = bnZero;
@@ -660,7 +675,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // a bridge to the final non-Binance network destination chain if necessary.
 
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { destinationToken, destinationChain } = orderDetails;
+      const { destinationToken, destinationChain, sourceToken, sourceChain, amountToTransfer } = orderDetails;
       const { matchingFill, expectedAmountToReceive: expectedAmountToReceiveString } =
         await this._getMatchingFillForCloid(cloid);
       if (!matchingFill) {
@@ -683,7 +698,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         continue;
       } // Only proceed to update the order status if it has finalized:
       const destinationTokenInfo = this._getTokenInfo(destinationToken, binanceWithdrawalNetwork);
-      const expectedAmountToReceive = toBNWei(expectedAmountToReceiveString, destinationTokenInfo.decimals);
+      const expectedAmountToReceivePreFees = toBNWei(expectedAmountToReceiveString, destinationTokenInfo.decimals);
+      const expectedCost = await this.getEstimatedCost(
+        {
+          sourceToken,
+          sourceChain,
+          destinationToken,
+          destinationChain,
+          maxAmountToTransfer: amountToTransfer,
+          adapter: "binance",
+        },
+        expectedAmountToReceivePreFees,
+        false
+      );
+      const expectedAmountToReceive = expectedAmountToReceivePreFees.sub(expectedCost);
+
       const unfinalizedWithdrawalAmount =
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] ??
         (await this._getUnfinalizedWithdrawalAmount(
@@ -709,6 +738,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // Check if we need to bridge the withdrawal to the final destination chain:
       const requiresBridgeAfterWithdrawal = binanceWithdrawalNetwork !== destinationChain;
       if (requiresBridgeAfterWithdrawal) {
+        const balance = await this._getERC20Balance(
+          binanceWithdrawalNetwork,
+          this._getTokenInfo(destinationToken, binanceWithdrawalNetwork).address.toNative()
+        );
+        if (balance.lt(expectedAmountToReceive)) {
+          this.logger.debug({
+            at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+            message: `Not enough balance on ${binanceWithdrawalNetwork} to bridge ${destinationToken} to ${binanceWithdrawalNetwork} for ${expectedAmountToReceive.toString()}, waiting...`,
+            balance: balance.toString(),
+            amountToTransfer: expectedAmountToReceive.toString(),
+          });
+          continue;
+        }
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
           message: `Sending order with cloid ${cloid} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain}, and deleting order details from Redis!`,

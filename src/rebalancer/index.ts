@@ -32,7 +32,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     130: {
       USDC: toBNWei("0", 6),
       USDT: toBNWei("0", 6),
-    }
+    },
   };
 
   const targetBalances: TargetBalanceConfig = {

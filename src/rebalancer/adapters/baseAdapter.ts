@@ -264,13 +264,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       throw new Error("origin and destination chain are the same");
     }
 
-    const balance = await this._getERC20Balance(originChain, this._getTokenInfo(token, originChain).address.toNative());
-    if (balance.lt(expectedAmountToTransfer)) {
-      throw new Error(
-        `Not enough balance on ${originChain} to bridge ${token} to ${destinationChain} for ${expectedAmountToTransfer.toString()}`
-      );
-    }
-
     switch (token) {
       case "USDT":
         return await this._sendOftBridge(originChain, destinationChain, expectedAmountToTransfer);
