@@ -379,6 +379,7 @@ export class Dataworker {
     const blockRangesForProposal = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
       nextBundleMainnetStartBlock,
+      undefined,
       true
     );
 
@@ -1569,9 +1570,11 @@ export class Dataworker {
     });
 
     const nextBundleMainnetStartBlock = this.getNextHubChainBundleStartBlock();
+    const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(nextBundleMainnetStartBlock);
     const widestPossibleExpectedBlockRange = await this._getWidestPossibleBlockRangeForNextBundle(
       spokePoolClients,
-      nextBundleMainnetStartBlock
+      nextBundleMainnetStartBlock,
+      chainIds.map(() => 1), // Require at least 1 block confirmation on top of the proposal.
     );
     const { valid, reason, expectedTrees } = await this.validateRootBundle(
       hubPoolChainId,
@@ -2849,14 +2852,17 @@ export class Dataworker {
   _getWidestPossibleBlockRangeForNextBundle(
     spokePoolClients: SpokePoolClientsByChain,
     mainnetBundleStartBlock: number,
+    endBlockBuffers?: number[],
     optimistic = false
   ): Promise<number[][]> {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
+    endBlockBuffers ??= getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer);
+
     return getWidestPossibleExpectedBlockRange(
       // We only want as many block ranges as there are chains enabled at the time of the bundle start block.
       chainIds,
       spokePoolClients,
-      getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer),
+      endBlockBuffers,
       this.clients,
       this.clients.hubPoolClient.latestHeightSearched,
       // We only want to count enabled chains at the same time that we are loading chain ID indices.
