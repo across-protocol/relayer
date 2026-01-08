@@ -218,46 +218,38 @@ export const IGNORED_HUB_EXECUTED_BUNDLES: number[] = [];
 // This distance should consider re-orgs, but also the time needed for various RPC providers to agree on chain state.
 // Provider caching will not be allowed for queries whose responses depend on blocks closer than this many blocks.
 // This is intended to be conservative.
-export const CHAIN_CACHE_FOLLOW_DISTANCE: { [chainId: number]: number } = {
-  [CHAIN_IDs.ARBITRUM]: 32,
-  [CHAIN_IDs.BASE]: 120,
-  [CHAIN_IDs.BLAST]: 120,
-  [CHAIN_IDs.BOBA]: 0,
-  [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
-  [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
-  [CHAIN_IDs.INK]: 120, // Follows Optimism
-  [CHAIN_IDs.LENS]: 512,
-  [CHAIN_IDs.LISK]: 120,
-  [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
-  [CHAIN_IDs.MAINNET]: 128,
-  [CHAIN_IDs.MODE]: 120,
-  [CHAIN_IDs.MONAD]: 150,
-  [CHAIN_IDs.OPTIMISM]: 120,
-  [CHAIN_IDs.PLASMA]: 300,
-  [CHAIN_IDs.POLYGON]: 256,
-  [CHAIN_IDs.SCROLL]: 100,
-  [CHAIN_IDs.SOLANA]: 512,
-  [CHAIN_IDs.SONEIUM]: 120,
-  [CHAIN_IDs.UNICHAIN]: 120,
-  [CHAIN_IDs.WORLD_CHAIN]: 120,
-  [CHAIN_IDs.ZK_SYNC]: 512,
-  [CHAIN_IDs.ZORA]: 120,
-  // Testnets:
-  [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0,
-  [CHAIN_IDs.BASE_SEPOLIA]: 0,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 0,
-  [CHAIN_IDs.INK_SEPOLIA]: 0,
-  [CHAIN_IDs.HYPEREVM_TESTNET]: 0,
-  [CHAIN_IDs.LISK_SEPOLIA]: 0,
-  [CHAIN_IDs.LENS_SEPOLIA]: 0,
-  [CHAIN_IDs.MODE_SEPOLIA]: 0,
-  [CHAIN_IDs.OPTIMISM_SEPOLIA]: 0,
-  [CHAIN_IDs.PLASMA_TESTNET]: 0,
-  [CHAIN_IDs.POLYGON_AMOY]: 0,
-  [CHAIN_IDs.UNICHAIN_SEPOLIA]: 0,
-  [CHAIN_IDs.SEPOLIA]: 0,
-  [CHAIN_IDs.BOB_SEPOLIA]: 0,
+const resolveChainCacheDelay = () => {
+  const DEFAULT_CACHE_DELAY = 512;
+
+  const cacheDelays = {
+    [ChainFamily.ORBIT]: 32,
+    [ChainFamily.OP_STACK]: 120,
+    [ChainFamily.SVM]: 512,
+    [ChainFamily.ZK_STACK]: 512,
+  };
+
+  const cacheDelay = {
+    [CHAIN_IDs.ARBITRUM]: cacheDelays[ChainFamily.ORBIT],
+    [CHAIN_IDs.BSC]: 5, // FastFinality on BSC makes finality time probabilistic but it takes an average of 2.5 blocks.
+    [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
+    [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
+    [CHAIN_IDs.MAINNET]: 128,
+    [CHAIN_IDs.MONAD]: 150,
+    [CHAIN_IDs.PLASMA]: 300,
+    [CHAIN_IDs.POLYGON]: 256,
+    [CHAIN_IDs.SCROLL]: 100,
+    [CHAIN_IDs.ZK_SYNC]: cacheDelays[ChainFamily.ZK_STACK],
+  };
+
+  return Object.fromEntries(
+    Object.entries(PUBLIC_NETWORKS).map(([_chainId, { family }]) => {
+      const chainId = Number(_chainId);
+      const buffer = chainIsProd(chainId) ? cacheDelays[chainId] ?? cacheDelay[family] ?? DEFAULT_CACHE_DELAY : 0;
+      return [chainId, buffer];
+    })
+  );
 };
+export const CHAIN_CACHE_FOLLOW_DISTANCE = resolveChainCacheDelay();
 
 // This is the block distance at which the bot, by default, stores in redis with no TTL.
 // These are all intended to be roughly 2 days of blocks for each chain.
