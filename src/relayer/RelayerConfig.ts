@@ -22,7 +22,7 @@ import {
 } from "../utils";
 import { CommonConfig, ProcessEnv } from "../common";
 import * as Constants from "../common/Constants";
-import { InventoryConfig, TokenBalanceConfig, isAliasConfig } from "../interfaces/InventoryManagement";
+import { InventoryConfig, TokenBalanceConfig, isAliasConfig, SwapRoute } from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
@@ -31,6 +31,7 @@ type DepositConfirmationConfig = {
 
 export class RelayerConfig extends CommonConfig {
   readonly externalListener: boolean;
+  readonly eventListener: boolean;
   readonly listenerPath: { [chainId: number]: string } = {};
   readonly inventoryConfig: InventoryConfig;
   readonly debugProfitability: boolean;
@@ -38,6 +39,7 @@ export class RelayerConfig extends CommonConfig {
   readonly sendingMessageRelaysEnabled: { [chainId: number]: boolean } = {};
   readonly sendingSlowRelaysEnabled: boolean;
   readonly relayerTokens: EvmAddress[];
+  readonly relayerDestinationTokens: { [chainId: number]: Address[] };
   readonly relayerOriginChains: number[] = [];
   readonly relayerDestinationChains: number[] = [];
   readonly relayerGasPadding: BigNumber;
@@ -46,6 +48,8 @@ export class RelayerConfig extends CommonConfig {
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
   readonly acceptInvalidFills: boolean;
+  readonly relayerUseInventoryManager: boolean;
+  readonly inventoryTopic: string;
   // List of depositors we only want to send slow fills for.
   readonly slowDepositors: Address[];
   // Following distances in blocks to guarantee finality on each chain.
@@ -81,6 +85,7 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_EXTERNAL_INVENTORY_CONFIG,
       RELAYER_INVENTORY_CONFIG,
       RELAYER_TOKENS,
+      RELAYER_DESTINATION_TOKENS,
       SEND_RELAYS,
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
@@ -91,11 +96,15 @@ export class RelayerConfig extends CommonConfig {
       RELAYER_TRY_MULTICALL_CHAINS,
       RELAYER_LOGGING_INTERVAL = "30",
       RELAYER_MAINTENANCE_INTERVAL = "60",
+      INVENTORY_TOPIC = "across-relayer-inventory",
+      RELAYER_USE_INVENTORY_MANAGER = "false",
+      RELAYER_EVENT_LISTENER = "false",
     } = env;
     super(env);
 
     // External listeners are dependent on looping mode being configured.
     this.externalListener = this.pollingDelay > 0 && RELAYER_EXTERNAL_LISTENER === "true";
+    this.eventListener = this.externalListener && RELAYER_EVENT_LISTENER === "true";
 
     // Empty means all chains.
     this.relayerOriginChains = JSON.parse(RELAYER_ORIGIN_CHAINS ?? "[]");
@@ -104,6 +113,15 @@ export class RelayerConfig extends CommonConfig {
     // Empty means all tokens.
     this.relayerTokens = JSON.parse(RELAYER_TOKENS ?? "[]").map((token) =>
       toAddressType(ethers.utils.getAddress(token), CHAIN_IDs.MAINNET)
+    );
+    // An empty array for a defined destination chain means that all tokens are supported. To support no tokens
+    // for a destination chain, map the chain to an empty array. For example, to fill only token A on chain C
+    // and fill nothing on chain D, set relayerDestinationTokens: { C: [A], D: [] }
+    this.relayerDestinationTokens = Object.fromEntries(
+      Object.entries(JSON.parse(RELAYER_DESTINATION_TOKENS ?? "{}")).map(([_chainId, tokens]) => {
+        const chainId = Number(_chainId);
+        return [chainId, ((tokens as string[]) ?? []).map((token) => toAddressType(token, Number(chainId)))];
+      })
     );
 
     // SLOW_DEPOSITORS can exist on any network, so their origin network must be inferred based on the structure of the address.
@@ -117,6 +135,9 @@ export class RelayerConfig extends CommonConfig {
     this.tryMulticallChains = JSON.parse(RELAYER_TRY_MULTICALL_CHAINS ?? "[]");
     this.loggingInterval = Number(RELAYER_LOGGING_INTERVAL);
     this.maintenanceInterval = Number(RELAYER_MAINTENANCE_INTERVAL);
+
+    this.inventoryTopic = INVENTORY_TOPIC;
+    this.relayerUseInventoryManager = RELAYER_USE_INVENTORY_MANAGER === "true";
 
     assert(
       !isDefined(RELAYER_EXTERNAL_INVENTORY_CONFIG) || !isDefined(RELAYER_INVENTORY_CONFIG),
@@ -170,6 +191,12 @@ export class RelayerConfig extends CommonConfig {
           );
         }
       });
+
+      // Initialize forceOriginRepayment defaults
+      inventoryConfig.forceOriginRepaymentPerChain ??= {};
+
+      // Initialize repaymentChainOverridePerChain defaults
+      inventoryConfig.repaymentChainOverridePerChain ??= {};
 
       const parseTokenConfig = (
         l1Token: string,
@@ -262,6 +289,39 @@ export class RelayerConfig extends CommonConfig {
             tokenConfigs[effectiveL1Token][chainId] = parseTokenConfig(l1Token, chainId, rawTokenConfig);
           });
         }
+      });
+
+      // Replace symbols in allowed swap routes with addresses.
+      const rawSwapRoutes = inventoryConfig?.allowedSwapRoutes ?? ([] as SwapRoute[]);
+      const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
+      rawSwapRoutes.forEach((rawSwapRoute) => {
+        // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
+        const fromTokens =
+          rawSwapRoute.fromChain === "ALL"
+            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses)
+            : [
+                ethersUtils.isAddress(rawSwapRoute.fromToken)
+                  ? rawSwapRoute.fromToken
+                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.fromToken].addresses[rawSwapRoute.fromChain],
+              ];
+        const toTokens =
+          rawSwapRoute.toChain === "ALL"
+            ? Object.values(TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses)
+            : [
+                ethersUtils.isAddress(rawSwapRoute.toToken)
+                  ? rawSwapRoute.toToken
+                  : TOKEN_SYMBOLS_MAP[rawSwapRoute.toToken].addresses[rawSwapRoute.toChain],
+              ];
+        fromTokens.forEach((fromToken) => {
+          toTokens.forEach((toToken) => {
+            const swapRoute = {
+              ...rawSwapRoute,
+              fromToken,
+              toToken,
+            };
+            swapRoutes.push(swapRoute);
+          });
+        });
       });
     }
 

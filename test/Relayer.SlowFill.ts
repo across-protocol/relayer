@@ -180,6 +180,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       },
       {
         relayerTokens: [],
+        relayerDestinationTokens: {},
         slowDepositors: [],
         minDepositConfirmations: defaultMinDepositConfirmations,
         tryMulticallChains: [],
@@ -241,7 +242,7 @@ describe("Relayer: Initiates slow fill requests", async function () {
       spyLogIncludes(
         spy,
         -10,
-        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1337 would also not be profitable."
+        "Taking repayment for deposit 0 with preferred chains [1] on destination chain 1342 would also not be profitable."
       )
     ).to.be.true;
     expect(lastSpyLogIncludes(spy, "Requested slow fill for deposit.")).to.be.true;

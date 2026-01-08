@@ -64,7 +64,9 @@ export async function arbStackFinalizer(
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   // Recipient addresses are just used to query events.
-  const recipientAddresses = Array.from(_recipientAddresses.keys()).map((address) => address.toNative());
+  const recipientAddresses = Array.from(_recipientAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toNative());
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;

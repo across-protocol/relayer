@@ -14,7 +14,7 @@ import { getCctpV1Messages, isDepositForBurnEvent } from "../../../utils/CCTPUti
 import { FinalizerPromise, AddressesToFinalize } from "../../types";
 import { KeyPairSigner } from "@solana/kit";
 import { finalizeCCTPV1MessagesSVM } from "./svmUtils/l1Tol2";
-import { CCTPMessageStatus } from "../../../common/Constants";
+import { utils } from "@across-protocol/sdk";
 
 /**
  * Finalizes CCTP V1 token and message relays originating on Ethereum and destined to the input L2, as indicated
@@ -43,7 +43,7 @@ export async function cctpV1L1toSvmL2Finalizer(
   };
   const signer: KeyPairSigner = await getKitKeypairFromEvmSigner(_signer);
   const outstandingMessages = await getCctpV1Messages(
-    Array.from(senderAddresses.keys()),
+    Array.from(senderAddresses.keys()).filter((address) => address.isEVM()),
     hubPoolClient.chainId,
     l2SpokePoolClient.chainId,
     searchConfig,
@@ -54,7 +54,7 @@ export async function cctpV1L1toSvmL2Finalizer(
   );
   const statusesGrouped = groupObjectCountsByProp(
     outstandingMessages,
-    (message: { status: CCTPMessageStatus }) => message.status
+    (message: { status: utils.CCTPMessageStatus }) => message.status
   );
   logger.debug({
     at: `Finalizer#CCTPV1L1ToL2Finalizer:${l2SpokePoolClient.chainId}`,

@@ -2,25 +2,19 @@ import {
   BigNumber,
   createFormatFunction,
   getNetworkName,
-  Provider,
   Signer,
   Contract,
   EvmAddress,
   getTokenInfo,
+  toBN,
 } from "../../utils";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import WETH_ABI from "../../common/abi/Weth.json";
 import { BinanceCEXBridge } from "./";
 
 export class BinanceCEXNativeBridge extends BinanceCEXBridge {
-  constructor(
-    l2chainId: number,
-    hubChainId: number,
-    l2Signer: Signer,
-    l1Provider: Provider | Signer,
-    l1Token: EvmAddress
-  ) {
-    super(l2chainId, hubChainId, l2Signer, l1Provider, l1Token);
+  constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
+    super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
   }
 
   async constructWithdrawToL1Txns(
@@ -44,6 +38,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
+      ensureConfirmation: true,
       message: `🎰 Unwrapped WETH on ${network} before withdrawing to L1`,
       mrkdwn: `Unwrapped ${formatter(amount)} ${l2TokenInfo.symbol} before withdrawing from ${network} to L1`,
     };
@@ -55,6 +50,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       method: "",
       args: undefined,
       nonMulticall: true,
+      gasLimit: toBN(21000), // gas limit is 21000 for a base transaction.
       canFailInSimulation: true, // This will fail in simulation since the relayer likely does not have enough ETH to perform the withdrawal before the unwrap step.
       value: amount,
       message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1`,

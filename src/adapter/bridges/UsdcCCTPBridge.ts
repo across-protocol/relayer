@@ -18,9 +18,13 @@ import {
   bnZero,
 } from "../../utils";
 import { processEvent, TransferTokenParams } from "../utils";
-import { getCctpV2TokenMessenger, getV2DepositForBurnMaxFee } from "../../utils/CCTPUtils";
+import {
+  getCctpV2TokenMessenger,
+  getV2DepositForBurnMaxFee,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
+} from "../../utils/CCTPUtils";
 import { CCTP_NO_DOMAIN } from "@across-protocol/constants";
-import { CCTP_MAX_SEND_AMOUNT, CCTPV2_FINALITY_THRESHOLD_STANDARD } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT } from "../../common";
 import { SortableEvent } from "../../interfaces";
 
 export class UsdcCCTPBridge extends BaseBridgeAdapter {

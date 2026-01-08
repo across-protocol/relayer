@@ -12,6 +12,7 @@ import {
   TransactionSimulationResult,
   willSucceed,
   stringifyThrownValue,
+  delay,
 } from "../utils";
 
 export interface AugmentedTransaction {
@@ -32,6 +33,8 @@ export interface AugmentedTransaction {
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
   // with other transactions.
   nonMulticall?: boolean;
+  // Flag indicating whether the client should await the transaction response for onchain confirmation.
+  ensureConfirmation?: boolean;
 }
 
 const { fixedPointAdjustment: fixedPoint } = sdkUtils;
@@ -114,6 +117,22 @@ export class TransactionClient {
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
+
+      if (txn.ensureConfirmation) {
+        for (let checks = 0; checks < 5; ++checks) {
+          try {
+            await response.wait();
+            break;
+          } catch (error) {
+            this.logger.warn({
+              at: "TransactionClient#submit",
+              message: `Transaction ${idx + 1} submission on ${networkName} not found on attempt ${checks}`,
+              errorMessage: error,
+            });
+            await delay(1);
+          }
+        }
+      }
     }
 
     this.logger.info({

@@ -23,7 +23,7 @@ import {
   winston,
 } from "../utils";
 import { ScraperOpts } from "./types";
-import { postEvents } from "./util/ipc";
+import { postBlock, postEvents } from "./util/ipc";
 import { scrapeEvents as _scrapeEvents } from "./util/svm";
 
 type WSProvider = RpcSubscriptions<SolanaRpcSubscriptionsApi>;
@@ -32,6 +32,7 @@ type EventWithData = arch.svm.EventWithData;
 const { NODE_SUCCESS, NODE_APP_ERR } = utils;
 const abortController = new AbortController();
 
+const PROGRAM = "RelayerSpokePoolListenerSVM";
 let logger: winston.Logger;
 let chainId: number;
 let chain: string;
@@ -70,10 +71,10 @@ function logFromEvent(event: Pick<EventWithData, "slot" | "program" | "signature
 }
 
 /**
- * Aggregate utils/scrapeEvents for a series of event names.
- * @param spokePool Ethers Contract instance.
+ * Aggregate utils/scrapeEvents for a series of event names and submit them to the parent process.
+ * @param eventsClient SVM CPI events client instance.
  * @param eventNames The array of events to be queried.
- * @param opts Options to configure event scraping behaviour.
+ * @param opts Options to configure event scraping behaviour, including the target block number.
  * @returns void
  */
 async function scrapeEvents(
@@ -88,7 +89,7 @@ async function scrapeEvents(
   ]);
 
   if (!abortController.signal.aborted) {
-    if (!postEvents(Number(opts.to), currentTime, events.flat().map(logFromEvent))) {
+    if (!postBlock(Number(opts.to), currentTime) || !postEvents(events.flat().map(logFromEvent))) {
       abortController.abort();
     }
   }
@@ -131,8 +132,8 @@ async function listen(
       for await (const update of subscription) {
         const { slot } = update as { slot: bigint }; // Bodge: pretend slots are blocks.
         const currentTime = getCurrentTime(); // @todo Try to subscribe w/ timestamp updates.
-        const events = eventMgr.tick();
-        if (!postEvents(Number(slot), currentTime, events)) {
+
+        if (!postBlock(Number(slot), currentTime)) {
           abortController.abort();
         }
       }
@@ -163,7 +164,10 @@ async function listen(
           .filter(({ name }) => eventNames.includes(name))
           .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-        events.forEach((event) => eventMgr.add(event, providerName));
+        const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
+        if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
+          abortController.abort();
+        }
       }
     } catch (err: unknown) {
       const message = "Caught error on Solana provider.";
@@ -192,6 +196,7 @@ async function listen(
  * Main entry point.
  */
 async function run(argv: string[]): Promise<void> {
+  const at = `${PROGRAM}::run`;
   const minimistOpts = {
     string: ["lookback", "spokepool"],
   };
@@ -232,7 +237,7 @@ async function run(argv: string[]): Promise<void> {
       )
     );
   } else {
-    logger.debug({ at: "RelayerSpokePoolListener::run", message: `Skipping lookback on ${chain}.` });
+    logger.debug({ at, message: `Skipping lookback on ${chain}.` });
   }
 
   const opts = {
@@ -241,15 +246,15 @@ async function run(argv: string[]): Promise<void> {
     lookback: Number(latestSlot - startSlot),
   };
 
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} SpokePool Indexer.`, opts });
+  logger.debug({ at, message: `Starting ${chain} SpokePool Indexer.`, opts });
 
   process.on("SIGHUP", () => {
-    logger.debug({ at: "Relayer#run", message: `Received SIGHUP in ${chain} listener, stopping...` });
+    logger.debug({ at, message: `Received SIGHUP in ${chain} listener, stopping...` });
     abortController.abort();
   });
 
   process.on("disconnect", () => {
-    logger.debug({ at: "Relayer::run", message: `${chain} parent disconnected, stopping...` });
+    logger.debug({ at, message: `${chain} parent disconnected, stopping...` });
     abortController.abort();
   });
 
@@ -260,13 +265,14 @@ async function run(argv: string[]): Promise<void> {
   }
 
   const events = ["FundsDeposited", "FilledRelay"];
-  logger.debug({ at: "RelayerSpokePoolListener::run", message: `Starting ${chain} listener.`, events, opts });
+  logger.debug({ at, message: `Starting ${chain} listener.`, events, opts });
   const eventMgr = new EventManager(logger, chainId, quorum);
 
   await listen(eventMgr, eventsClient, events, quorum);
 }
 
 if (require.main === module) {
+  const at = PROGRAM;
   logger = Logger;
 
   run(process.argv.slice(2))
@@ -274,12 +280,12 @@ if (require.main === module) {
       process.exitCode = NODE_SUCCESS;
     })
     .catch((error) => {
-      logger.error({ at: "RelayerSpokePoolListener", message: `${chain} listener exited with error.`, error });
+      logger.error({ at, message: `${chain} listener exited with error.`, error });
       process.exitCode = NODE_APP_ERR;
     })
     .finally(async () => {
       await disconnectRedisClients();
-      logger.debug({ at: "RelayerSpokePoolListener", message: `Exiting ${chain} listener.` });
+      logger.debug({ at, message: `Exiting ${chain} listener.` });
       exit(Number(process.exitCode));
     });
 }

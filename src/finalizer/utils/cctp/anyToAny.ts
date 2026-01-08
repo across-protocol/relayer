@@ -39,7 +39,7 @@ export async function cctpV2Finalizer(
   const sourceChainId = spokePoolClient.chainId;
   assert(!chainIsSvm(sourceChainId), "cctpFinalizer only supports EVM chains");
 
-  const senderAndRecipientAddresses = Array.from(addressesToFinalize.keys());
+  const senderAndRecipientAddresses = Array.from(addressesToFinalize.keys()).filter((address) => address.isEVM());
 
   // Get all DepositForBurn events from source chain sent from one of the addresses in addressesToFinalize.
   const sourceProvider = getCachedProvider(sourceChainId);

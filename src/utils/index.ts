@@ -25,7 +25,7 @@ export type { Block, TransactionResponse, TransactionReceipt, Provider } from "@
 
 export { config } from "dotenv";
 
-export { Logger, waitForLogger } from "@uma/logger";
+export { Logger, waitForLogger } from "@risk-labs/logger";
 
 export {
   CHAIN_IDs,
@@ -58,6 +58,7 @@ export * from "./SvmSignerUtils";
 export * from "./BlockUtils";
 export * from "./EventUtils";
 export * from "./FillUtils";
+export * from "./InstanceCoordinator";
 export * from "./ObjectUtils";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
@@ -78,3 +79,6 @@ export * from "./BNUtils";
 export * from "./CCTPUtils";
 export * from "./RetryUtils";
 export * from "./BinanceUtils";
+export * from "./OFTUtils";
+export * from "./HyperliquidUtils";
+export * from "./Tasks";

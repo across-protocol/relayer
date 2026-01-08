@@ -51,10 +51,8 @@ type QuorumEvent = Log & { providers: string[] };
  */
 export class EventManager {
   public readonly chain: string;
-  public readonly events: { [blockNumber: number]: QuorumEvent[] } = {};
-  public readonly processedEvents: Set<string> = new Set();
-
-  private blockNumber: number;
+  public readonly events: { [eventHash: string]: QuorumEvent } = {};
+  public readonly blockHashes: { [blockHash: string]: string[] } = {};
 
   constructor(
     private readonly logger: winston.Logger,
@@ -72,36 +70,8 @@ export class EventManager {
    * @param event Event to search for.
    * @returns The matching event, or undefined.
    */
-  findEvent(event: Log): QuorumEvent | undefined {
-    return this.events[event.blockNumber]?.find(
-      (storedEvent) =>
-        storedEvent.logIndex === event.logIndex &&
-        storedEvent.transactionIndex === event.transactionIndex &&
-        storedEvent.transactionHash === event.transactionHash &&
-        this.hashEvent(storedEvent) === this.hashEvent(event)
-    );
-  }
-
-  /**
-   * For a given Log, verify whether it has already been processed.
-   * @param event An Log instance to check.
-   * @returns True if the event has been processed, else false.
-   */
-  protected isEventProcessed(event: Log): boolean {
-    // Protect against re-sending this event if it later arrives from another provider.
-    const eventKey = this.hashEvent(event);
-    return this.processedEvents.has(eventKey);
-  }
-
-  /**
-   * For a given Log, mark it as having been processed.
-   * @param event A Log instance to mark processed.
-   * @returns void
-   */
-  protected markEventProcessed(event: Log): void {
-    // Protect against re-sending this event if it later arrives from another provider.
-    const eventKey = this.hashEvent(event);
-    this.processedEvents.add(eventKey);
+  findEvent(eventHash: string): QuorumEvent | undefined {
+    return this.events[eventHash];
   }
 
   /**
@@ -109,102 +79,75 @@ export class EventManager {
    * @param event A Log instance with appended provider information.
    * @returns The number of unique providers that reported this event.
    */
-  getEventQuorum(event: Log): number {
-    const storedEvent = this.findEvent(event);
+  getEventQuorum(eventHash: string): number {
+    const storedEvent = this.findEvent(eventHash);
     return isDefined(storedEvent) ? dedupArray(storedEvent.providers).length : 0;
   }
 
   /**
-   * Record an Ethers event. If quorum is 1 then the event will be enqueued for transfer. If this is a new event and
-   * quorum > 1 then its hash will be recorded for future reference. If the same event is received multiple times then
-   * it will be enqueued for transfer. This applies a rudimentary quorum system to the event and ensures that providers
-   * agree on the events being transmitted.
-   * @param event Ethers event to be recorded.
-   * @param provider A string uniquely identifying the provider that supplied the event.
-   * @returns void
+   * For a given Log, identify its quorum based on the number of unique providers that have supplied it.
+   * @param event A Log instance with appended provider information.
+   * @returns The number of unique providers that reported this event.
    */
-  add(event: Log, provider: string): void {
+  protected _addEvent(eventHash: string, event: QuorumEvent): void {
+    this.events[eventHash] = event;
+    this.blockHashes[event.blockHash] ??= [];
+    this.blockHashes[event.blockHash].push(eventHash);
+  }
+
+  /**
+   * Record event receiption. Retain a record of the providers that have reported each event. This applies a
+   * rudimentary quorum system to the event and ensures that providers agree on the events being transmitted.
+   * @param event Event to be recorded.
+   * @param provider A string uniquely identifying the provider that supplied the event.
+   * @returns True when the event reaches quorum.
+   */
+  add(event: Log, provider: string): boolean {
     assert(!event.removed);
 
-    if (this.isEventProcessed(event)) {
-      return;
-    }
+    const eventHash = this.hashEvent(event);
 
     // If `eventHash` is not recorded in `eventHashes` then it's presumed to be a new event. If it is
     // already found in the `eventHashes` array, then at least one provider has already supplied it.
-    const events = (this.events[event.blockNumber] ??= []);
-    const storedEvent = this.findEvent(event);
+    const storedEvent = this.findEvent(eventHash);
 
     // Store or update the set of events for this block number.
     if (!isDefined(storedEvent)) {
       // Event hasn't been seen before, so store it.
-      events.push({ ...event, providers: [provider] });
-    } else {
-      if (!storedEvent.providers.includes(provider)) {
-        // Event has been seen before, but not from this provider. Store it.
-        storedEvent.providers.push(provider);
-      }
+      this._addEvent(eventHash, { ...event, providers: [provider] });
+      return this.quorum === 1;
     }
+
+    if (storedEvent.providers.includes(provider)) {
+      return false;
+    }
+
+    // Event has been seen before, but not from this provider. Store it.
+    storedEvent.providers.push(provider);
+
+    // If the event just hit quorum, notify the caller.
+    return storedEvent.providers.length === this.quorum;
   }
 
   /**
-   * Remove an Ethers event. This event may have previously been ingested, and subsequently invalidated due to a chain
-   * re-org.
-   * @param event Ethers event to be recorded.
+   * Remove all events corresponding to a blockHash.
+   * @param event Event that was removed.
    * @param provider A string uniquely identifying the provider that supplied the event.
    * @returns void
    */
   remove(event: Log, provider: string): void {
     assert(event.removed);
 
-    const events = this.events[event.blockNumber] ?? [];
-
-    // Filter coarsely on txnRef, since a reorg should invalidate multiple events within a single transaction hash.
-    const eventIdxs = events
-      .map((event, idx) => ({ ...event, idx }))
-      .filter(({ blockHash }) => blockHash === event.blockHash)
-      .map(({ idx }) => idx);
-
-    if (eventIdxs.length > 0) {
-      // Remove each event in reverse to ensure that indexes remain valid until the last has been removed.
-      eventIdxs.reverse().forEach((idx) => events.splice(idx, 1));
-
+    const eventHashes = this.blockHashes[event.blockHash];
+    const nEvents = eventHashes.length;
+    if (nEvents > 0) {
+      eventHashes.forEach((eventHash) => delete this.events[eventHash]);
       this.logger.warn({
         at: "EventManager::remove",
-        message: `Dropped ${eventIdxs.length} event(s) at ${this.chain} block ${event.blockNumber}.`,
+        message: `Dropped ${nEvents} event(s) at ${this.chain} block ${event.blockNumber}.`,
         provider,
       });
     }
-  }
-
-  /**
-   * Record a new block. This function triggers the existing queue of pending events to be evaluated for quorum.
-   * Events meeting quorum criteria are submitted to the parent process (if defined). Events submitted are
-   * subsequently flushed from this class.
-   * @param blockNumber Number of the latest block.
-   * @returns void
-   */
-  tick(): Log[] {
-    const blockNumbers = Object.keys(this.events)
-      .map(Number)
-      .sort((x, y) => x - y);
-    const quorumEvents: QuorumEvent[] = [];
-
-    blockNumbers.forEach((blockNumber) => {
-      // Filter out events that have reached quorum for propagation.
-      this.events[blockNumber] = this.events[blockNumber].filter((event) => {
-        if (this.quorum > this.getEventQuorum(event)) {
-          return true; // No quorum; retain for next time.
-        }
-
-        this.markEventProcessed(event);
-        quorumEvents.push(event);
-        return false;
-      });
-    });
-
-    // Strip out the quorum information before returning.
-    return quorumEvents.map(({ providers, ...event }) => event);
   }
 
   /**

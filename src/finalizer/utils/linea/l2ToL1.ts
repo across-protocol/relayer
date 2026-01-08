@@ -230,6 +230,7 @@ export async function lineaL2ToL1Finalizer(
 
   // Append raw MessageSent events for custom sender addresses to TokensBridged events
   const senderAddresses = Array.from(_senderAddresses.keys())
+    .filter((address) => address.isEVM())
     .map((address) => address.toEvmAddress())
     .filter((sender) => sender !== spokePoolClient.spokePool.address && sender !== hubPoolClient.hubPool.address);
   const l2TokenBridge = new Contract(

@@ -28,6 +28,7 @@ import {
   toAddressType,
   getKitKeypairFromEvmSigner,
   getEventAuthority,
+  getRedisCache,
   getStatePda,
   getFillStatusPda,
   LatestBlockhash,
@@ -84,7 +85,7 @@ import {
   l2TokensToCountTowardsSpokePoolLeafExecutionCapital,
   persistDataToArweave,
 } from "../dataworker/DataworkerUtils";
-import { _buildRelayerRefundRoot, _buildSlowRelayRoot } from "./DataworkerUtils";
+import { _buildRelayerRefundRoot, _buildSlowRelayRoot, generateValidationKey } from "./DataworkerUtils";
 import _ from "lodash";
 import {
   ARBITRUM_ORBIT_L1L2_MESSAGE_FEE_DATA,
@@ -115,8 +116,6 @@ import {
   type Address as KitAddress,
   type KeyPairSigner,
 } from "@solana/kit";
-import { getCreateAssociatedTokenIdempotentInstruction } from "@solana-program/token";
-import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { SvmSpokeClient } from "@across-protocol/contracts";
 import {
   findAddressLookupTablePda,
@@ -646,7 +645,16 @@ export class Dataworker {
       spokePoolClients,
       earliestBlocksInSpokePoolClients
     );
-    if (!valid) {
+
+    if (valid) {
+      const rootBundleKey = generateValidationKey(pendingRootBundle);
+      const redis = await getRedisCache(this.logger);
+      if (isDefined(redis)) {
+        const validations = await redis.incr(rootBundleKey);
+        const message = "Registered successful validation.";
+        this.logger.debug({ at: "Dataworker#validate", message, rootBundleKey, validations });
+      }
+    } else {
       // In the case where the Dataworker config is improperly configured, emit an error level alert so bot runner
       // can get dataworker running ASAP.
       if (ERROR_DISPUTE_REASONS.has(reason)) {
@@ -1460,13 +1468,25 @@ export class Dataworker {
           });
         } else {
           assert(isSVMSpokePoolClient(client));
-          const signature = await this._executeSlowFillLeafSvm(
+          const executionResult = await this._executeSlowFillLeafSvm(
             client,
             leaf,
             rootBundleId,
             slowRelayTree.getHexProof(leaf)
           );
-          this.logger.info({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn, signature });
+          if (executionResult.executable) {
+            this.logger.info({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: mrkdwn,
+              signature: executionResult.signature,
+            });
+          } else {
+            this.logger.debug({
+              at: "Dataworker#executeSlowRelayLeaves",
+              message: "Cannot execute slow fill leaf since recipient account does not have an ATA.",
+              slowFillMarkdown: mrkdwn,
+            });
+          }
         }
       } else {
         this.logger.debug({ at: "Dataworker#executeSlowRelayLeaves", message: mrkdwn });
@@ -2755,8 +2775,10 @@ export class Dataworker {
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
     const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([
+      CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.BSC,
       CHAIN_IDs.HYPEREVM,
+      CHAIN_IDs.MONAD,
       CHAIN_IDs.PLASMA,
       CHAIN_IDs.POLYGON,
     ]);
@@ -2923,7 +2945,7 @@ export class Dataworker {
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([closeInstructionParamsIx], tx)
       );
-      const closeSig = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, kitKeypair, provider);
+      const closeSig = await sendAndConfirmSolanaTransaction(closeInstructionParamsTx, provider);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Closed instruction params PDA",
@@ -2950,7 +2972,7 @@ export class Dataworker {
       (tx) => appendTransactionMessageInstructions([initializeInstructionParamsIx], tx)
     );
     let txSignature;
-    txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, kitKeypair, provider);
+    txSignature = await sendAndConfirmSolanaTransaction(initInstructionParamsTx, provider);
     this.logger.debug({
       at: "Dataworker#executeRelayerRefundLeafSvm",
       message: "Initialized instruction params account",
@@ -2976,7 +2998,7 @@ export class Dataworker {
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([writeInstructionParamsIx], tx)
       );
-      txSignature = await sendAndConfirmSolanaTransaction(writeInstructionParamsTx, kitKeypair, provider);
+      txSignature = await sendAndConfirmSolanaTransaction(writeInstructionParamsTx, provider);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Wrote relayer refund leaf data to instruction params account",
@@ -3004,7 +3026,7 @@ export class Dataworker {
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
       (tx) => appendTransactionMessageInstructions([lookupTableIx], tx)
     );
-    txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, kitKeypair, provider);
+    txSignature = await sendAndConfirmSolanaTransaction(createLookupTableTx, provider);
     await waitForNewSolanaBlock(provider, 1);
 
     this.logger.debug({
@@ -3027,7 +3049,7 @@ export class Dataworker {
         (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
         (tx) => appendTransactionMessageInstructions([deactivateLutIx], tx)
       );
-      const deactivateLutSignature = await sendAndConfirmSolanaTransaction(deactivateLutTx, kitKeypair, provider);
+      const deactivateLutSignature = await sendAndConfirmSolanaTransaction(deactivateLutTx, provider);
       this.logger.debug({
         at: "Dataworker#executeRelayerRefundLeafSvm",
         message: "Deactivated address lookup table",
@@ -3083,7 +3105,7 @@ export class Dataworker {
             (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
-          await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+          await sendAndConfirmSolanaTransaction(extendLutTx, provider);
           // @dev Every time we extend an ALT, we need to wait for a new solana block so that the table has
           // sufficient time to "activate." https://solana.com/developers/courses/program-optimization/lookup-tables#6-modify-main-to-use-lookup-tables
           await waitForNewSolanaBlock(provider, 1);
@@ -3096,7 +3118,7 @@ export class Dataworker {
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
-        refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafTx, kitKeypair, provider);
+        refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafTx, provider);
       } else {
         // This is case 2. Some refundAddresses do not have ATAs for the l2TokenAddress.
         this.logger.warn({
@@ -3152,7 +3174,7 @@ export class Dataworker {
               (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
               (tx) => appendTransactionMessageInstructions([initializeClaimAccountIx], tx)
             );
-            txSignature = await sendAndConfirmSolanaTransaction(initializeClaimAccountTx, kitKeypair, provider);
+            txSignature = await sendAndConfirmSolanaTransaction(initializeClaimAccountTx, provider);
             this.logger.debug({
               at: "Dataworker#executeRelayerRefundLeafSvm",
               message: "Initialized claim account",
@@ -3180,7 +3202,7 @@ export class Dataworker {
             (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
             (tx) => appendTransactionMessageInstructions([extendLookupTableIx], tx)
           );
-          await sendAndConfirmSolanaTransaction(extendLutTx, kitKeypair, provider);
+          await sendAndConfirmSolanaTransaction(extendLutTx, provider);
           // @dev Every time we extend an ALT, we need to wait for a new solana block so that the table has
           // sufficient time to "activate." https://solana.com/developers/courses/program-optimization/lookup-tables#6-modify-main-to-use-lookup-tables
           await waitForNewSolanaBlock(provider, 1);
@@ -3193,11 +3215,7 @@ export class Dataworker {
           (tx) => appendTransactionMessageInstructions([executeRelayerRefundLeafDeferredIx], tx),
           (tx) => compressTransactionMessageUsingAddressLookupTables(tx, addressLookupTableDefinitions.lookupTableMap)
         );
-        refundLeafSignature = await sendAndConfirmSolanaTransaction(
-          executeRelayerRefundLeafDeferredTx,
-          kitKeypair,
-          provider
-        );
+        refundLeafSignature = await sendAndConfirmSolanaTransaction(executeRelayerRefundLeafDeferredTx, provider);
         const claimRelayerRefund = async (
           refundAddress: KitAddress<string>,
           claimAccount: KitAddress<string>,
@@ -3226,7 +3244,7 @@ export class Dataworker {
           const claimRelayerRefundTx = pipe(await createDefaultTransaction(provider, kitKeypair), (tx) =>
             appendTransactionMessageInstructions([claimRelayerRefundIx], tx)
           );
-          return await sendAndConfirmSolanaTransaction(claimRelayerRefundTx, kitKeypair, provider);
+          return await sendAndConfirmSolanaTransaction(claimRelayerRefundTx, provider);
         };
         // Zip the claimAccounts with the recipient ATA and then claim all refunds corresponding to refund accounts with ATAs.
         const recipientTokenAccounts = claimAccounts.map((claimAccount, idx) => {
@@ -3277,7 +3295,7 @@ export class Dataworker {
     leaf: SlowFillLeaf,
     rootBundleId: number,
     slowFillHexProof: string[]
-  ): Promise<string> {
+  ): Promise<{ executable: boolean; signature?: string }> {
     // Parse relevant info from the slow fill leaf/dataworker.
     const provider = spokePoolClient.svmEventsClient.getRpc();
     const spokePoolProgramId = toKitAddress(spokePoolClient.spokePoolAddress);
@@ -3332,21 +3350,10 @@ export class Dataworker {
       proof: some(proof),
     });
 
-    // Check whether the recipient on Solana has an ATA for the output token. If they do not, then create one and include that in the instruction set.
-    let recipientCreateTokenAccountInstruction;
+    // Do not execute a slow fill leaf if the recipient's ATA does not exist. The dataworker should not fund new token accounts for users.
     const associatedTokenAccountExists = (await fetchEncodedAccount(provider, recipientTokenAccount)).exists;
     if (!associatedTokenAccountExists) {
-      const mint = arch.svm.toAddress(leaf.relayData.outputToken);
-      const mintInfo = await arch.svm.getMintInfo(spokePoolClient.svmEventsClient.getRpc(), mint);
-      const programAddress = mintInfo.programAddress;
-      recipientCreateTokenAccountInstruction = getCreateAssociatedTokenIdempotentInstruction({
-        payer: kitKeypair,
-        owner: statePda,
-        mint: l2TokenAddress,
-        ata: recipientTokenAccount,
-        systemProgram: SYSTEM_PROGRAM_ADDRESS,
-        tokenProgram: programAddress,
-      });
+      return { executable: false };
     }
 
     // Build the slow fill transaction. If there are instructions to create a new token account, then add those instructions to the slow fill transaction. Otherwise,
@@ -3355,13 +3362,10 @@ export class Dataworker {
       createTransactionMessage({ version: 0 }),
       (tx) => setTransactionMessageFeePayer(kitKeypair.address, tx),
       (tx) => setTransactionMessageLifetimeUsingBlockhash(recentBlockhash.value, tx),
-      (tx) =>
-        isDefined(recipientCreateTokenAccountInstruction)
-          ? appendTransactionMessageInstructions([recipientCreateTokenAccountInstruction], tx)
-          : tx,
       (tx) => appendTransactionMessageInstructions([executeSlowFillIx], tx)
     );
-    return sendAndConfirmSolanaTransaction(executeSlowFillTx, kitKeypair, provider);
+    const signature = await sendAndConfirmSolanaTransaction(executeSlowFillTx, provider);
+    return { executable: true, signature };
   }
 
   async _getKitKeypair(): Promise<KeyPairSigner> {
