@@ -273,6 +273,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         await this._withdraw(cloid, withdrawAmount, destinationToken, destinationChain);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
+        // Delay a bit before checking checking whether this withdrawal has finalized so we have a chance at immediately
+        // marking it as finalized and delete it from Redis.
+        await delay(5);
       } else {
         // We throw an error here because we shouldn't expect the market order to ever not be filled.
         throw new Error(`No matching fill found for cloid ${cloid}`);
@@ -328,7 +331,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         continue;
       }
 
-      // The withdrawal has finalized.
+      // The withdrawal has finalized, fetch its withdrawal details from the Binance API.
+      const withdrawalDetails = finalizedWithdrawals.find((withdrawal) => withdrawal.id === initiatedWithdrawalId);
+      if (!withdrawalDetails) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Cannot find withdrawal details in Binance API response for withdrawal history for cloid ${cloid} which filled at ${matchingFill.time}, waiting....`,
+        });
+        continue;
+      }
+
       // Check if we need to bridge the withdrawal to the final destination chain:
       const requiresBridgeAfterWithdrawal = binanceWithdrawalNetwork !== destinationChain;
       if (requiresBridgeAfterWithdrawal) {
@@ -336,10 +348,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           binanceWithdrawalNetwork,
           this._getTokenInfo(destinationToken, binanceWithdrawalNetwork).address.toNative()
         );
-        const withdrawalDetails = finalizedWithdrawals.find((withdrawal) => withdrawal.id === initiatedWithdrawalId);
-        if (!withdrawalDetails) {
-          throw new Error(`Cannot find withdrawal details for cloid ${cloid} which filled at ${matchingFill.time}`);
-        }
         const binanceWithdrawalNetworkTokenInfo = this._getTokenInfo(destinationToken, binanceWithdrawalNetwork);
         const withdrawAmountWei = toBNWei(
           truncate(withdrawalDetails.amount, binanceWithdrawalNetworkTokenInfo.decimals),
@@ -348,7 +356,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         if (balance.lt(withdrawAmountWei)) {
           this.logger.debug({
             at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-            message: `Not enough balance on ${binanceWithdrawalNetwork} to bridge ${destinationToken} to ${binanceWithdrawalNetwork} for ${withdrawAmountWei.toString()}, waiting...`,
+            message: `Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork} and needs to be bridged to final destination chain ${destinationChain}, but there is not enough balance on ${binanceWithdrawalNetwork} to bridge ${destinationToken} to ${destinationChain} for ${withdrawAmountWei.toString()}, waiting...`,
             balance: balance.toString(),
             requiredWithdrawAmount: withdrawAmountWei.toString(),
             withdrawalDetails,
@@ -357,7 +365,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Bridging ${destinationToken} order with cloid ${cloid} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain}, and deleting order details from Redis!`,
+          message: `Order ${cloid} has finalized withdrawing to ${binanceWithdrawalNetwork}; bridging ${destinationToken} from ${binanceWithdrawalNetwork} to final destination chain ${destinationChain} and deleting order details from Redis!`,
           requiredWithdrawAmount: withdrawAmountWei.toString(),
           destinationToken,
           withdrawalDetails,
@@ -366,7 +374,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } else {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Deleting order details from Redis with cloid ${cloid} because it has completed!`,
+          message: `Deleting order details from Redis with cloid ${cloid} because its withdrawal has finalized to the final destination chain ${destinationChain}!`,
+          withdrawalDetails,
         });
       }
       // We no longer need this order information, so we can delete it.
