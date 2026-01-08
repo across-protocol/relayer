@@ -565,7 +565,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // Order has finalized, subtract virtual balance from the binance withdrawal network:
       const withdrawalDetails = finalizedWithdrawals.find((withdrawal) => withdrawal.id === initiatedWithdrawalId);
       if (!withdrawalDetails) {
-        throw new Error(`Cannot find withdrawal details for cloid ${cloid} which filled at ${matchingFill.time}`);
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
+          message: `Cannot find withdrawal details for cloid ${cloid} which filled at ${matchingFill.time}, waiting...`,
+        });
+        continue;
       }
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
