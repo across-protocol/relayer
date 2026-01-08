@@ -12,6 +12,7 @@ import { TokenInfo } from "../../interfaces";
 import {
   acrossApi,
   Address,
+  assert,
   BigNumber,
   bnZero,
   CCTPV2_FINALITY_THRESHOLD_STANDARD,
@@ -79,7 +80,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected REDIS_PREFIX: string;
   protected REDIS_KEY_PENDING_ORDER: string;
-  // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
+  // Key used to query latest cloid that uniquely identifies orders. This same cloid can be set when placing orders
+  // on HL and Binance, thereby allowing us to track when an order gets filled and how much to withdraw subsequently.
   protected REDIS_KEY_LATEST_NONCE: string;
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
@@ -269,6 +271,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // ////////////////////////////////////////////////////////////
   // PROTECTED HELPER METHODS
   // ////////////////////////////////////////////////////////////
+
+  protected _assertInitialized(): void {
+    assert(this.initialized, "not initialized");
+  }
 
   protected _getAmountConverter(
     originChain: number,

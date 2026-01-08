@@ -1144,8 +1144,4 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     ]);
     return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgeToBinanceNetwork];
   }
-
-  private _assertInitialized(): void {
-    assert(this.initialized, "BinanceStablecoinSwapAdapter not initialized");
-  }
 }
