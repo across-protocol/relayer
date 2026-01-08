@@ -1,5 +1,5 @@
 import { RedisCache } from "../../caching/RedisCache";
-import { AugmentedTransaction, MultiCallerClient } from "../../clients";
+import { AugmentedTransaction } from "../../clients";
 import {
   assert,
   BigNumber,
@@ -25,6 +25,8 @@ import {
   winston,
   forEachAsync,
   ZERO_ADDRESS,
+  truncate,
+  delay,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -132,12 +134,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     },
   };
 
-  private availableRoutes: RebalanceRoute[];
-  private allSourceChains: Set<number>;
-  private allDestinationChains: Set<number>;
-
-  private multicallerClient: MultiCallerClient;
-
   private maxSlippagePct = 0.02; // @todo make this configurable
 
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
@@ -151,8 +147,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const provider_999 = await getProvider(HYPEREVM);
     const connectedSigner_999 = this.baseSigner.connect(provider_999);
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
-    this.availableRoutes = _availableRoutes;
-    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
 
     for (const route of this.availableRoutes) {
       // Initialize a provider for the source chain and check if we have spot market data
@@ -174,7 +168,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     //     this.baseSigner
     // );
 
-    // CoreDepositWallet required to deposit USDC to Hypercore.
+    // Check allowance for CoreDepositWallet required to deposit USDC to Hypercore.
     const usdc = new Contract(this._getTokenInfo("USDC", HYPEREVM).address.toNative(), ERC20.abi, connectedSigner_999);
     const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
     if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
@@ -189,37 +183,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         mrkdwn: "Approved USDC for CoreDepositWallet",
       });
     }
-    const cctpMessenger = await this._getCctpMessenger(HYPEREVM);
-    const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
-    if (cctpAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
-      this.multicallerClient.enqueueTransaction({
-        contract: usdc,
-        chainId: HYPEREVM,
-        method: "approve",
-        nonMulticall: true,
-        unpermissioned: false,
-        args: [cctpMessenger.address, MAX_SAFE_ALLOWANCE],
-        message: "Approved USDC for CCTP Messenger",
-        mrkdwn: "Approved USDC for CCTP Messenger",
-      });
-    }
-
-    const usdt = new Contract(this._getTokenInfo("USDT", HYPEREVM).address.toNative(), ERC20.abi, connectedSigner_999);
-    const oftMessenger = await this._getOftMessenger(HYPEREVM);
-    const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
-    if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
-      this.multicallerClient.enqueueTransaction({
-        contract: usdt,
-        chainId: HYPEREVM,
-        method: "approve",
-        nonMulticall: true,
-        unpermissioned: false,
-        args: [oftMessenger.address, MAX_SAFE_ALLOWANCE],
-        message: "Approved USDT for OFT Messenger",
-        mrkdwn: "Approved USDT for OFT Messenger",
-      });
-    }
-
     await this.multicallerClient.executeTxnQueues();
   }
 
@@ -240,12 +203,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // minimum tick size (i.e. szDecimals and pxDecimals), so we might be left with some dust in the account.
     // We should figure out how to only transfer in exactly how many tokens we intend to set the sz to.
 
-    // If source token is not USDC, USDT, or USDH, throw.
-    // If destination token is same as source token, throw.
-    // If source token is USDH then throw if source chain is not HyperEVM.
-    // If source chain is not HyperEVM, then initiate CCTP/OFT transfer to HyperEVM and save order
-    //     with status PENDING_BRIDGE_TO_HYPEREVM. Save the transfer under BRIDGE_TO_HYPEREVM in order to correctly
-    //     mark the order status.
     const cloid = await this._redisGetNextCloid();
 
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
@@ -286,6 +243,27 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
+  async _getUserTakerFeePct(skipCache = false): Promise<BigNumber> {
+    const cacheKey = "hyperliquid-user-fees";
+
+    if (!skipCache) {
+      const cached = await this.redisCache.get<string>(cacheKey);
+      if (cached) {
+        return BigNumber.from(cached);
+      }
+    }
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const userFees = await infoClient.userFees({ user: this.baseSignerAddress.toNative() });
+    const takerBaseFee = Number(userFees.userSpotCrossRate);
+    const takerFee = takerBaseFee * 0.2; // for stable pairs, fee is 20% of the taker base fee
+    const takerFeePct = toBNWei(takerFee.toFixed(18), 18).mul(100);
+
+    // Reset cache if we've fetched a new API response.
+    await this.redisCache.set(cacheKey, takerFeePct.toString()); // Use default TTL which is a long time as
+    // this response is not expected to change frequently.
+    return takerFeePct;
+  }
+
   async getEstimatedCost(
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,
@@ -307,11 +285,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
 
-    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-    const userFees = await infoClient.userFees({ user: this.baseSignerAddress.toNative() });
-    const takerBaseFee = Number(userFees.userSpotCrossRate);
-    const takerFee = takerBaseFee * 0.2; // for stable pairs, fee is 20% of the taker base fee
-    const takerFeePct = toBNWei(takerFee.toFixed(18), 18).mul(100);
+    const takerFeePct = await this._getUserTakerFeePct();
     const takerFeeFixed = takerFeePct.mul(amountToTransfer).div(toBNWei(100, 18));
 
     // Bridge to HyperEVM Fee:
@@ -381,7 +355,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _createHlOrder(orderDetails: OrderDetails, cloid: string): Promise<void> {
-    const { sourceToken, amountToTransfer, destinationToken } = orderDetails;
+    const { sourceToken, amountToTransfer } = orderDetails;
     const tokenMeta = this._getTokenMeta(sourceToken);
 
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
@@ -409,14 +383,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         availableBalanceEvmDecimals: availableBalanceEvmDecimals.toString(),
         amountToTransfer: amountToTransfer.toString(),
       });
-    }
-
-    // Fetch latest price for the market we're going to place an order for:
-    const spotMarketMeta = this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-    const spotMarketData = await infoClient.spotMetaAndAssetCtxs();
-    const tokenData = spotMarketData[1].find((market) => market.coin === `@${spotMarketMeta.index}`);
-    if (!tokenData) {
-      throw new Error(`No token data found for spot market: ${spotMarketMeta.index}`);
     }
 
     // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
@@ -461,16 +427,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Figure out what time we last received an update so we can get all updates since then:
     // @todo Replace this hard code lookback
     const lastPollEnd = this._getFromTimestamp();
-
-    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-    const openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
-    if (openOrders.length > 0) {
-      this.logger.debug({
-        at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: "Open orders",
-        openOrders,
-      });
-    }
 
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
     if (pendingBridgeToHyperevm.length > 0) {
@@ -518,6 +474,24 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
+    const pendingBridgeToHypercore = await this._redisGetPendingDepositsToHypercore();
+    if (pendingBridgeToHypercore.length > 0) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+        message: "Orders pending deposit to Hypercore",
+        pendingBridgeToHypercore,
+      });
+    }
+    for (const cloid of pendingBridgeToHypercore) {
+      const orderDetails = await this._redisGetOrderDetails(cloid);
+      await this._createHlOrder(orderDetails, cloid);
+      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
+      // Wait some time after placing a new order to allow for it to execute and hopefully be immediately filled
+      // and reflected in our HL balance. Then in the next step we can withdraw it from Hypercore.
+      await delay(10);
+    }
+
+    let openOrders: hl.OpenOrdersResponse = [];
     // Check pending swap statuses before checking pending deposits to hypercore otherwise we might place an order,
     // and attempt to replace it because it wasn't immediately executed.
     const pendingSwaps = await this._redisGetPendingSwaps();
@@ -527,6 +501,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: "Orders pending swap",
         pendingSwaps,
       });
+      const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+      openOrders = await infoClient.openOrders({ user: this.baseSignerAddress.toNative() });
+      if (openOrders.length > 0) {
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: "Open orders",
+          openOrders,
+        });
+      }
     }
     for (const cloid of pendingSwaps) {
       const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
@@ -557,23 +540,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
           matchingOpenOrder,
         });
       }
-      // See if cloid matches with an open order and user fill
-      // If it has a user fill, then update its order status to next state:
-      // If it doesn't have a user fill AND doesn't have an open order, then replace its order.
-    }
-
-    const pendingBridgeToHypercore = await this._redisGetPendingDepositsToHypercore();
-    if (pendingBridgeToHypercore.length > 0) {
-      this.logger.debug({
-        at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: "Orders pending deposit to Hypercore",
-        pendingBridgeToHypercore,
-      });
-    }
-    for (const cloid of pendingBridgeToHypercore) {
-      const orderDetails = await this._redisGetOrderDetails(cloid);
-      await this._createHlOrder(orderDetails, cloid);
-      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
     }
 
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
@@ -672,7 +638,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.sz) * Number(level.px) : Number(level.sz);
-      const szWei = toBNWei(sz.toFixed(tokenMeta.evmDecimals), tokenMeta.evmDecimals);
+      const szWei = toBNWei(truncate(sz, tokenMeta.evmDecimals));
       if (szWei.gte(amountToTransfer)) {
         return true;
       }
@@ -785,7 +751,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const destinationTokenMeta = this._getTokenMeta(destinationToken);
     const sourceTokenMeta = this._getTokenMeta(sourceToken);
     const evmDecimals = spotMarketMeta.isBuy ? destinationTokenMeta.evmDecimals : sourceTokenMeta.evmDecimals;
-    const szFormatted = Number(Number(fromWei(sz, evmDecimals)).toFixed(spotMarketMeta.szDecimals));
+    const szNumber = Number(fromWei(sz, evmDecimals));
+    const szFormatted = truncate(szNumber, spotMarketMeta.szDecimals);
     assert(szFormatted >= spotMarketMeta.minimumOrderSize, "Max amount to transfer is less than minimum order size");
     return szFormatted;
   }
@@ -932,10 +899,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const amountReadable = fromWei(amountToDepositEvmPrecision, this._getTokenInfo(sourceToken, HYPEREVM).decimals);
     let transaction: AugmentedTransaction;
     if (sourceToken === "USDC") {
-      const allowance = await erc20.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
-      if (allowance.lt(amountToDepositEvmPrecision)) {
-        throw new Error("Insufficient allowance to bridge USDC into Hypercore via CoreDepositWallet.deposit()");
-      }
       const coreDepositWallet = new ethers.Contract(
         USDC_CORE_DEPOSIT_WALLET_ADDRESS,
         ["function deposit(uint256 amount, uint32 destinationDex)"],

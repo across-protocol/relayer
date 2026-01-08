@@ -1,6 +1,6 @@
 import { CCTP_NO_DOMAIN, OFT_NO_EID, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { RedisCache } from "../../caching/RedisCache";
-import { AugmentedTransaction, getAcrossHost, TransactionClient } from "../../clients";
+import { AugmentedTransaction, getAcrossHost, MultiCallerClient, TransactionClient } from "../../clients";
 import {
   CCTP_MAX_SEND_AMOUNT,
   EVM_OFT_MESSENGERS,
@@ -26,6 +26,7 @@ import {
   EventSearchConfig,
   EvmAddress,
   fixedPointAdjustment,
+  forEachAsync,
   formatToAddress,
   getBlockForTimestamp,
   getCctpDomainForChainId,
@@ -37,6 +38,7 @@ import {
   getTokenInfo,
   isDefined,
   isStargateBridge,
+  MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
   PriceClient,
@@ -67,6 +69,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   protected baseSignerAddress: EvmAddress;
   protected initialized = false;
   protected priceClient: PriceClient;
+  protected multicallerClient: MultiCallerClient;
+
+  protected availableRoutes: RebalanceRoute[];
+  protected allDestinationChains: Set<number>;
+  protected allDestinationTokens: Set<string>;
+  protected allSourceChains: Set<number>;
+  protected allSourceTokens: Set<string>;
 
   protected REDIS_PREFIX: string;
   protected REDIS_KEY_PENDING_ORDER: string;
@@ -85,12 +94,62 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
-    // Make sure each source token and destination token has an entryin token symbols map:
+    // Make sure each source token and destination token has an entry in token symbols map:
     for (const route of availableRoutes) {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
       this._getTokenInfo(sourceToken, sourceChain);
       this._getTokenInfo(destinationToken, destinationChain);
     }
+
+    this.availableRoutes = availableRoutes;
+    this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
+    this.allDestinationTokens = new Set<string>(this.availableRoutes.map((x) => x.destinationToken));
+    this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
+    this.allSourceTokens = new Set<string>(this.availableRoutes.map((x) => x.sourceToken));
+
+    this.multicallerClient = new MultiCallerClient(this.logger, this.config.multiCallChunkSize, this.baseSigner);
+
+    // Set Bridge allowances:
+    const allChains = new Set<number>([...this.allSourceChains, ...this.allDestinationChains]);
+    await forEachAsync(Array.from(allChains), async (chainId) => {
+      const connectedSigner = this.baseSigner.connect(await getProvider(chainId));
+      if (getCctpV2TokenMessenger(chainId)?.address) {
+        const usdc = new Contract(this._getTokenInfo("USDC", chainId).address.toNative(), ERC20.abi, connectedSigner);
+        const cctpMessenger = await this._getCctpMessenger(chainId);
+        const cctpAllowance = await usdc.allowance(this.baseSignerAddress.toNative(), cctpMessenger.address);
+        if (cctpAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
+          this.multicallerClient.enqueueTransaction({
+            contract: usdc,
+            chainId,
+            method: "approve",
+            nonMulticall: true,
+            unpermissioned: false,
+            args: [cctpMessenger.address, MAX_SAFE_ALLOWANCE],
+            message: "Approved USDC for CCTP Messenger",
+            mrkdwn: "Approved USDC for CCTP Messenger",
+          });
+        }
+      }
+      if (EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(chainId)) {
+        const usdt = new Contract(this._getTokenInfo("USDT", chainId).address.toNative(), ERC20.abi, connectedSigner);
+        const oftMessenger = await this._getOftMessenger(chainId);
+        const oftAllowance = await usdt.allowance(this.baseSignerAddress.toNative(), oftMessenger.address);
+        if (oftAllowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
+          this.multicallerClient.enqueueTransaction({
+            contract: usdt,
+            chainId,
+            method: "approve",
+            nonMulticall: true,
+            unpermissioned: false,
+            args: [oftMessenger.address, MAX_SAFE_ALLOWANCE],
+            message: "Approved USDT for OFT Messenger",
+            mrkdwn: "Approved USDT for OFT Messenger",
+          });
+        }
+      }
+    });
+
+    await this.multicallerClient.executeTxnQueues();
     this.initialized = true;
     return;
   }

@@ -29,11 +29,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("20", 6),
+      USDC: toBNWei("0", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("20", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -44,7 +44,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     143: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
     },
   };
 
@@ -52,9 +52,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
@@ -117,6 +117,24 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       });
     }
   }
+
+  // Add hyperliquid swaps:
+  rebalanceRoutes.push({
+    sourceChain: CHAIN_IDs.HYPEREVM,
+    sourceToken: "USDT",
+    destinationChain: CHAIN_IDs.HYPEREVM,
+    destinationToken: "USDC",
+    maxAmountToTransfer,
+    adapter: "hyperliquid",
+  });
+  rebalanceRoutes.push({
+    sourceChain: CHAIN_IDs.HYPEREVM,
+    sourceToken: "USDC",
+    destinationChain: CHAIN_IDs.HYPEREVM,
+    destinationToken: "USDT",
+    maxAmountToTransfer,
+    adapter: "hyperliquid",
+  });
 
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();
@@ -182,7 +200,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
       timerStart = performance.now();
-      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "0.05", 18));
+      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "5", 18));
       logger.debug({
         at: "index.ts:runRebalancer",
         message: "Completed rebalancing inventory",

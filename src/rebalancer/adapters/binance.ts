@@ -50,7 +50,6 @@ interface SPOT_MARKET_META {
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private binanceApiClient: Binance;
-  private availableRoutes: RebalanceRoute[];
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
 
@@ -64,11 +63,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   REDIS_KEY_PENDING_DEPOSIT = this.REDIS_PREFIX + "pending-deposit";
   REDIS_KEY_PENDING_SWAP = this.REDIS_PREFIX + "pending-swap";
   REDIS_KEY_PENDING_WITHDRAWAL = this.REDIS_PREFIX + "pending-withdrawal";
-
-  private allDestinationChains: Set<number>;
-  private allDestinationTokens: Set<string>;
-  private allSourceChains: Set<number>;
-  private allSourceTokens: Set<string>;
 
   private spotMarketMeta: { [name: string]: SPOT_MARKET_META } = {
     "USDT-USDC": {
@@ -104,7 +98,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
-    this.availableRoutes = _availableRoutes;
     await forEachAsync(this.availableRoutes, async (route) => {
       const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
       const [sourceCoin, destinationCoin] = await Promise.all([
@@ -141,11 +134,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }", available networks: ${destinationCoin.networkList.map((network) => network.name).join(", ")}`
       );
     });
-
-    this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
-    this.allDestinationTokens = new Set<string>(this.availableRoutes.map((x) => x.destinationToken));
-    this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
-    this.allSourceTokens = new Set<string>(this.availableRoutes.map((x) => x.sourceToken));
   }
 
   async updateRebalanceStatuses(): Promise<void> {
