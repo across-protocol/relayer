@@ -1,4 +1,14 @@
-import { BigNumber, bnZero, CHAIN_IDs, config, delay, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import {
+  BigNumber,
+  bnZero,
+  CHAIN_IDs,
+  config,
+  delay,
+  disconnectRedisClients,
+  Signer,
+  toBNWei,
+  winston,
+} from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
@@ -172,7 +182,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     // Execute rebalances
     if (process.env.SEND_REBALANCES === "true") {
       timerStart = performance.now();
-      await rebalancerClient.rebalanceInventory(currentBalances);
+      await rebalancerClient.rebalanceInventory(currentBalances, toBNWei(process.env.MAX_FEE_PCT ?? "0.05", 18));
       logger.debug({
         at: "index.ts:runRebalancer",
         message: "Completed rebalancing inventory",

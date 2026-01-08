@@ -533,6 +533,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken } = orderDetails;
       const { matchingFill } = await this._getMatchingFillForCloid(cloid);
+      assert(isDefined(matchingFill), "Matching fill should be defined for order with status PENDING_WITHDRAWAL");
 
       const binanceWithdrawalNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
       const initiatedWithdrawalId = await this._redisGetInitiatedWithdrawalId(cloid);

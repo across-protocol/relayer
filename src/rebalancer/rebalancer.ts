@@ -8,6 +8,7 @@ import {
   getNetworkName,
   isDefined,
   Signer,
+  toBNWei,
   winston,
 } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
@@ -67,7 +68,7 @@ export class RebalancerClient {
    * combination that has a rebalance route. A current balance entry must also be set for each target balance in the
    * client configuration.
    */
-  async rebalanceInventory(currentBalances: { [chainId: number]: { [token: string]: BigNumber } }): Promise<void> {
+  async rebalanceInventory(currentBalances: { [chainId: number]: { [token: string]: BigNumber } }， maxFeePct: BigNumber): Promise<void> {
     // Assert that each current balance maps to a target balance.
     for (const [sourceToken, tokenConfig] of Object.entries(this.config.targetBalances)) {
       for (const [sourceChain] of Object.entries(tokenConfig)) {
@@ -316,6 +317,15 @@ export class RebalancerClient {
         const deficitAmountCapped = rebalanceRouteToUse.maxAmountToTransfer.gt(deficitAmount)
           ? deficitAmount
           : rebalanceRouteToUse.maxAmountToTransfer;
+        const maxFee = deficitAmountCapped.mul(maxFeePct).div(toBNWei(100));
+        if (cheapestExpectedCost.gt(maxFee)) {
+          this.logger.debug({
+            at: "RebalancerClient.rebalanceInventory",
+            message: `Cheapest expected cost ${cheapestExpectedCost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
+          })
+          return;
+        }
+
         this.logger.debug({
           at: "RebalancerClient.rebalanceInventory",
           message: `Using cheapest rebalance route for ${sourceToken} on ${getNetworkName(
