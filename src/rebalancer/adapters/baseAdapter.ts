@@ -35,7 +35,6 @@ import {
   getNetworkName,
   getProvider,
   getTokenInfo,
-  getV2DepositForBurnMaxFee,
   isDefined,
   isStargateBridge,
   MessagingFeeStruct,
@@ -298,8 +297,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   private async _getCctpV2MaxFee(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     originChain: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     destinationChain: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     amountToBridge: BigNumber
   ): Promise<{
     maxFee: BigNumber;

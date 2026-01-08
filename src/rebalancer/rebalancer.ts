@@ -68,7 +68,10 @@ export class RebalancerClient {
    * combination that has a rebalance route. A current balance entry must also be set for each target balance in the
    * client configuration.
    */
-  async rebalanceInventory(currentBalances: { [chainId: number]: { [token: string]: BigNumber } }， maxFeePct: BigNumber): Promise<void> {
+  async rebalanceInventory(
+    currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
+    maxFeePct: BigNumber
+  ): Promise<void> {
     // Assert that each current balance maps to a target balance.
     for (const [sourceToken, tokenConfig] of Object.entries(this.config.targetBalances)) {
       for (const [sourceChain] of Object.entries(tokenConfig)) {
@@ -322,7 +325,7 @@ export class RebalancerClient {
           this.logger.debug({
             at: "RebalancerClient.rebalanceInventory",
             message: `Cheapest expected cost ${cheapestExpectedCost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
-          })
+          });
           return;
         }
 
