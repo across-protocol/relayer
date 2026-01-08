@@ -1,4 +1,4 @@
-import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
+import { BigNumber, bnZero, CHAIN_IDs, config, delay, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
@@ -127,10 +127,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
       duration: performance.now() - timerStart,
     });
-
-    // // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
-    // // transactions to get mined.
-    // await delay(5);
+    // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
+    // transactions to get mined.
+    await delay(5);
 
     // Modify all current balances with the pending rebalances:
     timerStart = performance.now();

@@ -22,6 +22,7 @@ import {
   paginatedEventQuery,
   Signer,
   toBNWei,
+  truncate,
   winston,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
@@ -192,7 +193,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK, STATUS.PENDING_DEPOSIT);
         // Delay a bit after depositing to Binance so we can, in the best case, place a market order immediately
         // after we allow the deposit to confirm and be reflected in the Binance balance.
-        await delay(5);
+        await delay(10);
       }
     }
 
@@ -237,7 +238,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // Delay a bit before checking balances to withdraw so we can give this function a chance to successively place
       // a market order successfully and subsequently withdraw the filled order. It takes a short time for the just filled
       // order to be reflected in the balance.
-      await delay(5);
+      await delay(10);
     }
 
     // Withdraw pending swaps if they have filled.
@@ -341,7 +342,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         }
         const binanceWithdrawalNetworkTokenInfo = this._getTokenInfo(destinationToken, binanceWithdrawalNetwork);
         const withdrawAmountWei = toBNWei(
-          withdrawalDetails.amount.toFixed(binanceWithdrawalNetworkTokenInfo.decimals),
+          truncate(withdrawalDetails.amount, binanceWithdrawalNetworkTokenInfo.decimals),
           binanceWithdrawalNetworkTokenInfo.decimals
         );
         if (balance.lt(withdrawAmountWei)) {
@@ -891,7 +892,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // the amount that we want to buy of the base asset) is denominated in the quote asset and we need to convert it
       // into the base asset.
       const sz = spotMarketMeta.isBuy ? Number(level.quantity) * Number(level.price) : Number(level.quantity);
-      const szWei = toBNWei(sz.toFixed(sourceTokenInfo.decimals), sourceTokenInfo.decimals);
+      const szWei = toBNWei(truncate(sz, sourceTokenInfo.decimals), sourceTokenInfo.decimals);
       if (szWei.gte(amountToTransfer)) {
         return true;
       }
@@ -919,8 +920,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ? amountToTransfer.mul(10 ** spotMarketMeta.pxDecimals).div(toBNWei(price, spotMarketMeta.pxDecimals))
       : amountToTransfer;
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const szFormatted = Number(Number(fromWei(sz, sourceTokenInfo.decimals)).toFixed(spotMarketMeta.szDecimals));
-    assert(szFormatted >= spotMarketMeta.minimumOrderSize, "amount to transfer is less than minimum order size");
+    // Floor this number so we can guarantee that we have enough balance to place the order:
+    const szNumber = Number(fromWei(sz, sourceTokenInfo.decimals));
+    const szFormatted = truncate(szNumber, spotMarketMeta.szDecimals);
+    assert(
+      szFormatted >= spotMarketMeta.minimumOrderSize,
+      `size of order ${szFormatted} is less than minimum order size ${spotMarketMeta.minimumOrderSize}`
+    );
     return szFormatted;
   }
 
@@ -1064,7 +1070,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     // We need to truncate the amount to withdraw to the destination chain's decimal places.
     const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
-    const amountToWithdraw = quantity.toFixed(destinationTokenInfo.decimals);
+    const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
     const withdrawalId = await this.binanceApiClient.withdraw({
       coin: destinationToken,
       address: this.baseSignerAddress.toNative(),
