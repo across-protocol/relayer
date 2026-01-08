@@ -8,7 +8,6 @@ import {
   CHAIN_IDs,
   getTokenInfo,
   EvmAddress,
-  getHlInfoClient,
   getSpotMeta,
   getDstOftHandler,
   getL2Book,
@@ -23,15 +22,18 @@ import {
   paginatedEventQuery,
   getBlockForTimestamp,
   getSpotClearinghouseState,
+  getUserFees,
   getChainQuorum,
   toBN,
   getRedisCache,
   delay,
+  spreadEventWithBlockNumber,
+  createFormatFunction,
 } from "../utils";
 import { Log, SwapFlowInitialized } from "../interfaces";
 import { CHAIN_MAX_BLOCK_LOOKBACK } from "../common";
 import { MultiCallerClient, EventListener, HubPoolClient } from "../clients";
-
+import { utils as sdkUtils } from "@across-protocol/sdk";
 export interface HyperliquidExecutorClients {
   // We can further constrain the HubPoolClient type since we don't call any functions on it.
   hubPoolClient: HubPoolClient;
@@ -64,8 +66,10 @@ export type Pair = {
 };
 
 const BASE_TOKENS = ["USDT0", "USDC"];
+const USD_DECIMALS = 8;
 const abortController = new AbortController();
-const HL_FIXED_ADJUSTMENT = 10 ** 8;
+const HL_FIXED_ADJUSTMENT = 10 ** USD_DECIMALS;
+const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 
@@ -81,7 +85,7 @@ const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
 export class HyperliquidExecutor {
   private dstOftMessenger: Contract;
   private dstCctpMessenger: Contract;
-  private pairs: { [pair: string]: Pair } = {};
+  public pairs: { [pair: string]: Pair } = {};
   private pairUpdates: { [pairName: string]: number } = {};
   private eventListener: EventListener;
   private infoClient;
@@ -105,7 +109,7 @@ export class HyperliquidExecutor {
     this.dstOftMessenger = getDstOftHandler().connect(signer.connect(this.clients.dstProvider));
     this.dstCctpMessenger = getDstCctpHandler().connect(signer.connect(this.clients.dstProvider));
 
-    this.infoClient = getHlInfoClient();
+    this.infoClient = sdkUtils.getHlInfoClient();
     this.eventListener = new EventListener(this.chainId, this.logger, getChainQuorum(this.chainId));
   }
 
@@ -190,21 +194,29 @@ export class HyperliquidExecutor {
    * @notice Main entrypoint for the HyperliquidFinalizer service
    * @dev The finalizer gets `limitOrderOuts` by checking the current prices in the HL orderbook.
    */
-  public async finalizeSwapFlows(): Promise<void> {
+  public async finalizeSwapFlows(toBlock?: number): Promise<void> {
     // For each pair the finalizer handles, create a single transaction which bundles together all limit orders which have sufficient finalToken liquidity.
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
       const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
       // PairIds are formatted as `BASE_TOKEN-FINAL_TOKEN`.
       const [, finalTokenSymbol] = pairId.split("-");
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
-      const [_outputSpotBalance, outstandingOrders, l2Book] = await Promise.all([
+      const [_outputSpotBalance, outstandingOrders, l2Book, userFees] = await Promise.all([
         this.querySpotBalance(finalTokenSymbol, pair.swapHandler, pair.finalTokenDecimals),
-        this.getOutstandingOrdersOnPair(pair),
+        this.getOutstandingOrdersOnPair(pair, toBlock),
         getL2Book(this.infoClient, { coin: pair.name }),
+        getUserFees(this.infoClient, { user: pair.swapHandler.toNative() }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
+      // The market price is dependent on whether we are selling the base token or the final token.
       const currentPx = pair.baseForFinal ? l2Book.levels[0][0].px : l2Book.levels[1][0].px;
       const currentPxFixed = toBN(Math.floor(Number(currentPx) * HL_FIXED_ADJUSTMENT));
+      // The exchange rate must be in units of baseToken/finalToken. If we are selling the final token,
+      // then we need to invert the current price to get to this.
+      const hlFixedAdjustment = toBN(HL_FIXED_ADJUSTMENT);
+      const exchangeRate = pair.baseForFinal
+        ? currentPxFixed
+        : hlFixedAdjustment.mul(hlFixedAdjustment).div(currentPxFixed);
 
       // limitOrderOut is taken from current prices.
       // Fill orders FIFO.
@@ -216,7 +228,19 @@ export class HyperliquidExecutor {
           pair.baseTokenDecimals
         )(outstandingOrder.evmAmountIn);
         // LimitOrderOut = inputAmount * exchangeRate.
-        const _limitOrderOut = convertedInputAmount.mul(currentPxFixed).div(HL_FIXED_ADJUSTMENT);
+        // This is the price _before_ fees have been accounted for.
+        const limitOrderOutNoFees = convertedInputAmount.mul(exchangeRate).div(HL_FIXED_ADJUSTMENT);
+        // @dev the STABLE_SWAP_DISCOUNT (0.2) is applied to all stable pairs. We need to use the `userSpotCrossRate` fee
+        // parameter since all placed orders are market orders at the best ask.
+        const stableSwapFeeRate = toBN(
+          Math.floor(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT * HL_FIXED_ADJUSTMENT)
+        );
+        const realizedFeesInInputTokens = convertedInputAmount.mul(stableSwapFeeRate).div(HL_FIXED_ADJUSTMENT);
+        const realizedFees = ConvertDecimals(
+          pair.baseTokenDecimals,
+          pair.finalTokenDecimals
+        )(realizedFeesInInputTokens);
+        const _limitOrderOut = limitOrderOutNoFees.sub(realizedFees);
         const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
           ? outstandingOrder.maxAmountToSend
           : _limitOrderOut;
@@ -226,16 +250,17 @@ export class HyperliquidExecutor {
           outputAmounts.push(limitOrderOut);
           outputSpotBalance = outputSpotBalance.sub(limitOrderOut);
         } else {
-          // Outstanding orders are treated as a FIFO queue. As soon as there is insufficient liquidity to fill one, do not attempt to fill any more recent orders.
+          // Outstanding orders are treated as a FIFO queue. As soon as there is insufficient liquidity to fill one, do not attempt to fill any more recent orders.\
+          const formatter = createFormatFunction(2, 4, false, pair.finalTokenDecimals);
           this.logger.debug({
             at: "HyperliquidExecutor#finalizeSwapFlows",
             message: "Cannot finalize any more orders",
             amountToFinalize: quoteNonces.length,
             remainingAmount: outstandingOrders.length - quoteNonces.length,
             pairId,
-            outputSpotBalance,
+            outputSpotBalance: formatter(outputSpotBalance),
             nextOrderUp: outstandingOrder,
-            amountNeededToCover: limitOrderOut.sub(outputSpotBalance),
+            amountNeededToCover: formatter(limitOrderOut.sub(outputSpotBalance)),
           });
           break;
         }
@@ -257,7 +282,7 @@ export class HyperliquidExecutor {
   public startListeners(): void {
     // Handler for adding a new task based on a `SwapFlowInitialized` event.
     const handleSwapFlowInitiated = (log: Log) => {
-      const swapFlowInitiated = log.args as SwapFlowInitialized;
+      const swapFlowInitiated = spreadEventWithBlockNumber(log) as SwapFlowInitialized;
       // If we handled the event already, then ignore it.
       if (this.handledEvents.has(swapFlowInitiated.quoteNonce)) {
         return;
@@ -388,8 +413,7 @@ export class HyperliquidExecutor {
     const existingOrder = openOrders[0];
     const level = pair.baseForFinal ? 0 : 1;
     const bestAsk = Number(l2Book.levels[level][0].px);
-    const priceXe8 = Math.floor(bestAsk * 10 ** pair.finalTokenDecimals);
-    // No need to update prices.
+    const priceXe8 = toBN(Math.floor(bestAsk * 10 ** pair.finalTokenDecimals));
 
     const oid = Math.floor(Date.now() / 1000); // Set the new order id to the current time in seconds.
     // Atomically replace the existing order with the new order by first cancelling the existing order and then placing a new one.
@@ -401,6 +425,22 @@ export class HyperliquidExecutor {
       // If the inputSpotBalance is 0, then there is nothing to do.
       return { actionable: false, mrkdwn: "No order updates required" };
     }
+    // If the price is too low, do not submit a limit order anymore. The bot should essentially back off of making orders.
+    // e.g. if we back off of a price which is below peg by 10bps, then if the price we were submitting was at 0.99899, we would abort.
+    // @dev We multiply by -1 if the pair "sells" the base token since unfavorable slippage will occur when the price we are selling is < 1.
+    // We multiply by 1 when the pair "sells" the final token since unfavorable slippage will occur when the price we are buying is > 1.
+    const bpsFromParity = priceXe8.sub(HL_FIXED_ADJUSTMENT).mul(pair.baseForFinal ? -1 : 1);
+    if (bpsFromParity.gt(this.config.maxSlippageBps)) {
+      const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
+      const bpsFormatter = createFormatFunction(2, 4, false, 2); // Represent bps in %.
+      this.logger.warn({
+        at: "HyperliquidExecutor#updateOrderAmount",
+        message: "Not submitting new limit order due to excessive slippage",
+        bestAsk: usdFormatter(priceXe8),
+        maxSlippage: bpsFormatter(this.config.maxSlippageBps),
+      });
+      return { actionable: false, mrkdwn: "Slippage too high to submit order" };
+    }
     // Finally enqueue an order with the derived price and total swap handler's balance of baseToken.
     this.placeOrder(baseToken, finalToken, priceXe8, sizeXe8, oid);
     return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${sizeXe8}.` };
@@ -408,12 +448,15 @@ export class HyperliquidExecutor {
 
   // Onchain function wrappers.
   // Enqueues an order transaction in the multicaller client.
-  private placeOrder(baseToken: EvmAddress, finalToken: EvmAddress, price: number, size: BigNumber, oid: number) {
+  private placeOrder(baseToken: EvmAddress, finalToken: EvmAddress, price: BigNumber, size: BigNumber, oid: number) {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const formatter = createFormatFunction(2, 4, false, 8);
 
-    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${price}\n size: ${size}\n oid: ${oid}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n price: ${formatter(
+      price
+    )}\n size: ${formatter(size)}\n oid: ${oid}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
@@ -431,7 +474,7 @@ export class HyperliquidExecutor {
    * @param owner The address whose balance should be queried.
    * @param decimals Hyperliquid obverved token decimals (as defined in the token meta).
    */
-  private async querySpotBalance(tokenSymbol: string, owner: EvmAddress, decimals: number): Promise<BigNumber> {
+  async querySpotBalance(tokenSymbol: string, owner: EvmAddress, decimals: number): Promise<BigNumber> {
     const { balances } = await getSpotClearinghouseState(this.infoClient, { user: owner.toNative() });
     const balance = balances.find((balance) => balance.coin === tokenSymbol);
     if (isDefined(balance)) {
@@ -481,10 +524,10 @@ export class HyperliquidExecutor {
    * @param pair The baseToken -> finalToken pair whose outstanding orders are queried.
    * @param toBlock optional toBlock (defaults to "latest") to use when querying outstanding orders.
    */
-  private async getOutstandingOrdersOnPair(pair: Pair, toBlock?: number): Promise<SwapFlowInitialized[]> {
+  async getOutstandingOrdersOnPair(pair: Pair, to = this.dstSearchConfig.to): Promise<SwapFlowInitialized[]> {
     const l2TokenInfo = this._getTokenInfo(pair.baseToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
-    const searchConfig = { ...this.dstSearchConfig, to: toBlock ?? this.dstSearchConfig.to };
+    const searchConfig = { ...this.dstSearchConfig, to };
     const [orderInitializedEvents, orderFinalizedEvents] = await Promise.all([
       paginatedEventQuery(
         dstHandler,
@@ -497,11 +540,11 @@ export class HyperliquidExecutor {
         searchConfig
       ),
     ]);
+
+    const finalized = orderFinalizedEvents.map(({ args }) => args.quoteNonce);
     return orderInitializedEvents
-      .filter(
-        (initEvent) => !orderFinalizedEvents.map(({ args }) => args.quoteNonce).includes(initEvent.args.quoteNonce)
-      )
-      .map(({ args }) => args as SwapFlowInitialized);
+      .filter(({ args }) => !finalized.includes(args.quoteNonce))
+      .map((log) => spreadEventWithBlockNumber(log) as SwapFlowInitialized);
   }
 
   // Finalizes swap flows for the input quote nonces.
@@ -515,8 +558,11 @@ export class HyperliquidExecutor {
     const l2TokenInfo = this._getTokenInfo(baseToken, this.chainId);
     const finalTokenInfo = this._getTokenInfo(finalToken, this.chainId);
     const dstHandler = l2TokenInfo.symbol === "USDC" ? this.dstCctpMessenger : this.dstOftMessenger;
+    const formatter = createFormatFunction(2, 4, false, 8);
 
-    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${finalTokenInfo.symbol}\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs}`;
+    const mrkdwn = `\nbaseToken: ${l2TokenInfo.symbol}\n finalToken: ${
+      finalTokenInfo.symbol
+    }\n quoteNonces: ${quoteNonces}\n limitOrderOuts: ${limitOrderOutputs.map(formatter)}`;
     this.clients.multiCallerClient.enqueueTransaction({
       contract: dstHandler,
       chainId: this.chainId,
