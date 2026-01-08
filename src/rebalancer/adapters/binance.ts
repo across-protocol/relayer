@@ -8,6 +8,7 @@ import {
   CHAIN_IDs,
   Coin,
   Contract,
+  delay,
   ERC20,
   forEachAsync,
   fromWei,
@@ -189,6 +190,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         await this._depositToBinance(sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK, STATUS.PENDING_DEPOSIT);
+        // Delay a bit after depositing to Binance so we can, in the best case, place a market order immediately
+        // after we allow the deposit to confirm and be reflected in the Binance balance.
+        await delay(5);
       }
     }
 
@@ -230,6 +234,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
       await this._placeMarketOrder(cloid, orderDetails);
       await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
+      // Delay a bit before checking balances to withdraw so we can give this function a chance to successively place
+      // a market order successfully and subsequently withdraw the filled order. It takes a short time for the just filled
+      // order to be reflected in the balance.
+      await delay(5);
     }
 
     // Withdraw pending swaps if they have filled.
@@ -303,8 +311,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
         orderDetails.destinationToken,
         binanceWithdrawalNetwork,
-        Math.ceil(matchingFill.time / 1000) // Ceil this time so we only grab unfinalized withdrawals definitely sent
-        // AFTER the fill's time
+        Math.floor(matchingFill.time / 1000) - 5 * 60 // Floor this so we can grab the initiated withdrawal data whose
+        // ID we've already saved into Redis
       );
       const initiatedWithdrawalIsUnfinalized = unfinalizedWithdrawals.find(
         (withdrawal) => withdrawal.id === initiatedWithdrawalId
@@ -539,8 +547,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
         destinationToken,
         binanceWithdrawalNetwork,
-        Math.ceil(matchingFill.time / 1000) // Ceil this time so we only grab unfinalized withdrawals definitely sent
-        // AFTER the fill's time
+        Math.floor(matchingFill.time / 1000) - 5 * 60 // Floor this so we can grab the initiated withdrawal data whose
+        // ID we've already saved into Redis
       );
       const initiatedWithdrawalIsUnfinalized = unfinalizedWithdrawals.find(
         (withdrawal) => withdrawal.id === initiatedWithdrawalId

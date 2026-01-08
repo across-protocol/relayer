@@ -14,6 +14,7 @@ import {
   Address,
   BigNumber,
   bnZero,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
   CHAIN_IDs,
   coingecko,
   Contract,
@@ -73,8 +74,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   // Key used to query latest cloid that uniquely identifies orders. Also used to set cloids when placing HL orders.
   protected REDIS_KEY_LATEST_NONCE: string;
 
-  // TODO: Add redis functions here:
-
   constructor(readonly logger: winston.Logger, readonly config: RebalancerConfig, readonly baseSigner: Signer) {
     this.transactionClient = new TransactionClient(logger);
     this.priceClient = new PriceClient(logger, [
@@ -97,6 +96,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return;
   }
 
+  // ////////////////////////////////////////////////////////////
+  // PUBLIC METHODS
+  // ////////////////////////////////////////////////////////////
+
   abstract initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void>;
   abstract updateRebalanceStatuses(): Promise<void>;
   abstract getPendingRebalances(): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
@@ -105,6 +108,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     amountToTransfer: BigNumber,
     debugLog: boolean
   ): Promise<BigNumber>;
+
+  // ////////////////////////////////////////////////////////////
+  // PROTECTED REDIS HELPER METHODS
+  // ////////////////////////////////////////////////////////////
 
   protected abstract _redisGetOrderStatusKey(status: number): string;
 
@@ -167,17 +174,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     });
   }
 
-  protected _getAmountConverter(
-    originChain: number,
-    originToken: Address,
-    destinationChain: number,
-    destinationToken: Address
-  ): ReturnType<typeof ConvertDecimals> {
-    const originTokenInfo = getTokenInfo(originToken, originChain);
-    const destinationTokenInfo = getTokenInfo(destinationToken, destinationChain);
-    return ConvertDecimals(originTokenInfo.decimals, destinationTokenInfo.decimals);
-  }
-
   protected async _redisGetNextCloid(): Promise<string> {
     // Increment and get the latest nonce from Redis:
     const nonce = await this.redisCache.incr(`${this.REDIS_PREFIX}:${this.REDIS_KEY_LATEST_NONCE}`);
@@ -210,6 +206,21 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       message: `Deleted order details for cloid ${cloid} under key ${orderDetailsKey} and from status set ${orderStatusKey}`,
       result,
     });
+  }
+
+  // ////////////////////////////////////////////////////////////
+  // PROTECTED HELPER METHODS
+  // ////////////////////////////////////////////////////////////
+
+  protected _getAmountConverter(
+    originChain: number,
+    originToken: Address,
+    destinationChain: number,
+    destinationToken: Address
+  ): ReturnType<typeof ConvertDecimals> {
+    const originTokenInfo = getTokenInfo(originToken, originChain);
+    const destinationTokenInfo = getTokenInfo(destinationToken, destinationChain);
+    return ConvertDecimals(originTokenInfo.decimals, destinationTokenInfo.decimals);
   }
 
   // SVM addresses currently unsupported
@@ -286,6 +297,28 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
   }
 
+  private async _getCctpV2MaxFee(
+    originChain: number,
+    destinationChain: number,
+    amountToBridge: BigNumber
+  ): Promise<{
+    maxFee: BigNumber;
+    finalityThreshold: number;
+  }> {
+    // @todo: Figure out how to switch to fast mode if the `maxFee` allows for it.
+    return {
+      maxFee: bnZero,
+      finalityThreshold: CCTPV2_FINALITY_THRESHOLD_STANDARD,
+    };
+    // const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
+    //   this._getTokenInfo("USDC", originChain).address,
+    //   originChain,
+    //   destinationChain,
+    //   amountToBridge,
+    // );
+    // return { maxFee, finalityThreshold };
+  }
+
   private async _sendCctpBridge(
     originChain: number,
     destinationChain: number,
@@ -294,14 +327,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     // TODO: In the future, this could re-use a CCTPAdapter function.
     const cctpMessenger = await this._getCctpMessenger(originChain);
     const originUsdcToken = this._getTokenInfo("USDC", originChain).address;
-    // TODO: Don't always use fast mode, we should switch based on the expected fee and transfer size
-    // incase a portion of the fee is fixed. The expected fee should be 1bp.
-    const { maxFee, finalityThreshold } = await getV2DepositForBurnMaxFee(
-      originUsdcToken,
-      originChain,
-      destinationChain,
-      amountToBridge
-    );
     if (amountToBridge.gt(CCTP_MAX_SEND_AMOUNT)) {
       // TODO: Handle this case by sending multiple transactions.
       throw new Error(
@@ -309,6 +334,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       );
     }
     const formatter = createFormatFunction(2, 4, false, this._getTokenInfo("USDC", originChain).decimals);
+    const { maxFee, finalityThreshold } = await this._getCctpV2MaxFee(originChain, destinationChain, amountToBridge);
     const transaction = {
       contract: cctpMessenger,
       chainId: originChain,
@@ -453,8 +479,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     let bridgeFee = bnZero;
     if (token === "USDC") {
       // CCTP Fee:
-      const cctpV2FastTransferFeeBps = (await sdkUtils.getV2MinTransferFees(originChain, destinationChain)).fast;
-      bridgeFee = toBNWei(cctpV2FastTransferFeeBps, 18).mul(amountToTransfer).div(toBNWei(10000, 18));
+      const { maxFee } = await this._getCctpV2MaxFee(originChain, destinationChain, amountToTransfer);
+      bridgeFee = maxFee;
     } else if (token === "USDT") {
       // OFT Fee:
       const { feeStruct } = await this._getOftQuoteSend(originChain, destinationChain, amountToTransfer);
@@ -476,8 +502,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   protected async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {
     if (
-      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(originChain) ||
-      !EVM_OFT_MESSENGERS[TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]?.has(destinationChain)
+      !EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(originChain) ||
+      !EVM_OFT_MESSENGERS.get(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET])?.has(destinationChain)
     ) {
       return bnZero;
     }

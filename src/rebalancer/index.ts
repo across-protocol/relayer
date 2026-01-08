@@ -30,6 +30,10 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     130: {
       USDC: toBNWei("0", 6),
+      USDT: toBNWei("0", 6),
+    },
+    143: {
+      USDC: toBNWei("0", 6),
       USDT: toBNWei("20", 6),
     },
   };
@@ -38,6 +42,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -45,8 +50,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("10.1", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
@@ -67,6 +72,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     CHAIN_IDs.OPTIMISM,
     CHAIN_IDs.MAINNET,
     CHAIN_IDs.UNICHAIN,
+    CHAIN_IDs.MONAD,
     // CHAIN_IDs.BASE, // This shouldn't work and should fail on initialization
   ];
   const usdcChains = [
@@ -77,6 +83,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     CHAIN_IDs.MAINNET,
     CHAIN_IDs.BASE,
     CHAIN_IDs.UNICHAIN,
+    CHAIN_IDs.MONAD,
   ];
   const maxAmountToTransfer = toBNWei("10.5", 6);
   const rebalanceRoutes: RebalanceRoute[] = [];
