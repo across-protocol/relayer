@@ -1,16 +1,8 @@
-import {
-  BigNumber,
-  bnZero,
-  CHAIN_IDs,
-  config,
-  delay,
-  disconnectRedisClients,
-  Signer,
-  toBNWei,
-  winston,
-} from "../utils";
+import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
+import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
+import { OftAdapter } from "./adapters/oftAdapter";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute, TargetBalanceConfig } from "./rebalancer";
 import { RebalancerConfig } from "./RebalancerConfig";
 config();
@@ -32,8 +24,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("20", 6),
+      USDT: toBNWei("20", 6),
+      USDC: toBNWei("0", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -52,7 +44,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -61,6 +53,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -71,8 +64,10 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   // Construct adapters:
   const hyperliquidAdapter = new HyperliquidStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
   const binanceAdapter = new BinanceStablecoinSwapAdapter(logger, rebalancerConfig, baseSigner);
+  const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
+  const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
 
-  const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
+  const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
 
   // Following two variables are hardcoded to aid testing:
   const usdtChains = [
@@ -146,7 +141,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   });
 
   // Update all adapter order statuses so we can get the most accurate latest balances:
-  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(rebalanceRoutes.map((x) => adapters[x.adapter]));
+  const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(adapters));
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
     await adapter.updateRebalanceStatuses();
@@ -155,9 +150,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
       duration: performance.now() - timerStart,
     });
-    // There should probably be a delay between the above and `getPendingRebalances` to allow for any newly transmitted
-    // transactions to get mined.
-    await delay(5);
 
     // Modify all current balances with the pending rebalances:
     timerStart = performance.now();

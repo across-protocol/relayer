@@ -559,34 +559,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     const { HYPEREVM } = CHAIN_IDs;
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
-    // This function returns the total virtual balance of token that is in flight to chain.
 
-    // If there are any unfinalized bridges on the way to the destination chain, add virtual balances for them.
-    await forEachAsync(Array.from(this.allDestinationChains), async (destinationChain) => {
-      pendingRebalances[destinationChain] ??= {};
-      if (destinationChain !== HYPEREVM) {
-        const [usdtPendingRebalanceAmount, usdcPendingRebalanceAmount] = await Promise.all([
-          this._getUnfinalizedOftBridgeAmount(HYPEREVM, destinationChain),
-          this._getUnfinalizedCctpBridgeAmount(HYPEREVM, destinationChain),
-        ]);
-        if (usdtPendingRebalanceAmount.gt(bnZero)) {
-          this.logger.debug({
-            at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-            message: `Adding ${usdtPendingRebalanceAmount.toString()} for pending OFT rebalances from HyperEVM to ${destinationChain}`,
-          });
-          pendingRebalances[destinationChain]["USDT"] ??= usdtPendingRebalanceAmount;
-        }
-        if (usdcPendingRebalanceAmount.gt(bnZero)) {
-          this.logger.debug({
-            at: "HyperliquidStablecoinSwapAdapter.getPendingRebalances",
-            message: `Adding ${usdcPendingRebalanceAmount.toString()} for pending CCTP rebalances from HyperEVM to ${destinationChain}`,
-          });
-          pendingRebalances[destinationChain]["USDC"] ??= usdcPendingRebalanceAmount;
-        }
-      }
-    });
-
-    pendingRebalances[HYPEREVM] ??= {};
+    // For each order that is in the state of being bridged to HyperEVM, check if its bridged amount has arrived
+    // on HyperEVM yet, and if it has, then we should subtract its virtual balance from HyperEVM since that balance
+    // will soon be deposited into Hypercore.
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
     if (pendingBridgeToHyperevm.length > 0) {
       this.logger.debug({
@@ -594,11 +570,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Hyperevm cloids: ${pendingBridgeToHyperevm.join(", ")}`,
       });
     }
-
-    // If there are any finalized bridges to HyperEVM that correspond to orders that should subsequently be deposited
-    // into Hypercore, we should subtract their virtual balance from HyperEVM.
+    pendingRebalances[HYPEREVM] ??= {};
     await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
-      pendingRebalances[sourceChain] ??= {};
       if (sourceChain !== HYPEREVM) {
         let [usdtPendingRebalanceAmount, usdcPendingRebalanceAmount] = await Promise.all([
           this._getUnfinalizedOftBridgeAmount(sourceChain, HYPEREVM),
@@ -669,14 +642,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending withdrawal from Hypercore cloids: ${pendingWithdrawalsFromHypercore.join(", ")}`,
       });
     }
-    let unfinalizedUsdtWithdrawalAmount = await this._getUnfinalizedWithdrawalAmountFromHypercore(
-      "USDT",
-      this._getFromTimestamp() * 1000
-    );
-    let unfinalizedUsdcWithdrawalAmount = await this._getUnfinalizedWithdrawalAmountFromHypercore(
-      "USDC",
-      this._getFromTimestamp() * 1000
-    );
+    let [unfinalizedUsdtWithdrawalAmount, unfinalizedUsdcWithdrawalAmount] = await Promise.all([
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", this._getFromTimestamp() * 1000),
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", this._getFromTimestamp() * 1000),
+    ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken } = orderDetails;

@@ -375,50 +375,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
 
-    // If there are any unfinalized bridges on the way to the destination chain, add virtual balances for them.
-    await forEachAsync(Array.from(this.allDestinationTokens), async (destinationToken) => {
-      await forEachAsync(Array.from(this.allDestinationChains), async (destinationChain) => {
-        assert(
-          !isDefined(pendingRebalances[destinationChain]?.[destinationToken]),
-          "Destination chain should not have any pending rebalances for this destination token"
-        );
-        pendingRebalances[destinationChain] = {};
-        const binanceWithdrawalNetworkForDestinationChain = await this._getEntrypointNetwork(
-          destinationChain,
-          destinationToken
-        );
-        const requiresBridgeAfterWithdrawal = binanceWithdrawalNetworkForDestinationChain !== destinationChain;
-        if (requiresBridgeAfterWithdrawal) {
-          let pendingRebalanceAmount;
-          if (destinationToken === "USDT") {
-            pendingRebalanceAmount = await this._getUnfinalizedOftBridgeAmount(
-              binanceWithdrawalNetworkForDestinationChain,
-              destinationChain
-            );
-          } else {
-            pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(
-              binanceWithdrawalNetworkForDestinationChain,
-              destinationChain
-            );
-          }
-          if (pendingRebalanceAmount.gt(bnZero)) {
-            this.logger.debug({
-              at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-              message: `Adding ${pendingRebalanceAmount.toString()} ${destinationToken} for pending rebalances from ${binanceWithdrawalNetworkForDestinationChain} to ${destinationChain}`,
-            });
-            pendingRebalances[destinationChain][destinationToken] = pendingRebalanceAmount;
-          }
-        }
-      });
-    });
-
-    // If there are any finalized bridges to non-Binance networks that need to be subsequently deposited
-    // into Binance, subtract their virtual balances from the non-Binance networks.
-    // 1. Load all pending finalized bridges to non-Binance networks
-    // 2. For each order with status PENDING_BRIDGE_TO_BINANCE_NETWORK, subtract its virtual balance from unfinalized
-    //    bridge amount. If there is no more unfinalized bridge amount, then the order can be considered to be finalized
-    //    and we can subtract its virtual balance.
-
+    // If there are any rebalances that are currently in the state of being bridged to a Binance deposit network
+    // (to subsequently be deposited into Binance), then we should check if their bridged amounts have arrived at the
+    // deposit network yet. If they have, then the network's balance will be higher than we want to show, so we should
+    // subtract each order's expected deposit amount from that network's balance.
     const pendingBridgeToBinanceNetwork = await this._redisGetPendingBridgeToBinanceNetwork();
     if (pendingBridgeToBinanceNetwork.length > 0) {
       this.logger.debug({
@@ -426,9 +386,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending bridge to Binance deposit network cloids: ${pendingBridgeToBinanceNetwork.join(", ")}`,
       });
     }
-
-    // If there are any finalized bridges to a Binance deposit network that correspond to orders that should subsequently be deposited
-    // into Binance, we should subtract their virtual balance from the Binance deposit network.
     await forEachAsync(Array.from(this.allSourceTokens), async (sourceToken) => {
       await forEachAsync(Array.from(this.allSourceChains), async (sourceChain) => {
         const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
@@ -491,6 +448,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     });
 
+    // Add virtual destination chain credits for all pending orders, so that the user of this class is aware that
+    // we are in the process of sending tokens to the destination chain.
     const pendingOrders = await this._redisGetPendingOrders();
     if (pendingOrders.length > 0) {
       this.logger.debug({
@@ -499,8 +458,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         pendingOrders: pendingOrders,
       });
     }
-
-    // Add virtual balances for all pending orders:
     for (const cloid of pendingOrders) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
@@ -523,8 +480,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       ).add(convertedAmount);
     }
 
-    // Subtract virtual balance for pending withdrawals that have already finalized:
-    // For each pending withdrawal from Binance, check if it has finalized, and if it has, subtract its virtual balance from the binance withdrawal network.
+    // Similar to how we treat orders that are in the state of being bridged to a Binance deposit network, we need to
+    // also account for orders that are in the state of being bridged to a Binance withdrawal network (which may or may
+    // not be subsequently bridged to a final destination chain). If the withdrawn amount has arrived at the withdrawal network,
+    // then we should subtract the order's virtual balance from the withdrawal network.
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
@@ -585,13 +544,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
 
     return pendingRebalances;
-    // For any orders with pending status add virtual balance to destination chain.
-    // We need to make sure not to count orders with pending withdrawal status that have already finalized otherwise
-    // we'll double count them. To do this, get the total unfinalized withdrawal amount from Binance and the
-    // PENDING_WITHDRAWAL status orders. For each order, check if the order amount is less than the unfinalized withdrawal
-    // amount. If it is, then we can assume this order is still pending, so subtract from the unfinalized withdrawal
-    // amount counter and go to the next order. If the order amount is greater than the unfinalized withdrawal
-    // then we can assume this order has finalized, so subtract a virtual balance credit for the order amount.
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<void> {
