@@ -136,31 +136,17 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "hyperliquid"));
 
-    const { HYPEREVM } = CHAIN_IDs;
-    const provider_999 = await getProvider(HYPEREVM);
-    const connectedSigner_999 = this.baseSigner.connect(provider_999);
-
     for (const route of this.availableRoutes) {
-      // Initialize a provider for the source chain and check if we have spot market data
-      // and token data for that source token and destination token.
       const expectedName = `${route.sourceToken}-${route.destinationToken}`;
       if (!this.spotMarketMeta[expectedName]) {
         throw new Error(`Missing spotMarketMeta data for ${expectedName}`);
       }
     }
 
-    this.allDestinationChains = new Set<number>(this.availableRoutes.map((x) => x.destinationChain));
-    this.allSourceChains = new Set<number>(this.availableRoutes.map((x) => x.sourceChain));
-
-    // Tasks:
-    // - Check allowances and set them as needed.
-    // this.hyperliquidHelper = new Contract(
-    //     "todo",
-    //     [],
-    //     this.baseSigner
-    // );
-
     // Check allowance for CoreDepositWallet required to deposit USDC to Hypercore.
+    const { HYPEREVM } = CHAIN_IDs;
+    const provider_999 = await getProvider(HYPEREVM);
+    const connectedSigner_999 = this.baseSigner.connect(provider_999);
     const usdc = new Contract(this._getTokenInfo("USDC", HYPEREVM).address.toNative(), ERC20.abi, connectedSigner_999);
     const allowance = await usdc.allowance(this.baseSignerAddress.toNative(), USDC_CORE_DEPOSIT_WALLET_ADDRESS);
     if (allowance.lt(toBN(MAX_SAFE_ALLOWANCE).div(2))) {
@@ -199,8 +185,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
     const { sourceToken, sourceChain, destinationChain, destinationToken } = rebalanceRoute;
 
-    // When initializing a rebalance, the order status should be set either to PENDING_BRIDGE_TO_HYPEREVM or PENDING_DEPOSIT_TO_HYPERCORE
-    // depending on the source chain.
     if (rebalanceRoute.sourceChain !== CHAIN_IDs.HYPEREVM) {
       // Bridge this token into HyperEVM first
       this.logger.debug({
@@ -237,39 +221,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
-    // The most important thing we want this function to do so is to update state such that getPendingRebalances()
-    // returns the correct virtual balances:
-    // - Get all open orders and user fills from HL API.
-    // - Load all CCTP MintAndWithdraw events across all chains for user:
-    // - For all PENDING_BRIDGE_TO_HYPEREVM orders and PENDING_BRIDGE_TO_DESTINATION_CHAIN orders,
-    //   check if there is a matching MintAndWithdraw event.
-    //    - If there is a matching event, then we have some extra balance on the destination chain that we need to account for so
-    //      we should add negative virtual balances to cancel it out.
-    // - For all PENDING_WITHDRAWAL_FROM_HYPERCORE orders, check if there is a matching Transfer event
-    //    - If there is, then we have too much balance on HyperEVM that we need to account for so we should add
-    //      negative virtual balances to cancel it out.
-
-    // How to update order statuses and place new transactions:
-    // PENDING_BRIDGE_TO_HYPEREVM:
-    // - For any orders with this status and a matching MintAndWithdraw event, update the order to
-    //   PENDING_DEPOSIT_TO_HYPERCORE and initiate a deposit into Hypercore.
-    // PENDING_SWAP:
-    // - For any orders with this status, check if there is an open order order or a user fill matching this oid.
-    //   If there is none, then the order must have been cancelled so we need to replace it with the same OID.
-    //   If there is a user fill, update the order status to PENDING_WITHDRAWAL_FROM_HYPERCORE and initiate a withdrawal from Hypercore.
-    // - For any orders with this status that have been outstanding for > N hours, cancel them and replace them.
-    // PENDING_BRIDGE_TO_DESTINATION_CHAIN:
-    // - For any orders with this status and a matching MintAndWithdraw event, delete the order from Redis.
-    // PENDING_DEPOSIT_TO_HYPERCORE:
-    // - For any orders with this status and a matching Transfer event, change the order status to PENDING_SWAP
-    // PENDING_WITHDRAWAL_FROM_HYPERCORE:
-    // - For any orders with this status and a matching Transfer event, update the order status to PENDING_BRIDGE_TO_DESTINATION_CHAIN
-    //   or delete it if HyperEVM is the final destination chain. We can determine what to do based on the saved
-    //   RebalanceRoute information in Redis.
-
-    // Figure out what time we last received an update so we can get all updates since then:
-    // @todo Replace this hard code lookback
-    const lastPollEnd = this._getFromTimestamp();
 
     const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToHyperevm();
     if (pendingBridgeToHyperevm.length > 0) {
@@ -355,7 +306,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       }
     }
     for (const cloid of pendingSwaps) {
-      const matchingFill = await this._getMatchingFillForCloid(cloid, lastPollEnd * 1000);
+      const matchingFill = await this._getMatchingFillForCloid(cloid);
       const matchingOpenOrder = openOrders.find((order) => order.cloid === cloid);
       if (matchingFill) {
         this.logger.debug({
@@ -398,7 +349,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // For each finalized withdrawal from Hypercore, delete its status from Redis and optionally initiate
       // a bridge to the final destination chain if necessary.
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const matchingFill = await this._getMatchingFillForCloid(cloid, this._getFromTimestamp() * 1000);
+      const matchingFill = await this._getMatchingFillForCloid(cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
       }
@@ -645,7 +596,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingWithdrawalsFromHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { destinationToken } = orderDetails;
-      const matchingFill = await this._getMatchingFillForCloid(cloid, this._getFromTimestamp() * 1000);
+      const matchingFill = await this._getMatchingFillForCloid(cloid);
       if (!matchingFill) {
         throw new Error(`No matching fill found for cloid ${cloid} that has status PENDING_WITHDRAWAL_FROM_HYPERCORE`);
       }
@@ -793,10 +744,6 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer: amountToTransfer.toString(),
       });
     }
-
-    // Check for open orders and available balance. If no open orders matching desired CLOID and available balance
-    // is sufficient, then place order.
-
     await this._placeMarketOrder(orderDetails, cloid);
   }
 
@@ -854,13 +801,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _getMatchingFillForCloid(
-    cloid: string,
-    startTime: number
+    cloid: string
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const userFills = await infoClient.userFillsByTime({
       user: this.baseSignerAddress.toNative(),
-      startTime,
+      startTime: this._getFromTimestamp() * 1000,
     });
 
     const matchingFill = userFills.find((fill) => fill.cloid === cloid);
@@ -885,7 +831,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // We need to make sure there are not more than evmDecimals decimals for the amount to withdraw or the HL
     // spotSend/sendAsset transaction will fail "Invalid number of decimals".
     amountToWithdraw = toBNWei(
-      Number(fromWei(amountToWithdraw, destinationTokenMeta.coreDecimals)).toFixed(destinationTokenMeta.evmDecimals),
+      truncate(Number(fromWei(amountToWithdraw, destinationTokenMeta.coreDecimals)), destinationTokenMeta.evmDecimals),
       destinationTokenMeta.coreDecimals
     );
     return { details: matchingFill, amountToWithdraw };
