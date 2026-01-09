@@ -436,7 +436,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             // Order has finalized, subtract virtual balance from the binance deposit network:
             this.logger.debug({
               at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-              message: `Subtracting ${convertedOrderAmount.toString()} ${sourceToken} for order cloid ${cloid} that has finalized bridging to binance deposit network ${binanceDepositNetwork}`,
+              message: `Subtracting ${convertedOrderAmount.toString()} ${sourceToken} for order cloid ${cloid} that has finalized bridging from ${sourceChain} to binance deposit network ${binanceDepositNetwork}`,
             });
             pendingRebalances[binanceDepositNetwork] ??= {};
             pendingRebalances[binanceDepositNetwork][sourceToken] = (
