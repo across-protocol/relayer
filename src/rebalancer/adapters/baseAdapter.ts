@@ -22,6 +22,7 @@ import {
   ConvertDecimals,
   createFormatFunction,
   defiLlama,
+  delay,
   ERC20,
   ethers,
   EventSearchConfig,
@@ -279,6 +280,15 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     assert(this.initialized, "not initialized");
   }
 
+  protected async _wait(seconds: number): Promise<void> {
+    this.logger.debug({
+      at: "BaseAdapter._wait",
+      message: `Waiting for ${seconds} seconds...`,
+    });
+    await delay(seconds);
+    return;
+  }
+
   protected _getAmountConverter(
     originChain: number,
     originToken: Address,
@@ -528,7 +538,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 12; // 12 hours ago
+    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 24 hours ago
   }
 
   protected async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
@@ -672,7 +682,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return withdrawalAmount;
   }
 
-  protected async _submitTransaction(transaction: AugmentedTransaction): Promise<void> {
+  protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
     const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
     const { contract: targetContract, method, ...txnRequestData } = txnRequest;
     if (!succeed) {
@@ -690,5 +700,6 @@ export abstract class BaseAdapter implements RebalancerAdapter {
         }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
       );
     }
+    return response[0].hash;
   }
 }

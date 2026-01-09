@@ -1,4 +1,3 @@
-import { RedisCache } from "../../caching/RedisCache";
 import { AugmentedTransaction } from "../../clients";
 import {
   assert,
@@ -25,7 +24,6 @@ import {
   forEachAsync,
   ZERO_ADDRESS,
   truncate,
-  delay,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -333,7 +331,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
       // Wait some time after placing a new order to allow for it to execute and hopefully be immediately filled
       // and reflected in our HL balance. Then in the next step we can withdraw it from Hypercore.
-      await delay(10);
+      await this._wait(10);
     }
 
     let openOrders: hl.OpenOrdersResponse = [];

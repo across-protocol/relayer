@@ -3,30 +3,32 @@ import {
   assert,
   BigNumber,
   BINANCE_NETWORKS,
+  BinanceTransactionType,
   BinanceWithdrawal,
   bnZero,
   CHAIN_IDs,
   Coin,
   Contract,
-  delay,
   ERC20,
   forEachAsync,
   fromWei,
   getAccountCoins,
   getBinanceApiClient,
+  getBinanceTransactionTypeKey,
   getBinanceWithdrawals,
   getNetworkName,
   getProvider,
-  getRedisCache,
   isDefined,
+  isWeekday,
   paginatedEventQuery,
+  setBinanceDepositType,
+  setBinanceWithdrawalType,
   Signer,
   toBNWei,
   truncate,
   winston,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
-import { RedisCache } from "../../caching/RedisCache";
 import { BaseAdapter, OrderDetails } from "./baseAdapter";
 import { AugmentedTransaction } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -180,7 +182,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_BRIDGE_TO_BINANCE_NETWORK, STATUS.PENDING_DEPOSIT);
         // Delay a bit after depositing to Binance so we can, in the best case, place a market order immediately
         // after we allow the deposit to confirm and be reflected in the Binance balance.
-        await delay(10);
+        await this._wait(10);
       }
     }
 
@@ -225,7 +227,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       // Delay a bit before checking balances to withdraw so we can give this function a chance to successively place
       // a market order successfully and subsequently withdraw the filled order. It takes a short time for the just filled
       // order to be reflected in the balance.
-      await delay(10);
+      await this._wait(10);
     }
 
     // Withdraw pending swaps if they have filled.
@@ -262,7 +264,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL);
         // Delay a bit before checking checking whether this withdrawal has finalized so we have a chance at immediately
         // marking it as finalized and delete it from Redis.
-        await delay(5);
+        await this._wait(5);
       } else {
         // We throw an error here because we shouldn't expect the market order to ever not be filled.
         throw new Error(`No matching fill found for cloid ${cloid}`);
@@ -713,9 +715,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
     }
 
-    // - Opportunity cost of capital should be 0 since all withdrawals are very fast, even if going over the CCTP/OFT
-    // bridges.
-    const opportunityCostOfCapitalBps = 0;
+    // - Opportunity cost of capital when source chain is 999 and token is USDT. The rudimentary logic here is to assume 4bps when the
+    // OFT rebalance would end on a weekday.
+    //  @todo a better way to do this might be to use historical fills to calculate the relayer's
+    // latest profitability % to forecast the opportunity cost of capital.
+    const requiresOftBridgeFromHyperevm =
+      sourceChain === CHAIN_IDs.HYPEREVM &&
+      sourceToken === "USDT" &&
+      (await this._getEntrypointNetwork(sourceChain, sourceToken)) !== CHAIN_IDs.HYPEREVM;
+    const oftRebalanceEndTime =
+      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() + 11 * 60 * 60 * 1000;
+    const opportunityCostOfCapitalBps =
+      requiresOftBridgeFromHyperevm && (isWeekday() || isWeekday(new Date(oftRebalanceEndTime))) ? 4 : 0;
     const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
       .mul(amountToTransfer)
       .div(toBNWei(10000, 18));
@@ -809,7 +820,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       message: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
       mrkdwn: `Deposited ${amountReadable} ${sourceToken} to Binance on chain ${getNetworkName(sourceChain)}`,
     };
-    await this._submitTransaction(txn);
+    const txnHash = await this._submitTransaction(txn);
+    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, this.redisCache);
+    this.logger.debug({
+      at: "BinanceStablecoinSwapAdapter._depositToBinance",
+      message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
+      redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
+    });
   }
 
   private async _getBinanceBalance(token: string): Promise<number> {
@@ -1033,11 +1050,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
-    this.logger.debug({
+    await setBinanceWithdrawalType(
+      destinationEntrypointNetwork,
+      withdrawalId.id,
+      BinanceTransactionType.SWAP,
+      this.redisCache
+    );
+    this.logger.info({
       at: "BinanceStablecoinSwapAdapter._withdraw",
-      message: `Successfully withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${destinationEntrypointNetwork} for order cloid ${cloid}`,
-      withdrawalId,
+      message: `Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
+        destinationEntrypointNetwork
+      )} for order cloid ${cloid}`,
       redisWithdrawalIdKey: initiatedWithdrawalKey,
+      redisWithdrawalTypeKey: getBinanceTransactionTypeKey(destinationEntrypointNetwork, withdrawalId.id),
+      finalDestinationChain: destinationChain,
     });
   }
 

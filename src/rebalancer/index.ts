@@ -21,7 +21,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("20", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
@@ -36,7 +36,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     143: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
     },
   };
 
@@ -52,8 +52,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -140,7 +140,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     duration: performance.now() - timerStart,
   });
 
-  // Update all adapter order statuses so we can get the most accurate latest balances:
+  // Update all adapter order statuses so we can get the most accurate latest balances, and then query their balances.
   const adaptersToUpdate: Set<RebalancerAdapter> = new Set(Object.values(adapters));
   for (const adapter of adaptersToUpdate) {
     timerStart = performance.now();
@@ -150,7 +150,9 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
       duration: performance.now() - timerStart,
     });
+  }
 
+  for (const adapter of adaptersToUpdate) {
     // Modify all current balances with the pending rebalances:
     timerStart = performance.now();
     const pendingRebalances = await adapter.getPendingRebalances();
@@ -192,7 +194,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => ({
       [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
     })),
-  })
+  });
 
   // Finally, send out new rebalances:
   try {
