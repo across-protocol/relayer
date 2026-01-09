@@ -1,3 +1,8 @@
+/**
+ * @notice This file is not designed to be run in production. I have been using it as an entrypoint to test out the
+ * main `RebalancerClient` logic.
+ */
+
 import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
