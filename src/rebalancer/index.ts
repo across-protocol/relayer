@@ -24,7 +24,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("20", 6),
+      USDT: toBNWei("0", 6),
       USDC: toBNWei("0", 6),
     },
     8453: {
@@ -36,7 +36,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     143: {
       USDC: toBNWei("0", 6),
-      USDT: toBNWei("0", 6),
+      USDT: toBNWei("20", 6),
     },
   };
 
@@ -45,14 +45,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
@@ -67,7 +67,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const cctpAdapter = new CctpAdapter(logger, rebalancerConfig, baseSigner);
   const oftAdapter = new OftAdapter(logger, rebalancerConfig, baseSigner);
 
-  const adapters = { hyperliquid: hyperliquidAdapter, binance: binanceAdapter, cctp: cctpAdapter, oft: oftAdapter };
+  const adapters = { oft: oftAdapter, cctp: cctpAdapter, hyperliquid: hyperliquidAdapter, binance: binanceAdapter };
 
   // Following two variables are hardcoded to aid testing:
   const usdtChains = [
@@ -185,6 +185,14 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       }
     }
   }
+
+  logger.debug({
+    at: "index.ts:runRebalancer",
+    message: "Net current balances",
+    currentBalances: Object.entries(currentBalances).map(([chainId, tokens]) => ({
+      [chainId]: Object.fromEntries(Object.entries(tokens).map(([token, amount]) => [token, amount.toString()])),
+    })),
+  })
 
   // Finally, send out new rebalances:
   try {

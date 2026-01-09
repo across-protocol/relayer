@@ -29,17 +29,17 @@ export class CctpAdapter extends BaseAdapter {
       await forEachAsync(
         Array.from(allChains).filter((otherChainId) => otherChainId !== sourceChain),
         async (destinationChain) => {
-          pendingRebalances[destinationChain] ??= {};
           const pendingRebalanceAmount = await this._getUnfinalizedCctpBridgeAmount(sourceChain, destinationChain);
           if (pendingRebalanceAmount.gt(bnZero)) {
             this.logger.debug({
               at: "CctpAdapter.getPendingRebalances",
               message: `Adding ${pendingRebalanceAmount.toString()} USDC for pending rebalances from ${sourceChain} to ${destinationChain}`,
             });
+            pendingRebalances[destinationChain] ??= {};
+            pendingRebalances[destinationChain]["USDC"] = (pendingRebalances[destinationChain]?.["USDC"] ?? bnZero).add(
+              pendingRebalanceAmount
+            );
           }
-          pendingRebalances[destinationChain].USDC = (pendingRebalances[destinationChain]?.USDC ?? bnZero).add(
-            pendingRebalanceAmount
-          );
         }
       );
     });

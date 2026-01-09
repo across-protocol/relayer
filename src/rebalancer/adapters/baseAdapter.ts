@@ -36,6 +36,7 @@ import {
   getMessengerEvm,
   getNetworkName,
   getProvider,
+  getRedisCache,
   getTokenInfo,
   isDefined,
   isStargateBridge,
@@ -94,6 +95,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
+    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
+
     this.baseSignerAddress = EvmAddress.from(await this.baseSigner.getAddress());
 
     // Make sure each source token and destination token has an entry in token symbols map:

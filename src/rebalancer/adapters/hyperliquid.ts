@@ -15,7 +15,6 @@ import {
   fromWei,
   getNetworkName,
   getProvider,
-  getRedisCache,
   isWeekday,
   MAX_SAFE_ALLOWANCE,
   paginatedEventQuery,
@@ -137,12 +136,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   // ////////////////////////////////////////////////////////////
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
-    await super.initialize(_availableRoutes);
+    await super.initialize(_availableRoutes.filter((route) => route.adapter === "hyperliquid"));
 
     const { HYPEREVM } = CHAIN_IDs;
     const provider_999 = await getProvider(HYPEREVM);
     const connectedSigner_999 = this.baseSigner.connect(provider_999);
-    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
 
     for (const route of this.availableRoutes) {
       // Initialize a provider for the source chain and check if we have spot market data

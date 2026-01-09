@@ -53,9 +53,8 @@ export class RebalancerClient {
   ) {}
 
   async initialize(): Promise<void> {
-    for (const [name, adapter] of Object.entries(this.adapters)) {
-      const routesForAdapter = this.rebalanceRoutes.filter((route) => route.adapter === name);
-      await adapter.initialize(routesForAdapter);
+    for (const adapter of Object.values(this.adapters)) {
+      await adapter.initialize(this.rebalanceRoutes);
     }
   }
 

@@ -93,9 +93,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   // ////////////////////////////////////////////////////////////
 
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
-    await super.initialize(_availableRoutes);
+    await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
 
-    this.redisCache = (await getRedisCache(this.logger)) as RedisCache;
     this.binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
     await forEachAsync(this.availableRoutes, async (route) => {
@@ -427,7 +426,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             if (pendingRebalanceAmount.gte(convertedOrderAmount)) {
               this.logger.debug({
                 at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-                message: `Order cloid ${cloid} is possibly pending finalization to binance deposit network ${binanceDepositNetwork} still (remaining pending amount: ${pendingRebalanceAmount.toString()} ${sourceToken}, order expected amount: ${convertedOrderAmount.toString()})`,
+                message: `Order cloid ${cloid} is possibly pending finalization from ${sourceChain} to binance deposit network ${binanceDepositNetwork} still (remaining pending amount: ${pendingRebalanceAmount.toString()} ${sourceToken}, order expected amount: ${convertedOrderAmount.toString()})`,
               });
 
               pendingRebalanceAmount = pendingRebalanceAmount.sub(convertedOrderAmount);
