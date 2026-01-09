@@ -88,7 +88,7 @@
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
     "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
     "update-inventory-config": "yarn ts-node ./scripts/fetchInventoryConfig.ts",
-    "validate-root-bundle": "yarn ts-node src/scripts/validateRootBundle.ts"
+    "validate-root-bundle": "yarn ts-node src/scripts/validateRootBundle.ts | tee validateRootBundle-${REQUEST_TIME}.log"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.2.3",
