@@ -163,7 +163,15 @@ export async function setupDataworker(
     sampleRateModel
   );
 
-  const configStoreClient = new MockConfigStoreClient(spyLogger, configStore);
+  const configStoreClient = new MockConfigStoreClient(
+    spyLogger,
+    configStore,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true
+  );
   configStoreClient.setAvailableChains(testChainIdList);
 
   await configStoreClient.update();

@@ -534,6 +534,66 @@ describe("Dataworker: Load bundle data", async function () {
           .div(fixedPointAdjustment),
       });
     });
+    it("Falls back to origin chain repayment when selected repayment chain is disabled", async function () {
+      const depositV3Events: Event[] = [];
+      const fillV3Events: Event[] = [];
+
+      // Create three valid deposits
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      depositV3Events.push(generateV3Deposit({ outputToken: randomAddress() }));
+      await mockOriginSpokePoolClient.update(["FundsDeposited"]);
+      const deposits = mockOriginSpokePoolClient.getDeposits();
+
+      // Disable the repayment chain.
+      configStoreClient.updateGlobalConfig(
+        GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS,
+        JSON.stringify([repaymentChainId])
+      );
+      await configStoreClient.update();
+
+      // Fill deposits from different relayers
+      const relayer2 = randomAddress();
+      fillV3Events.push(generateV3FillFromDeposit(deposits[0]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[1]));
+      fillV3Events.push(generateV3FillFromDeposit(deposits[2], {}, relayer2));
+      await mockDestinationSpokePoolClient.update(["FilledRelay"]);
+      const data1 = await dataworkerInstance.clients.bundleDataClient.loadData(
+        getDefaultBlockRange(5),
+        spokePoolClients
+      );
+
+      // Repayment chain refund should be undefined.
+      expect(data1.bundleFillsV3[repaymentChainId]).to.be.undefined;
+
+      // Refund data should exist for the origin chain/input token combination.
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.length).to.equal(
+        depositV3Events.length
+      );
+      expect(
+        data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.depositId)
+      ).to.deep.equal(fillV3Events.map((event) => event.args.depositId));
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].fills.map((e) => e.lpFeePct)).to.deep.equal(
+        fillV3Events.map(() => lpFeePct)
+      );
+      const totalGrossRefundAmount = fillV3Events.reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0));
+      const totalV3LpFees = totalGrossRefundAmount.mul(lpFeePct).div(fixedPointAdjustment);
+      expect(totalV3LpFees).to.equal(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].realizedLpFees);
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].totalRefundAmount).to.equal(
+        totalGrossRefundAmount.sub(totalV3LpFees)
+      );
+      const refundAmountPct = fixedPointAdjustment.sub(lpFeePct);
+      expect(data1.bundleFillsV3[originChainId][toBytes32(erc20_1.address)].refunds).to.deep.equal({
+        [toBytes32(relayer.address)]: fillV3Events
+          .slice(0, fillV3Events.length - 1)
+          .reduce((agg, e) => agg.add(e.args.inputAmount), toBN(0))
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+        [toBytes32(relayer2)]: fillV3Events[fillV3Events.length - 1].args.inputAmount
+          .mul(refundAmountPct)
+          .div(fixedPointAdjustment),
+      });
+    });
     it("Ignores disabled chains", async function () {
       const depositV3Events: Event[] = [];
       const fillV3Events: Event[] = [];
