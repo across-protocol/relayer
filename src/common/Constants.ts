@@ -360,7 +360,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
   [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
-  [CHAIN_IDs.TATARA]: ["TATARA-USDC", "WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.MONAD_TESTNET]: ["USDC", "USDT", "WBTC"],
@@ -417,7 +416,6 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [CHAIN_IDs.ARBITRUM_SEPOLIA]: ArbitrumOrbitBridge,
     [CHAIN_IDs.POLYGON_AMOY]: PolygonERC20Bridge,
     [CHAIN_IDs.SCROLL_SEPOLIA]: ScrollERC20Bridge,
-    [CHAIN_IDs.TATARA]: PolygonERC20Bridge, // No rebalancing is supported.
   };
 
   const defaultBridges = {
