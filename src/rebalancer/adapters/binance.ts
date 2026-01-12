@@ -977,7 +977,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<{ unfinalizedWithdrawals: BinanceWithdrawal[]; finalizedWithdrawals: BinanceWithdrawal[] }> {
     assert(isDefined(BINANCE_NETWORKS[destinationChain]), "Destination chain should be a Binance network");
     const provider = await getProvider(destinationChain);
-    const eventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    // @dev Binance withdrawals are fast, so setting a lookback of 6 hours should capture any unfinalized withdrawals.
+    const withdrawalInitiatedLookbackPeriodSeconds = 6 * 60 * 60;
+    const withdrawalInitiatedFromTimestampSeconds = startTimeSeconds - withdrawalInitiatedLookbackPeriodSeconds;
+    const eventSearchConfig = await this._getEventSearchConfig(
+      destinationChain,
+      withdrawalInitiatedFromTimestampSeconds
+    );
     const destinationTokenContract = new Contract(
       this._getTokenInfo(destinationToken, destinationChain).address.toNative(),
       ERC20.abi,

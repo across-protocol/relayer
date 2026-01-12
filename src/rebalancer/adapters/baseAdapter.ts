@@ -33,6 +33,7 @@ import {
   getBlockForTimestamp,
   getCctpDomainForChainId,
   getCctpV2TokenMessenger,
+  getCurrentTime,
   getEndpointId,
   getMessengerEvm,
   getNetworkName,
@@ -537,15 +538,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return amountToBridge;
   }
 
-  protected _getFromTimestamp(): number {
-    return Math.floor(Date.now() / 1000) - 60 * 60 * 24; // 24 hours ago
-  }
-
-  protected async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
-    const fromTimestamp = this._getFromTimestamp();
+  protected async _getEventSearchConfig(chainId: number, fromTimestamp: number): Promise<EventSearchConfig> {
     const provider = await getProvider(chainId);
-    const fromBlock = await getBlockForTimestamp(this.logger, chainId, fromTimestamp);
-    const toBlock = await provider.getBlock("latest");
+    const [fromBlock, toBlock] = await Promise.all([
+      getBlockForTimestamp(this.logger, chainId, fromTimestamp),
+      provider.getBlock("latest"),
+    ]);
     const maxLookBack = this.config.maxBlockLookBack[chainId];
     return { from: fromBlock, to: toBlock.number, maxLookBack };
   }
@@ -589,8 +587,19 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
     const originMessenger = await this._getOftMessenger(originChain);
     const destinationMessenger = await this._getOftMessenger(destinationChain);
-    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
-    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    // @dev We want to set the lookback such that we can capture all unfinalized OFT bridge transactions, but not too
+    // long such that we are making unnecessary RPC requests. 24 hours should be more than enough, even for special
+    // case source chains like HyperEVM which takes 11 hours usually. The destination chain event search from timestamp
+    // should be set slightly longer than the origin chain one to make sure that each initiated event can be matched
+    // against its finalized event if that finalized event exists.
+    const lookbackPeriodSeconds = 24 * 60 * 60;
+    const originChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
+    const destinationChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds * 2;
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain, originChainFromTimestampSeconds);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(
+      destinationChain,
+      destinationChainFromTimestampSeconds
+    );
     // Fetch OFT events to determine OFT send statuses.
     const [sent, received] = await Promise.all([
       paginatedEventQuery(
@@ -637,8 +646,15 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
     const originMessenger = await this._getCctpMessenger(originChain);
     const destinationMessenger = await this._getCctpMessenger(destinationChain);
-    const originEventSearchConfig = await this._getEventSearchConfig(originChain);
-    const destinationEventSearchConfig = await this._getEventSearchConfig(destinationChain);
+    // @dev 12 hours should be a conservative lookback period to capture any unfinalized CCTP bridge transactions.
+    const lookbackPeriodSeconds = 12 * 60 * 60;
+    const originChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
+    const destinationChainFromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds * 2;
+    const originEventSearchConfig = await this._getEventSearchConfig(originChain, originChainFromTimestampSeconds);
+    const destinationEventSearchConfig = await this._getEventSearchConfig(
+      destinationChain,
+      destinationChainFromTimestampSeconds
+    );
     // Fetch CCTP events to determine CCTP send statuses.
     const [sent, received] = await Promise.all([
       paginatedEventQuery(

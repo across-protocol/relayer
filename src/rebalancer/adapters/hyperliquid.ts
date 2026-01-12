@@ -24,6 +24,7 @@ import {
   forEachAsync,
   ZERO_ADDRESS,
   truncate,
+  getCurrentTime,
 } from "../../utils";
 import { RebalanceRoute } from "../rebalancer";
 import * as hl from "@nktkas/hyperliquid";
@@ -136,12 +137,23 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   async initialize(_availableRoutes: RebalanceRoute[]): Promise<void> {
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "hyperliquid"));
 
-    for (const route of this.availableRoutes) {
-      const expectedName = `${route.sourceToken}-${route.destinationToken}`;
+    await forEachAsync(this.availableRoutes, async (route) => {
+      const { sourceToken, destinationToken, sourceChain, destinationChain } = route;
+      const expectedName = `${sourceToken}-${destinationToken}`;
       if (!this.spotMarketMeta[expectedName]) {
         throw new Error(`Missing spotMarketMeta data for ${expectedName}`);
       }
-    }
+      assert(
+        this._chainIsBridgeable(destinationChain, destinationToken),
+        `Destination chain ${getNetworkName(
+          destinationChain
+        )} is not a valid final destination chain for token ${destinationToken}`
+      );
+      assert(
+        this._chainIsBridgeable(sourceChain, sourceToken),
+        `Source chain ${getNetworkName(sourceChain)} is not a valid source chain for token ${sourceToken}`
+      );
+    });
 
     // Check allowance for CoreDepositWallet required to deposit USDC to Hypercore.
     const { HYPEREVM } = CHAIN_IDs;
@@ -589,9 +601,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Pending withdrawal from Hypercore cloids: ${pendingWithdrawalsFromHypercore.join(", ")}`,
       });
     }
+    // Hypercore withdrawals are fast, so setting a lookback of 6 hours should capture any unfinalized withdrawals.
+    const withdrawalInitiatedLookbackPeriodSeconds = 6 * 60 * 60;
+    const withdrawalInitiatedFromTimestampSeconds = getCurrentTime() - withdrawalInitiatedLookbackPeriodSeconds;
     let [unfinalizedUsdtWithdrawalAmount, unfinalizedUsdcWithdrawalAmount] = await Promise.all([
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", this._getFromTimestamp() * 1000),
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", this._getFromTimestamp() * 1000),
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", withdrawalInitiatedFromTimestampSeconds),
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", withdrawalInitiatedFromTimestampSeconds),
     ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
@@ -1099,25 +1114,34 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   ): Promise<BigNumber> {
     const { HYPEREVM } = CHAIN_IDs;
     const provider = await getProvider(HYPEREVM);
-    const eventSearchConfig = await this._getEventSearchConfig(HYPEREVM);
+    // @dev We should set the from timestamp of the finalized event search config to some value conservatively
+    // before the withdrawal initiated earliest timestamp to make sure that we're not missing any finalized events.
+    // Setting the from block equal to 12 hours before the withdrawal initiated earliest timestamp should be a good
+    // default because withdrawals from Hypercore should resolve in ~15 minutes typically.
+    const finalizedWithdrawalLookbackPeriodSeconds = 12 * 60 * 60;
+    const finalizedWithdrawalFromTimestampSeconds =
+      withdrawalInitiatedEarliestTimestamp - finalizedWithdrawalLookbackPeriodSeconds;
+    const finalizedWithdrawalEventSearchConfig = await this._getEventSearchConfig(
+      HYPEREVM,
+      finalizedWithdrawalFromTimestampSeconds
+    );
     const hyperevmToken = new Contract(
       this._getTokenInfo(destinationToken, HYPEREVM).address.toNative(),
       ERC20.abi,
       this.baseSigner.connect(provider)
     );
     const tokenMeta = this._getTokenMeta(destinationToken);
-    const finalizedWithdrawals = await paginatedEventQuery(
-      hyperevmToken,
-      hyperevmToken.filters.Transfer(
-        destinationToken === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : tokenMeta.evmSystemAddress.toNative(),
-        this.baseSignerAddress.toNative()
+    const [finalizedWithdrawals, initiatedWithdrawals] = await Promise.all([
+      paginatedEventQuery(
+        hyperevmToken,
+        hyperevmToken.filters.Transfer(
+          destinationToken === "USDC" ? USDC_CORE_DEPOSIT_WALLET_ADDRESS : tokenMeta.evmSystemAddress.toNative(),
+          this.baseSignerAddress.toNative()
+        ),
+        finalizedWithdrawalEventSearchConfig
       ),
-      eventSearchConfig
-    );
-    const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
-      destinationToken,
-      withdrawalInitiatedEarliestTimestamp
-    );
+      this._getInitiatedWithdrawalsFromHypercore(destinationToken, withdrawalInitiatedEarliestTimestamp),
+    ]);
 
     let unfinalizedWithdrawalAmount = bnZero;
     const finalizedWithdrawalTxnHashes = new Set<string>();
