@@ -9,5 +9,6 @@ RUN apt-get install -y libudev-dev libusb-1.0-0-dev jq yarn rsync
 RUN yarn
 
 RUN yarn build
+RUN yarn update-inventory-config
 
 ENTRYPOINT ["/bin/bash", "scripts/runCommand.sh"]
