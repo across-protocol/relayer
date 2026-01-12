@@ -174,7 +174,7 @@ export class RebalancerClient {
       });
     });
 
-    // Sort deficits by priority tier and then by amount, where the resultant list is in descending order of priority tier and then amount.
+    // Sort deficits by priority tier and then by amount, where the resultant list is in descending order of priority tier.
     const sortedDeficits: { chainId: number; token: string; deficitAmount: BigNumber }[] = [];
     Object.entries(destinationChainsWithDeficitBalances).forEach(([chainId, tokens]) => {
       Object.entries(tokens).forEach(([token, deficitAmount]) => {
@@ -196,7 +196,7 @@ export class RebalancerClient {
           }
 
           // Priority tiers are equal, compare amounts. If amounts are equal, give weight to the existing entry.
-          return _deficitAmount.lt(deficitAmount);
+          return deficitAmount.lt(_deficitAmount);
         });
         // If index is -1, then the new entry should be the last entry in the list.
         if (index === -1) {
@@ -219,7 +219,7 @@ export class RebalancerClient {
       });
     }
 
-    // Sort excesses using opposite logic as deficits, where the resultant list is in ascending order of priority tier and then amount.
+    // Sort excesses using opposite logic as deficits, where the resultant list is in ascending order of priority tier.
     const sortedExcesses: { chainId: number; token: string; excessAmount: BigNumber }[] = [];
     Object.entries(sourceChainsWithExcessBalances).forEach(([chainId, tokens]) => {
       Object.entries(tokens).forEach(([token, excessAmount]) => {
@@ -241,7 +241,7 @@ export class RebalancerClient {
           }
 
           // Priority tiers are equal, compare amounts. If amounts are equal, give weight to the existing entry.
-          return _excessAmount.gt(excessAmount);
+          return excessAmount.gt(_excessAmount);
         });
         // If index is -1, then the new entry should be the last entry in the list.
         if (index === -1) {
