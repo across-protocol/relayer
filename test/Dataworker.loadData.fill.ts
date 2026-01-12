@@ -546,11 +546,7 @@ describe("Dataworker: Load bundle data", async function () {
       const deposits = mockOriginSpokePoolClient.getDeposits();
 
       // Disable the repayment chain.
-      configStoreClient.updateGlobalConfig(
-        GLOBAL_CONFIG_STORE_KEYS.DISABLED_CHAINS,
-        JSON.stringify([repaymentChainId])
-      );
-      await configStoreClient.update();
+      configStoreClient._updateDisabledChains([repaymentChainId]);
 
       // Fill deposits from different relayers
       const relayer2 = randomAddress();
