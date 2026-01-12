@@ -341,12 +341,16 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         await this._withdrawToHyperevm(existingOrder.destinationToken, matchingFill.amountToWithdraw);
         await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
       } else if (!matchingOpenOrder) {
+        this.logger.debug({
+          at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
+          message: `Order ${cloid} was never filled and no longer exists, creating new order`,
+        });
         const existingOrder = await this._redisGetOrderDetails(cloid);
         await this._createHlOrder(existingOrder, cloid);
       } else {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: "Order is still unfilled",
+          message: `Order ${cloid} is still unfilled`,
           matchingOpenOrder,
         });
       }
@@ -373,7 +377,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Only proceed to update the order status if it has finalized:
       const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
         orderDetails.destinationToken,
-        Math.floor(matchingFill.details.time / 1000)
+        matchingFill.details.time
       );
       if (initiatedWithdrawals.length === 0) {
         this.logger.debug({
@@ -391,7 +395,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         unfinalizedWithdrawalAmounts[orderDetails.destinationToken] ??
         (await this._getUnfinalizedWithdrawalAmountFromHypercore(
           orderDetails.destinationToken,
-          Math.floor(matchingFill.details.time / 1000)
+          matchingFill.details.time
         ));
       // If HL were to impose a withdraw fee then we'd need to subtract the estimated fee from the expectedAmountToReceive
       // here otherwise we might have received less than the expected amount on HyperEVM.
@@ -602,11 +606,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     // Hypercore withdrawals are fast, so setting a lookback of 6 hours should capture any unfinalized withdrawals.
-    const withdrawalInitiatedLookbackPeriodSeconds = 6 * 60 * 60;
-    const withdrawalInitiatedFromTimestampSeconds = getCurrentTime() - withdrawalInitiatedLookbackPeriodSeconds;
+    const withdrawalInitiatedLookbackPeriod = 6 * 60 * 60;
+    const withdrawalInitiatedFromTimestamp = getCurrentTime() - withdrawalInitiatedLookbackPeriod;
     let [unfinalizedUsdtWithdrawalAmount, unfinalizedUsdcWithdrawalAmount] = await Promise.all([
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", withdrawalInitiatedFromTimestampSeconds),
-      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", withdrawalInitiatedFromTimestampSeconds),
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDT", withdrawalInitiatedFromTimestamp * 1000),
+      this._getUnfinalizedWithdrawalAmountFromHypercore("USDC", withdrawalInitiatedFromTimestamp * 1000),
     ]);
     for (const cloid of pendingWithdrawalsFromHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
@@ -618,7 +622,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Check if order finalized and if so, subtract its virtual balance from HyperEVM.
       const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
         orderDetails.destinationToken,
-        Math.floor(matchingFill.details.time / 1000)
+        matchingFill.details.time / 1000
       );
       if (initiatedWithdrawals.length === 0) {
         // No initiated withdrawal found, definitely cannot be finalized:
@@ -758,6 +762,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         availableBalanceEvmDecimals: availableBalanceEvmDecimals.toString(),
         amountToTransfer: amountToTransfer.toString(),
       });
+      return;
     }
     await this._placeMarketOrder(orderDetails, cloid);
   }
@@ -1078,14 +1083,14 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getInitiatedWithdrawalsFromHypercore(
     destinationToken: string,
-    withdrawalInitiatedEarliestTimestamp: number
+    withdrawalInitiatedEarliestTimestampMilliseconds: number
   ): Promise<any[]> {
     const tokenMeta = this._getTokenMeta(destinationToken);
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
     const initiatedWithdrawals = (
       await infoClient.userNonFundingLedgerUpdates({
         user: this.baseSignerAddress.toNative(),
-        startTime: withdrawalInitiatedEarliestTimestamp,
+        startTime: withdrawalInitiatedEarliestTimestampMilliseconds,
       })
     ).filter((_update) => {
       if ((_update.delta.type as any) === "send") {
@@ -1111,7 +1116,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
 
   private async _getUnfinalizedWithdrawalAmountFromHypercore(
     destinationToken: string,
-    withdrawalInitiatedEarliestTimestamp: number
+    withdrawalInitiatedEarliestTimestampMilliseconds: number
   ): Promise<BigNumber> {
     const provider = await getProvider(HYPEREVM);
     // @dev We should set the from timestamp of the finalized event search config to some value conservatively
@@ -1119,11 +1124,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     // Setting the from block equal to 12 hours before the withdrawal initiated earliest timestamp should be a good
     // default because withdrawals from Hypercore should resolve in ~15 minutes typically.
     const finalizedWithdrawalLookbackPeriodSeconds = 12 * 60 * 60;
-    const finalizedWithdrawalFromTimestampSeconds =
-      withdrawalInitiatedEarliestTimestamp - finalizedWithdrawalLookbackPeriodSeconds;
+    const finalizedWithdrawalFromTimestamp =
+      Math.floor(withdrawalInitiatedEarliestTimestampMilliseconds / 1000) - finalizedWithdrawalLookbackPeriodSeconds;
     const finalizedWithdrawalEventSearchConfig = await this._getEventSearchConfig(
       HYPEREVM,
-      finalizedWithdrawalFromTimestampSeconds
+      finalizedWithdrawalFromTimestamp
     );
     const hyperevmToken = new Contract(
       this._getTokenInfo(destinationToken, HYPEREVM).address.toNative(),
@@ -1140,7 +1145,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         ),
         finalizedWithdrawalEventSearchConfig
       ),
-      this._getInitiatedWithdrawalsFromHypercore(destinationToken, withdrawalInitiatedEarliestTimestamp),
+      this._getInitiatedWithdrawalsFromHypercore(destinationToken, withdrawalInitiatedEarliestTimestampMilliseconds),
     ]);
 
     let unfinalizedWithdrawalAmount = bnZero;

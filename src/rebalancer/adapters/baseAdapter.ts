@@ -538,10 +538,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return amountToBridge;
   }
 
-  protected async _getEventSearchConfig(chainId: number, fromTimestamp: number): Promise<EventSearchConfig> {
+  protected async _getEventSearchConfig(chainId: number, fromTimestampSeconds: number): Promise<EventSearchConfig> {
     const provider = await getProvider(chainId);
     const [fromBlock, toBlock] = await Promise.all([
-      getBlockForTimestamp(this.logger, chainId, fromTimestamp),
+      getBlockForTimestamp(this.logger, chainId, fromTimestampSeconds),
       provider.getBlock("latest"),
     ]);
     const maxLookBack = this.config.maxBlockLookBack[chainId];
