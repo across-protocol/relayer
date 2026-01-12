@@ -27,11 +27,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   logger = _logger;
   const currentBalances: { [chainId: number]: { [token: string]: BigNumber } } = {
     1: {
-      USDT: toBNWei("0", 6),
+      USDT: toBNWei("12", 6),
       USDC: toBNWei("0", 6),
     },
     10: {
-      USDC: toBNWei("12", 6),
+      USDC: toBNWei("0", 6),
       USDT: toBNWei("0", 6),
     },
     42161: {
@@ -55,19 +55,19 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     56: {
       USDT: toBNWei("0", 18),
-      USDC: toBNWei("30", 18),
+      USDC: toBNWei("0", 18),
     },
   };
 
   const targetBalances: TargetBalanceConfig = {
     USDT: {
-      "1": { targetBalance: toBNWei("18", 6), priorityTier: 0 },
+      "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("10.1", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "130": { targetBalance: toBNWei("12", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("10", 18), priorityTier: 1 },
+      "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: bnZero, priorityTier: 0 },
@@ -77,7 +77,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("10.2", 18), priorityTier: 1 },
     },
   };
   const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);

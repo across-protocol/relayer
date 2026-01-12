@@ -143,15 +143,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
 
     // Pending bridges to Binance network: we'll attempt to deposit the tokens to Binance if we have enough balance.
-    const pendingBridgeToHyperevm = await this._redisGetPendingBridgeToBinanceNetwork();
-    if (pendingBridgeToHyperevm.length > 0) {
+    const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgeToBinanceNetwork();
+    if (pendingBridgeToBinanceDepositNetwork.length > 0) {
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
         message: "Orders pending bridge to Binance network",
-        pendingBridgeToHyperevm,
+        pendingBridgeToBinanceDepositNetwork,
       });
     }
-    for (const cloid of pendingBridgeToHyperevm) {
+    for (const cloid of pendingBridgeToBinanceDepositNetwork) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
       const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
@@ -490,7 +490,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const pendingWithdrawals = await this._redisGetPendingWithdrawals();
     for (const cloid of pendingWithdrawals) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { destinationChain, destinationToken } = orderDetails;
+      const { destinationChain, destinationToken, sourceChain, sourceToken, amountToTransfer } = orderDetails;
       const { matchingFill } = await this._getMatchingFillForCloid(cloid);
       assert(isDefined(matchingFill), "Matching fill should be defined for order with status PENDING_WITHDRAWAL");
 
@@ -533,9 +533,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         });
         continue;
       }
+      const amountConverter = this._getAmountConverter(
+        sourceChain,
+        this._getTokenInfo(sourceToken, sourceChain).address,
+        destinationChain,
+        this._getTokenInfo(destinationToken, destinationChain).address
+      );
+      const convertedAmount = amountConverter(amountToTransfer);
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.getPendingRebalances",
-        message: `Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${orderDetails.amountToTransfer.toString()} from binance withdrawal network ${binanceWithdrawalNetwork}`,
+        message: `Withdrawal for order ${cloid} has finalized, subtracting the order's virtual balance of ${convertedAmount.toString()} from binance withdrawal network ${binanceWithdrawalNetwork}`,
         cloid: cloid,
         orderDetails: orderDetails,
         withdrawalDetails,
@@ -543,7 +550,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       pendingRebalances[binanceWithdrawalNetwork] ??= {};
       pendingRebalances[binanceWithdrawalNetwork][destinationToken] = (
         pendingRebalances[binanceWithdrawalNetwork][destinationToken] ?? bnZero
-      ).sub(orderDetails.amountToTransfer);
+      ).sub(convertedAmount);
     }
 
     return pendingRebalances;
