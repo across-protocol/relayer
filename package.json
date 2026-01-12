@@ -39,7 +39,7 @@
     "binance-api-node": "0.12.7",
     "dotenv": "^16.3.1",
     "ethers": "^5.7.2",
-    "hardhat": "^2.14.0",
+    "hardhat": "^2.28.0",
     "hardhat-deploy": "^0.11.34",
     "lodash": "^4.17.21",
     "lodash.get": "^4.4.2",
