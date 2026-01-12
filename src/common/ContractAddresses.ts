@@ -1,3 +1,4 @@
+import { getDeployedAddress } from "@across-protocol/contracts-beta";
 import { CHAIN_IDs } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
@@ -38,6 +39,7 @@ import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
 import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
 import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
+import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -234,6 +236,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x5616194d65638086a3191b1fef436f503ff329ec",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
   },
   [CHAIN_IDs.MONAD]: {
     cctpV2MessageTransmitter: {
@@ -312,14 +318,18 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
     dstCctpHandler: {
-      address: "0xb63c02e60C05F05975653edC83F876C334E07C6d",
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery", CHAIN_IDs.HYPEREVM),
     },
     dstOftHandler: {
-      address: "0xc8786D517b4e224bB43985A38dBeF8588D7354CD",
+      address: getDeployedAddress("DstOFTHandler", CHAIN_IDs.HYPEREVM),
+    },
+    hyperliquidDepositHandler: {
+      address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
+      abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -465,6 +475,14 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
   },
   [CHAIN_IDs.BLAST]: {
@@ -801,11 +819,6 @@ export const CONTRACT_ADDRESSES: {
     scrollGatewayRouter: {
       address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
-    },
-  },
-  [CHAIN_IDs.TATARA]: {
-    withdrawableErc20: {
-      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
     },
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {

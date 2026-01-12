@@ -42,6 +42,7 @@ export class OpStackWethBridge extends BaseL2BridgeAdapter {
       method: "withdraw",
       args: [amount],
       nonMulticall: true,
+      ensureConfirmation: true,
       message: "🎰 Unwrapped WETH on OpStack before withdrawing to L1",
       mrkdwn: `Unwrapped ${formatter(amount.toString())} WETH before withdrawing from ${getNetworkName(
         this.l2chainId
