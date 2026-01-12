@@ -294,11 +294,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingBridgeToHypercore) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      await this._createHlOrder(orderDetails, cloid);
-      await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
-      // Wait some time after placing a new order to allow for it to execute and hopefully be immediately filled
-      // and reflected in our HL balance. Then in the next step we can withdraw it from Hypercore.
-      await this._wait(10);
+      const orderResult = await this._createHlOrder(orderDetails, cloid);
+      if (orderResult) {
+        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT_TO_HYPERCORE, STATUS.PENDING_SWAP);
+        // Wait some time after placing a new order to allow for it to execute and hopefully be immediately filled
+        // and reflected in our HL balance. Then in the next step we can withdraw it from Hypercore.
+        await this._wait(10);
+      }
     }
 
     let openOrders: hl.OpenOrdersResponse = [];
@@ -622,7 +624,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       // Check if order finalized and if so, subtract its virtual balance from HyperEVM.
       const initiatedWithdrawals = await this._getInitiatedWithdrawalsFromHypercore(
         orderDetails.destinationToken,
-        matchingFill.details.time / 1000
+        matchingFill.details.time
       );
       if (initiatedWithdrawals.length === 0) {
         // No initiated withdrawal found, definitely cannot be finalized:
@@ -733,7 +735,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return takerFeePct;
   }
 
-  private async _createHlOrder(orderDetails: OrderDetails, cloid: string): Promise<void> {
+  private async _createHlOrder(
+    orderDetails: OrderDetails,
+    cloid: string
+  ): Promise<ReturnType<typeof this._placeMarketOrder> | undefined> {
     const { sourceToken, amountToTransfer } = orderDetails;
     const tokenMeta = this._getTokenMeta(sourceToken);
 
@@ -764,7 +769,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       });
       return;
     }
-    await this._placeMarketOrder(orderDetails, cloid);
+    return await this._placeMarketOrder(orderDetails, cloid);
   }
 
   private async _getLatestPrice(
@@ -805,10 +810,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     };
   }
 
-  private async _placeMarketOrder(orderDetails: OrderDetails, cloid: string): Promise<void> {
+  private async _placeMarketOrder(
+    orderDetails: OrderDetails,
+    cloid: string
+  ): Promise<ReturnType<typeof this._placeLimitOrder> | undefined> {
     const { sourceToken, destinationToken, amountToTransfer } = orderDetails;
     const { px } = await this._getLatestPrice(sourceToken, destinationToken, amountToTransfer);
-    await this._placeLimitOrder(orderDetails, cloid, px);
+    return await this._placeLimitOrder(orderDetails, cloid, px);
   }
 
   private _getSpotMarketMetaForRoute(sourceToken: string, destinationToken: string): SPOT_MARKET_META {
@@ -905,7 +913,11 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     return szFormatted;
   }
 
-  private async _placeLimitOrder(orderDetails: OrderDetails, cloid: string, px: string): Promise<void> {
+  private async _placeLimitOrder(
+    orderDetails: OrderDetails,
+    cloid: string,
+    px: string
+  ): Promise<ReturnType<typeof exchangeClient.order> | undefined> {
     const { sourceToken, destinationToken, amountToTransfer } = orderDetails;
     this.logger.debug({
       at: "HyperliquidStablecoinSwapAdapter._placeLimitOrder",
@@ -956,6 +968,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Order result for order ${cloid}`,
         result,
       });
+      return result;
     } catch (error: unknown) {
       if (error instanceof hl.ApiRequestError) {
         this.logger.error({

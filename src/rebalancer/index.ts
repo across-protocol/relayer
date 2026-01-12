@@ -26,7 +26,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("13", 6),
+      USDC: toBNWei("12", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
