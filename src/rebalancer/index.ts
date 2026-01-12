@@ -26,7 +26,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     42161: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("20", 6),
+      USDC: toBNWei("13", 6),
     },
     999: {
       USDT: toBNWei("0", 6),
@@ -50,8 +50,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "1": { targetBalance: bnZero, priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("10.3", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
     },
     USDC: {
@@ -78,7 +78,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const usdtChains = [
     CHAIN_IDs.HYPEREVM,
     CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BSC,
     CHAIN_IDs.OPTIMISM,
     CHAIN_IDs.MAINNET,
     CHAIN_IDs.UNICHAIN,
@@ -88,7 +87,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const usdcChains = [
     CHAIN_IDs.HYPEREVM,
     CHAIN_IDs.ARBITRUM,
-    CHAIN_IDs.BSC,
     CHAIN_IDs.OPTIMISM,
     CHAIN_IDs.MAINNET,
     CHAIN_IDs.BASE,
@@ -99,42 +97,30 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
   const rebalanceRoutes: RebalanceRoute[] = [];
   for (const usdtChain of usdtChains) {
     for (const usdcChain of usdcChains) {
-      rebalanceRoutes.push({
-        sourceChain: usdtChain,
-        sourceToken: "USDT",
-        destinationChain: usdcChain,
-        destinationToken: "USDC",
-        maxAmountToTransfer,
-        adapter: "binance",
-      });
-      rebalanceRoutes.push({
-        sourceChain: usdcChain,
-        sourceToken: "USDC",
-        destinationChain: usdtChain,
-        destinationToken: "USDT",
-        maxAmountToTransfer,
-        adapter: "binance",
-      });
+      for (const adapter of ["binance", "hyperliquid"]) {
+        // Handle exceptions:
+        if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
+          continue;
+        }
+        rebalanceRoutes.push({
+          sourceChain: usdtChain,
+          sourceToken: "USDT",
+          destinationChain: usdcChain,
+          destinationToken: "USDC",
+          maxAmountToTransfer,
+          adapter,
+        });
+        rebalanceRoutes.push({
+          sourceChain: usdcChain,
+          sourceToken: "USDC",
+          destinationChain: usdtChain,
+          destinationToken: "USDT",
+          maxAmountToTransfer,
+          adapter,
+        });
+      }
     }
   }
-
-  // Add hyperliquid swaps:
-  rebalanceRoutes.push({
-    sourceChain: CHAIN_IDs.HYPEREVM,
-    sourceToken: "USDT",
-    destinationChain: CHAIN_IDs.HYPEREVM,
-    destinationToken: "USDC",
-    maxAmountToTransfer,
-    adapter: "hyperliquid",
-  });
-  rebalanceRoutes.push({
-    sourceChain: CHAIN_IDs.HYPEREVM,
-    sourceToken: "USDC",
-    destinationChain: CHAIN_IDs.HYPEREVM,
-    destinationToken: "USDT",
-    maxAmountToTransfer,
-    adapter: "hyperliquid",
-  });
 
   const rebalancerClient = new RebalancerClient(logger, rebalancerConfig, adapters, rebalanceRoutes, baseSigner);
   let timerStart = performance.now();

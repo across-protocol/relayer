@@ -147,11 +147,13 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         this._chainIsBridgeable(destinationChain, destinationToken),
         `Destination chain ${getNetworkName(
           destinationChain
-        )} is not a valid final destination chain for token ${destinationToken}`
+        )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
         this._chainIsBridgeable(sourceChain, sourceToken),
-        `Source chain ${getNetworkName(sourceChain)} is not a valid source chain for token ${sourceToken}`
+        `Source chain ${getNetworkName(
+          sourceChain
+        )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
       );
     });
 
@@ -819,9 +821,12 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     cloid: string
   ): Promise<{ details: any; amountToWithdraw: BigNumber } | undefined> {
     const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    // Any fill that we are searching for in this client shouldn't be more than 24 hours old:
+    const lookbackPeriodSeconds = 24 * 60 * 60;
+    const fromTimestampSeconds = getCurrentTime() - lookbackPeriodSeconds;
     const userFills = await infoClient.userFillsByTime({
       user: this.baseSignerAddress.toNative(),
-      startTime: this._getFromTimestamp() * 1000,
+      startTime: fromTimestampSeconds * 1000, // @dev Time here is in milliseconds.
     });
 
     const matchingFill = userFills.find((fill) => fill.cloid === cloid);

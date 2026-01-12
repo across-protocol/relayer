@@ -116,11 +116,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           this._chainIsBridgeable(destinationChain, destinationToken),
         `Destination chain ${getNetworkName(
           destinationChain
-        )} is not a valid final destination chain for token ${destinationToken}`
+        )} is not a valid final destination chain for token ${destinationToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
         sourceEntrypointNetwork === sourceChain || this._chainIsBridgeable(sourceChain, sourceToken),
-        `Source chain ${getNetworkName(sourceChain)} is not a valid source chain for token ${sourceToken}`
+        `Source chain ${getNetworkName(
+          sourceChain
+        )} is not a valid source chain for token ${sourceToken} because it is either not a OFT or a CCTP bridge`
       );
       assert(
         sourceCoin.networkList.find((network) => network.name === BINANCE_NETWORKS[sourceEntrypointNetwork]),
