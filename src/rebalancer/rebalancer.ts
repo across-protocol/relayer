@@ -1,4 +1,3 @@
-import { TOKEN_SYMBOLS_MAP } from "@across-protocol/contracts";
 import {
   assert,
   BigNumber,
@@ -11,6 +10,7 @@ import {
   Signer,
   toBNWei,
   winston,
+  TOKEN_SYMBOLS_MAP,
 } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 

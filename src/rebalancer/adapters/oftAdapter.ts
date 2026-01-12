@@ -3,10 +3,9 @@
  * @dev In the future we will add support for sending new OFT rebalances.
  */
 
-import { BigNumber } from "ethers";
 import { RebalanceRoute } from "../rebalancer";
 import { BaseAdapter } from "./baseAdapter";
-import { bnZero, forEachAsync } from "../../utils";
+import { bnZero, forEachAsync, BigNumber } from "../../utils";
 
 export class OftAdapter extends BaseAdapter {
   async initialize(availableRoutes: RebalanceRoute[]): Promise<void> {
