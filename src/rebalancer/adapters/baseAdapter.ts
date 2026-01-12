@@ -40,6 +40,7 @@ import {
   getProvider,
   getRedisCache,
   getTokenInfo,
+  getTokenInfoFromSymbol,
   isDefined,
   isStargateBridge,
   MAX_SAFE_ALLOWANCE,
@@ -51,7 +52,6 @@ import {
   Signer,
   toBN,
   toBNWei,
-  TOKEN_EQUIVALENCE_REMAPPING,
   TOKEN_SYMBOLS_MAP,
   winston,
 } from "../../utils";
@@ -303,25 +303,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
 
   // SVM addresses currently unsupported
   protected _getTokenInfo(symbol: string, chainId: number): TokenInfo {
-    const remappedTokenSymbols = Object.entries(TOKEN_EQUIVALENCE_REMAPPING)
-      .filter(([, value]) => value === symbol)
-      .map(([key]) => key);
-    const allPossibleSymbols = [...remappedTokenSymbols, symbol];
-    const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).find((details) => {
-      const symbolMatches = allPossibleSymbols.some(
-        (_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase()
-      );
-      if (!symbolMatches) {
-        return false;
-      }
-      return details.addresses[chainId];
-    });
-    if (!tokenDetails) {
-      throw new Error(
-        `Token ${symbol} not found on chain ${chainId}, (remapped token symbols: ${remappedTokenSymbols.join(", ")})`
-      );
-    }
-    return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
+    return getTokenInfoFromSymbol(symbol, chainId);
   }
 
   protected async _getERC20Balance(chainId: number, tokenAddress: string): Promise<BigNumber> {

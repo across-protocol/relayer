@@ -2,9 +2,10 @@ import { TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
-import { formatUnits } from "./SDKUtils";
+import { formatUnits, getTokenInfo } from "./SDKUtils";
 import { isDefined } from "./TypeGuards";
 import { Address, toAddressType, EvmAddress, SvmAddress, SVMProvider, toBN } from "./";
+import { TokenInfo } from "../interfaces";
 
 const { ZERO_ADDRESS } = constants;
 
@@ -98,4 +99,27 @@ export async function getSolanaTokenBalance(
   }, toBN(0));
 
   return totalBalance;
+}
+
+export function getTokenInfoFromSymbol(symbol: string, chainId: number): TokenInfo {
+  // Create list of possible symbols for token:
+  const remappedTokenSymbols = Object.entries(TOKEN_EQUIVALENCE_REMAPPING)
+    .filter(([, value]) => value === symbol)
+    .map(([key]) => key);
+  const allPossibleSymbols = [...remappedTokenSymbols, symbol];
+  // Find the token address for the symbol that has an entry for the given chain ID. We assume that for each
+  // non-L1 chain, there is a single chain+address combination, otherwise this function wouldn't work.
+  const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).find((details) => {
+    const symbolMatches = allPossibleSymbols.some((_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase());
+    if (!symbolMatches) {
+      return false;
+    }
+    return details.addresses[chainId];
+  });
+  if (!tokenDetails) {
+    throw new Error(
+      `Token ${symbol} not found on chain ${chainId}, (remapped token symbols: ${remappedTokenSymbols.join(", ")})`
+    );
+  }
+  return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
 }
