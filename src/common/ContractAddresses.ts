@@ -821,11 +821,6 @@ export const CONTRACT_ADDRESSES: {
       abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
     },
   },
-  [CHAIN_IDs.TATARA]: {
-    withdrawableErc20: {
-      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
-    },
-  },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     cctpMessageTransmitter: {
       address: "0xbc498c326533d675cf571B90A2Ced265ACb7d086",
