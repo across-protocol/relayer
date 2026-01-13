@@ -86,7 +86,7 @@
     "deposit": "yarn node ./dist/scripts/spokepool.js deposit",
     "dispute": "yarn ts-node ./scripts/hubpool.ts dispute",
     "update": "git pull && yarn reinstall && yarn version --non-interactive && git show --quiet",
-    "update-addresses": "yarn node ./dist/scripts/fetch-addresses.js",
+    "update-addresses": "yarn ts-node ./scripts/fetch-addresses.ts",
     "update-inventory-config": "yarn node ./dist/scripts/fetchInventoryConfig.js",
     "validate-root-bundle": "yarn node ./dist/src/scripts/validateRootBundle.js | tee validateRootBundle-${REQUEST_TIME}.log"
   },
