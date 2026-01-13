@@ -676,6 +676,12 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return withdrawalAmount;
   }
 
+  // @todo: Add retry logic here! Or replace with the multicaller client. However, we can't easily swap in the MulticallerClient
+  // because of the interplay between tracking order statuses in the RedisCache and confirming on chain transactions. Often times
+  // we can only update an order status once its corresponding transaction has confirmed, which is different from how we use
+  // the multicaller client normally where we enqueue txns in the core logic and execute all transactions optimistically once we
+  // exit the core clients. In the Rebalancer use case we need to confirm transactions, but I've had trouble getting .wait()
+  // to work, due to what seems like on-chain timeouts while waiting for txns to confirm.
   protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
     const { reason, succeed, transaction: txnRequest } = (await this.transactionClient.simulate([transaction]))[0];
     const { contract: targetContract, method, ...txnRequestData } = txnRequest;

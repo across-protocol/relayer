@@ -92,7 +92,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
-      minimumOrderSize: 10,
+      minimumOrderSize: 10.01, // Added 0.01 to minimum to account for price volatility.
       szDecimals: 2,
       pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: false,
@@ -105,7 +105,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
-      minimumOrderSize: 10,
+      minimumOrderSize: 10.01, // Added 0.01 to minimum to account for price volatility.
       szDecimals: 2,
       pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: true,
@@ -332,8 +332,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
             existingOrder.destinationToken
           } from Hypercore to HyperEVM.`,
         });
-        await this._withdrawToHyperevm(existingOrder.destinationToken, matchingFill.amountToWithdraw);
-        await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+        const success = await this._withdrawToHyperevm(existingOrder.destinationToken, matchingFill.amountToWithdraw);
+        if (success) {
+          await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_SWAP, STATUS.PENDING_WITHDRAWAL_FROM_HYPERCORE);
+        }
       } else if (!matchingOpenOrder) {
         this.logger.debug({
           at: "HyperliquidStablecoinSwapAdapter.updateRebalanceStatuses",
@@ -705,6 +707,25 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
   // PRIVATE HELPER METHODS
   // ////////////////////////////////////////////////////////////
 
+  private async _getAvailableBalanceForToken(token: string): Promise<BigNumber> {
+    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
+    const spotClearingHouseState = await infoClient.spotClearinghouseState({ user: this.baseSignerAddress.toNative() });
+
+    const balanceToken = spotClearingHouseState.balances.find(
+      (balance) => balance.coin === this._remapTokenSymbolToHlSymbol(token)
+    );
+    if (!balanceToken) {
+      throw new Error(`No balance found in spotClearingHouseState for token: ${token}`);
+    }
+
+    const tokenMeta = this._getTokenMeta(token);
+    const availableBalance = toBNWei(balanceToken.total, tokenMeta.coreDecimals).sub(
+      toBNWei(balanceToken.hold, tokenMeta.coreDecimals)
+    );
+
+    return availableBalance;
+  }
+
   private async _getUserTakerFeePct(skipCache = false): Promise<BigNumber> {
     const cacheKey = "hyperliquid-user-fees";
 
@@ -734,20 +755,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     const sourceTokenMeta = this._getTokenMeta(sourceToken);
     const sourceTokenInfo = getTokenInfoFromSymbol(sourceToken, sourceChain);
 
-    const infoClient = new hl.InfoClient({ transport: new hl.HttpTransport() });
-
-    const spotClearingHouseState = await infoClient.spotClearinghouseState({ user: this.baseSignerAddress.toNative() });
-
-    const balanceInputToken = spotClearingHouseState.balances.find(
-      (balance) => balance.coin === this._remapTokenSymbolToHlSymbol(sourceToken)
-    );
-    if (!balanceInputToken) {
-      throw new Error(`No balance found in spotClearingHouseState for input token: ${sourceToken}`);
-    }
-
-    const availableBalance = toBNWei(balanceInputToken.total, sourceTokenMeta.coreDecimals).sub(
-      toBNWei(balanceInputToken.hold, sourceTokenMeta.coreDecimals)
-    );
+    const availableBalance = await this._getAvailableBalanceForToken(sourceToken);
     const availableBalanceEvmDecimals = ConvertDecimals(
       sourceTokenMeta.coreDecimals,
       sourceTokenInfo.decimals
@@ -994,7 +1002,10 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
-  private async _withdrawToHyperevm(destinationToken: string, amountToWithdrawCorePrecision: BigNumber): Promise<void> {
+  private async _withdrawToHyperevm(
+    destinationToken: string,
+    amountToWithdrawCorePrecision: BigNumber
+  ): Promise<boolean> {
     // CoreWriter contract on EVM that can be used to interact with Hypercore.
     const CORE_WRITER_EVM_ADDRESS = "0x3333333333333333333333333333333333333333";
     // CoreWriter exposes a single function that charges 20k gas to send an instruction on Hypercore.
@@ -1010,6 +1021,19 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       destinationToken === "USDC" ? 13 : 6, // action index of spotSend is 6 and sendAsset is 13
     ]);
     const tokenMeta = this._getTokenMeta(destinationToken);
+
+    // Check that we have enough balance to withdraw. Since we do this by calling the CoreWriter, if we don't have enough
+    // balance then the withdrawal won't revert on-chain but it'll fail on Hypercore silently.
+    const availableBalance = await this._getAvailableBalanceForToken(destinationToken);
+    if (availableBalance.lt(amountToWithdrawCorePrecision)) {
+      this.logger.debug({
+        at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
+        message: `Not enough balance to withdraw ${destinationToken} from Core to EVM. Available balance: ${availableBalance.toString()}`,
+        availableBalance: availableBalance.toString(),
+      });
+      return false;
+    }
+
     const provider = await getProvider(HYPEREVM);
     const connectedSigner = this.baseSigner.connect(provider);
 
@@ -1040,6 +1064,8 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
     this.logger.debug({
       at: "HyperliquidStablecoinSwapAdapter._withdrawToHyperevm",
       message: `Withdrawing ${amountToWithdraw} ${destinationToken} from Core to Evm by calling CoreWriter.sendRawAction() with bytes: ${bytes}`,
+      availableBalance: availableBalance.toString(),
+      amountToWithdrawCorePrecision: amountToWithdrawCorePrecision.toString(),
     });
 
     // Note: I'd like this to work via the multicaller client or runTransaction but the .wait() seems to fail.
@@ -1050,6 +1076,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       message: `Withdrew ${amountToWithdraw} ${destinationToken} from Hypercore to HyperEVM`,
       txn: blockExplorerLink(txn.hash, HYPEREVM),
     });
+    return true;
   }
 
   private async _depositToHypercore(sourceToken: string, amountToDepositEvmPrecision: BigNumber): Promise<void> {
