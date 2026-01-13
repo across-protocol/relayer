@@ -40,7 +40,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     999: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("0", 6),
+      USDC: toBNWei("12", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -54,8 +54,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDT: toBNWei("0", 6),
     },
     56: {
-      USDT: toBNWei("10.2", 18),
-      USDC: toBNWei("0", 18),
+      USDT: toBNWei("0", 18),
+      USDC: toBNWei("12", 18),
     },
   };
 
@@ -63,21 +63,21 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("11.2", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("11.2", 18), priorityTier: 1 },
     },
     USDC: {
-      "1": { targetBalance: bnZero, priorityTier: 0 },
+      "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("10.1", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
     },
   };
   const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
@@ -121,7 +121,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         }
         const sourceUsdtInfo = getTokenInfoFromSymbol("USDT", usdtChain);
         const sourceUsdcInfo = getTokenInfoFromSymbol("USDC", usdcChain);
-        const maxAmountToTransfer = "10.5";
+        const maxAmountToTransfer = "100";
 
         rebalanceRoutes.push({
           sourceChain: usdtChain,
