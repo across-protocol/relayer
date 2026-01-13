@@ -692,8 +692,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     const spreadFee = toBNWei(spreadPct.toFixed(18), 18).mul(amountToTransfer).div(toBNWei(1, 18));
 
-    // @todo: Move the following two components to the base adapter:
-
     // Bridge to Binance deposit network Fee:
     let bridgeToBinanceFee = bnZero;
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
@@ -997,10 +995,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       destinationTokenContract.filters.Transfer(null, this.baseSignerAddress.toNative()),
       eventSearchConfig
     );
-    // @todo: Make sure that the finalized event query time range is after the initiated event query, otherwise we might
-    // see false positives of unfinalized withdrawals just because we're not looking at the right time range for the
-    // the finalized events. The assumption we want to maintain is that we see all possible finalized events
-    // for the chosen inititated events.
     const initiatedWithdrawals = await this._getInitiatedBinanceWithdrawals(
       destinationToken,
       destinationChain,

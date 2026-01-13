@@ -288,8 +288,6 @@ export class RebalancerClient {
           getTokenInfoFromSymbol(destinationToken, Number(destinationChainId)).decimals,
           getTokenInfoFromSymbol(sourceToken, Number(sourceChainId)).decimals
         );
-        // @todo: Prioritize rebalance routes based on estimated cost and also be aware of user's fee cap.
-        // We need this function to take in a fee cap to handle this logic.
         await forEachAsync(this.rebalanceRoutes, async (r) => {
           // For this rebalance route, cap the deficit amount at the maxAmountToTransfer for this route.
           const deficitAmountCapped = r.maxAmountToTransfer.gt(converterFromDestinationToSource(deficitAmount))
@@ -314,6 +312,8 @@ export class RebalancerClient {
             }
           }
         });
+
+        // No matching rebalance routes for this excess->deficit flow so we need to evaluate the next excess.
         if (!isDefined(rebalanceRouteToUse)) {
           continue;
         }
@@ -352,8 +352,15 @@ export class RebalancerClient {
         break;
       }
       if (!isDefined(matchingExcess)) {
-        // @todo: This log could be clarified better. We get here if there are no rebalance routes that would fulfill
-        // this deficit that also happen to have an excess on the rebalance route's source chain.
+        // We get here if there are no rebalance routes that would fulfill
+        // this deficit that also happen to have an excess on the rebalance route's source chain. In other words,
+        // we can't fill this deficit so we need to move on.
+        this.logger.debug({
+          at: "RebalancerClient.rebalanceInventory",
+          message: `No excess balances with matching rebalance routes found to fill the deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
+            destinationChainId
+          )}, skipping this deficit`,
+        });
         continue;
       }
       const { sourceToken, sourceChain, maxAmountToTransfer, adapter } = rebalanceRouteToUse;
