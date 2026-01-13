@@ -96,10 +96,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.111-alpha.3":
-  version "4.3.111-alpha.3"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.111-alpha.3.tgz#31d64cb73fa6f900a26d952ee20118d3fab3b5e8"
-  integrity sha512-uAax1DvCxsTXRDxC6hi7bE70h+2U+AAoc23ypFRiP1D6uV3eWwEYaP/cO4WyLelWYIYDMBVTLtdIE+9XLh7RgA==
+"@across-protocol/sdk@4.3.111-alpha.4":
+  version "4.3.111-alpha.4"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.111-alpha.4.tgz#41ea12d7a7703bab9063ddab9cab0e51ff349534"
+  integrity sha512-K0FHnQU2HxGfGeOKTGfQGRwUbVx/+2eqDeKf+4ButjB9wU/gLrCVOfNT3WUaxkVZNeUTtrz2s7IIQNCB2zSQ2Q==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
@@ -128,7 +128,7 @@
     node-gyp "^11.0.0"
     superstruct "^0.15.4"
     tslib "^2.6.2"
-    viem "2.43"
+    viem "~2.43.0"
 
 "@adraffy/ens-normalize@1.10.1":
   version "1.10.1"
@@ -17078,20 +17078,6 @@ verror@1.10.0:
     core-util-is "1.0.2"
     extsprintf "^1.2.0"
 
-viem@2.43:
-  version "2.43.5"
-  resolved "https://registry.yarnpkg.com/viem/-/viem-2.43.5.tgz#450529892ee106132e9aa45bfc11e2641624190f"
-  integrity sha512-QuJpuEMEPM3EreN+vX4mVY68Sci0+zDxozYfbh/WfV+SSy/Gthm74PH8XmitXdty1xY54uTCJ+/Gbbd1IiMPSA==
-  dependencies:
-    "@noble/curves" "1.9.1"
-    "@noble/hashes" "1.8.0"
-    "@scure/bip32" "1.7.0"
-    "@scure/bip39" "1.6.0"
-    abitype "1.2.3"
-    isows "1.0.7"
-    ox "0.11.1"
-    ws "8.18.3"
-
 viem@^2.21.8:
   version "2.38.3"
   resolved "https://registry.yarnpkg.com/viem/-/viem-2.38.3.tgz#316905584d60188d3a921fc3960e55e9e46cb3f4"
@@ -17118,6 +17104,20 @@ viem@^2.37.2:
     abitype "1.1.0"
     isows "1.0.7"
     ox "0.9.6"
+    ws "8.18.3"
+
+viem@~2.43.0:
+  version "2.43.5"
+  resolved "https://registry.yarnpkg.com/viem/-/viem-2.43.5.tgz#450529892ee106132e9aa45bfc11e2641624190f"
+  integrity sha512-QuJpuEMEPM3EreN+vX4mVY68Sci0+zDxozYfbh/WfV+SSy/Gthm74PH8XmitXdty1xY54uTCJ+/Gbbd1IiMPSA==
+  dependencies:
+    "@noble/curves" "1.9.1"
+    "@noble/hashes" "1.8.0"
+    "@scure/bip32" "1.7.0"
+    "@scure/bip39" "1.6.0"
+    abitype "1.2.3"
+    isows "1.0.7"
+    ox "0.11.1"
     ws "8.18.3"
 
 walk-up-path@^1.0.0:
