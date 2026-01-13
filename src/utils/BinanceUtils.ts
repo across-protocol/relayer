@@ -5,7 +5,7 @@ import Binance, {
   type Binance as BinanceApi,
 } from "binance-api-node";
 import minimist from "minimist";
-import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs } from "./";
+import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, delay, CHAIN_IDs, winston } from "./";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise = undefined;
@@ -203,22 +203,28 @@ export async function getBinanceWithdrawals(
  * parses the unknown into a readable object to be used by the finalizers.
  * @returns A typed `AccountCoins` response.
  */
-export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  const coins = Object.values(await binanceApi["accountCoins"]());
-  return coins.map((coin) => {
-    const networkList = coin["networkList"]?.map((network) => {
+export async function getAccountCoins(binanceApi: BinanceApi, logger: winston.Logger): Promise<ParsedAccountCoins> {
+  try {
+    const coins = Object.values(await binanceApi["accountCoins"]());
+    return coins.map((coin) => {
+      const networkList = coin["networkList"]?.map((network) => {
+        return {
+          name: network["network"],
+          coin: network["coin"],
+          withdrawMin: network["withdrawMin"],
+          withdrawMax: network["withdrawMax"],
+          contractAddress: network["contractAddress"],
+        } as Network;
+      });
       return {
-        name: network["network"],
-        coin: network["coin"],
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        contractAddress: network["contractAddress"],
-      } as Network;
+        symbol: coin["coin"],
+        balance: coin["free"],
+        networkList,
+      } as Coin;
     });
-    return {
-      symbol: coin["coin"],
-      balance: coin["free"],
-      networkList,
-    } as Coin;
-  });
+  } catch (_err) {
+    const error = _err.toString();
+    logger.error({ at: "BinanceUtils", message: "Failed to get Binance account coins", error });
+    return [];
+  }
 }
