@@ -547,7 +547,10 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
       // This logic would need to change to support non stablecoin swaps.
       const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(originChain);
-      const nativeTokenDecimals = this._getTokenInfo(nativeTokenSymbol, originChain).decimals;
+      const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
+      if (!isDefined(nativeTokenDecimals)) {
+        throw new Error(`Unable to resolve native token decimals for chain ID ${originChain}`);
+      }
       const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
       const price = await this.priceClient.getPriceByAddress(
         nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[originChain]
