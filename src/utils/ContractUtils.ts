@@ -1,5 +1,4 @@
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
-import * as beta from "@across-protocol/contracts-beta";
 import {
   CHAIN_IDs,
   Contract,
@@ -58,24 +57,24 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 // The DstOft/Cctp handler contracts only exist on HyperEVM.
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address =
     CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address =
     CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getSrcOftPeriphery(chainId: number): Contract {
   const factoryName = "SponsoredOFTSrcPeriphery";
-  const artifact = beta[`${factoryName}__factory`];
-  return new Contract(beta.getDeployedAddress(factoryName, chainId), artifact.abi);
+  const artifact = typechain[`${factoryName}__factory`];
+  return new Contract(getDeployedAddress(factoryName, chainId), artifact.abi);
 }
