@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import { arch } from "@across-protocol/sdk";
 import {
   createKeyPairSignerFromBytes,
   createDefaultRpcTransport,
@@ -21,10 +20,10 @@ import {
   TOKEN_SYMBOLS_MAP,
   getAssociatedTokenAddress,
 } from "../../utils";
-import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
+import { PublicKey } from "@solana/web3.js";
 import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/contracts";
 import * as sdk from "@across-protocol/sdk";
-import { PublicKey } from "@solana/web3.js";
+import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
 import {
   MESSAGE_TRANSMITTER_V2_PROGRAM,
   MINT_RECIPIENT_LENGTH,
@@ -35,6 +34,7 @@ import {
   TOKEN_MESSENGER_V2_PROGRAM,
 } from "./svmConstants";
 
+const { arch } = sdk;
 const textEncoder = new TextEncoder();
 
 type SolanaAddress = KitAddress<string>;
@@ -242,8 +242,7 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
     accounts: [...receiveInstruction.accounts, ...buildHandleReceiveRemainingAccounts(tokenMessengerAccounts)],
   };
 
-  const tx = pipe(
-    await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
+  const tx = pipe(await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
     appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx)
   );
 
