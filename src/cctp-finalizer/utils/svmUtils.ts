@@ -34,7 +34,6 @@ import {
   TOKEN_MESSENGER_V2_PROGRAM,
 } from "./svmConstants";
 
-const { arch } = sdk;
 const textEncoder = new TextEncoder();
 
 type SolanaAddress = KitAddress<string>;
@@ -288,7 +287,7 @@ export async function checkIfAlreadyProcessedSvm(
 
   // Version 0 = V1, Version 1 = V2
   if (version === 0) {
-    return await arch.svm.hasCCTPV1MessageBeenProcessed(
+    return await sdk.arch.svm.hasCCTPV1MessageBeenProcessed(
       svmProvider,
       svmSigner,
       nonce,
@@ -330,7 +329,7 @@ export async function processMintSvm(
     nonce,
   });
 
-  const attestedMessage: arch.svm.AttestedCCTPMessage = {
+  const attestedMessage: sdk.arch.svm.AttestedCCTPMessage = {
     nonce,
     sourceDomain,
     messageBytes: attestation.message,
@@ -342,7 +341,7 @@ export async function processMintSvm(
 
   // Version 0 = V1, Version 1 = V2
   if (version === 0) {
-    const receiveMessageTx = await arch.svm.getCCTPV1ReceiveMessageTx(
+    const receiveMessageTx = await sdk.arch.svm.getCCTPV1ReceiveMessageTx(
       svmProvider,
       svmSigner,
       attestedMessage,
