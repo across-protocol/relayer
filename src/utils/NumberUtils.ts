@@ -1,5 +1,3 @@
-// Use this instead of toFixed() to truncate numbers to a certain number of decimals instead of rounding it to
-// that same number of decimals.
 /**
  * @notice Should be used as a replacement for Number.toFixed() where the result is not rounded to the set
  * number of decimals. toFixed() automatically rounds the last digit.

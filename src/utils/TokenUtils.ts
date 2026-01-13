@@ -109,17 +109,19 @@ export function getTokenInfoFromSymbol(symbol: string, chainId: number): TokenIn
   const allPossibleSymbols = [...remappedTokenSymbols, symbol];
   // Find the token address for the symbol that has an entry for the given chain ID. We assume that for each
   // non-L1 chain, there is a single chain+address combination, otherwise this function wouldn't work.
-  const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).find((details) => {
+  const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).filter((details) => {
     const symbolMatches = allPossibleSymbols.some((_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase());
     if (!symbolMatches) {
       return false;
     }
     return details.addresses[chainId];
   });
-  if (!tokenDetails) {
+  if (tokenDetails.length !== 1) {
     throw new Error(
-      `Token ${symbol} not found on chain ${chainId}, (remapped token symbols: ${remappedTokenSymbols.join(", ")})`
+      `Token ${symbol} not found on chain ${chainId} or multiple matches symbol+chain combination, (remapped token symbols: ${remappedTokenSymbols.join(
+        ", "
+      )})`
     );
   }
-  return getTokenInfo(EvmAddress.from(tokenDetails.addresses[chainId]), chainId);
+  return getTokenInfo(EvmAddress.from(tokenDetails[0].addresses[chainId]), chainId);
 }

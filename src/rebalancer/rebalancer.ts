@@ -72,7 +72,7 @@ export class RebalancerClient {
     currentBalances: { [chainId: number]: { [token: string]: BigNumber } },
     maxFeePct: BigNumber
   ): Promise<void> {
-    // Assert that each current balance maps to a target balance.
+    // Assert that each target balance has a corresponding current balance.
     for (const [sourceToken, tokenConfig] of Object.entries(this.config.targetBalances)) {
       for (const [sourceChain] of Object.entries(tokenConfig)) {
         assert(
