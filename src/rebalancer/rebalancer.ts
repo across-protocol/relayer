@@ -279,7 +279,8 @@ export class RebalancerClient {
       let rebalanceRouteToUse: RebalanceRoute | undefined;
       let cheapestExpectedCost = bnUint256Max;
       let matchingExcess: { chainId: number; token: string; excessAmount: BigNumber } | undefined;
-      await forEachAsync(sortedExcesses, async (excess, excessIndex) => {
+      for (let i = 0; i < sortedExcesses.length; i++) {
+        const excess = sortedExcesses[i];
         const { chainId: sourceChainId, token: sourceToken, excessAmount } = excess;
         // We assume here that the tokens are worth the same price,
         // as we'd need to normalize to USD terms to determine if an excess can fill a deficit otherwise.
@@ -314,7 +315,7 @@ export class RebalancerClient {
           }
         });
         if (!isDefined(rebalanceRouteToUse)) {
-          return;
+          continue;
         }
         matchingExcess = excess;
 
@@ -329,9 +330,10 @@ export class RebalancerClient {
             at: "RebalancerClient.rebalanceInventory",
             message: `Cheapest expected cost ${cheapestExpectedCost.toString()} is greater than max fee ${maxFee.toString()}, exiting`,
           });
-          return;
+          continue;
         }
 
+        // We have a matching excess now, we can exit this loop and move on to the next deficit.
         this.logger.debug({
           at: "RebalancerClient.rebalanceInventory",
           message: `Using cheapest rebalance route for ${sourceToken} on ${getNetworkName(
@@ -346,8 +348,9 @@ export class RebalancerClient {
         });
 
         // We found a matching excess, let's now modify the existing excess amount list so we don't overdraw this excess.
-        sortedExcesses[excessIndex].excessAmount = excessAmount.sub(deficitAmountCapped);
-      });
+        sortedExcesses[i].excessAmount = excessAmount.sub(deficitAmountCapped);
+        break;
+      }
       if (!isDefined(matchingExcess)) {
         // @todo: This log could be clarified better. We get here if there are no rebalance routes that would fulfill
         // this deficit that also happen to have an excess on the rebalance route's source chain.
