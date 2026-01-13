@@ -102,25 +102,39 @@ export async function getSolanaTokenBalance(
 }
 
 export function getTokenInfoFromSymbol(symbol: string, chainId: number): TokenInfo {
+  const simpleSearchResult = TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
+  if (simpleSearchResult) {
+    return getTokenInfo(EvmAddress.from(simpleSearchResult), chainId);
+  }
+
+  // For any token symbols that don't map exactly to a TOKEN_SYMBOLS_MAP entry, try to find its equivalent symbol.
   // Create list of possible symbols for token:
   const remappedTokenSymbols = Object.entries(TOKEN_EQUIVALENCE_REMAPPING)
     .filter(([, value]) => value === symbol)
     .map(([key]) => key);
-  const allPossibleSymbols = [...remappedTokenSymbols, symbol];
-  // Find the token address for the symbol that has an entry for the given chain ID. We assume that for each
-  // non-L1 chain, there is a single chain+address combination, otherwise this function wouldn't work.
+  // Find the token address for the symbol that has an entry for the given chain ID.
   const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).filter((details) => {
-    const symbolMatches = allPossibleSymbols.some((_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase());
+    const symbolMatches = remappedTokenSymbols.some(
+      (_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase()
+    );
     if (!symbolMatches) {
       return false;
     }
     return details.addresses[chainId];
   });
-  if (tokenDetails.length !== 1) {
+  if (tokenDetails.length === 0) {
     throw new Error(
-      `Token ${symbol} not found on chain ${chainId} or multiple matches symbol+chain combination, (remapped token symbols: ${remappedTokenSymbols.join(
-        ", "
-      )})`
+      `Token ${symbol} not found on chain ${chainId}, (searched token symbols: ${remappedTokenSymbols.join(", ")})`
+    );
+  }
+  if (
+    tokenDetails.length > 1 &&
+    tokenDetails.some((details) => details.addresses[chainId] !== tokenDetails[0].addresses[chainId])
+  ) {
+    throw new Error(
+      `Multiple tokens found for symbol ${symbol} on chain ${chainId} with different addresses, (matching token symbols: ${tokenDetails
+        .map((details) => details.symbol)
+        .join(", ")})`
     );
   }
   return getTokenInfo(EvmAddress.from(tokenDetails[0].addresses[chainId]), chainId);
