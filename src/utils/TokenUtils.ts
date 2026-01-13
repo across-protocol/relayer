@@ -1,4 +1,4 @@
-import { TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CHAIN_IDs, TOKEN_EQUIVALENCE_REMAPPING, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { constants, utils, arch } from "@across-protocol/sdk";
 import { CONTRACT_ADDRESSES } from "../common";
 import { BigNumberish, BigNumber } from "./BNUtils";
@@ -101,41 +101,26 @@ export async function getSolanaTokenBalance(
   return totalBalance;
 }
 
-export function getTokenInfoFromSymbol(symbol: string, chainId: number): TokenInfo {
-  const simpleSearchResult = TOKEN_SYMBOLS_MAP[symbol]?.addresses[chainId];
-  if (simpleSearchResult) {
-    return getTokenInfo(EvmAddress.from(simpleSearchResult), chainId);
-  }
+/**
+ * @notice Returns token info using l1 token symbol for chain ID. If token symbol is not an L1 token
+ * symbol then this function will throw. This function will also throw if the token doesn't exist
+ * on the chain.
+ * @param l1TokenSymbol L1 token symbol to get the token info for.
+ * @param chainId Chain ID to get the token info for.
+ * @returns Token info for the given l1 token symbol and chain ID.
+ */
+export function getTokenInfoFromSymbol(l1TokenSymbol: string, chainId: number): TokenInfo {
+  const { MAINNET } = CHAIN_IDs;
+  const l1TokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP[l1TokenSymbol]?.addresses[MAINNET]);
+  const l1TokenInfo = getTokenInfo(l1TokenAddress, MAINNET);
 
-  // For any token symbols that don't map exactly to a TOKEN_SYMBOLS_MAP entry, try to find its equivalent symbol.
-  // Create list of possible symbols for token:
-  const remappedTokenSymbols = Object.entries(TOKEN_EQUIVALENCE_REMAPPING)
-    .filter(([, value]) => value === symbol)
-    .map(([key]) => key);
-  // Find the token address for the symbol that has an entry for the given chain ID.
-  const tokenDetails = Object.values(TOKEN_SYMBOLS_MAP).filter((details) => {
-    const symbolMatches = remappedTokenSymbols.some(
-      (_symbol) => _symbol.toLowerCase() === details.symbol.toLowerCase()
-    );
-    if (!symbolMatches) {
-      return false;
+  if (chainId === CHAIN_IDs.MAINNET) {
+    return l1TokenInfo;
+  } else {
+    const remoteTokenAddress = getRemoteTokenForL1Token(l1TokenAddress, chainId, MAINNET);
+    if (!remoteTokenAddress) {
+      throw new Error(`Unable to resolve remote token address for ${l1TokenSymbol} on chain ${chainId}`);
     }
-    return details.addresses[chainId];
-  });
-  if (tokenDetails.length === 0) {
-    throw new Error(
-      `Token ${symbol} not found on chain ${chainId}, (searched token symbols: ${remappedTokenSymbols.join(", ")})`
-    );
+    return getTokenInfo(remoteTokenAddress, chainId);
   }
-  if (
-    tokenDetails.length > 1 &&
-    tokenDetails.some((details) => details.addresses[chainId] !== tokenDetails[0].addresses[chainId])
-  ) {
-    throw new Error(
-      `Multiple tokens found for symbol ${symbol} on chain ${chainId} with different addresses, (matching token symbols: ${tokenDetails
-        .map((details) => details.symbol)
-        .join(", ")})`
-    );
-  }
-  return getTokenInfo(EvmAddress.from(tokenDetails[0].addresses[chainId]), chainId);
 }
