@@ -424,7 +424,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
   };
 
   const defaultBridges = {
-    [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge, // @TODO: Is this enough for MegaETH?
+    [ChainFamily.OP_STACK]: OpStackDefaultERC20Bridge,
     [ChainFamily.ORBIT]: ArbitrumOrbitBridge,
     [ChainFamily.ZK_STACK]: ZKStackBridge,
   };

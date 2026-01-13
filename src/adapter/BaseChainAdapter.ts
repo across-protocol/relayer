@@ -469,8 +469,8 @@ export class BaseChainAdapter {
     // Permit bypass if simMode is set in order to permit tests to pass.
     if (simMode === false) {
       const symbol = await contract.symbol();
-      const { BSC, HYPEREVM, MAINNET, PLASMA, MONAD, MEGAETH } = CHAIN_IDs;
-      const nativeTokenChains = [BSC, HYPEREVM, MAINNET, PLASMA, MONAD, MEGAETH];
+      const { BSC, HYPEREVM, MAINNET, PLASMA, MONAD } = CHAIN_IDs;
+      const nativeTokenChains = [BSC, HYPEREVM, MAINNET, PLASMA, MONAD];
       const prependW = nativeTokenChains.some((chainId) => PUBLIC_NETWORKS[chainId].nativeToken === nativeTokenSymbol);
       const expectedTokenSymbol = prependW ? `W${nativeTokenSymbol}` : nativeTokenSymbol;
       assert(
