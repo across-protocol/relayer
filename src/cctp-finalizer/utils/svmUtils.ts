@@ -8,9 +8,10 @@ import {
   address,
   getProgramDerivedAddress,
   appendTransactionMessageInstruction,
+  pipe,
   type Address as KitAddress,
   AccountRole,
-  type IAccountMeta,
+  type AccountMeta,
 } from "@solana/kit";
 import {
   winston,
@@ -176,7 +177,7 @@ async function getTokenMessengerAccounts(
   };
 }
 
-function buildHandleReceiveRemainingAccounts(accounts: TokenMessengerAccounts): IAccountMeta<string>[] {
+function buildHandleReceiveRemainingAccounts(accounts: TokenMessengerAccounts): AccountMeta<string>[] {
   return [
     { address: accounts.tokenMessengerAccount, role: AccountRole.READONLY },
     { address: accounts.remoteTokenMessengerKey, role: AccountRole.READONLY },
@@ -241,8 +242,10 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
     accounts: [...receiveInstruction.accounts, ...buildHandleReceiveRemainingAccounts(tokenMessengerAccounts)],
   };
 
-  let tx = await sdk.arch.svm.createDefaultTransaction(provider, signer);
-  tx = appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx);
+  const tx = pipe(
+    await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
+    appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx)
+  );
 
   const signature = await sendAndConfirmSolanaTransaction(tx, provider);
   logger.info({
