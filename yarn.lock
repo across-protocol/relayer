@@ -16,11 +16,6 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.88.tgz#1ba756921a06bd5bd2d3750a934b1ceb624a6b66"
   integrity sha512-pwvbDpaMm25VCsjc9G3gsIyWxY/mak+AGg0NHQszhS1nbKFFZxgJe6Qs5v9IIND7mlxTAXFmXNLOsjwC9U5Kkg==
 
-"@across-protocol/constants@^3.1.94":
-  version "3.1.94"
-  resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.94.tgz#17c52c7234133df63411c6ea77133ed25c88c710"
-  integrity sha512-wZWgzELYjsaMqbtRqIgXz9u2nuJUEv+ivWoidreEsNbGL1TPorPtnC3nIobFKXB+hnbembxYWsj5Py2pGPZwQw==
-
 "@across-protocol/constants@^3.1.95", "@across-protocol/constants@^3.1.97":
   version "3.1.97"
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.97.tgz#a9df3ca45475863b809622cdac4d2a411e0d3450"
@@ -101,13 +96,13 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.109":
-  version "4.3.109"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.109.tgz#24f0a3b172e4a6c4e7fe5b106a9cc9a956affb84"
-  integrity sha512-t8sOG25t2frYDRMkosQTMgFp6Vo3QLmrjpnPWiNZtFrhLvi9jFZDNyf225v+LH06pSFr+433rdkP2JjT0UZVJg==
+"@across-protocol/sdk@4.3.111-alpha.0":
+  version "4.3.111-alpha.0"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.111-alpha.0.tgz#278cd5429d5f060786217686e040eadda26a7be4"
+  integrity sha512-nHIgRrjzARpDo1bujJFPXl7PGgGBlCFDUWlcyG98TbHNqLXGFN9Gc+yX99narIR+p+IAlUrfaxupa0Uope27Gw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
-    "@across-protocol/constants" "^3.1.94"
+    "@across-protocol/constants" "^3.1.97"
     "@across-protocol/contracts" "4.1.19"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"

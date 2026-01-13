@@ -113,6 +113,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0x470458C91978D2d929704489Ad730DC3E3001113",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
+    // @TODO: Check MegaETH contract overrides
     ovmStandardBridge_690: {
       address: "0xc473ca7E02af24c129c2eEf51F2aDf0411c1Df69",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -468,6 +469,7 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
+  // @TODO: Check MegaETH contract overrides
   [CHAIN_IDs.INK]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",

@@ -2780,6 +2780,7 @@ export class Dataworker {
     // msg.value, we can drop this mapping and instead use response from `oftMessengers` call to decide whether a spoke
     // supports withdrawals via OFT
     const CHAINS_SUPPORTING_MSG_VALUE_ON_OFT_WITHDRAWAL = new Set([
+      // @TODO: MegaETH shouldn't be here?
       CHAIN_IDs.ARBITRUM,
       CHAIN_IDs.BSC,
       CHAIN_IDs.HYPEREVM,
