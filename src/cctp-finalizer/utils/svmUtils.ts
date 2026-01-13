@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import { arch } from "@across-protocol/sdk";
 import {
   createKeyPairSignerFromBytes,
   createDefaultRpcTransport,
@@ -8,9 +7,10 @@ import {
   address,
   getProgramDerivedAddress,
   appendTransactionMessageInstruction,
+  pipe,
   type Address as KitAddress,
   AccountRole,
-  type IAccountMeta,
+  type AccountMeta,
 } from "@solana/kit";
 import {
   winston,
@@ -20,10 +20,10 @@ import {
   TOKEN_SYMBOLS_MAP,
   getAssociatedTokenAddress,
 } from "../../utils";
-import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
+import { PublicKey } from "@solana/web3.js";
 import { MessageTransmitterV2Client, TokenMessengerMinterV2Client } from "@across-protocol/contracts";
 import * as sdk from "@across-protocol/sdk";
-import { PublicKey } from "@solana/web3.js";
+import { DestinationUsdcNotConfiguredError, OriginUsdcNotConfiguredError } from "../errors";
 import {
   MESSAGE_TRANSMITTER_V2_PROGRAM,
   MINT_RECIPIENT_LENGTH,
@@ -176,7 +176,7 @@ async function getTokenMessengerAccounts(
   };
 }
 
-function buildHandleReceiveRemainingAccounts(accounts: TokenMessengerAccounts): IAccountMeta<string>[] {
+function buildHandleReceiveRemainingAccounts(accounts: TokenMessengerAccounts): AccountMeta<string>[] {
   return [
     { address: accounts.tokenMessengerAccount, role: AccountRole.READONLY },
     { address: accounts.remoteTokenMessengerKey, role: AccountRole.READONLY },
@@ -241,8 +241,9 @@ async function sendAndConfirmCCTPV2ReceiveMessageTx(params: {
     accounts: [...receiveInstruction.accounts, ...buildHandleReceiveRemainingAccounts(tokenMessengerAccounts)],
   };
 
-  let tx = await sdk.arch.svm.createDefaultTransaction(provider, signer);
-  tx = appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx);
+  const tx = pipe(await sdk.arch.svm.createDefaultTransaction(provider, signer), (tx) =>
+    appendTransactionMessageInstruction(instructionWithRemainingAccounts, tx)
+  );
 
   const signature = await sendAndConfirmSolanaTransaction(tx, provider);
   logger.info({
@@ -286,7 +287,7 @@ export async function checkIfAlreadyProcessedSvm(
 
   // Version 0 = V1, Version 1 = V2
   if (version === 0) {
-    return await arch.svm.hasCCTPV1MessageBeenProcessed(
+    return await sdk.arch.svm.hasCCTPV1MessageBeenProcessed(
       svmProvider,
       svmSigner,
       nonce,
@@ -328,7 +329,7 @@ export async function processMintSvm(
     nonce,
   });
 
-  const attestedMessage: arch.svm.AttestedCCTPMessage = {
+  const attestedMessage: sdk.arch.svm.AttestedCCTPMessage = {
     nonce,
     sourceDomain,
     messageBytes: attestation.message,
@@ -340,7 +341,7 @@ export async function processMintSvm(
 
   // Version 0 = V1, Version 1 = V2
   if (version === 0) {
-    const receiveMessageTx = await arch.svm.getCCTPV1ReceiveMessageTx(
+    const receiveMessageTx = await sdk.arch.svm.getCCTPV1ReceiveMessageTx(
       svmProvider,
       svmSigner,
       attestedMessage,
