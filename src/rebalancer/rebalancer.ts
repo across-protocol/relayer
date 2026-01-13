@@ -360,6 +360,9 @@ export class RebalancerClient {
           message: `No excess balances with matching rebalance routes found to fill the deficit of ${deficitAmount.toString()} of ${destinationToken} on ${getNetworkName(
             destinationChainId
           )}, skipping this deficit`,
+          sortedExcesses: sortedExcesses.map(
+            (e) => `${getNetworkName(e.chainId)}: ${e.token} - ${e.excessAmount.toString()}`
+          ),
         });
         continue;
       }
