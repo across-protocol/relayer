@@ -2763,10 +2763,10 @@
     path-browserify "^1.0.0"
     url "^0.11.0"
 
-"@risk-labs/logger@^1.3.7":
-  version "1.3.7"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.7.tgz#2dc38e73aee8d009283d581fbde438f33fb2f118"
-  integrity sha512-fQMKaP/6hcUe9ocEBcA0LLraKO+RO3giJ1RSXfeOcCllFIHWavJeMEmCAej1EurSFeqr1BsucCm2tqRizMhjGg==
+"@risk-labs/logger@^1.3.10-alpha.6":
+  version "1.3.10-alpha.6"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.10-alpha.6.tgz#aeac860df15ad38a6d3b0871c0553ddd55b7ed50"
+  integrity sha512-1beODPEypK7LpzeYV9QnNEjQPxmwjLbMLYp+fjS5AlEVwwdwcyy/2nUjyzBp821dBhlgwA1E/bZdYzGSeWrVXw==
   dependencies:
     "@google-cloud/logging-winston" "^4.1.1"
     "@google-cloud/trace-agent" "^5.1.6"
@@ -2781,15 +2781,33 @@
     winston "^3.17.0"
     winston-transport "^4.9.0"
 
-"@risk-labs/serverless-orchestration@^1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.0.5.tgz#2da3601ef1d1418a54160036bbc655d45603744d"
-  integrity sha512-Y75JStykqhPupKDzfWWt5cJI7ksADcCTYJY1N+amXxT2X419NvE9TZVrUyHCUN+07MpQ2GW+rD2tilDJqfRJRA==
+"@risk-labs/logger@^1.3.8":
+  version "1.3.8"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.8.tgz#85bf29e8ab8773a26cea29a5b1aecd2fb4a709d2"
+  integrity sha512-S+c42bnpjlSJ/bD4V4tGQabRvao40v1LoaQ5miRIYpYFnRLSBB1wPJGQoPTI3R7raZjxFupQYaX8Ache68vk0A==
+  dependencies:
+    "@google-cloud/logging-winston" "^4.1.1"
+    "@google-cloud/trace-agent" "^5.1.6"
+    "@pagerduty/pdjs" "^2.2.4"
+    axios "^1.12.2"
+    discord.js "^14.11.0"
+    dotenv "^9.0.0"
+    minimist "^1.2.0"
+    node-pagerduty "^1.2.0"
+    redis "^4.6.13"
+    superstruct "^2.0.2"
+    winston "^3.17.0"
+    winston-transport "^4.9.0"
+
+"@risk-labs/serverless-orchestration@^1.0.6":
+  version "1.0.6"
+  resolved "https://registry.yarnpkg.com/@risk-labs/serverless-orchestration/-/serverless-orchestration-1.0.6.tgz#8abaf41b12fc8d7a9126af514276cee2270931d3"
+  integrity sha512-DjYXKvcC9d9nxCkPpAMn7H6FYJNInr3t0eObGj+AL0+msPwM6KtHSUwj4S/pQwi+dXYWRw+PPmFvFpnR3Yogsw==
   dependencies:
     "@awaitjs/express" "^0.3.0"
     "@google-cloud/datastore" "^7.0.0"
     "@google-cloud/storage" "^6.4.2"
-    "@risk-labs/logger" "^1.3.7"
+    "@risk-labs/logger" "^1.3.8"
     express "^4.17.1"
     fetch-retry "^5.0.3"
     google-auth-library "^8.5.1"
