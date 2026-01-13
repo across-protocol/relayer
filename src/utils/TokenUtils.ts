@@ -34,6 +34,27 @@ export function getNativeTokenAddressForChain(chainId: number): Address {
   return toAddressType(CONTRACT_ADDRESSES[chainId]?.nativeToken?.address ?? ZERO_ADDRESS, chainId);
 }
 
+export function getNativeTokenInfoForChain(
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): {
+  symbol: string;
+  address: string;
+  decimals: number;
+} {
+  const symbol = utils.getNativeTokenSymbol(chainId);
+  const token = TOKEN_SYMBOLS_MAP[symbol];
+  if (!isDefined(symbol) || !isDefined(token)) {
+    throw new Error(`Unable to resolve native token for chain ID ${chainId}`);
+  }
+
+  const { decimals, addresses } = token;
+
+  const address = addresses[hubChainId] ?? addresses[chainId]; // Mainnet tokens have priority for price lookups.
+
+  return { symbol, address, decimals };
+}
+
 export function getWrappedNativeTokenAddress(chainId: number): Address {
   const tokenSymbol = utils.getNativeTokenSymbol(chainId);
   // If the native token is ETH, then we know the wrapped native token is WETH. Otherwise, some ERC20 token is the native token.

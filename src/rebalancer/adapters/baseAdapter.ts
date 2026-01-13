@@ -36,6 +36,7 @@ import {
   getCurrentTime,
   getEndpointId,
   getMessengerEvm,
+  getNativeTokenInfoForChain,
   getNetworkName,
   getProvider,
   getRedisCache,
@@ -546,18 +547,11 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       const { feeStruct } = await this._getOftQuoteSend(originChain, destinationChain, amountToTransfer);
       // Convert native fee to USD and we assume that USD price is 1 and equivalent to the source/destination token.
       // This logic would need to change to support non stablecoin swaps.
-      const nativeTokenSymbol = sdkUtils.getNativeTokenSymbol(originChain);
-      const nativeTokenDecimals = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].decimals;
-      if (!isDefined(nativeTokenDecimals)) {
-        throw new Error(`Unable to resolve native token decimals for chain ID ${originChain}`);
-      }
-      const nativeTokenAddresses = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses;
-      const price = await this.priceClient.getPriceByAddress(
-        nativeTokenAddresses[CHAIN_IDs.MAINNET] ?? nativeTokenAddresses[originChain]
-      );
-      const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenDecimals));
+      const nativeTokenInfo = getNativeTokenInfoForChain(originChain, CHAIN_IDs.MAINNET);
+      const price = await this.priceClient.getPriceByAddress(nativeTokenInfo.address);
+      const nativeFeeUsd = toBNWei(price.price).mul(feeStruct.nativeFee).div(toBNWei(1, nativeTokenInfo.decimals));
       const sourceTokenInfo = this._getTokenInfo(token, originChain);
-      const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenDecimals, sourceTokenInfo.decimals)(nativeFeeUsd);
+      const nativeFeeSourceDecimals = ConvertDecimals(nativeTokenInfo.decimals, sourceTokenInfo.decimals)(nativeFeeUsd);
       bridgeFee = nativeFeeSourceDecimals;
     }
     return bridgeFee;
