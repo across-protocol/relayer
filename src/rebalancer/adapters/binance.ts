@@ -564,7 +564,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const expectedCost = await this.getEstimatedCost(rebalanceRoute, amountToTransfer, false);
     const expectedAmountToWithdraw = amountToTransfer.sub(expectedCost);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const minimumWithdrawalSize = toBNWei(Number(withdrawMin) + 0.01, sourceTokenInfo.decimals); // Add 0.01 to minimum to account
+    const minimumWithdrawalSize = toBNWei(Number(withdrawMin) + 1, sourceTokenInfo.decimals); // Add buffer to minimum to account
     // for price volatility. For stablecoin swaps, this should be totally fine since price isn't volatile.
     const maximumWithdrawalSize = toBNWei(withdrawMax, sourceTokenInfo.decimals);
     assert(

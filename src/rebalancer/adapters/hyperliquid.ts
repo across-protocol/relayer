@@ -92,7 +92,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
-      minimumOrderSize: 10.01, // Added 0.01 to minimum to account for price volatility.
+      minimumOrderSize: 11, // Added buffer to minimum to account for price volatility.
       szDecimals: 2,
       pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: false,
@@ -105,7 +105,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       baseAssetIndex: 0,
       quoteAssetName: "USDT",
       baseAssetName: "USDC",
-      minimumOrderSize: 10.01, // Added 0.01 to minimum to account for price volatility.
+      minimumOrderSize: 11, // Added buffer to minimum to account for price volatility.
       szDecimals: 2,
       pxDecimals: 5, // Max(5, 8 - szDecimals): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
       isBuy: true,
