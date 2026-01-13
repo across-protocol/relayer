@@ -58,7 +58,6 @@ import {
 } from "../../utils";
 import { RebalancerAdapter, RebalanceRoute } from "../rebalancer";
 import { RebalancerConfig } from "../RebalancerConfig";
-import { utils as sdkUtils } from "@across-protocol/sdk";
 
 export interface OrderDetails {
   sourceToken: string;
