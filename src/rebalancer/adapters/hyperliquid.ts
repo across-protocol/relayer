@@ -649,7 +649,7 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
         message: `Withdrawal for order ${cloid} has finalized, subtracting its virtual balance of ${expectedAmountToReceive.toString()} from HyperEVM`,
       });
       pendingRebalances[HYPEREVM][destinationToken] = (pendingRebalances[HYPEREVM][destinationToken] ?? bnZero).sub(
-        matchingFill.amountToWithdraw
+        expectedAmountToReceive
       );
     }
 
@@ -756,11 +756,15 @@ export class HyperliquidStablecoinSwapAdapter extends BaseAdapter {
       this.logger.debug({
         at: "HyperliquidStablecoinSwapAdapter._createHlOrder",
         message: `Available balance for input token: ${sourceToken} (${availableBalanceEvmDecimals.toString()}) is less than amount to transfer: ${amountToTransfer.toString()}`,
-        availableBalanceEvmDecimals: availableBalanceEvmDecimals.toString(),
-        amountToTransfer: amountToTransfer.toString(),
       });
       return;
     }
+    this.logger.debug({
+      at: "HyperliquidStablecoinSwapAdapter._createHlOrder",
+      message: `Sufficient balance to place limit order for cloid ${cloid}`,
+      availableBalanceEvmDecimals: availableBalanceEvmDecimals.toString(),
+      requiredBalance: amountToTransfer.toString(),
+    });
     return await this._placeMarketOrder(orderDetails, cloid);
   }
 

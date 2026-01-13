@@ -199,30 +199,23 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetails(cloid);
-      const { sourceToken, sourceChain, amountToTransfer, destinationToken } = orderDetails;
+      const { sourceToken, sourceChain, amountToTransfer } = orderDetails;
 
-      const latestPx = (await this._getLatestPrice(sourceToken, destinationToken, sourceChain, amountToTransfer))
-        .latestPrice;
-      const szForOrder = this._getQuantityForOrder(
-        sourceToken,
-        sourceChain,
-        destinationToken,
-        amountToTransfer,
-        latestPx
-      );
-      const balance = await this._getBinanceBalance(sourceToken);
-      if (balance < szForOrder) {
+      const binanceBalance = await this._getBinanceBalance(sourceToken);
+      const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+      const binanceBalanceWei = toBNWei(binanceBalance, sourceTokenInfo.decimals);
+      if (binanceBalanceWei.lt(amountToTransfer)) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-          message: `Not enough balance to place order for cloid ${cloid}, balance: ${balance}`,
-          szForOrder: szForOrder,
+          message: `Available balance for input token: ${sourceToken} (${binanceBalanceWei.toString()}) is less than amount to transfer: ${amountToTransfer.toString()}`,
         });
         continue;
       }
       this.logger.debug({
         at: "BinanceStablecoinSwapAdapter.updateRebalanceStatuses",
-        message: `Sufficient balance to place market order for cloid ${cloid} with size ${szForOrder}`,
-        binanceBalance: balance,
+        message: `Sufficient balance to place market order for cloid ${cloid}`,
+        availableBalance: binanceBalanceWei.toString(),
+        requiredBalance: amountToTransfer.toString(),
       });
       await this._placeMarketOrder(cloid, orderDetails);
       await this._redisUpdateOrderStatus(cloid, STATUS.PENDING_DEPOSIT, STATUS.PENDING_SWAP);
