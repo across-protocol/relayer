@@ -11,6 +11,7 @@ import {
   toBNWei,
   winston,
   getTokenInfoFromSymbol,
+  bnUint32Max,
 } from "../utils";
 import { RebalancerConfig } from "./RebalancerConfig";
 
@@ -36,7 +37,6 @@ export interface RebalanceRoute {
   destinationChain: number;
   sourceToken: string;
   destinationToken: string;
-  maxAmountToTransfer: BigNumber; // Assumed to be a source chain amount.
   adapter: string; // Name of adapter to use for this rebalance.
 }
 
@@ -153,7 +153,6 @@ export class RebalancerClient {
       const { destinationChain, destinationToken } = rebalanceRoute;
       const currentBalance = currentBalances[destinationChain][destinationToken];
 
-      // If target is greater than the maxAmountToTransfer for this route, set target to maxAmountToTransfer.
       const targetBalance = targetBalances[destinationToken][destinationChain].targetBalance;
       const hasDeficit = currentBalance.lt(targetBalance);
       if (!hasDeficit) {
@@ -290,9 +289,13 @@ export class RebalancerClient {
         );
         await forEachAsync(this.rebalanceRoutes, async (r) => {
           // For this rebalance route, cap the deficit amount at the maxAmountToTransfer for this route.
-          const deficitAmountCapped = r.maxAmountToTransfer.gt(converterFromDestinationToSource(deficitAmount))
+          const rebalanceRouteMaxAmountToTransfer =
+            this.config.maxAmountsToTransfer[sourceToken]?.[sourceChainId] ?? bnUint32Max;
+          const deficitAmountCapped = rebalanceRouteMaxAmountToTransfer.gt(
+            converterFromDestinationToSource(deficitAmount)
+          )
             ? converterFromDestinationToSource(deficitAmount)
-            : r.maxAmountToTransfer;
+            : rebalanceRouteMaxAmountToTransfer;
           if (
             r.sourceChain === sourceChainId &&
             r.sourceToken === sourceToken &&
@@ -319,11 +322,13 @@ export class RebalancerClient {
         }
         matchingExcess = excess;
 
-        const deficitAmountCapped = rebalanceRouteToUse.maxAmountToTransfer.gt(
+        const rebalanceRouteMaxAmountToTransfer =
+          this.config.maxAmountsToTransfer[sourceToken]?.[sourceChainId] ?? bnUint32Max;
+        const deficitAmountCapped = rebalanceRouteMaxAmountToTransfer.gt(
           converterFromDestinationToSource(deficitAmount)
         )
           ? converterFromDestinationToSource(deficitAmount)
-          : rebalanceRouteToUse.maxAmountToTransfer;
+          : rebalanceRouteMaxAmountToTransfer;
         const maxFee = deficitAmountCapped.mul(maxFeePct).div(toBNWei(100));
         if (cheapestExpectedCost.gt(maxFee)) {
           this.logger.debug({
@@ -366,14 +371,16 @@ export class RebalancerClient {
         });
         continue;
       }
-      const { sourceToken, sourceChain, maxAmountToTransfer, adapter } = rebalanceRouteToUse;
+      const { sourceToken, sourceChain, adapter } = rebalanceRouteToUse;
       const converterFromDestinationToSource = ConvertDecimals(
         getTokenInfoFromSymbol(destinationToken, Number(destinationChainId)).decimals,
         getTokenInfoFromSymbol(sourceToken, Number(sourceChain)).decimals
       );
-      const deficitAmountCapped = maxAmountToTransfer.gt(converterFromDestinationToSource(deficitAmount))
+      const rebalanceRouteMaxAmountToTransfer =
+        this.config.maxAmountsToTransfer[sourceToken]?.[sourceChain] ?? bnUint32Max;
+      const deficitAmountCapped = rebalanceRouteMaxAmountToTransfer.gt(converterFromDestinationToSource(deficitAmount))
         ? converterFromDestinationToSource(deficitAmount)
-        : maxAmountToTransfer;
+        : rebalanceRouteMaxAmountToTransfer;
 
       // Add the expected cost to the deficit amount to get the total amount to transfer. This way we end up with
       // the expected amount to receive after fees.

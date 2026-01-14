@@ -3,17 +3,7 @@
  * main `RebalancerClient` logic.
  */
 
-import {
-  BigNumber,
-  bnZero,
-  CHAIN_IDs,
-  config,
-  disconnectRedisClients,
-  getTokenInfoFromSymbol,
-  Signer,
-  toBNWei,
-  winston,
-} from "../utils";
+import { BigNumber, bnZero, CHAIN_IDs, config, disconnectRedisClients, Signer, toBNWei, winston } from "../utils";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -40,7 +30,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     999: {
       USDT: toBNWei("0", 6),
-      USDC: toBNWei("12", 6),
+      USDC: toBNWei("30", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -55,7 +45,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     },
     56: {
       USDT: toBNWei("0", 18),
-      USDC: toBNWei("12", 18),
+      USDC: toBNWei("0", 18),
     },
   };
 
@@ -63,11 +53,11 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     USDT: {
       "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
       "10": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "143": { targetBalance: toBNWei("10", 6), priorityTier: 1 },
-      "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "999": { targetBalance: toBNWei("11.2", 6), priorityTier: 1 },
+      "143": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
+      "42161": { targetBalance: toBNWei("11.1", 6), priorityTier: 1 },
+      "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "130": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("11.2", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
     },
     USDC: {
       "1": { targetBalance: toBNWei("0", 6), priorityTier: 0 },
@@ -80,6 +70,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
     },
   };
+
   const rebalancerConfig = new RebalancerConfig(process.env, targetBalances);
 
   // Construct adapters:
@@ -119,16 +110,12 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
         if (adapter !== "binance" && (usdtChain === CHAIN_IDs.BSC || usdcChain === CHAIN_IDs.BSC)) {
           continue;
         }
-        const sourceUsdtInfo = getTokenInfoFromSymbol("USDT", usdtChain);
-        const sourceUsdcInfo = getTokenInfoFromSymbol("USDC", usdcChain);
-        const maxAmountToTransfer = "100";
 
         rebalanceRoutes.push({
           sourceChain: usdtChain,
           sourceToken: "USDT",
           destinationChain: usdcChain,
           destinationToken: "USDC",
-          maxAmountToTransfer: toBNWei(maxAmountToTransfer, sourceUsdtInfo.decimals),
           adapter,
         });
         rebalanceRoutes.push({
@@ -136,7 +123,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
           sourceToken: "USDC",
           destinationChain: usdtChain,
           destinationToken: "USDT",
-          maxAmountToTransfer: toBNWei(maxAmountToTransfer, sourceUsdcInfo.decimals),
           adapter,
         });
       }
