@@ -1,5 +1,5 @@
 import { BalanceAllocator, BalanceMap } from "../src/clients/BalanceAllocator";
-import { BigNumber, toAddressType, Address } from "../src/utils";
+import { BigNumber, bnZero, toAddressType, Address } from "../src/utils";
 import { randomAddress, chai } from "./utils";
 const { expect } = chai;
 
@@ -45,26 +45,26 @@ describe("BalanceAllocator", async function () {
 
   it("Correct initial state", async function () {
     balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(100));
-    expect(await balanceAllocator.getBalance(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(0));
+    expect((await balanceAllocator.getBalance(1, testToken1, testAccount1)).eq(BigNumber.from(100))).to.be.true;
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(bnZero)).to.be.true;
   });
 
   it("Add used", async function () {
     balanceAllocator.addUsed(1, testToken1, testAccount1, BigNumber.from(100));
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(BigNumber.from(100))).to.be.true;
   });
 
   it("Returns balance sub used", async function () {
     balanceAllocator.addUsed(1, testToken1, testAccount1, BigNumber.from(100));
     balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(150));
-    expect(await balanceAllocator.getBalanceSubUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(50));
+    expect((await balanceAllocator.getBalanceSubUsed(1, testToken1, testAccount1)).eq(BigNumber.from(50))).to.be.true;
   });
 
   it("Simple request", async function () {
     balanceAllocator.setMockBalances(1, testToken1, testAccount1, BigNumber.from(100));
     expect(await balanceAllocator.requestBalanceAllocation(1, [testToken1], testAccount1, BigNumber.from(50))).to.be
       .true;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(50));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(BigNumber.from(50))).to.be.true;
   });
 
   it("Multiple requests, multiple tokens, succeeds", async function () {
@@ -76,8 +76,8 @@ describe("BalanceAllocator", async function () {
         { chainId: 1, tokens: [testToken2], holder: testAccount1, amount: BigNumber.from(50) },
       ])
     ).to.be.true;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(50));
-    expect(balanceAllocator.getUsed(1, testToken2, testAccount1)).to.equal(BigNumber.from(50));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(BigNumber.from(50))).to.be.true;
+    expect(balanceAllocator.getUsed(1, testToken2, testAccount1).eq(BigNumber.from(50))).to.be.true;
   });
 
   it("Combined request, same token, succeeds", async function () {
@@ -88,7 +88,7 @@ describe("BalanceAllocator", async function () {
         { chainId: 1, tokens: [testToken1], holder: testAccount1, amount: BigNumber.from(50) },
       ])
     ).to.be.true;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(100));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(BigNumber.from(100))).to.be.true;
   });
 
   it("Combined request, same token, fails", async function () {
@@ -99,7 +99,7 @@ describe("BalanceAllocator", async function () {
         { chainId: 1, tokens: [testToken1], holder: testAccount1, amount: BigNumber.from(50) },
       ])
     ).to.be.false;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(0));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(bnZero)).to.be.true;
   });
 
   it("Combined request, multiple tokens per request, succeeds", async function () {
@@ -111,7 +111,7 @@ describe("BalanceAllocator", async function () {
         { chainId: 1, tokens: [testToken1, testToken2], holder: testAccount1, amount: BigNumber.from(50) },
       ])
     ).to.be.true;
-    expect(balanceAllocator.getUsed(1, testToken1, testAccount1)).to.equal(BigNumber.from(99));
-    expect(balanceAllocator.getUsed(1, testToken2, testAccount1)).to.equal(BigNumber.from(1));
+    expect(balanceAllocator.getUsed(1, testToken1, testAccount1).eq(BigNumber.from(99))).to.be.true;
+    expect(balanceAllocator.getUsed(1, testToken2, testAccount1).eq(BigNumber.from(1))).to.be.true;
   });
 });
