@@ -45,7 +45,7 @@
     "redis4": "npm:redis@^4.1.0",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
-    "viem": "^2.33.1",
+    "viem": "~2.37.0",
     "winston": "^3.17.0",
     "zksync-ethers": "^5.11.1"
   },
