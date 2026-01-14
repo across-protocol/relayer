@@ -11,7 +11,6 @@ import { CHAIN_IDs, getNetworkName, getNodeUrlList, isDefined, PUBLIC_NETWORKS }
 // require("./tasks");
 
 import "@nomiclabs/hardhat-etherscan";
-import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
 import "hardhat-gas-reporter";
 import "solidity-coverage";
