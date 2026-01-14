@@ -124,7 +124,7 @@ export class CommonConfig {
       const missing = chainIds.find((chainId) => !bufferKeys.includes(chainId));
       assert(!missing, `Missing BLOCK_RANGE_END_BLOCK_BUFFER configuration for chainId ${missing}`);
     }
-
+    // test comment
     for (const chainId of chainIds) {
       // Multicall chunk size precedence: Environment, chain-specific config, global default.
       // prettier-ignore
