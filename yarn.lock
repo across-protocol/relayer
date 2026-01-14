@@ -55,10 +55,10 @@
     yargs "^17.7.2"
     zksync-web3 "^0.14.3"
 
-"@across-protocol/contracts@4.1.19":
-  version "4.1.19"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.19.tgz#77bd0867c5b152ffbdd6e4b786e63fde5027bc72"
-  integrity sha512-362X2tTMCwr9qQJiUX5VRwo3vucgmXALajQisW9dwVBV4NmDtCP+upw5d9okQGsktaRP6nqziSzc4q5NOeJQCg==
+"@across-protocol/contracts@4.1.20":
+  version "4.1.20"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.20.tgz#32569e134f9fa5dfe85058c52bf47af785b54b6a"
+  integrity sha512-j34ROZUdFuZNydDCF2NJWTuKUW4kQi5gpP52QAqvlCcby/v4FMTUuvNLBMeDGC3tbD3VXetmqciimgEqmhjScA==
   dependencies:
     "@across-protocol/constants" "^3.1.95"
     "@coral-xyz/anchor" "^0.31.1"
@@ -96,14 +96,14 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.111-alpha.0":
-  version "4.3.111-alpha.0"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.111-alpha.0.tgz#278cd5429d5f060786217686e040eadda26a7be4"
-  integrity sha512-nHIgRrjzARpDo1bujJFPXl7PGgGBlCFDUWlcyG98TbHNqLXGFN9Gc+yX99narIR+p+IAlUrfaxupa0Uope27Gw==
+"@across-protocol/sdk@4.3.111":
+  version "4.3.111"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.111.tgz#843c7acb17aaa9da57458476895a004118fa407d"
+  integrity sha512-TD5kmnpaNnoEox+gfhIagJWIZwrnVZy9ojEO49aWUv5p1eWMC9V4lvDWClaEd47YRB7wE84wz5+hoDj/WNRyQQ==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
-    "@across-protocol/contracts" "4.1.19"
+    "@across-protocol/contracts" "4.1.20"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
