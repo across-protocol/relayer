@@ -19,7 +19,6 @@ import {
   getNetworkName,
   getProvider,
   isDefined,
-  isWeekday,
   paginatedEventQuery,
   setBinanceDepositType,
   setBinanceWithdrawalType,
@@ -716,21 +715,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
     }
 
-    // - Opportunity cost of capital when source chain is 999 and token is USDT. The rudimentary logic here is to assume 4bps when the
-    // OFT rebalance would end on a weekday.
-    //  @todo a better way to do this might be to use historical fills to calculate the relayer's
+    // The only time we add an opportunity cost of capital component is when we require rebalancing via OFT from HyperEVM
+    // because this is the only route amongst all CCTP/OFT routes that takes longer than ~20 minutes to complete. It takes
+    // 11 hours and this is so much larger than the default bridging time that we need to charge something for the opportunity cost of capital.
+    // @todo a better way to do this might be to use historical fills to calculate the relayer's
     // latest profitability % to forecast the opportunity cost of capital.
     const requiresOftBridgeFromHyperevm =
       sourceChain === CHAIN_IDs.HYPEREVM &&
       sourceToken === "USDT" &&
       (await this._getEntrypointNetwork(sourceChain, sourceToken)) !== CHAIN_IDs.HYPEREVM;
-    const oftRebalanceEndTime =
-      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() + 11 * 60 * 60 * 1000;
-    const opportunityCostOfCapitalBps =
-      requiresOftBridgeFromHyperevm && (isWeekday() || isWeekday(new Date(oftRebalanceEndTime))) ? 4 : 0;
-    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalBps, 18)
+    const opportunityCostOfCapitalPct = requiresOftBridgeFromHyperevm
+      ? this._getOpportunityCostOfCapitalPctForRebalanceTime(11 * 60 * 60 * 1000)
+      : bnZero;
+    const opportunityCostOfCapitalFixed = toBNWei(opportunityCostOfCapitalPct, 18)
       .mul(amountToTransfer)
-      .div(toBNWei(10000, 18));
+      .div(toBNWei(100, 18));
 
     const totalFee = tradeFee
       .add(withdrawFeeConvertedToSourceToken)

@@ -44,6 +44,7 @@ import {
   getTokenInfoFromSymbol,
   isDefined,
   isStargateBridge,
+  isWeekday,
   MAX_SAFE_ALLOWANCE,
   MessagingFeeStruct,
   paginatedEventQuery,
@@ -554,6 +555,21 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       bridgeFee = nativeFeeSourceDecimals;
     }
     return bridgeFee;
+  }
+
+  protected _getOpportunityCostOfCapitalPctForRebalanceTime(timeElapsedInMilliseconds: number): number {
+    // If the current time is a weekday or the rebalance end time is a weekday, then return the weekday opportunity cost of capital percentage,
+    // otherwise return the weekend opportunity cost of capital percentage.
+    const weekdayOpportunityCostOfCapitalPct = 0.04; // We charge 0.04% fixed for all rebalances taking place on a weekday
+    const weekendOpportunityCostOfCapitalPct = 0; // We charge 0% fixed for all rebalances taking place on a weekend
+    const rebalanceEndTime =
+      new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime() +
+      timeElapsedInMilliseconds; // @dev We use EST here because isWeekday() also does accounting using EST.
+    if (isWeekday() || isWeekday(new Date(rebalanceEndTime))) {
+      return weekdayOpportunityCostOfCapitalPct;
+    } else {
+      return weekendOpportunityCostOfCapitalPct;
+    }
   }
 
   protected async _getUnfinalizedOftBridgeAmount(originChain: number, destinationChain: number): Promise<BigNumber> {

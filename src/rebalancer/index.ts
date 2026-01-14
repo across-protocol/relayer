@@ -29,8 +29,8 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       USDC: toBNWei("0", 6),
     },
     999: {
-      USDT: toBNWei("0", 6),
-      USDC: toBNWei("30", 6),
+      USDT: toBNWei("20", 6),
+      USDC: toBNWei("20", 6),
     },
     8453: {
       USDC: toBNWei("0", 6),
@@ -67,7 +67,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
       "42161": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "999": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
       "8453": { targetBalance: toBNWei("0", 6), priorityTier: 1 },
-      "56": { targetBalance: toBNWei("0", 18), priorityTier: 1 },
+      "56": { targetBalance: toBNWei("11.1", 18), priorityTier: 1 },
     },
   };
 
