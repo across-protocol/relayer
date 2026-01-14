@@ -173,15 +173,16 @@ export class ProfitClient {
     return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
   }
 
-  resolveNativeToken(chainId: number): { symbol: string; decimals: number } {
+  resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
     const tokenInfo = getNativeTokenInfoForChain(chainId, this.hubPoolClient.chainId);
     return {
       symbol: tokenInfo.symbol,
       decimals: tokenInfo.decimals,
+      address: tokenInfo.address,
     };
   }
 
-  resolveGasToken(chainId: number): { symbol: string; decimals: number } {
+  resolveGasToken(chainId: number): { symbol: string; decimals: number; address: string } {
     // Note for future: gas token and native token may not always be the same
     return this.resolveNativeToken(chainId);
   }
