@@ -769,7 +769,6 @@ const resolveBridgeDelay = () => {
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
-  // @TODO: Check MegaETH contract overrides
   [CHAIN_IDs.BASE]: {
     // https://github.com/ethereum-optimism/ecosystem/blob/8df6ab1afcf49312dc7e89ed079f910843d74427/packages/sdk/src/utils/chain-constants.ts#L252
     l1: {
@@ -799,6 +798,12 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   [CHAIN_IDs.LISK]: {
     l1: {
       DisputeGameFactory: "0x0CF7D3706a27CCE2017aEB11E8a9c8b5388c282C",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
+  [CHAIN_IDs.MEGAETH]: {
+    l1: {
+      DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
