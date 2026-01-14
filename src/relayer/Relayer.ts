@@ -552,17 +552,18 @@ export class Relayer {
     const mdcs = this.config.minDepositConfirmations[chainId];
     const originSpoke = this.clients.spokePoolClients[chainId];
 
-    let totalCommitment = bnZero;
-    let toBlock = originSpoke.latestHeightSearched;
-
     // For each deposit confirmation tier (lookback), sum all outstanding commitments back to head.
-    const limits = mdcs.map(({ usdThreshold, minConfirmations }) => {
-      const fromBlock = Math.max(toBlock - minConfirmations, originSpoke.deploymentBlock);
+    const { deploymentBlock, latestHeightSearched: head } = originSpoke;
+    let totalCommitment = bnZero;
+
+    const limits = mdcs.map(({ usdThreshold, minConfirmations }, idx) => {
+      const toBlock = Math.max(head - minConfirmations, deploymentBlock);
+      const fromBlock =
+        idx < mdcs.length - 1 ? Math.max(head - mdcs[idx + 1].minConfirmations + 1, 0) : deploymentBlock;
       const commitment = this.computeOriginChainCommitment(chainId, fromBlock, toBlock);
 
       totalCommitment = totalCommitment.add(commitment);
       const limit = usdThreshold.sub(totalCommitment);
-      toBlock = fromBlock - 1; // Shuffle the range for the next loop.
 
       return { fromBlock, limit };
     });
