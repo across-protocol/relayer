@@ -728,6 +728,7 @@ export class ProfitClient {
     // the main RL address because it has all supported tokens and approvals in place on all chains.
     const testSymbols = {
       [CHAIN_IDs.BLAST]: "USDB",
+      [CHAIN_IDs.MEGAETH]: "WETH", // USDM deferred on MegaETH.
       [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
       [CHAIN_IDs.PLASMA]: "USDT",
       [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
