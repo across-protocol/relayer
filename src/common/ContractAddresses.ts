@@ -1,5 +1,4 @@
-import { getDeployedAddress } from "@across-protocol/contracts-beta";
-import { CHAIN_IDs } from "../utils";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -111,6 +110,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_480: {
       address: "0x470458C91978D2d929704489Ad730DC3E3001113",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_4326: {
+      address: "0x0CA3A2FBC3D770b578223FBB6b062fa875a2eE75",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_690: {
@@ -460,6 +463,15 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.MODE]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    nativeToken: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.MEGAETH]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
