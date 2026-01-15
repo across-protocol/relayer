@@ -390,7 +390,11 @@ export class Refiller {
     }
   }
 
-  private async refillUsdh(currentBalance: BigNumber, decimals: number): Promise<void> {
+  private async refillUsdh(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalanceData: RefillBalanceData
+  ): Promise<void> {
     // If either the apiUrl or apiKey is undefined, then return, since we can't do anything.
     if (!isDefined(this.config.nativeMarketsApiConfig)) {
       this.logger.warn({
@@ -399,6 +403,16 @@ export class Refiller {
       });
       return;
     }
+
+    // Check if we should refill and get the transfer details
+    const refillData = await this.shouldRefillUsdh(currentBalance, decimals, refillBalanceData);
+    if (!refillData) {
+      return;
+    }
+
+    const { usdc, amountToTransfer, accountAddress } = refillData;
+
+    // If we reach here, we need to send tokens - proceed with API calls
     const { apiUrl: nativeMarketsApiUrl, apiKey: nativeMarketsApiKey } = this.config.nativeMarketsApiConfig;
     const headers = {
       "Api-Version": "2025-11-01",
@@ -407,32 +421,31 @@ export class Refiller {
     };
     const day = 24 * 60 * 60;
 
-    // First, get the address ID of the base signer, which is used to determine the deposit address for Arb -> HyperEVM transfers.
+    // Get the address ID of the account, which is used to determine the deposit address for Arb -> HyperEVM transfers.
     let addressId;
-    // If we have the address ID for the base signer and token combo in cache, then do not request it from native markets.
-    const addressIdCacheKey = `nativeMarketsAddressId:${this.baseSignerAddress.toNative()}`;
+    // If we have the address ID for the account and token combo in cache, then do not request it from native markets.
+    const addressIdCacheKey = `nativeMarketsAddressId:${accountAddress}`;
     const addressIdCache = await this.redisCache.get(addressIdCacheKey);
     if (isDefined(addressIdCache)) {
       addressId = addressIdCache;
     } else {
       const { data: registeredAddresses } = await axios.get(`${nativeMarketsApiUrl}/addresses`, { headers });
       addressId = registeredAddresses.items.find(
-        ({ chain, token, address_hex }) =>
-          chain === "hyper_evm" && token === "usdh" && address_hex === this.baseSignerAddress.toNative()
+        ({ chain, token, address_hex }) => chain === "hyper_evm" && token === "usdh" && address_hex === accountAddress
       )?.id;
       // In the event the address is not currently available, create a new one by posting to the native markets API.
       if (!isDefined(addressId)) {
         const newAddressIdData = {
-          address: this.baseSignerAddress.toNative(),
+          address: accountAddress,
           chain: "hyper_evm",
           name: "across-refiller-test",
           token: "usdh",
         };
 
         this.logger.info({
-          at: "Refiller#refillNativeTokenBalances",
-          message: `Address ${this.baseSignerAddress.toNative()} is not registered in the native markets API. Creating new address ID.`,
-          address: this.baseSignerAddress.toNative(),
+          at: "Refiller#refillUsdh",
+          message: `Address ${accountAddress} is not registered in the native markets API. Creating new address ID.`,
+          address: accountAddress,
         });
         const { data: _addressId } = await axios.post(`${nativeMarketsApiUrl}/addresses`, newAddressIdData, {
           headers,
@@ -442,7 +455,7 @@ export class Refiller {
       await this.redisCache.set(addressIdCacheKey, addressId, 7 * day);
     }
 
-    // Next, get the transfer route deposit address on Arbitrum.
+    // Get the transfer route deposit address on Arbitrum.
     const { data: transferRoutes } = await axios.get(`${nativeMarketsApiUrl}/transfer_routes`, { headers });
     let availableTransferRoute = transferRoutes.items
       .filter((route) => isDefined(route.source_address))
@@ -450,7 +463,7 @@ export class Refiller {
         ({ source_address, destination_address }) =>
           source_address.chain === "arbitrum" &&
           source_address.token === "usdc" &&
-          destination_address.address_hex === this.baseSignerAddress.toNative()
+          destination_address.address_hex === accountAddress
       );
     // Once again, if the transfer route is not defined, then create a new one by querying the native markets API.
     if (!isDefined(availableTransferRoute)) {
@@ -462,9 +475,9 @@ export class Refiller {
       };
 
       this.logger.info({
-        at: "Refiller#refillNativeTokenBalances",
+        at: "Refiller#refillUsdh",
         message: `Address ID ${addressId} does not have an Arbitrum USDC -> HyperEVM USDH transfer route configured. Creating a new route.`,
-        address: this.baseSignerAddress.toNative(),
+        address: accountAddress,
         addressId,
       });
       const { data: _availableTransferRoute } = await axios.post(
@@ -477,27 +490,97 @@ export class Refiller {
       availableTransferRoute = _availableTransferRoute;
     }
 
-    // Create the transfer transaction.
+    // Send tokens
+    this.clients.multiCallerClient.enqueueTransaction({
+      contract: usdc,
+      chainId: CHAIN_IDs.ARBITRUM,
+      method: "transfer",
+      args: [availableTransferRoute.source_address.address_hex, amountToTransfer],
+      message: "Rebalanced Arbitrum USDC to HyperEVM USDH",
+      nonMulticall: true,
+      mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
+    });
+  }
+
+  /**
+   * Determines if a USDH refill should occur and calculates the amount to transfer.
+   * @returns Object with usdc contract, amount, and account address if refill should happen; null otherwise.
+   */
+  private async shouldRefillUsdh(
+    currentBalance: BigNumber,
+    decimals: number,
+    refillBalanceData: RefillBalanceData
+  ): Promise<{ usdc: Contract; amountToTransfer: BigNumber; accountAddress: string } | null> {
+    const { trigger, target, checkOriginChainBalance, account } = refillBalanceData;
+    const triggerThreshold = parseUnits(trigger.toString(), decimals);
+    const targetThreshold = parseUnits(target.toString(), decimals);
+    const accountAddress = account.toNative();
+
+    // Early exit check: If checking destination chain balance, verify it's below trigger
+    if (!checkOriginChainBalance && currentBalance.gt(triggerThreshold)) {
+      this.logger.debug({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Destination chain balance above trigger, skipping transfer",
+        destinationChainBalance: formatUnits(currentBalance, decimals),
+        triggerThreshold: formatUnits(triggerThreshold, decimals),
+      });
+      return null;
+    }
+
+    // Get origin chain (Arbitrum) USDC balance
     const srcProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ARBITRUM];
     const usdc = new Contract(
       TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.ARBITRUM],
       ERC20_ABI,
       this.baseSigner.connect(srcProvider)
     );
-    // By default, sweep the entire USDC balance of the base signer to HyperEVM USDH.
-    const amountToTransfer = await usdc.balanceOf(this.baseSignerAddress.toNative());
+    const originChainBalance = await usdc.balanceOf(this.baseSignerAddress.toNative());
 
-    if (amountToTransfer.gt(this.config.minUsdhRebalanceAmount)) {
-      this.clients.multiCallerClient.enqueueTransaction({
-        contract: usdc,
-        chainId: CHAIN_IDs.ARBITRUM,
-        method: "transfer",
-        args: [availableTransferRoute.source_address.address_hex, amountToTransfer],
-        message: "Rebalanced Arbitrum USDC to HyperEVM USDH",
-        nonMulticall: true,
-        mrkdwn: `Sent ${formatUnits(amountToTransfer, decimals)} USDC from Arbitrum to HyperEVM.`,
+    // Calculate deficit for destination balance check (only needed when not checking origin)
+    const deficit = targetThreshold.sub(currentBalance);
+
+    const originChainBalanceOverThreshold = originChainBalance.gt(this.config.minUsdhRebalanceAmount);
+    // Determine if we should send tokens and how much based on the check type
+    const shouldSendTokens = checkOriginChainBalance ? originChainBalanceOverThreshold : deficit.gt(bnZero);
+
+    const amountToTransfer = checkOriginChainBalance ? originChainBalance : deficit;
+
+    if (!checkOriginChainBalance && amountToTransfer.gt(originChainBalance)) {
+      this.logger.warn({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Amount to transfer is greater than origin chain balance, skipping transfer",
+        amountToTransfer: formatUnits(amountToTransfer, decimals),
+        originChainBalance: formatUnits(originChainBalance, decimals),
       });
+      return null;
     }
+
+    this.logger.debug({
+      at: "Refiller#shouldRefillUsdh",
+      message: "Determining if we should send tokens and how much to send",
+      destinationChainBalance: formatUnits(currentBalance, decimals),
+      targetThreshold: formatUnits(targetThreshold, decimals),
+      deficit: formatUnits(deficit, decimals),
+      originChainBalance: formatUnits(originChainBalance, decimals),
+      amountToTransfer: formatUnits(amountToTransfer, decimals),
+      minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
+      shouldSendTokens,
+    });
+
+    // Return null if we shouldn't send tokens
+    if (!shouldSendTokens || amountToTransfer.lte(bnZero)) {
+      this.logger.debug({
+        at: "Refiller#shouldRefillUsdh",
+        message: "Skipping transfer",
+        reason: "Origin chain balance insufficient or no deficit",
+        originChainBalance: formatUnits(originChainBalance, decimals),
+        minThreshold: formatUnits(this.config.minUsdhRebalanceAmount, decimals),
+        amountToTransfer: formatUnits(amountToTransfer, decimals),
+      });
+      return null;
+    }
+
+    return { usdc, amountToTransfer, accountAddress };
   }
 
   private async _swapToRefill(
