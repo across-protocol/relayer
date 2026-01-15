@@ -722,9 +722,11 @@ export class ProfitClient {
     const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
     const currentTime = getCurrentTime();
 
+    // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
+    // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
+    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC"];
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
     const evmRelayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? prodRelayer : TEST_RELAYER;
-
     const sampleDeposit = {
       depositId: bnZero,
       depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
@@ -741,10 +743,6 @@ export class ProfitClient {
       fromLiteChain: false,
       toLiteChain: false,
     };
-
-    // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
-    // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
-    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC"];
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
