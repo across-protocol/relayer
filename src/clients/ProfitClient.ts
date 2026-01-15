@@ -722,52 +722,46 @@ export class ProfitClient {
     const outputAmount = toBN(100); // Avoid rounding to zero but ensure the relayer has sufficient balance to estimate.
     const currentTime = getCurrentTime();
 
-    // Prefer USDC on mainnet because it is consistent in terms of gas estimation (no unwrap conditional).
-    // Prefer WETH on testnet because it is more likely to be configured for the destination SpokePool.
-    // The relayer _cannot_ be the recipient because the SpokePool skips the ERC20 transfer. Instead, use
-    // the main RL address because it has all supported tokens and approvals in place on all chains.
-    const testSymbols = {
-      [CHAIN_IDs.BLAST]: "USDB",
-      [CHAIN_IDs.INK]: "WETH", // USDC deferred on Ink.
-      [CHAIN_IDs.PLASMA]: "USDT",
-      [CHAIN_IDs.SONEIUM]: "WETH", // USDC deferred on Soneium.
-    };
     const prodRelayer = process.env.RELAYER_FILL_SIMULATION_ADDRESS ?? PROD_RELAYER;
-    const [defaultTestSymbol, _relayer] =
-      this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? ["USDC", prodRelayer] : ["WETH", TEST_RELAYER];
+    const evmRelayer = this.hubPoolClient.chainId === CHAIN_IDs.MAINNET ? prodRelayer : TEST_RELAYER;
+
+    const sampleDeposit = {
+      depositId: bnZero,
+      depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
+      inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
+      inputAmount: outputAmount.add(bnOne),
+      outputToken: "", // SpokePool-specific, overwritten later.
+      outputAmount,
+      originChainId: 0, // Not verified by the SpokePool.
+      quoteTimestamp: currentTime - 60,
+      fillDeadline: currentTime + 60,
+      exclusivityDeadline: 0,
+      message: EMPTY_MESSAGE,
+      messageHash: ZERO_BYTES,
+      fromLiteChain: false,
+      toLiteChain: false,
+    };
+
+    // Prefer USDC for fill simulation because it is consistent in terms of gas estimation (no unwrap conditional).
+    // Otherwise walk down the `tokenSymbols` array until a known token is found for each chain.
+    const outputTokenSymbols = ["USDC", "WETH", "USDT", "WBTC"];
 
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
-        // @dev We need set the recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
+        const symbol = outputTokenSymbols.find((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId]);
+
+        // @dev Set recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
         const destinationAddress = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
           destinationChainId
         );
-        const relayer = chainIsEvm(destinationChainId) ? _relayer : SVM_RELAYER;
-        const sampleDeposit = {
-          depositId: bnZero,
-          depositor: toAddressType(TEST_RECIPIENT, CHAIN_IDs.MAINNET),
-          recipient: destinationAddress,
-          inputToken: toAddressType(ZERO_ADDRESS, CHAIN_IDs.MAINNET), // Not verified by the SpokePool.
-          inputAmount: outputAmount.add(bnOne),
-          outputToken: "", // SpokePool-specific, overwritten later.
-          outputAmount,
-          originChainId: 0, // Not verified by the SpokePool.
-          destinationChainId: 0, // SpokePool-specific, overwritten later.
-          quoteTimestamp: currentTime - 60,
-          fillDeadline: currentTime + 60,
-          exclusivityDeadline: 0,
-          exclusiveRelayer: toAddressType(
-            chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
-            destinationChainId
-          ),
-          message: EMPTY_MESSAGE,
-          messageHash: ZERO_BYTES,
-          fromLiteChain: false,
-          toLiteChain: false,
-        };
-        const symbol = testSymbols[destinationChainId] ?? defaultTestSymbol;
+        const relayer = chainIsEvm(destinationChainId) ? evmRelayer : SVM_RELAYER;
+        const exclusiveRelayer = toAddressType(
+          chainIsEvm(destinationChainId) ? ZERO_ADDRESS : ZERO_BYTES,
+          destinationChainId
+        );
+
         const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =
           destinationChainId === hubPoolClient.chainId
@@ -775,8 +769,15 @@ export class ProfitClient {
             : getRemoteTokenForL1Token(hubToken, destinationChainId, this.hubPoolClient.chainId);
         assert(isDefined(outputToken), `Chain ${destinationChainId} SpokePool is not configured for ${symbol}`);
 
-        const deposit = { ...sampleDeposit, destinationChainId, outputToken };
+        const deposit = {
+          ...sampleDeposit,
+          destinationChainId,
+          destinationAddress,
+          outputToken,
+          exclusiveRelayer,
+        };
         const gasCosts = await this._getTotalGasCost(deposit, toAddressType(relayer, destinationChainId));
+
         // The scaledNativeGasCost is approximately what the relayer will set as the `gasLimit` when submitting
         // fills on the destination chain.
         const scaledNativeGasCost = gasCosts.nativeGasCost.mul(this.gasPadding).div(fixedPointAdjustment);
