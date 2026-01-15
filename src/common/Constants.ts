@@ -330,7 +330,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
-  [CHAIN_IDs.MEGAETH]: ["WETH"], // @TODO: Add "USDT" after it is fully deployed to MegaETH.
+  [CHAIN_IDs.MEGAETH]: ["ETH", "WETH"], // @TODO: Add "USDT" after it is fully deployed to MegaETH.
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
