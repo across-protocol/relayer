@@ -749,8 +749,6 @@ export class ProfitClient {
     // Pre-fetch total gas costs for relays on enabled chains.
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
-        const symbol = outputTokenSymbols.find((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId]);
-
         // @dev Set recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
         const destinationAddress = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
@@ -762,6 +760,7 @@ export class ProfitClient {
           destinationChainId
         );
 
+        const symbol = outputTokenSymbols.find((symbol) => TOKEN_SYMBOLS_MAP[symbol].addresses[destinationChainId]);
         const hubToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[symbol].addresses[this.hubPoolClient.chainId]);
         const outputToken =
           destinationChainId === hubPoolClient.chainId
