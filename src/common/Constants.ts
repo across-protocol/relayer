@@ -154,6 +154,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.ALEPH_ZERO]: 0,
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
+    [CHAIN_IDs.MEGAETH]: 20_000,
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
@@ -183,6 +184,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
     [CHAIN_IDs.MAINNET]: 5, // ~12s/block
+    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
@@ -234,6 +236,7 @@ const resolveChainCacheDelay = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // big blocks are 60s/block
     [CHAIN_IDs.LINEA]: 100, // Linea has a soft-finality of 1 block. This value is padded - but at 3s/block the padding is 5 minutes
     [CHAIN_IDs.MAINNET]: 128,
+    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
     [CHAIN_IDs.MONAD]: 150,
     [CHAIN_IDs.PLASMA]: 300,
     [CHAIN_IDs.POLYGON]: 256,
@@ -265,6 +268,7 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
+  [CHAIN_IDs.MEGAETH]: 17280000, // 10ms/block
   [CHAIN_IDs.MODE]: 86400,
   [CHAIN_IDs.MONAD]: 432000,
   [CHAIN_IDs.OPTIMISM]: 86400,
@@ -326,6 +330,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI", "ezETH"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
+  [CHAIN_IDs.MEGAETH]: ["WETH"], // @TODO: Add "USDT" after it is fully deployed to MegaETH.
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC", "ezETH"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: [
@@ -486,6 +491,10 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: OpStackUSDCBridge,
   },
+  [CHAIN_IDs.MEGAETH]: {
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
+  },
   [CHAIN_IDs.MODE]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.ezETH.addresses[CHAIN_IDs.MAINNET]]: HyperlaneXERC20Bridge,
@@ -605,6 +614,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.HYPEREVM]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+  },
+  [CHAIN_IDs.MEGAETH]: {
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
   },
   [CHAIN_IDs.MODE]: {
@@ -788,6 +801,12 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
   },
+  [CHAIN_IDs.MEGAETH]: {
+    l1: {
+      DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
+    },
+    l2: DEFAULT_L2_CONTRACT_ADDRESSES,
+  },
   [CHAIN_IDs.MODE]: {
     l1: {
       DisputeGameFactory: "0x6f13EFadABD9269D6cEAd22b448d434A1f1B433E",
@@ -894,6 +913,7 @@ export const DEFAULT_GAS_MULTIPLIER: { [chainId: number]: number } = {
   [CHAIN_IDs.HYPEREVM]: 1.5,
   [CHAIN_IDs.INK]: 1.5,
   [CHAIN_IDs.LISK]: 1.5,
+  [CHAIN_IDs.MEGAETH]: 1.1,
   [CHAIN_IDs.MODE]: 1.5,
   [CHAIN_IDs.MONAD]: 1.1,
   [CHAIN_IDs.PLASMA]: 1.5,
@@ -981,6 +1001,7 @@ export const EVM_OFT_MESSENGERS: Map<string, Map<number, EvmAddress>> = new Map(
     TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET],
     new Map<number, EvmAddress>([
       [CHAIN_IDs.MAINNET, EvmAddress.from("0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee")],
+      [CHAIN_IDs.MEGAETH, EvmAddress.from("0x9151434b16b9763660705744891fA906F660EcC5")],
       [CHAIN_IDs.MONAD, EvmAddress.from("0x9151434b16b9763660705744891fa906f660ecc5")],
       [CHAIN_IDs.ARBITRUM, EvmAddress.from("0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92")],
       [CHAIN_IDs.HYPEREVM, EvmAddress.from("0x904861a24F30EC96ea7CFC3bE9EA4B476d237e98")],
