@@ -750,7 +750,7 @@ export class ProfitClient {
     const totalGasCostsToLog = Object.fromEntries(
       await sdkUtils.mapAsync(enabledChainIds.filter(chainIsEvm), async (destinationChainId) => {
         // @dev Set recipient/relayer to a valid address on the destination network in order for the gas query to succeed.
-        const destinationAddress = toAddressType(
+        const recipient = toAddressType(
           chainIsEvm(destinationChainId) ? TEST_RECIPIENT : SVM_RELAYER,
           destinationChainId
         );
@@ -771,7 +771,7 @@ export class ProfitClient {
         const deposit = {
           ...sampleDeposit,
           destinationChainId,
-          destinationAddress,
+          recipient,
           outputToken,
           exclusiveRelayer,
         };
