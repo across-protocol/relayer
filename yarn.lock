@@ -57,10 +57,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.112-alpha.1":
-  version "4.3.112-alpha.1"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.112-alpha.1.tgz#970be66f422de9e5ea67fd2c43a89d420293d050"
-  integrity sha512-Oz2aMNjsrHbQFqnZZEh+DPCFBst55CAtOu8AKulp7l1vA2HU6mywl3/E4NMR8nRgMBgVBp+WOcEsOQFKlCcbaw==
+"@across-protocol/sdk@4.3.112":
+  version "4.3.112"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.112.tgz#6173f20d3dea1fc30c416c5384626935c6fa3a43"
+  integrity sha512-VZNOxOL7E3vWhwxNCZ8tmFl8qPjWAfM/damOQmue1TzPBYxPZNPjyya7wFEf+Z7vEKJMOzuqgnrzZFRg3N696A==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
@@ -73,13 +73,10 @@
     "@solana-program/system" "^0.7.0"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.3.0"
-    "@types/mocha" "^10.0.1"
-    "@types/node" "^24.3.0"
     "@uma/contracts-node" "^0.4.26"
     arweave "^1.14.4"
     async "^3.2.5"
     axios "^0.27.2"
-    big-number "^2.0.0"
     bs58 "^6.0.0"
     decimal.js "^10.3.1"
     ethers "^5.7.2"
@@ -89,6 +86,8 @@
     superstruct "^0.15.4"
     tslib "^2.6.2"
     viem "^2.21.15"
+    winston "^3.17.0"
+    winston-transport "^4.9.0"
 
 "@adraffy/ens-normalize@1.10.1":
   version "1.10.1"
@@ -5144,11 +5143,6 @@ big-integer@1.6.36:
   version "1.6.36"
   resolved "https://registry.yarnpkg.com/big-integer/-/big-integer-1.6.36.tgz#78631076265d4ae3555c04f85e7d9d2f3a071a36"
   integrity sha512-t70bfa7HYEA1D9idDbmuv7YbsbVkQ+Hp+8KFSul4aE5e/i1bjCNIRYJZlA8Q8p0r9T8cF/RVvwUgRA//FydEyg==
-
-big-number@^2.0.0:
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/big-number/-/big-number-2.0.0.tgz#98548eda9393b445791670a213aed6f6dcd66ee3"
-  integrity sha512-C67Su0g+XsmXADX/UM9L/+xSbqqwq0D/qGJs2ky6Noy2FDuCZnC38ZSXODiaBvqWma2VYRZEXgm4H74PS6tCDg==
 
 big.js@^6.0.3:
   version "6.1.1"
