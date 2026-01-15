@@ -43,6 +43,7 @@
     "lodash": "^4.17.21",
     "minimist": "^1.2.8",
     "redis4": "npm:redis@^4.1.0",
+    "reflect-metadata": "^0.2.2",
     "superstruct": "^1.0.3",
     "ts-node": "^10.9.1",
     "viem": "~2.37.0",
