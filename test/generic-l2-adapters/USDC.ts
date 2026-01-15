@@ -96,8 +96,8 @@ describe("Cross Chain Adapter: USDC CCTP L2 Bridge", async function () {
   it("requiredTokenApprovals", async function () {
     const approvals = adapter.requiredTokenApprovals();
     approvals.forEach((approval) => {
-      expect(approval.token).to.equal(toAddress(l2USDCToken));
-      expect(approval.bridge).to.equal(toAddress(cctpBridgeContract.address));
+      expect(approval.token.eq(toAddress(l2USDCToken))).to.be.true;
+      expect(approval.bridge.eq(toAddress(cctpBridgeContract.address))).to.be.true;
     });
   });
 });
