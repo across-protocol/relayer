@@ -42,10 +42,20 @@ import {
   toAddressType,
 } from "../../../src/utils";
 
+type SolanaClient = {
+  rpc: ReturnType<typeof createSolanaRpc>;
+  rpcSubscriptions: ReturnType<typeof createSolanaRpcSubscriptions>;
+};
+
+type TransactionSignature = ReturnType<typeof getSignatureFromTransaction>;
+type SvmSpokeState = Awaited<ReturnType<typeof SvmSpokeClient.fetchState>>;
+type SvmCurrentTime = SvmSpokeState["data"]["currentTime"];
+type SvmStatePda = ReturnType<typeof arch.svm.getStatePda>;
+
 /** RPC / Client */
 
 // Creates an RPC+WebSocket client pointing to local validator.
-export const createDefaultSolanaClient = () => {
+export const createDefaultSolanaClient = (): SolanaClient => {
   const rpc = createSolanaRpc("http://127.0.0.1:8899");
   const rpcSubscriptions = createSolanaRpcSubscriptions("ws://127.0.0.1:8900");
   return { rpc, rpcSubscriptions };
@@ -57,7 +67,7 @@ export const createDefaultSolanaClient = () => {
 export const generateKeyPairSignerWithSol = async (
   rpcClient: arch.svm.RpcClient,
   putativeLamports = 1_000_000_000n
-) => {
+): Promise<KeyPairSigner> => {
   const signer = await generateKeyPairSigner();
   await airdropFactory(rpcClient)({
     recipientAddress: signer.address,
@@ -72,7 +82,7 @@ export const signAndSendTransaction = async (
   rpcClient: arch.svm.RpcClient,
   transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
   commitment: Commitment = "confirmed"
-) => {
+): Promise<TransactionSignature> => {
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
   const signature = getSignatureFromTransaction(signedTransaction);
   await sendAndConfirmTransactionFactory(rpcClient)(signedTransaction, { commitment });
@@ -88,7 +98,12 @@ export async function createMint(
   decimals = 6,
   tokenProgram: Address = TOKEN_PROGRAM_ADDRESS,
   mintSize = getMintSize()
-) {
+): Promise<{
+  mint: KeyPairSigner;
+  decimals: number;
+  mintAuthority: Address;
+  freezeAuthority: Address;
+}> {
   const [mint, mintRent] = await Promise.all([
     generateKeyPairSigner(),
     client.rpc.getMinimumBalanceForRentExemption(BigInt(mintSize)).send(),
@@ -129,7 +144,7 @@ export async function mintTokens(
   mint: Address,
   amount: bigint,
   tokenProgram: Address = TOKEN_PROGRAM_ADDRESS
-) {
+): Promise<Address> {
   const payerAta = await arch.svm.getAssociatedTokenAddress(
     SvmAddress.from(payer.address),
     SvmAddress.from(mint),
@@ -172,7 +187,7 @@ export const initializeSvmSpoke = async (
   depositQuoteTimeBuffer = 3600,
   fillDeadlineBuffer = 4 * 3600,
   seed = arch.svm.SVM_SPOKE_SEED
-) => {
+): Promise<{ state: SvmStatePda }> => {
   const state = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
 
   const initializeInput: SvmSpokeClient.InitializeInput = {
@@ -198,7 +213,11 @@ export const initializeSvmSpoke = async (
 };
 
 // Sets the current time for the SVM Spoke program.
-export const setCurrentTime = async (signer: KeyPairSigner, solanaClient: arch.svm.RpcClient, newTime: number) => {
+export const setCurrentTime = async (
+  signer: KeyPairSigner,
+  solanaClient: arch.svm.RpcClient,
+  newTime: number
+): Promise<TransactionSignature> => {
   const setCurrentTimeIx = SvmSpokeClient.getSetCurrentTimeInstruction({
     signer,
     state: await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS),
@@ -211,7 +230,7 @@ export const setCurrentTime = async (signer: KeyPairSigner, solanaClient: arch.s
   );
 };
 
-export const getCurrentTime = async (solanaClient: arch.svm.RpcClient) => {
+export const getCurrentTime = async (solanaClient: arch.svm.RpcClient): Promise<SvmCurrentTime> => {
   const statePda = await arch.svm.getStatePda(SvmSpokeClient.SVM_SPOKE_PROGRAM_ADDRESS);
   const state = await SvmSpokeClient.fetchState(solanaClient.rpc, statePda);
   return state.data.currentTime;
@@ -224,7 +243,11 @@ export const sendCreateFill = async (
   mint: KeyPairSigner,
   mintDecimals: number,
   overrides: Partial<RelayDataArgs> = {}
-) => {
+): Promise<{
+  signature: TransactionSignature;
+  relayData: SvmSpokeClient.FillRelayInput["relayData"];
+  fillInput: SvmSpokeClient.FillRelayInput;
+}> => {
   const currentTime = await getCurrentTime(solanaClient);
   const { getRandomSvmAddress, toAddress, SVM_DEFAULT_ADDRESS } = arch.svm;
 
@@ -304,7 +327,7 @@ export const sendRequestSlowFill = async (
   solanaClient: arch.svm.RpcClient,
   signer: KeyPairSigner,
   overrides: Partial<RelayDataArgs> = {}
-) => {
+): Promise<{ signature: TransactionSignature; relayData: SvmSpokeClient.RequestSlowFillInstructionDataArgs["relayData"] }> => {
   const { getRandomSvmAddress, toAddress, SVM_DEFAULT_ADDRESS } = arch.svm;
   const destinationChainId = CHAIN_IDs.SOLANA;
   const currentTime = await getCurrentTime(solanaClient);
@@ -363,7 +386,7 @@ export const sendCreateDeposit = async (
   payerAta: Address,
   overrides: Partial<SvmSpokeClient.DepositInput> = {},
   destinationChainId: number = CHAIN_IDs.MAINNET
-) => {
+): Promise<{ signature: TransactionSignature; depositInput: SvmSpokeClient.DepositInput }> => {
   const { toAddress } = arch.svm;
   const currentTime = await getCurrentTime(solanaClient);
 

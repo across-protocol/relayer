@@ -129,7 +129,7 @@ export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePo
   return { weth, erc20, spokePool, unwhitelistedErc20, destErc20, deploymentBlock: receipt.blockNumber };
 }
 
-export async function deployMulticall3(signer: SignerWithAddress) {
+export async function deployMulticall3(signer: SignerWithAddress): ReturnType<typeof sdkUtils.deploy> {
   return sdkUtils.deploy(signer);
 }
 
@@ -372,13 +372,15 @@ export async function updateDeposit(
   assert.ok(isDefined(updatedRecipient));
   assert.ok(isDefined(updatedOutputAmount));
   assert.ok(isDefined(updatedMessage));
+  const outputAmount = updatedOutputAmount as BigNumber;
+  const message = updatedMessage as string;
   const signature = await getUpdatedV3DepositSignature(
     depositor,
     deposit.depositId,
     deposit.originChainId,
-    updatedOutputAmount!,
+    outputAmount,
     updatedRecipient,
-    updatedMessage!
+    message
   );
 
   await spokePool
@@ -386,9 +388,9 @@ export async function updateDeposit(
     .speedUpDeposit(
       sdkUtils.toBytes32(depositor.address),
       deposit.depositId,
-      updatedOutputAmount,
+      outputAmount,
       updatedRecipient,
-      updatedMessage,
+      message,
       signature
     );
   return signature;
@@ -417,11 +419,12 @@ export async function fillV3Relay(
 
   const events = await spokePool.queryFilter(spokePool.filters.FilledRelay());
   const lastEvent = events.at(-1);
-  let args = lastEvent!.args;
-  assert.exists(args);
-  args = args!;
+  if (!lastEvent || !lastEvent.args) {
+    throw new Error("FilledRelay event not found");
+  }
+  const { args } = lastEvent;
 
-  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent!;
+  const { blockNumber, transactionHash, transactionIndex, logIndex } = lastEvent;
 
   const parsedEvent = spreadEvent(args);
   return {
@@ -493,30 +496,31 @@ export function getDisabledBlockRanges(): number[][] {
 }
 
 // A helper function to parse key - value map into a Fill object
-export function fillFromArgs(fillArgs: { [key: string]: any }): Fill {
+export function fillFromArgs(fillArgs: Record<string, unknown>): Fill {
   const { message, ...relayData } = relayDataFromArgs(fillArgs);
-  const { relayExecutionInfo: relayExecutionInfoArgs } = fillArgs;
+  const relayExecutionInfoArgs = fillArgs.relayExecutionInfo as Record<string, unknown>;
+  const destinationChainId = fillArgs.destinationChainId as number;
   const relayExecutionInfo: RelayExecutionEventInfo = {
-    updatedRecipient: toAddressType(relayExecutionInfoArgs.updatedRecipient, fillArgs.destinationChainId),
-    updatedOutputAmount: relayExecutionInfoArgs.updatedOutputAmount,
-    updatedMessageHash: relayExecutionInfoArgs.updatedMessageHash,
-    fillType: relayExecutionInfoArgs.fillType,
+    updatedRecipient: toAddressType(relayExecutionInfoArgs.updatedRecipient as string, destinationChainId),
+    updatedOutputAmount: relayExecutionInfoArgs.updatedOutputAmount as BigNumber,
+    updatedMessageHash: relayExecutionInfoArgs.updatedMessageHash as string,
+    fillType: relayExecutionInfoArgs.fillType as RelayExecutionEventInfo["fillType"],
   };
   if (relayExecutionInfoArgs.updatedMessage) {
-    relayExecutionInfo.updatedMessage = relayExecutionInfoArgs.updatedMessage;
+    relayExecutionInfo.updatedMessage = relayExecutionInfoArgs.updatedMessage as string;
   }
   return {
     ...relayData,
-    messageHash: fillArgs.messageHash,
-    destinationChainId: fillArgs.destinationChainId,
-    relayer: toAddressType(fillArgs.relayer, fillArgs.destinationChainId),
-    repaymentChainId: fillArgs.repaymentChainId,
+    messageHash: fillArgs.messageHash as string,
+    destinationChainId,
+    relayer: toAddressType(fillArgs.relayer as string, destinationChainId),
+    repaymentChainId: fillArgs.repaymentChainId as number,
     relayExecutionInfo,
   };
 }
 
 // decomposes Fill into primitive types suitable for === comparisons
-export function fillIntoPrimitiveTypes(fill: Fill) {
+export function fillIntoPrimitiveTypes(fill: Fill): Record<string, unknown> {
   return {
     ...fill,
     inputToken: fill.inputToken.toNative(),
@@ -532,58 +536,62 @@ export function fillIntoPrimitiveTypes(fill: Fill) {
   };
 }
 
-export function relayDataFromArgs(relayDataArgs: { [key: string]: any }): RelayData {
+export function relayDataFromArgs(relayDataArgs: Record<string, unknown>): RelayData {
+  const originChainId = relayDataArgs.originChainId as number;
+  const destinationChainId = relayDataArgs.destinationChainId as number;
   return {
-    originChainId: relayDataArgs.originChainId,
-    depositor: toAddressType(relayDataArgs.depositor, relayDataArgs.originChainId),
-    recipient: toAddressType(relayDataArgs.recipient, relayDataArgs.destinationChainId),
-    depositId: relayDataArgs.depositId,
-    inputToken: toAddressType(relayDataArgs.inputToken, relayDataArgs.originChainId),
-    inputAmount: relayDataArgs.inputAmount,
-    outputToken: toAddressType(relayDataArgs.outputToken, relayDataArgs.destinationChainId),
-    outputAmount: relayDataArgs.outputAmount,
-    message: relayDataArgs.message,
-    fillDeadline: relayDataArgs.fillDeadline,
-    exclusiveRelayer: toAddressType(relayDataArgs.exclusiveRelayer, relayDataArgs.destinationChainId),
-    exclusivityDeadline: relayDataArgs.exclusivityDeadline,
+    originChainId,
+    depositor: toAddressType(relayDataArgs.depositor as string, originChainId),
+    recipient: toAddressType(relayDataArgs.recipient as string, destinationChainId),
+    depositId: relayDataArgs.depositId as BigNumber,
+    inputToken: toAddressType(relayDataArgs.inputToken as string, originChainId),
+    inputAmount: relayDataArgs.inputAmount as BigNumber,
+    outputToken: toAddressType(relayDataArgs.outputToken as string, destinationChainId),
+    outputAmount: relayDataArgs.outputAmount as BigNumber,
+    message: relayDataArgs.message as string,
+    fillDeadline: relayDataArgs.fillDeadline as number,
+    exclusiveRelayer: toAddressType(relayDataArgs.exclusiveRelayer as string, destinationChainId),
+    exclusivityDeadline: relayDataArgs.exclusivityDeadline as number,
   };
 }
 
-export function slowFillRequestFromArgs(slowFillRequestArgs: { [key: string]: any }): SlowFillRequest {
+export function slowFillRequestFromArgs(slowFillRequestArgs: Record<string, unknown>): SlowFillRequest {
   const { message, ...relayData } = relayDataFromArgs(slowFillRequestArgs);
   return {
     ...relayData,
-    destinationChainId: slowFillRequestArgs.destinationChainId,
-    messageHash: slowFillRequestArgs.messageHash ?? getMessageHash(slowFillRequestArgs.message),
+    destinationChainId: slowFillRequestArgs.destinationChainId as number,
+    messageHash:
+      (slowFillRequestArgs.messageHash as string | undefined) ?? getMessageHash(slowFillRequestArgs.message as string),
   };
 }
 
 // A helper function to parse key - value map into a Deposit object with correct types (e.g. Address)
-export function depositFromArgs(depositArgs: { [key: string]: any }): Deposit {
+export function depositFromArgs(depositArgs: Record<string, unknown>): Deposit {
+  const destinationChainId = depositArgs.destinationChainId as number;
   const deposit: Deposit = {
     ...relayDataFromArgs(depositArgs),
-    destinationChainId: depositArgs.destinationChainId,
-    messageHash: depositArgs.messageHash,
-    quoteTimestamp: depositArgs.quoteTimestamp,
-    fromLiteChain: depositArgs.fromLiteChain,
-    toLiteChain: depositArgs.toLiteChain,
+    destinationChainId,
+    messageHash: depositArgs.messageHash as string,
+    quoteTimestamp: depositArgs.quoteTimestamp as number,
+    fromLiteChain: depositArgs.fromLiteChain as boolean,
+    toLiteChain: depositArgs.toLiteChain as boolean,
   };
 
   if (depositArgs.speedUpSignature) {
-    deposit.speedUpSignature = depositArgs.speedUpSignature;
+    deposit.speedUpSignature = depositArgs.speedUpSignature as string;
   }
 
   if (depositArgs.updatedRecipient) {
-    deposit.updatedRecipient = toAddressType(depositArgs.updatedRecipient, depositArgs.destinationChainId);
-    deposit.updatedOutputAmount = depositArgs.updatedOutputAmount;
-    deposit.updatedMessage = depositArgs.updatedMessage;
+    deposit.updatedRecipient = toAddressType(depositArgs.updatedRecipient as string, destinationChainId);
+    deposit.updatedOutputAmount = depositArgs.updatedOutputAmount as BigNumber;
+    deposit.updatedMessage = depositArgs.updatedMessage as string;
   }
 
   return deposit;
 }
 
 // decomposes Deposit into primitive types suitable for === comparisons
-export function depositIntoPrimitiveTypes(deposit: Deposit) {
+export function depositIntoPrimitiveTypes(deposit: Deposit): Record<string, unknown> {
   return {
     ...deposit,
     inputToken: deposit.inputToken.toNative(),
