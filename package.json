@@ -57,7 +57,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build-bigint-buffer": "[ -d node_modules/bigint-buffer ] && command -v node-gyp > /dev/null && cd node_modules/bigint-buffer && node-gyp configure && node-gyp build || echo 'Skipping bigint-buffer build: folder or node-gyp not found'",
-    "postinstall": "patch-package; yarn build-bigint-buffer; yarn update-addresses",
+    "postinstall": "patch-package; yarn build-bigint-buffer; yarn update-addresses; yarn update-inventory-config",
     "lint": "yarn eslint && yarn prettier --list-different",
     "lint-fix": "yarn eslint --fix && yarn prettier --write",
     "prettier": "prettier .",
