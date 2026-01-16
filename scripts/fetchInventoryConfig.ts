@@ -1,27 +1,23 @@
 import { writeFile } from "node:fs/promises";
 import { config } from "dotenv";
 import axios from "axios";
+import { GoogleAuth } from "google-auth-library";
 
-const OUTPUT_PATH = "inventoryConfig.json";
+const DEFAULT_OUTPUT_PATH = "inventoryConfig.json";
+const DEFAULT_ENVIRONMENT = "prod";
 
-interface GitHubFileResponse {
-  content: string;
-  encoding: string;
-  sha: string;
-  size: number;
-  url: string;
-}
+type JsonValue = Record<string, unknown> | unknown[];
 
 async function fetchWithRetry(
   url: string,
-  headers: { Authorization: string; Accept: string },
+  headers: Record<string, string>,
   retries = 3,
   delayMs = 1000
-): Promise<GitHubFileResponse> {
+): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await axios.get<GitHubFileResponse>(url, { headers });
-      return response.data;
+      const response = await axios.get(url, { headers, responseType: "text" });
+      return response.data as string;
     } catch (error) {
       if (i === retries - 1) {
         throw error;
@@ -30,77 +26,74 @@ async function fetchWithRetry(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
-  throw new Error("Failed to fetch file from GitHub");
+  throw new Error("Failed to fetch file from Configurama");
 }
 
-async function fetchFileFromGitHub(
-  owner: string,
-  repo: string,
-  path: string,
-  token: string,
-  branch = "master"
-): Promise<string> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
-  const headers = {
-    Authorization: `token ${token}`,
-    Accept: "application/vnd.github.v3+json",
-  };
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+}
 
-  const response = await fetchWithRetry(url, headers);
+function extractInventoryConfig(parsed: JsonValue): Record<string, unknown> {
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const asRecord = parsed as Record<string, unknown>;
+    const nested = asRecord.RELAYER_INVENTORY_CONFIG;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      return nested as Record<string, unknown>;
+    }
+    return asRecord;
+  }
+  throw new Error("Inventory config must be a JSON object");
+}
 
-  // GitHub API returns base64 encoded content
-  const content = Buffer.from(response.content, "base64").toString("utf-8");
-  return content;
+async function getIdTokenHeaders(audience: string): Promise<Record<string, string>> {
+  const auth = new GoogleAuth();
+  const client = await auth.getIdTokenClient(audience);
+  const headers = await client.getRequestHeaders();
+  return headers as Record<string, string>;
 }
 
 async function run(): Promise<number> {
   config(); // Load .env file
 
-  // Get configuration from environment variables
-  const githubToken = process.env.GITHUB_TOKEN;
-  const githubOwner = process.env.GITHUB_REPO_OWNER;
-  const githubRepo = process.env.GITHUB_REPO_NAME;
-  const githubFilePath = process.env.GITHUB_FILE_PATH;
-  const githubBranch = process.env.GITHUB_BRANCH || "master";
+  const configuramaBaseUrl = process.env.CONFIGURAMA_BASE_URL;
+  const configuramaEnv = process.env.CONFIGURAMA_ENV ?? DEFAULT_ENVIRONMENT;
+  const configuramaFilePath = process.env.CONFIGURAMA_FILE_PATH;
+  const outputPath = process.env.RELAYER_EXTERNAL_INVENTORY_CONFIG ?? DEFAULT_OUTPUT_PATH;
 
-  // Validate required environment variables
-  if (!githubToken) {
-    throw new Error("GITHUB_TOKEN environment variable is required");
+  if (!configuramaBaseUrl && !configuramaFilePath) {
+    console.log("Skipping inventory config fetch: CONFIGURAMA_BASE_URL and CONFIGURAMA_FILE_PATH not set.");
+    return 0;
   }
-  if (!githubOwner) {
-    throw new Error("GITHUB_REPO_OWNER environment variable is required");
-  }
-  if (!githubRepo) {
-    throw new Error("GITHUB_REPO_NAME environment variable is required");
-  }
-  if (!githubFilePath) {
-    throw new Error("GITHUB_FILE_PATH environment variable is required");
+  if (!configuramaBaseUrl || !configuramaFilePath) {
+    throw new Error("CONFIGURAMA_BASE_URL and CONFIGURAMA_FILE_PATH must both be set.");
   }
 
-  console.log(`Fetching ${githubFilePath} from ${githubOwner}/${githubRepo} (branch: ${githubBranch})...`);
+  const baseUrl = normalizeBaseUrl(configuramaBaseUrl);
+  const url = `${baseUrl}/config?environment=${encodeURIComponent(configuramaEnv)}&filename=${encodeURIComponent(
+    configuramaFilePath
+  )}`;
+
+  console.log(`Fetching inventory config from ${url}...`);
 
   try {
-    // Fetch the file content from GitHub
-    const fileContent = await fetchFileFromGitHub(githubOwner, githubRepo, githubFilePath, githubToken, githubBranch);
+    const headers = await getIdTokenHeaders(baseUrl);
+    const fileContent = await fetchWithRetry(url, headers);
 
-    // Parse JSON to validate it's valid JSON
-    const jsonData = JSON.parse(fileContent);
+    const parsed = JSON.parse(fileContent) as JsonValue;
+    const inventoryConfig = extractInventoryConfig(parsed);
 
-    // Write to output file
-    await writeFile(OUTPUT_PATH, JSON.stringify(jsonData, null, 2));
+    await writeFile(outputPath, JSON.stringify(inventoryConfig, null, 2));
 
-    console.log(`✅ Successfully fetched and saved to ${OUTPUT_PATH}`);
+    console.log(`✅ Successfully fetched and saved to ${outputPath}`);
     return 0;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 404) {
-        throw new Error(`File not found: ${githubFilePath} in ${githubOwner}/${githubRepo}`);
+        throw new Error(`File not found: ${configuramaFilePath} in Configurama (${configuramaEnv})`);
       } else if (error.response?.status === 401 || error.response?.status === 403) {
-        throw new Error(
-          `Authentication failed. Check your GITHUB_TOKEN and ensure it has access to ${githubOwner}/${githubRepo}`
-        );
+        throw new Error("Authentication failed. Ensure ADC is configured to call the Configurama API.");
       } else {
-        throw new Error(`GitHub API error: ${error.response?.status} - ${error.message}`);
+        throw new Error(`Configurama API error: ${error.response?.status} - ${error.message}`);
       }
     }
     throw error;
