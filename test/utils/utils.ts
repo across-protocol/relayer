@@ -1,8 +1,10 @@
-import * as utils from "@across-protocol/contracts/dist/test-utils";
+import * as utils from "@across-protocol/sdk/test-utils";
+import { seedWallet, amountToSeedWallets } from "@across-protocol/contracts/dist/test-utils";
 import { SpyTransport, bigNumberFormatter } from "@risk-labs/logger";
 import { AcrossConfigStore, FakeContract } from "@across-protocol/contracts";
 import { constants, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, providers } from "ethers";
+import { ethers } from "hardhat";
 import chai, { assert, expect } from "chai";
 import chaiExclude from "chai-exclude";
 import sinon from "sinon";
@@ -52,13 +54,13 @@ export {
   spyLogLevel,
 } from "@risk-labs/logger";
 export { MAX_SAFE_ALLOWANCE, MAX_UINT_VAL } from "../../src/utils";
+export { ethers };
+export const createRandomBytes32 = (): string => ethers.utils.hexlify(ethers.utils.randomBytes(32));
 export const {
-  ethers,
   buildPoolRebalanceLeafTree,
   buildPoolRebalanceLeaves,
   buildSlowRelayTree,
   buildV3SlowRelayTree,
-  createRandomBytes32,
   getContractFactory,
   getUpdatedV3DepositSignature,
   hubPoolFixture,
@@ -99,7 +101,7 @@ export async function setupTokensForWallet(
     await token.connect(wallet).approve(contractToApprove.address, balance);
   };
 
-  await utils.seedWallet(wallet, tokens, weth, utils.amountToSeedWallets.mul(seedMultiplier));
+  await seedWallet(wallet, tokens, weth, amountToSeedWallets.mul(seedMultiplier));
   await Promise.all(tokens.map(approveToken));
 
   if (weth) {
@@ -122,7 +124,7 @@ export function createSpyLogger(): SpyLoggerResult {
 }
 
 export async function deploySpokePoolWithToken(fromChainId = 0): Promise<SpokePoolDeploymentResult> {
-  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(utils.ethers);
+  const { weth, erc20, spokePool, unwhitelistedErc20, destErc20 } = await utils.deploySpokePool(ethers);
   const receipt = await spokePool.deployTransaction.wait();
 
   await spokePool.setChainId(fromChainId == 0 ? utils.originChainId : fromChainId);
@@ -437,10 +439,10 @@ export async function addLiquidity(
   signer: SignerWithAddress,
   hubPool: Contract,
   l1Token: Contract,
-  amount: utils.BigNumber
+  amount: BigNumber
 ): Promise<void> {
   const weth = undefined;
-  await utils.seedWallet(signer, [l1Token], weth, amount);
+  await seedWallet(signer, [l1Token], weth, amount);
   await l1Token.connect(signer).approve(hubPool.address, amount);
   await hubPool.enableL1TokenForLiquidityProvision(l1Token.address);
   await hubPool.connect(signer).addLiquidity(l1Token.address, amount);
