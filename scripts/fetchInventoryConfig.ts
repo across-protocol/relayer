@@ -33,15 +33,6 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 }
 
-function isLocalBaseUrl(baseUrl: string): boolean {
-  try {
-    const parsed = new URL(baseUrl);
-    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
-  } catch {
-    return false;
-  }
-}
-
 function extractInventoryConfig(parsed: JsonValue): Record<string, unknown> {
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const asRecord = parsed as Record<string, unknown>;
@@ -85,11 +76,7 @@ async function run(): Promise<number> {
   console.log(`Fetching inventory config from ${url}...`);
 
   try {
-    const localBaseUrl = isLocalBaseUrl(baseUrl);
-    if (localBaseUrl) {
-      console.log("Local Configurama base URL detected; skipping auth headers.");
-    }
-    const headers = localBaseUrl ? {} : await getIdTokenHeaders(baseUrl);
+    const headers = await getIdTokenHeaders(baseUrl);
     const fileContent = await fetchWithRetry(url, headers);
 
     const parsed = JSON.parse(fileContent) as JsonValue;
