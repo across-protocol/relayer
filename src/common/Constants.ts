@@ -803,6 +803,15 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
   },
   [CHAIN_IDs.MEGAETH]: {
     l1: {
+      AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
+      L1CrossDomainMessenger: "0x6C7198250087B29A8040eC63903Bc130f4831Cc9",
+      L1StandardBridge: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].ovmStandardBridge_4326.address,
+      StateCommitmentChain: ZERO_ADDRESS,
+      CanonicalTransactionChain: ZERO_ADDRESS,
+      BondManager: ZERO_ADDRESS,
+      OptimismPortal: "0x7f82f57F0Dd546519324392e408b01fcC7D709e8",
+      L2OutputOracle: ZERO_ADDRESS,
+      OptimismPortal2: ZERO_ADDRESS,
       DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
