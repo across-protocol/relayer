@@ -1,19 +1,5 @@
-import { Contract } from "ethers";
 import { Log } from "../../interfaces";
-import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../../common";
-import {
-  BigNumber,
-  MAX_SAFE_ALLOWANCE,
-  blockExplorerLink,
-  bnZero,
-  getNetworkName,
-  getRedisCache,
-  runTransaction,
-  toBN,
-  winston,
-  mapAsync,
-  EvmAddress,
-} from "../../utils";
+import { BigNumber, getRedisCache, toBN, EvmAddress } from "../../utils";
 
 /**
  * @notice This function is designed to be used in L2 chain adapters when identifying "finalized" cross
@@ -115,32 +101,4 @@ export async function setL2TokenAllowanceInCache(
   const redis = await getRedisCache();
   const key = getL2AllowanceCacheKey(l2ChainId, l2Token, userAddress, contractAddress);
   await redis?.set(key, allowance.toString());
-}
-
-// @TODO: It looks like this function is not used anywhere. We have similar function in adapter/utils.ts. Delete this?
-export async function approveTokens(
-  tokens: { token: Contract; bridge: EvmAddress }[],
-  chainId: number,
-  hubChainId: number,
-  logger: winston.Logger
-): Promise<string> {
-  const approvalMarkdwn = await mapAsync(tokens, async ({ token: l1Token, bridge }) => {
-    const txs = [];
-    if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(l1Token.address)) {
-      txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toNative(), bnZero]));
-    }
-    txs.push(await runTransaction(logger, l1Token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
-    const receipts = await Promise.all(txs.map((tx) => tx.wait()));
-    const hubNetwork = getNetworkName(hubChainId);
-    const spokeNetwork = getNetworkName(chainId);
-    let internalMrkdwn =
-      ` - Approved canonical ${spokeNetwork} token bridge ${blockExplorerLink(bridge.toNative(), hubChainId)} ` +
-      `to spend ${await l1Token.symbol()} ${blockExplorerLink(l1Token.address, hubChainId)} on ${hubNetwork}.` +
-      `tx: ${blockExplorerLink(receipts[receipts.length - 1].txnRef, hubChainId)}`;
-    if (receipts.length > 1) {
-      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].txnRef, hubChainId)}`;
-    }
-    return internalMrkdwn;
-  });
-  return ["*Approval transactions:*", ...approvalMarkdwn].join("\n");
 }
