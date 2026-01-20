@@ -1,8 +1,6 @@
 import * as typechain from "@across-protocol/contracts"; // TODO: refactor once we've fixed export from contract repo
-import * as beta from "@across-protocol/contracts-beta";
 import {
   CHAIN_IDs,
-  getNetworkName,
   Contract,
   Signer,
   getDeployedAddress,
@@ -19,54 +17,17 @@ export function getDeployedContract(contractName: string, networkId: number, sig
   try {
     const address = getDeployedAddress(contractName, networkId);
     // If the contractName is SpokePool then we need to modify it to find the correct contract factory artifact.
-    const factoryName = `${contractName === "SpokePool" ? castSpokePoolName(networkId) : contractName}__factory`;
-    const artifact = typechain[factoryName];
+    const artifact = typechain[`${contractName}__factory`];
     return new Contract(address, artifact.abi, signer);
   } catch (error) {
     throw new Error(`Could not find address for contract ${contractName} on ${networkId} (${error})`);
   }
 }
 
-// If the name of the contract is SpokePool then we need to apply a transformation on the name to get the correct
-// contract factory name. For example, if the network is "mainnet" then the contract is called Ethereum_SpokePool.
-export function castSpokePoolName(networkId: number): string {
-  let networkName: string;
-  switch (networkId) {
-    case CHAIN_IDs.MAINNET:
-    case CHAIN_IDs.SEPOLIA:
-      return "Ethereum_SpokePool";
-    case CHAIN_IDs.ARBITRUM:
-      return "Arbitrum_SpokePool";
-    case CHAIN_IDs.BSC:
-    case CHAIN_IDs.HYPEREVM:
-    case CHAIN_IDs.PLASMA:
-    case CHAIN_IDs.MONAD:
-      return "Universal_SpokePool";
-    case CHAIN_IDs.ZK_SYNC:
-      return "ZkSync_SpokePool";
-    case CHAIN_IDs.SOLANA:
-    case CHAIN_IDs.SOLANA_DEVNET:
-      return "SvmSpoke";
-    case CHAIN_IDs.SONEIUM:
-      return "Cher_SpokePool";
-    case CHAIN_IDs.REDSTONE:
-    case CHAIN_IDs.UNICHAIN:
-    case CHAIN_IDs.ZORA:
-    case CHAIN_IDs.BASE:
-    case CHAIN_IDs.MODE:
-      return "OP_SpokePool";
-    default:
-      networkName = getNetworkName(networkId);
-  }
-
-  return `${networkName.replace(" ", "")}_SpokePool`;
-}
-
 // For a chain ID and optional SpokePool address, return a Contract instance with the corresponding ABI.
 export function getSpokePool(chainId: number, address?: string): Contract {
-  const factoryName = castSpokePoolName(chainId);
-  const artifact = typechain[`${factoryName}__factory`];
-  return new Contract(address ?? getDeployedAddress("SpokePool", chainId), artifact.abi);
+  const spokePool = getDeployedContract("SpokePool", chainId);
+  return spokePool.connect(address ?? getDeployedAddress("SpokePool", chainId));
 }
 
 export function getSpokePoolAddress(chainId: number): Address {
@@ -96,24 +57,24 @@ export function getDeploymentBlockNumber(contractName: string, networkId: number
 // The DstOft/Cctp handler contracts only exist on HyperEVM.
 export function getDstOftHandler(): Contract {
   const factoryName = "DstOFTHandler";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address =
     CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstOftHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getDstCctpHandler(): Contract {
   const factoryName = "SponsoredCCTPDstPeriphery";
-  const artifact = beta["HyperCoreFlowExecutor__factory"];
+  const artifact = typechain["HyperCoreFlowExecutor__factory"];
   const address =
     CONTRACT_ADDRESSES[CHAIN_IDs.HYPEREVM]?.dstCctpHandler?.address ??
-    beta.getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
+    getDeployedAddress(factoryName, CHAIN_IDs.HYPEREVM);
   return new Contract(address, artifact.abi);
 }
 
 export function getSrcOftPeriphery(chainId: number): Contract {
   const factoryName = "SponsoredOFTSrcPeriphery";
-  const artifact = beta[`${factoryName}__factory`];
-  return new Contract(beta.getDeployedAddress(factoryName, chainId), artifact.abi);
+  const artifact = typechain[`${factoryName}__factory`];
+  return new Contract(getDeployedAddress(factoryName, chainId), artifact.abi);
 }
