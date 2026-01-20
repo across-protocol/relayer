@@ -323,9 +323,8 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     String(args.exclusiveRelayer ?? depositQuote.exclusiveRelayer.toNative()),
     toChainId
   );
-  const exclusivityParameter = args.exclusivityDeadline
-    ? Number(args.exclusivityDeadline)
-    : depositQuote.exclusivityDeadline;
+  const exclusivityParameter = Number(args.exclusivityDeadline ?? depositQuote.exclusivityDeadline);
+  const fillDeadline = Number(args.fillDeadline ?? depositQuote.fillDeadline);
 
   const abortController = new AbortController();
   const srcListener = new EventListener(fromChainId, logger, 1);
@@ -378,7 +377,7 @@ async function deposit(args: Record<string, number | string>, signer: Signer): P
     toChainId,
     exclusiveRelayer.toBytes32(),
     depositQuote.quoteTimestamp,
-    depositQuote.fillDeadline,
+    fillDeadline,
     exclusivityParameter,
     message
   );
