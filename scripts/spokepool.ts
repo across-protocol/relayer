@@ -156,18 +156,14 @@ async function getSuggestedFees(params: RelayerFeeQuery) {
     .join("&");
   const request = `${url}?${args}`;
 
-  try {
-    const quote = await fetch(request);
-    const response = await quote.json();
-    if (response?.type === "AcrossApiError") {
-      const { status, code, message } = response;
-      const cause = { request, status, code, message };
-      throw new Error("Quote request failed", { cause });
-    }
-    return response;
-  } catch (err) {
-    throw err;
+  const quote = await fetch(request);
+  const response = await quote.json();
+  if (response?.type === "AcrossApiError") {
+    const { status, code, message } = response;
+    const cause = { request, status, code, message };
+    throw new Error("Quote request failed", { cause });
   }
+  return response;
 }
 
 async function getRelayerQuote(
