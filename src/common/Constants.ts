@@ -183,7 +183,7 @@ const resolveChainBundleBuffers = () => {
     [CHAIN_IDs.HYPEREVM]: 120, // 60s/big block
     [CHAIN_IDs.LINEA]: 40, // ~3s/block
     [CHAIN_IDs.MAINNET]: 5, // ~12s/block
-    [CHAIN_IDs.MEGAETH]: 6000, // ~10ms/block @TODO: What is finality for MegaETH?
+    [CHAIN_IDs.MEGAETH]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.MONAD]: 150, // ~400ms/block, 2 block finality
     [CHAIN_IDs.PLASMA]: 180, // ~1s/block variable. Finality guarantees are less certain, be a bit more conservative.
     [CHAIN_IDs.POLYGON]: 128, // ~2s/block. Polygon has historically re-orged often.
