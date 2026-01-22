@@ -33,6 +33,7 @@ type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
 };
 
 type ReadyTransactionPromise = Promise<SolanaTransaction>;
+type ReadyTransactionsPromise = Promise<SolanaTransaction[]>;
 
 type QueuedSvmFill = {
   txPromises: [ReadyTransactionPromise] | [ReadyTransactionsPromise, ReadyTransactionPromise];
