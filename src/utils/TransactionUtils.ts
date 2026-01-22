@@ -269,10 +269,7 @@ export async function sendAndConfirmSolanaTransaction(
   return txSignature;
 }
 
-export async function simulateSolanaTransaction(
-  unsignedTransaction: SolanaTransaction,
-  provider: SVMProvider
-) {
+export async function simulateSolanaTransaction(unsignedTransaction: SolanaTransaction, provider: SVMProvider) {
   const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
   const serializedTx = getBase64EncodedWireTransaction(signedTx);
   return provider.simulateTransaction(serializedTx, { sigVerify: false, encoding: "base64" }).send();
