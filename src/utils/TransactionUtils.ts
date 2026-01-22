@@ -15,6 +15,7 @@ import {
   getContractInfoFromAddress,
   getNetworkName,
   Signer,
+  SolanaTransaction,
   toBNWei,
   winston,
   CHAIN_IDs,
@@ -22,8 +23,6 @@ import {
   parseUnits,
 } from "../utils";
 import {
-  TransactionMessage,
-  TransactionMessageWithFeePayer,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
   type MicroLamports,
@@ -40,8 +39,6 @@ export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
-
-export type SolanaTransaction = TransactionMessage & TransactionMessageWithFeePayer;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;

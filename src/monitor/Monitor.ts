@@ -71,7 +71,6 @@ import {
   address,
   fetchEncodedAccount,
   getBase64EncodedWireTransaction,
-  setTransactionMessageFeePayer,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
 import { HyperliquidExecutor } from "../hyperliquid/HyperliquidExecutor";
@@ -1155,8 +1154,7 @@ export class Monitor {
       }
 
       const closePdaInstruction = await arch.svm.createCloseFillPdaInstruction(signer, svmRpc, fillStatusPda);
-      const transactionWithFeePayer = setTransactionMessageFeePayer(signer.address, closePdaInstruction);
-      const signedTransaction = await signTransactionMessageWithSigners(transactionWithFeePayer);
+      const signedTransaction = await signTransactionMessageWithSigners(closePdaInstruction);
       const encodedTransaction = getBase64EncodedWireTransaction(signedTransaction);
 
       if (simulate) {

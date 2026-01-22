@@ -1,17 +1,14 @@
 import {
-  TransactionMessage,
-  TransactionMessageWithFeePayer,
   getBase64EncodedWireTransaction,
   isSolanaError,
   KeyPairSigner,
-  setTransactionMessageFeePayer,
   signTransactionMessageWithSigners,
-  TransactionMessageWithBlockhashLifetime,
 } from "@solana/kit";
 import {
   assert,
   getKitKeypairFromEvmSigner,
   Signer,
+  SolanaTransaction,
   SvmAddress,
   Address as SDKAddress,
   blockExplorerLink,
@@ -31,7 +28,7 @@ type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   outputToken: SvmAddress;
 };
 
-type ReadyTransactionPromise = Promise<TransactionMessage & TransactionMessageWithBlockhashLifetime>;
+type ReadyTransactionPromise = Promise<SolanaTransaction>;
 
 type QueuedSvmFill = {
   txPromise: ReadyTransactionPromise;
@@ -98,8 +95,7 @@ export class SvmFillerClient {
   async _executeTxnQueueWithRetry(txPromise: ReadyTransactionPromise, retryAttempt: number): Promise<string> {
     try {
       const transaction = await txPromise;
-      const transactionWithFeePayer = setTransactionMessageFeePayer(this.signer.address, transaction);
-      const signature = await signAndSendTransaction(this.provider, transactionWithFeePayer);
+      const signature = await signAndSendTransaction(this.provider, transaction);
       const signatureString = signature.toString();
       return signatureString;
     } catch (e: unknown) {
@@ -180,12 +176,7 @@ export class SvmFillerClient {
     }
 
     const simulationResults = await Promise.allSettled(
-      queue.map(({ txPromise }) =>
-        txPromise.then((tx) => {
-          const txWithFeePayer = setTransactionMessageFeePayer(this.signer.address, tx);
-          return signAndSimulateTransaction(this.provider, txWithFeePayer);
-        })
-      )
+      queue.map(({ txPromise }) => txPromise.then((tx) => signAndSimulateTransaction(this.provider, tx)))
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
@@ -250,7 +241,7 @@ export class SvmFillerClient {
 
 const signAndSimulateTransaction = async (
   provider: arch.svm.SVMProvider,
-  unsignedTxn: TransactionMessage & TransactionMessageWithBlockhashLifetime & TransactionMessageWithFeePayer
+  unsignedTxn: arch.svm.SolanaTransaction
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
