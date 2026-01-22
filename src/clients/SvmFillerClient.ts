@@ -1,8 +1,10 @@
 import {
-  CompilableTransactionMessage,
+  TransactionMessage,
+  TransactionMessageWithFeePayer,
   getBase64EncodedWireTransaction,
   isSolanaError,
   KeyPairSigner,
+  setTransactionMessageFeePayer,
   signTransactionMessageWithSigners,
   TransactionMessageWithBlockhashLifetime,
 } from "@solana/kit";
@@ -29,7 +31,7 @@ type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   outputToken: SvmAddress;
 };
 
-type ReadyTransactionPromise = Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime>;
+type ReadyTransactionPromise = Promise<TransactionMessage & TransactionMessageWithBlockhashLifetime>;
 
 type QueuedSvmFill = {
   txPromise: ReadyTransactionPromise;
@@ -96,7 +98,8 @@ export class SvmFillerClient {
   async _executeTxnQueueWithRetry(txPromise: ReadyTransactionPromise, retryAttempt: number): Promise<string> {
     try {
       const transaction = await txPromise;
-      const signature = await signAndSendTransaction(this.provider, transaction);
+      const transactionWithFeePayer = setTransactionMessageFeePayer(this.signer.address, transaction);
+      const signature = await signAndSendTransaction(this.provider, transactionWithFeePayer);
       const signatureString = signature.toString();
       return signatureString;
     } catch (e: unknown) {
@@ -177,7 +180,12 @@ export class SvmFillerClient {
     }
 
     const simulationResults = await Promise.allSettled(
-      queue.map(({ txPromise }) => txPromise.then((tx) => signAndSimulateTransaction(this.provider, tx)))
+      queue.map(({ txPromise }) =>
+        txPromise.then((tx) => {
+          const txWithFeePayer = setTransactionMessageFeePayer(this.signer.address, tx);
+          return signAndSimulateTransaction(this.provider, txWithFeePayer);
+        })
+      )
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
@@ -242,7 +250,7 @@ export class SvmFillerClient {
 
 const signAndSimulateTransaction = async (
   provider: arch.svm.SVMProvider,
-  unsignedTxn: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime
+  unsignedTxn: TransactionMessage & TransactionMessageWithBlockhashLifetime & TransactionMessageWithFeePayer
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);

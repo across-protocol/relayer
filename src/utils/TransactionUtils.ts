@@ -22,7 +22,8 @@ import {
   parseUnits,
 } from "../utils";
 import {
-  CompilableTransactionMessage,
+  TransactionMessage,
+  TransactionMessageWithFeePayer,
   getBase64EncodedWireTransaction,
   signTransactionMessageWithSigners,
   type MicroLamports,
@@ -40,7 +41,7 @@ const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
-export type SolanaTransaction = CompilableTransactionMessage;
+export type SolanaTransaction = TransactionMessage & TransactionMessageWithFeePayer;
 
 export type TransactionSimulationResult = {
   transaction: AugmentedTransaction;
@@ -269,7 +270,7 @@ export async function sendAndConfirmSolanaTransaction(
 }
 
 export async function simulateSolanaTransaction(
-  unsignedTransaction: CompilableTransactionMessage,
+  unsignedTransaction: SolanaTransaction,
   provider: SVMProvider
 ) {
   const signedTx = await signTransactionMessageWithSigners(unsignedTransaction);
