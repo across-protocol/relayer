@@ -57,10 +57,10 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.112":
-  version "4.3.112"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.112.tgz#6173f20d3dea1fc30c416c5384626935c6fa3a43"
-  integrity sha512-VZNOxOL7E3vWhwxNCZ8tmFl8qPjWAfM/damOQmue1TzPBYxPZNPjyya7wFEf+Z7vEKJMOzuqgnrzZFRg3N696A==
+"@across-protocol/sdk@4.3.113":
+  version "4.3.113"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.113.tgz#e2d7af70335024ee569d09576d58ce3a55042ab7"
+  integrity sha512-bGxU8kuoVBE+uADqxIucNDB/SC5WvenERVjTtH9sdpg6tAAtgNvmcV/SOJAy7QhcqJwbA0K64OlheZkG0J1lrw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
@@ -70,6 +70,7 @@
     "@ethersproject/bignumber" "^5.7.0"
     "@nktkas/hyperliquid" "^0.25.9"
     "@pinata/sdk" "^2.1.0"
+    "@solana-program/compute-budget" "^0.8.0"
     "@solana-program/system" "^0.7.0"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.3.0"
