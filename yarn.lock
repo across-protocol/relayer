@@ -16,10 +16,10 @@
   resolved "https://registry.yarnpkg.com/@across-protocol/constants/-/constants-3.1.97.tgz#a9df3ca45475863b809622cdac4d2a411e0d3450"
   integrity sha512-W2Q6bxcKNJ2QHtgIfOuCWOv/AmUyhPlXoJSiYZ9C3Ldk+fWupHkvbQ+4Ngg+1CCGD4HJLhyF1eLyxL3zg9tkUA==
 
-"@across-protocol/contracts@4.1.21-alpha.2":
-  version "4.1.21-alpha.2"
-  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.21-alpha.2.tgz#2a7a60587cb9329caf7bc2f40a3feed6e3fde165"
-  integrity sha512-EJKcfNKhVsh5oZ+XqSV92dG33ScY/p5kVq7pXCZYTqRCRJ2bC4i1gM18p7jNlR0ZLEHuGMUCW8/8TrgKGw65Uw==
+"@across-protocol/contracts@4.1.22":
+  version "4.1.22"
+  resolved "https://registry.yarnpkg.com/@across-protocol/contracts/-/contracts-4.1.22.tgz#e01efc3c166840dcdcc2b3a148109bb3f9369e5f"
+  integrity sha512-pSrg66aMZkiE9DjKLzHVShm5p6s3AhA4WX9AS/y/EF+ebavYjTubtsyt9CMHNH4BT6+2LDpiAIqJ7CHQ22wrKA==
   dependencies:
     "@across-protocol/constants" "^3.1.95"
     "@coral-xyz/anchor" "^0.31.1"
@@ -53,30 +53,26 @@
     "@openzeppelin/contracts" "4.1.0"
     "@uma/core" "^2.18.0"
 
-"@across-protocol/sdk@4.3.113-alpha.4":
-  version "4.3.113-alpha.4"
-  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.113-alpha.4.tgz#8be3f8a42378f11653e2bfc23e162eb868132d9b"
-  integrity sha512-tSJj2Kyha/XMU0hgdeQ9+8Aa6Tkm4uAg+eNQ0mUZ7D4MouNDaUCd8UxL7EHJO/tVao5PbEutLRLWB3OVweHNFA==
+"@across-protocol/sdk@4.3.116-alpha.1":
+  version "4.3.116-alpha.1"
+  resolved "https://registry.yarnpkg.com/@across-protocol/sdk/-/sdk-4.3.116-alpha.1.tgz#6b7e3c5e3113ccc802b4ecbdffeae1205a253ddb"
+  integrity sha512-nkbE4BUqYlvOl1vuttJNkI9d+FfqfiPZEZf1CUTwRG19d+0IJY69Vgc/pQat1o48b3rq5n9FLzVYQMIBG77lNw==
   dependencies:
     "@across-protocol/across-token" "^1.0.0"
     "@across-protocol/constants" "^3.1.97"
-    "@across-protocol/contracts" "4.1.21-alpha.2"
+    "@across-protocol/contracts" "4.1.22"
     "@coral-xyz/anchor" "^0.30.1"
     "@eth-optimism/sdk" "^3.3.1"
     "@ethersproject/bignumber" "^5.7.0"
     "@nktkas/hyperliquid" "^0.25.9"
     "@pinata/sdk" "^2.1.0"
+    "@solana-program/compute-budget" "^0.8.0"
     "@solana-program/system" "^0.7.0"
     "@solana-program/token-2022" "^0.4.0"
     "@solana/kit" "^2.3.0"
-    "@solana/web3.js" "^1.31.0"
-    "@types/mocha" "^10.0.1"
-    "@types/node" "^24.3.0"
-    "@uma/contracts-node" "^0.4.26"
     arweave "^1.14.4"
     async "^3.2.5"
     axios "^0.27.2"
-    big-number "^2.0.0"
     bs58 "^6.0.0"
     decimal.js "^10.3.1"
     ethers "^5.7.2"
@@ -86,6 +82,8 @@
     superstruct "^0.15.4"
     tslib "^2.6.2"
     viem "^2.21.15"
+    winston "^3.17.0"
+    winston-transport "^4.9.0"
 
 "@adraffy/ens-normalize@1.10.1":
   version "1.10.1"
@@ -4429,11 +4427,6 @@
   resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.18.tgz#3d3e0ad7dc70b81b3d0dbe722b4eba93bd29f9bf"
   integrity sha512-JiICiNPEfL18JrddxjSNQUs0/gRMAvdqejIu7UP8JTG4Cup8tDJ6TejZJxBVHlmtB6hSOBnbLoPXb/uLtfdQiw==
 
-"@uma/contracts-node@^0.4.26":
-  version "0.4.26"
-  resolved "https://registry.yarnpkg.com/@uma/contracts-node/-/contracts-node-0.4.26.tgz#2c967e10c41292eeaafeb6b458525138e06ea0d8"
-  integrity sha512-o+wzScJB9xVavQwQWkAA8ZXBT9tCqyrhJOBdcyxaKmTTZmPPjAW52V5IVKwcmEOykFOliDjvRtFZIfWjwzUwcA==
-
 "@uma/core@^2.18.0":
   version "2.56.0"
   resolved "https://registry.yarnpkg.com/@uma/core/-/core-2.56.0.tgz#c19aa427f08691a85e99ec523d23abf359a6b0c3"
@@ -5319,11 +5312,6 @@ big-integer@1.6.36:
   version "1.6.36"
   resolved "https://registry.yarnpkg.com/big-integer/-/big-integer-1.6.36.tgz#78631076265d4ae3555c04f85e7d9d2f3a071a36"
   integrity sha512-t70bfa7HYEA1D9idDbmuv7YbsbVkQ+Hp+8KFSul4aE5e/i1bjCNIRYJZlA8Q8p0r9T8cF/RVvwUgRA//FydEyg==
-
-big-number@^2.0.0:
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/big-number/-/big-number-2.0.0.tgz#98548eda9393b445791670a213aed6f6dcd66ee3"
-  integrity sha512-C67Su0g+XsmXADX/UM9L/+xSbqqwq0D/qGJs2ky6Noy2FDuCZnC38ZSXODiaBvqWma2VYRZEXgm4H74PS6tCDg==
 
 big.js@^6.0.3:
   version "6.1.1"
