@@ -239,10 +239,7 @@ export class SvmFillerClient {
   }
 }
 
-const signAndSimulateTransaction = async (
-  provider: arch.svm.SVMProvider,
-  unsignedTxn: arch.svm.SolanaTransaction
-) => {
+const signAndSimulateTransaction = async (provider: arch.svm.SVMProvider, unsignedTxn: arch.svm.SolanaTransaction) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
   return provider

@@ -22,11 +22,7 @@ import {
   SVMProvider,
   parseUnits,
 } from "../utils";
-import {
-  getBase64EncodedWireTransaction,
-  signTransactionMessageWithSigners,
-  type MicroLamports,
-} from "@solana/kit";
+import { getBase64EncodedWireTransaction, signTransactionMessageWithSigners, type MicroLamports } from "@solana/kit";
 import { updateOrAppendSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
 
 dotenv.config();
